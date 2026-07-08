@@ -42,4 +42,10 @@ def probe(settings: ProbeSettings) -> ProbeResult:
             "small Seoul bbox probe; national cadastral layer by spatial query/download"
         ),
         "latest_reference_period_observed": "SCHEMA_UNVERIFIED",
+        "request_metadata": {
+            "endpoint": "req/data GetFeature",
+            "data": "LP_PA_CBND_BUBUN",
+            "crs": "EPSG:4326",
+            "size": "1",
+        },
     }

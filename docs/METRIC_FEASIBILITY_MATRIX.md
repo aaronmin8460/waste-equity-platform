@@ -8,18 +8,18 @@ Classification definitions:
 - `UNVERIFIED`: official documentation is insufficient or live validation is still required.
 - `UNAVAILABLE`: the necessary data is not publicly documented as available.
 
-Classifications distinguish source feasibility from live validation. Phase 0.5 live-verified SGIS population and VWorld cadastral feature probes only; waste statistics, AirKorea, and KMA were not live-probed because credentials were missing.
+Classifications distinguish source feasibility from live validation. Phase 0.5 live-verified SGIS population and VWorld cadastral feature probes. Phase 0.6 live-verified RCIS `NTN001` for 2024. Phase 0.7 (2026-07-08) live-verified the RCIS generation/treatment/facility PIDs at sigungu granularity for 2023 and 2024; see `API_CONTRACTS/waste_statistics.md`.
 
 | Platform input | Classification | Primary source family | Notes |
 | --- | --- | --- | --- |
-| Regional waste generation | UNVERIFIED | Resource Circulation Information System | Waste generation is documented at the statistics family level, but API field granularity, units, and Seoul/Incheon/Gyeonggi subregional coverage must be live-validated. |
-| Regional waste treatment | UNVERIFIED | Resource Circulation Information System | Treatment statistics are documented, but accounting basis is not confirmed. |
-| Incineration quantity | UNVERIFIED | Resource Circulation Information System | Treatment method detail is documented in annual file description; API field names and regional granularity remain unverified. |
-| Landfill quantity | UNVERIFIED | Resource Circulation Information System | Same status as incineration. |
-| Recycling quantity | UNVERIFIED | Resource Circulation Information System | Recycling performance is documented, but API fields and regional granularity remain unverified. |
-| Treatment-facility locations | UNVERIFIED | Resource Circulation Information System | Annual file documentation mentions treatment-company status; exact location fields are not confirmed for the required API. |
-| Treatment-facility capacity | UNVERIFIED | Resource Circulation Information System | Capacity fields are not confirmed in the required-source API documentation found. |
-| Waste origin-to-destination movement | UNAVAILABLE | Resource Circulation Information System | No required-source documentation found for origin-to-destination flow. Do not infer movement. |
+| Regional waste generation | CONFIRMED_DIRECT | Resource Circulation Information System | LIVE_VERIFIED: `NTN007`/`NTN008`/`NTN018`/`NTN022` provide `WSTE_QTY` (톤/년) per sigungu and waste category for household, non-emission business, emission-facility business, and construction waste; 2023 and 2024 verified. Aggregate `합계`/`소계` rows must be excluded. |
+| Regional waste treatment | CONFIRMED_DIRECT | Resource Circulation Information System | LIVE_VERIFIED on the same PIDs: recycling/incineration/landfill/other quantities with public/self/consigned splits. Accounting basis is `ORIGIN_BASED_TREATMENT_OUTCOME` — treatment of the origin region's generated waste, not physical facility throughput in that region. |
+| Incineration quantity | CONFIRMED_DIRECT | Resource Circulation Information System | LIVE_VERIFIED: `TOT_INCI_QTY` on generation PIDs (origin-based) and `DISP_QTY` on `NTN031`/`NTN040` (facility-location-based). Both bases exist and must be labeled distinctly. |
+| Landfill quantity | CONFIRMED_DIRECT | Resource Circulation Information System | LIVE_VERIFIED: `TOT_FILL_QTY` (origin-based) and `FILL_QTY_TON` on `NTN033`/`NTN043` (facility-location-based). |
+| Recycling quantity | CONFIRMED_DIRECT | Resource Circulation Information System | LIVE_VERIFIED: `TOT_RECY_QTY` with material/energy splits (2023 onward) and `NTN046`-`NTN048` facility-side records. |
+| Treatment-facility locations | CONFIRMED_DERIVED | Resource Circulation Information System | LIVE_VERIFIED: facility PIDs give facility/company name, sigungu, and street address, but no coordinates. Geocoding (e.g. VWorld geocoder) is required for map placement and must preserve provenance. |
+| Treatment-facility capacity | CONFIRMED_DIRECT | Resource Circulation Information System | LIVE_VERIFIED: `FAC_CAP` (톤/일), `ABILITY_QTY` (톤/일), `TOT_FILL_CAP`/`RMN_FILL_CAP` (㎥) per facility. |
+| Waste origin-to-destination movement | UNAVAILABLE | Resource Circulation Information System | Confirmed against the full official PID catalog in the utilization guide: no origin-to-destination flow table exists. Do not infer movement. |
 | Regional population | CONFIRMED_DIRECT | SGIS | Population endpoint exists by administrative code and reference year. Phase 0.5 live probe returned 25 Seoul district-level records for 2020. |
 | Administrative boundaries | CONFIRMED_DIRECT | SGIS, VWorld | SGIS boundary GeoJSON endpoint exists; VWorld also provides boundary layers. Boundary endpoint remains live-unverified. |
 | Population grids | UNVERIFIED | SGIS | SGIS provides population/geostatistical services, but the exact grid endpoint for this platform must be selected and validated. |
@@ -38,9 +38,11 @@ Classifications distinguish source feasibility from live validation. Phase 0.5 l
 
 | Metric | Feasibility | Required warning |
 | --- | --- | --- |
-| Reported Treatment-to-Generation Imbalance Ratio | PROXY_ONLY | Does not prove waste movement, treatment responsibility, or facility burden. |
-| Waste generation per capita | CONFIRMED_DERIVED after waste regional fields are verified | Requires aligned waste reference period, population reference year, and geography. |
-| Existing treatment-facility proximity | UNVERIFIED | Requires verified facility locations and coordinate precision. |
+| Reported Treatment-to-Generation Imbalance Ratio | CONFIRMED_DERIVED | Numerator must be facility-location-based throughput (facility PIDs); denominator is origin-based generation. Does not prove waste movement or responsibility avoidance. Origin-based treatment splits cannot be used as the numerator because they approximately equal generation by construction. |
+| Waste generation per capita | CONFIRMED_DERIVED | Generation fields live-verified (Phase 0.7). Requires aligned waste reference period, population reference year, and geography via the region-name crosswalk. |
+| Disposition mix (incineration/landfill/recycling share of generated waste) | CONFIRMED_DERIVED | Origin-based accounting; label as treatment of the region's generated waste, not activity at facilities in the region. |
+| Facility capacity burden per capita | CONFIRMED_DERIVED | Facility capacity live-verified; requires geocoded facility locations for distance-based variants. |
+| Existing treatment-facility proximity | CONFIRMED_DERIVED after geocoding | Facility addresses live-verified but coordinates are not provided; geocoding accuracy must be validated and recorded. |
 | Air-quality current context | CONFIRMED_DIRECT | Real-time context only; not permanent siting evidence. |
 | Wind-aware current context | CONFIRMED_DERIVED | Current/forecast context only; not permanent siting evidence. |
 | Parcel/zoning exclusion screen | CONFIRMED_DERIVED | Requires explicit legal layers, dates, and geometry validity checks. |
@@ -51,4 +53,4 @@ Classifications distinguish source feasibility from live validation. Phase 0.5 l
 
 Status: not approved.
 
-Reason: official documentation found in this audit does not establish that regional treatment quantity represents treatment of waste generated by the same region, physical facility throughput, or cross-region responsibility. Use `Reported Treatment-to-Generation Imbalance Ratio` with the warning above unless explicit source definitions or origin-to-destination flows are obtained.
+Reason: Phase 0.7 confirmed the accounting bases. The regional treatment splits on the generation PIDs are origin-based outcomes (how the region's own generated waste was treated), so dividing them by generation is close to 1 by construction and carries no responsibility meaning. Facility throughput divided by generation compares different accounting bases and does not prove cross-region responsibility either, because no origin-to-destination flow table exists in the official PID catalog. Use `Reported Treatment-to-Generation Imbalance Ratio` (facility-location-based throughput over origin-based generation) with the warning above, and never present it as responsibility avoidance or burden transfer.

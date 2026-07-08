@@ -11,4 +11,10 @@ Phase 0.5 created sanitized live samples for SGIS and VWorld:
 - `sgis.live.json`
 - `vworld.live.json`
 
+Phase 0.6 created a sanitized live RCIS waste-statistics sample:
+
+- `waste-statistics.live.json`
+
+The RCIS sample is `LIVE_VERIFIED` for `wss/JsonApi/NTN001`, `YEAR=2024`. It verifies the management-area table only; it does not provide waste generation or treatment quantities.
+
 These `.json` samples are ignored by Git through `.gitignore`.

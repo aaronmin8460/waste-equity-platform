@@ -28,9 +28,9 @@ Refresh jobs must be idempotent, preserve sanitized raw responses, and fail visi
 - Store samples and probes under `data/samples/` only when marked `LIVE_VERIFIED` or `FIXTURE_ONLY`.
 - Do not commit live response samples unless a later governance phase explicitly approves that storage pattern.
 
-## Phase 0.5 Refresh Implications
+## Phase 0.6 Refresh Implications
 
 - SGIS refresh planning can proceed for source-registry and code-crosswalk design, but boundary endpoint, Incheon, and Gyeonggi-do live probes must be added before metric publication.
 - VWorld cadastral refresh planning can proceed for small-area probes; large-area Seoul/Incheon/Gyeonggi coverage should use official downloads or tiled requests that respect VWorld limits.
-- Waste-statistics refresh remains blocked by CREDENTIAL_MISSING and SCHEMA_UNVERIFIED status.
+- Waste-statistics refresh can be planned for live-verified `NTN001` management-area records. Generation/treatment refresh remains blocked until the relevant PIDs are live-validated for fields, units, and accounting basis. Use `RCIS_API_KEY` as the only required RCIS secret; use `RCIS_USER_ID` only as non-secret `USRID` request configuration.
 - AirKorea and KMA refresh schedules remain documented but not live-verified locally.

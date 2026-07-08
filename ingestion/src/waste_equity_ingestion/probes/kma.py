@@ -47,6 +47,13 @@ def probe(settings: ProbeSettings) -> ProbeResult:
         "schema_validation_status": "LIVE_VERIFIED",
         "geographic_coverage": "KMA grid nx=60 ny=127 probe; nationwide by grid coordinate",
         "latest_reference_period_observed": f"{base_date} {base_time}",
+        "request_metadata": {
+            "endpoint": "getUltraSrtNcst",
+            "base_date": base_date,
+            "base_time": base_time,
+            "nx": "60",
+            "ny": "127",
+        },
     }
 
 

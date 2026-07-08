@@ -19,10 +19,12 @@ SENSITIVE_KEYS = {
     "consumer_secret",
     "key",
     "rcis_api_key",
+    "rcis_user_id",
     "secret",
     "serviceKey",
     "ServiceKey",
     "token",
+    "usrid",
 }
 
 
@@ -33,6 +35,7 @@ class SampleEnvelope:
     verification_status: str
     schema_validation_status: str
     retrieved_at: str
+    request_metadata: dict[str, Any]
     payload: dict[str, Any]
 
 
@@ -58,6 +61,7 @@ def build_envelope(
     payload: dict[str, Any],
     verification_status: str,
     schema_validation_status: str,
+    request_metadata: dict[str, Any] | None = None,
 ) -> SampleEnvelope:
     if verification_status not in {"LIVE_VERIFIED", "FIXTURE_ONLY"}:
         raise ValueError("verification_status must be LIVE_VERIFIED or FIXTURE_ONLY")
@@ -71,6 +75,7 @@ def build_envelope(
         verification_status=verification_status,
         schema_validation_status=schema_validation_status,
         retrieved_at=datetime.now(timezone.utc).isoformat(),
+        request_metadata=sanitize(deepcopy(request_metadata or {})),
         payload=sanitize(deepcopy(payload)),
     )
 

@@ -52,6 +52,11 @@ def probe(settings: ProbeSettings) -> ProbeResult:
             "sidoName=서울 probe; source also supports Incheon/Gyeonggi by sidoName"
         ),
         "latest_reference_period_observed": _latest_data_time(payload),
+        "request_metadata": {
+            "endpoint": "getCtprvnRltmMesureDnsty",
+            "sidoName": "서울",
+            "returnType": "json",
+        },
     }
 
 

@@ -6,13 +6,13 @@ Audit date: 2026-07-07.
 
 Scope: Seoul Metropolitan Area, covering Seoul, Incheon, and Gyeonggi-do.
 
-This audit uses only official primary documentation from the required source families. Phase 0.5 added local live validation for SGIS and VWorld where credentials were configured.
+This audit uses only official primary documentation from the required source families. Phase 0.5 added local live validation for SGIS and VWorld where credentials were configured. Phase 0.6 live-verified RCIS `wss/JsonApi/NTN001` for `YEAR=2024`.
 
 ## Source Status Summary
 
 | Source | Feasibility | Live validation | Main risk |
 | --- | --- | --- | --- |
-| Korea Environment Corporation Resource Circulation Information System waste statistics API | Partially feasible | CREDENTIAL_MISSING | Accounting definitions are not sufficient to infer treatment responsibility or origin-to-destination movement. |
+| Korea Environment Corporation Resource Circulation Information System waste statistics API | Feasible | LIVE_VERIFIED for generation/treatment/facility PIDs at sigungu granularity (Phase 0.7, 2023 and 2024) | Region identifiers are Korean names without codes; aggregate `합계`/`소계` rows are embedded in data; origin-to-destination movement remains unavailable. |
 | SGIS population and administrative boundary APIs | Feasible | LIVE_VERIFIED | Seoul district-level population probe returned 25 records; other regions and boundary endpoint still need live probes. |
 | AirKorea real-time air-quality and station APIs | Feasible | CREDENTIAL_MISSING | Real-time observations are contextual and must not be used as permanent siting evidence. |
 | Korea Meteorological Administration short-term forecast API | Feasible | CREDENTIAL_MISSING | Candidate sites must be converted to KMA forecast grid coordinates, and one request covers one grid/time query. |
@@ -52,20 +52,52 @@ Required source: Korea Environment Corporation Resource Circulation Information 
 
 | Question | Audit result |
 | --- | --- |
-| City, county, district-level availability | UNVERIFIED for the API until authenticated endpoint metadata is inspected. The annual file documentation indicates national status and treatment-company status but does not expose the API field schema in the page text. |
-| Seoul district-level data | UNVERIFIED for the API. Must be validated with live or official endpoint schema for autonomous district labels/codes. |
-| Incheon county and district data | UNVERIFIED for the API. Must account for the 2026 Incheon administrative structure changes in downstream mapping. |
-| Gyeonggi city and county data | UNVERIFIED for the API. Must validate city/county labels and any city administrative districts where present. |
-| Waste generation measured by origin region | PROXY_ONLY until field definitions are verified. Published generation statistics are likely reported by administrative generator/reporting region, but this must not be treated as verified origin flow. |
-| Treatment accounting basis | UNVERIFIED. Official page names generation and treatment status but does not prove whether treatment means generated waste's treatment outcome, physical facility throughput in the region, or another accounting basis. |
-| Incineration, landfill, recycling, other treatment separation | CONFIRMED_DIRECT at the annual file level because the official file description names treatment methods and recycling rate. API-level field validation remains UNVERIFIED. |
-| Facility-level data availability | UNVERIFIED for the required API. The annual file page says treatment company status is provided, but field-level location/capacity details must be validated. |
-| Waste origin-to-destination flow availability | UNAVAILABLE from current official documentation. No required-source documentation found in this audit states origin-to-destination movement. |
-| Available years | CONFIRMED_DIRECT for 2014-2018 and 2019 onward as separate statistical forms for national generation/treatment on the RCIS API page. Several other listed waste-statistics categories are documented through 2023. Latest API reference period remains UNVERIFIED. |
-| Units | UNVERIFIED for the API. The annual file page says detailed data include generation quantity and treatment methods, but units must be validated from endpoint schema or downloaded official files. |
-| Publication frequency | CONFIRMED_DIRECT for annual file dataset. API page metadata says real-time update, but the underlying statistical reference periods are annual or periodic, not real-time observations. |
-| Latest available reference period | UNVERIFIED for the API. The annual file dataset indicates 2024-12-31, while the RCIS API page lists some categories through 2023 and does not expose all endpoint latest periods in page text. |
-| Supports treatment/generation equity metric | Only as a non-responsibility imbalance indicator. It cannot support claims that a region avoids responsibility or bears burden unless accounting definitions and origin-to-destination flows are provided. |
+| City, county, district-level availability | LIVE_VERIFIED (Phase 0.7): `NTN007`, `NTN008`, `NTN018`, and `NTN022` return sigungu-level rows nationwide, including all Seoul autonomous districts, Incheon counties/districts, and Gyeonggi cities/counties, for 2023 and 2024. |
+| Seoul district-level data | LIVE_VERIFIED: Seoul autonomous districts (`종로구`, `중구`, `용산구`, ...) observed on generation and facility PIDs. |
+| Incheon county and district data | LIVE_VERIFIED: Incheon sigungu rows observed. Downstream mapping must still account for the 2026 Incheon administrative structure changes because 2023/2024 statistics use the pre-change names. |
+| Gyeonggi city and county data | LIVE_VERIFIED: Gyeonggi sigungu rows observed. |
+| Waste generation measured by origin region | LIVE_VERIFIED: `WSTE_QTY` per origin region and waste category on generation PIDs. |
+| Treatment accounting basis | LIVE_VERIFIED (Phase 0.7): generation PIDs report `ORIGIN_BASED_TREATMENT_OUTCOME` (disposition of the origin region's generated waste, split public/self/consigned); facility PIDs report `FACILITY_LOCATION_BASED_THROUGHPUT`. The two bases must never be mixed without labeling. |
+| Incineration, landfill, recycling, other treatment separation | LIVE_VERIFIED: `TOT_INCI_QTY`, `TOT_FILL_QTY`, `TOT_RECY_QTY` (with material/energy splits from 2023), and `TOT_ETC_QTY` on generation PIDs; facility-side equivalents on `NTN031`-`NTN048`. |
+| Facility-level data availability | LIVE_VERIFIED: `NTN031`/`NTN032`/`NTN033` (public incineration/other/landfill) and `NTN040`/`NTN043`/`NTN046` (business disposal/recycling) return per-facility rows with name, sigungu, address, capacity, and annual throughput. No coordinates; geocoding required. `NTN044` returned one placeholder-like record and stays SCHEMA_UNVERIFIED. |
+| Waste origin-to-destination flow availability | UNAVAILABLE, now confirmed against the complete official PID catalog in the utilization guide. Do not infer movement. |
+| Available years | LIVE_VERIFIED: 2023 and 2024 for the target PIDs. The guide documents distinct schemas for `<=2018`, `2019`, and `>=2020`. |
+| Units | LIVE_VERIFIED: statistics PIDs return `result[0].DUNIT = ( 단위 : 톤/년 )`. Facility PIDs have blank `DUNIT`; units are documented per field in the guide (`FAC_CAP` 톤/일, `TOT_FILL_CAP` ㎥, `FILL_QTY_TON` 톤/년). |
+| Publication frequency | CONFIRMED_DIRECT for annual file dataset. API page metadata says real-time update, but the underlying statistical reference periods are annual. Latest year 2024 was already queryable in July 2026. |
+| Latest available reference period | LIVE_VERIFIED: 2024, with values distinct from 2023. |
+| Supports treatment/generation equity metric | Yes, as `Reported Treatment-to-Generation Imbalance Ratio` using facility-location-based throughput over origin-based generation, plus per-capita generation, disposition mix, and facility capacity burden. Responsibility-avoidance claims remain unsupported without origin-to-destination flows. |
+
+### Phase 0.6 RCIS Authentication And USRID Contract
+
+`RCIS_API_KEY` is the only required RCIS API secret in this repository. The user's RCIS website login ID must not be treated as an API credential, and no separate RCIS API ID secret should be invented.
+
+If the official utilization guide documents a fixed API service code, statistics identifier, or operation name, it must be represented as endpoint metadata or normal request configuration, not as a credential.
+
+The official utilization guide documents the request fields `KEY`, `USRID`, `PID`, and `YEAR`. For this project:
+
+- `KEY` is the authentication credential and maps to `RCIS_API_KEY`.
+- `PID` is a waste-statistics form code and belongs in endpoint metadata.
+- `YEAR` is a normal reference-year query parameter.
+- `USRID` is a required request parameter named "아이디" / user ID. It maps to `RCIS_USER_ID`, is non-secret request configuration, and must not be printed.
+
+Phase 0.6 local state: `RCIS_API_KEY` and `RCIS_USER_ID` are configured. The `wss/JsonApi/NTN001` live request succeeded with provider code `E000`.
+
+Remaining uncertainty: the inspected official pages document `USRID` as a required user ID request parameter, but do not prove whether it is always the normal RCIS website login ID or a separate OpenAPI account identifier. The configured value worked for `NTN001`; continue treating it as non-secret request configuration whose value must not be printed.
+
+### Phase 0.6 Live RCIS Result
+
+- Endpoint identifier: `wss/JsonApi/NTN001`.
+- Reference year: `2024`.
+- HTTP status: `200`.
+- Content type: `application/json;charset=UTF-8`.
+- Provider result: `ERR_CODE=E000`, message `데이터 전송이 완료되었습니다.`
+- Top-level response fields: `data`, `dataHeader`, `result`, `searchOption`.
+- Region field: `CITY_JIDT_CD_NM`.
+- Records: `전국`, `서울`, `부산`, `대구`, `인천`, `광주`, `대전`, `울산`, `세종`, `경기`, `강원`, `충북`, `충남`, `전북`, `전남`, `경북`, `경남`, `제주`.
+- Data fields: `CITY_JIDT_CD_NM`, `TOT_AREA`, `TOT_POP`, `TOT_DONG`, `TOT_HSHLD`, `LIFEWT_MNG_AREA`, `LIFEWT_MNG_POP`, `LIFEWT_MNG_DONG`, `LIFEWT_MNG_HSHLD`, `LIFEWT_MNGEXCPT_AREA`, `LIFEWT_MNGEXCPT_POP`, `LIFEWT_MNGEXCPT_DONG`, `LIFEWT_MNGEXCPT_HSHLD`, `MNGEXCPT_AREA_RATIO`, `MNGEXCPT_POP_RATIO`, `MNGEXCPT_DONG_RATIO`, `MNGEXCPT_HSHLD_RATIO`.
+- Units: not verified; `DUNIT` was blank.
+- Pagination: not present.
+- Sample: `data/samples/waste-statistics.live.json`, ignored by Git.
 
 ### Waste Metric Feasibility Finding
 

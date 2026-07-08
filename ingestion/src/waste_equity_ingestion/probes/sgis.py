@@ -50,4 +50,10 @@ def probe(settings: ProbeSettings) -> ProbeResult:
         "schema_validation_status": "LIVE_VERIFIED",
         "geographic_coverage": "adm_cd=11 Seoul probe; Incheon/Gyeonggi require separate adm_cd",
         "latest_reference_period_observed": "2020",
+        "request_metadata": {
+            "endpoint": "population.json",
+            "year": "2020",
+            "adm_cd": "11",
+            "low_search": "1",
+        },
     }

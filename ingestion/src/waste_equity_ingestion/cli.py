@@ -8,8 +8,8 @@ import sys
 from typing import Callable
 
 from .config import ProbeSettings
-from .errors import MissingCredentialsError, ProbeError
-from .probes import airkorea, kma, sgis, vworld, waste_statistics
+from .errors import MissingConfigurationError, MissingCredentialsError, ProbeError
+from .probes import airkorea, kma, sgis, vworld, waste_statistics, waste_statistics_discovery
 from .result import ProbeResult
 from .samples import build_envelope, save_sample
 
@@ -23,22 +23,72 @@ PROBES: dict[str, ProbeFunc] = {
     "waste-statistics": waste_statistics.probe,
 }
 
+DISCOVERY_SOURCE = "waste-statistics-discovery"
+
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a Phase 0 API feasibility probe.")
-    parser.add_argument("source", choices=sorted(PROBES))
+    parser.add_argument("source", choices=sorted([*PROBES, DISCOVERY_SOURCE]))
     parser.add_argument("--save-sample", action="store_true")
+    parser.add_argument(
+        "--pids",
+        help="Comma-separated RCIS PIDs to discover (default: documented target PIDs).",
+    )
+    parser.add_argument(
+        "--year",
+        default=waste_statistics_discovery.DEFAULT_DISCOVERY_YEAR,
+        help="Reference year for RCIS PID discovery requests.",
+    )
     return parser.parse_args(argv)
+
+
+def run_discovery(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    pids = (
+        [pid.strip() for pid in args.pids.split(",") if pid.strip()]
+        if args.pids
+        else sorted(waste_statistics_discovery.TARGET_PIDS)
+    )
+    summaries = waste_statistics_discovery.discover(settings, pids, args.year)
+    for summary in summaries:
+        payload = summary.pop("payload", None)
+        print(json.dumps(summary, ensure_ascii=False))
+        if args.save_sample and summary.get("status") == "LIVE_VERIFIED" and payload:
+            truncated = waste_statistics_discovery.truncate_payload_records(payload)
+            envelope = build_envelope(
+                source=waste_statistics.SOURCE,
+                endpoint=f"wss/JsonApi/{summary['pid']}",
+                payload=truncated,
+                verification_status="LIVE_VERIFIED",
+                schema_validation_status="LIVE_VERIFIED",
+                request_metadata={
+                    "pid": summary["pid"],
+                    "year": summary["year"],
+                    "pid_description": summary["description"],
+                    "record_count": summary.get("record_count"),
+                    "records_truncated_to": waste_statistics_discovery.SAMPLE_RECORD_LIMIT,
+                },
+            )
+            save_sample(
+                settings.sample_dir,
+                f"waste-statistics.{summary['pid']}.{summary['year']}.live.json",
+                envelope,
+            )
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     settings = ProbeSettings.from_env()
     try:
+        if args.source == DISCOVERY_SOURCE:
+            return run_discovery(settings, args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    except MissingConfigurationError as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
     except ProbeError as exc:
         print(str(exc), file=sys.stderr)
         return 3
@@ -56,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
             payload=payload["payload"],
             verification_status="LIVE_VERIFIED",
             schema_validation_status=payload["schema_validation_status"],
+            request_metadata=payload["request_metadata"],
         )
         save_sample(settings.sample_dir, f"{args.source}.live.json", envelope)
     return 0

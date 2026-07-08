@@ -13,6 +13,14 @@ class MissingCredentialsError(ProbeError):
         self.missing = missing
 
 
+class MissingConfigurationError(ProbeError):
+    """Raised when a required non-secret request configuration value is absent."""
+
+    def __init__(self, missing: list[str]) -> None:
+        super().__init__("Missing required configuration variables: " + ", ".join(missing))
+        self.missing = missing
+
+
 class ProviderResultError(ProbeError):
     """Raised when the provider-level result code signals failure."""
 

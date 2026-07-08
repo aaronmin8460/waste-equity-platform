@@ -42,7 +42,7 @@ Use Korean administrative/legal code systems as a separate mapping axis. Do not 
 
 ### Waste Statistics Region Labels Or Codes
 
-The waste-statistics API schema has not been live-validated. Preserve source labels exactly. Add normalized matching only after official endpoint fields are confirmed.
+The live `NTN001` response uses `CITY_JIDT_CD_NM` as the region-name field and does not expose a region code. Preserve source labels exactly. Add normalized matching only after each endpoint's official fields are confirmed.
 
 Required matching checks:
 
@@ -94,13 +94,21 @@ Do not assume city-level, county-level, and district-level reporting are interch
 | Incheon administrative changes | Time-series metrics may mix old and new districts. | Add validity dates and reference-period warnings. |
 | Gyeonggi administrative districts | City subdistricts may be absent in some sources. | Preserve native granularity and aggregate only with documented rules. |
 
-## Phase 0.5 Region-Code Validation Notes
+## Phase 0.6 Region-Code Validation Notes
 
 - SGIS live population probe used `adm_cd=11` for Seoul and returned 25 district-level records for `year=2020`.
 - SGIS Incheon and Gyeonggi-do codes were not live-probed in Phase 0.5.
 - VWorld live cadastral probe returned parcel attributes including `pnu`; PNU must remain separate from SGIS `adm_cd`.
-- Waste-statistics region labels or codes remain SCHEMA_UNVERIFIED because RCIS credentials were missing.
+- RCIS `NTN001` live response returned `CITY_JIDT_CD_NM` values for `전국`, all major sido/province labels, including `서울`, `인천`, and `경기`.
+- RCIS `NTN001` did not return Seoul autonomous districts, Incheon counties/districts, Gyeonggi cities/counties, Gyeonggi city administrative districts, or RCIS region codes.
 - AirKorea region names and KMA grid coordinates remain unvalidated locally because credentials were missing.
+
+## Phase 0.7 Region-Code Validation Notes
+
+- RCIS sigungu-level PIDs (`NTN002`, `NTN007`, `NTN008`, `NTN018`, `NTN022`, and the facility PIDs) return `CITY_JIDT_CD_NM` (sido) and `CTS_JIDT_CD_NM` (sigungu) as Korean names only. Despite the `_CD_NM` suffix, no numeric region code is present anywhere in the response.
+- The crosswalk must therefore map RCIS Korean region-name pairs (sido name, sigungu name) to canonical codes, versioned by reference year.
+- RCIS data embeds pseudo-region rows: `CTS_JIDT_CD_NM` values `합계` and `소계`, and `CITY_JIDT_CD_NM` value `전국`. These must be excluded from the crosswalk and from regional aggregation.
+- 2023/2024 RCIS statistics use pre-2026 Incheon administrative names; the crosswalk validity dates must handle the 2026 Incheon restructuring explicitly.
 
 ## Initial Crosswalk Workflow
 

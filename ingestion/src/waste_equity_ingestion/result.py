@@ -10,3 +10,4 @@ class ProbeResult(TypedDict):
     schema_validation_status: str
     geographic_coverage: str
     latest_reference_period_observed: str
+    request_metadata: dict[str, Any]
