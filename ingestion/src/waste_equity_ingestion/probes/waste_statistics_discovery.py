@@ -143,9 +143,7 @@ def discover(
     return summaries
 
 
-def discover_pid(
-    settings: ProbeSettings, endpoint: str, pid: str, year: str
-) -> dict[str, Any]:
+def discover_pid(settings: ProbeSettings, endpoint: str, pid: str, year: str) -> dict[str, Any]:
     params = build_request_params(
         api_key=settings.rcis_api_key,
         user_id=settings.rcis_user_id,

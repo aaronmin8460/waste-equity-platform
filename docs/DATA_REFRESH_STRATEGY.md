@@ -21,16 +21,72 @@ Refresh jobs must be idempotent, preserve sanitized raw responses, and fail visi
 - Re-running a job with the same source payload and transformation version must not duplicate records.
 - New transformations of the same raw payload must produce a new derived version, not overwrite old derived results.
 
+Phase 2.1 SGIS behavior:
+
+- SGIS normalized regions are upserted by canonical region code derived from
+  exact SGIS `adm_cd`.
+- SGIS population rows are upserted by region, reference year, source, and
+  population definition.
+- Re-running the same `sgis-ingest --year 2024 --scope capital-region --write`
+  command must not create duplicate regions or population rows.
+- Exact sanitized SGIS data responses are retained by endpoint, reference
+  period, response hash, and transformation version. Repeated live requests may
+  add raw-response rows when SGIS provider transaction metadata changes, while
+  normalized rows remain idempotent.
+
 ## Raw Response Rules
 
 - Store only sanitized raw responses or source files.
 - Redact service keys, API IDs, access tokens, signatures, authorization headers, and credential-like query parameters.
 - Store samples and probes under `data/samples/` only when marked `LIVE_VERIFIED` or `FIXTURE_ONLY`.
 - Do not commit live response samples unless a later governance phase explicitly approves that storage pattern.
+- SGIS Phase 2.1 stores sanitized production API data responses in the database,
+  not in committed sample files. Authentication tokens are not stored.
+
+## Phase 2.1 SGIS Production Refresh
+
+Current implementation status:
+
+- Implemented as an explicit one-shot CLI job, not a scheduler.
+- Production command:
+
+```bash
+python -m waste_equity_ingestion.cli sgis-ingest \
+  --year 2024 \
+  --scope capital-region \
+  --write
+```
+
+- Dry-run/validation command:
+
+```bash
+python -m waste_equity_ingestion.cli sgis-ingest \
+  --year 2024 \
+  --scope capital-region \
+  --dry-run
+```
+
+- Docker one-shot command:
+
+```bash
+docker compose --profile ingestion run --rm ingestion \
+  sgis-ingest --year 2024 --scope capital-region --write
+```
+
+The selected SGIS reference year is `2024`, the latest year live-verified as
+mutually compatible across Seoul, Incheon, and Gyeonggi-do population and
+boundary endpoints during Phase 2.1. Source CRS is recorded as `EPSG:5179` and
+PostGIS storage CRS is `EPSG:4326`.
+
+Dataset freshness is updated only after the SGIS job completes successfully.
+Failed SGIS runs remain visible in `ingestion_runs`, retain sanitized error
+categories, and must not update `last_success_at`.
 
 ## Phase 0.6 Refresh Implications
 
-- SGIS refresh planning can proceed for source-registry and code-crosswalk design, but boundary endpoint, Incheon, and Gyeonggi-do live probes must be added before metric publication.
+- SGIS source-registry and code-crosswalk planning from Phase 0.6 has been
+  superseded by Phase 2.1 live production validation for canonical geography and
+  population. Metrics still require later RCIS and cross-source mapping work.
 - VWorld cadastral refresh planning can proceed for small-area probes; large-area Seoul/Incheon/Gyeonggi coverage should use official downloads or tiled requests that respect VWorld limits.
 - Waste-statistics refresh can be planned for live-verified `NTN001` management-area records. Generation/treatment refresh remains blocked until the relevant PIDs are live-validated for fields, units, and accounting basis. Use `RCIS_API_KEY` as the only required RCIS secret; use `RCIS_USER_ID` only as non-secret `USRID` request configuration.
 - AirKorea and KMA refresh schedules remain documented but not live-verified locally.

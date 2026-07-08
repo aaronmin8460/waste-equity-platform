@@ -5,13 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Callable
+from collections.abc import Callable
 
 from .config import ProbeSettings
-from .errors import MissingConfigurationError, MissingCredentialsError, ProbeError
+from .errors import IngestionError, MissingConfigurationError, MissingCredentialsError, ProbeError
 from .probes import airkorea, kma, sgis, vworld, waste_statistics, waste_statistics_discovery
 from .result import ProbeResult
 from .samples import build_envelope, save_sample
+from .sgis_ingestion import run_sgis_ingestion
 
 ProbeFunc = Callable[[ProbeSettings], ProbeResult]
 
@@ -24,11 +25,12 @@ PROBES: dict[str, ProbeFunc] = {
 }
 
 DISCOVERY_SOURCE = "waste-statistics-discovery"
+SGIS_INGEST = "sgis-ingest"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a Phase 0 API feasibility probe.")
-    parser.add_argument("source", choices=sorted([*PROBES, DISCOVERY_SOURCE]))
+    parser.add_argument("source", choices=sorted([*PROBES, DISCOVERY_SOURCE, SGIS_INGEST]))
     parser.add_argument("--save-sample", action="store_true")
     parser.add_argument(
         "--pids",
@@ -36,19 +38,35 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--year",
-        default=waste_statistics_discovery.DEFAULT_DISCOVERY_YEAR,
-        help="Reference year for RCIS PID discovery requests.",
+        help=(
+            "Reference year. Required for sgis-ingest; defaults to the RCIS discovery "
+            "year for waste-statistics-discovery."
+        ),
+    )
+    parser.add_argument(
+        "--scope",
+        default="capital-region",
+        choices=["capital-region"],
+        help="Production ingestion geographic scope.",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--dry-run", action="store_true", help="Validate live data without DB writes."
+    )
+    mode.add_argument(
+        "--write", action="store_true", help="Write validated live data to DATABASE_URL."
     )
     return parser.parse_args(argv)
 
 
 def run_discovery(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    year = args.year or waste_statistics_discovery.DEFAULT_DISCOVERY_YEAR
     pids = (
         [pid.strip() for pid in args.pids.split(",") if pid.strip()]
         if args.pids
         else sorted(waste_statistics_discovery.TARGET_PIDS)
     )
-    summaries = waste_statistics_discovery.discover(settings, pids, args.year)
+    summaries = waste_statistics_discovery.discover(settings, pids, year)
     for summary in summaries:
         payload = summary.pop("payload", None)
         print(json.dumps(summary, ensure_ascii=False))
@@ -82,6 +100,19 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.source == DISCOVERY_SOURCE:
             return run_discovery(settings, args)
+        if args.source == SGIS_INGEST:
+            if not args.year:
+                raise IngestionError("sgis-ingest requires --year YYYY")
+            if not args.dry_run and not args.write:
+                raise IngestionError("sgis-ingest requires either --dry-run or --write")
+            report = run_sgis_ingestion(
+                settings,
+                year=int(args.year),
+                scope=args.scope,
+                write=bool(args.write),
+            )
+            print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+            return 0
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)

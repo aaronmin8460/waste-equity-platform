@@ -31,149 +31,139 @@ Completion checks:
 
 ## Phase 1: Repository And Tooling Scaffold
 
-Status: complete for the backend and infrastructure (2026-07-08). The master project context consolidates this phase with the metadata model and database foundation below as "Phase 1: Infrastructure"; the delivered scope is the `backend/` package (FastAPI, SQLAlchemy 2.0, Alembic, ruff/mypy/pytest all passing), `docker-compose.yml` (PostGIS database + backend), the core metadata tables (`regions`, `region_code_map`, `data_sources`, `ingestion_runs`, `dataset_freshness`, `raw_api_responses`) with a seeded source registry, and the health/data-operations endpoints. Frontend scaffold and CI remain open.
+Status: complete for the backend and infrastructure (2026-07-08). This phase absorbed the source-registry, metadata-model, and database-foundation work that earlier roadmap drafts listed as separate later phases.
 
 Goal: create the minimal project structure and developer tooling without implementing product features or data integrations.
 
-Planned deliverables:
+Delivered:
 
-- Frontend and backend directory structure
-- Package and Python project metadata
-- Formatting, linting, type-checking, and test commands
-- Docker Compose skeleton for local services
-- Environment variable loading pattern
-- Continuous integration plan or initial workflow
+- `backend/` package with FastAPI, SQLAlchemy 2.0, Alembic, ruff, mypy, and pytest.
+- `docker-compose.yml` with PostgreSQL/PostGIS and backend services.
+- Core source registry and metadata model.
+- PostgreSQL/PostGIS foundation and Alembic revision `0001`.
+- Core metadata tables: `regions`, `region_code_map`, `data_sources`, `ingestion_runs`, `dataset_freshness`, `raw_api_responses`.
+- Seeded source registry for SGIS, RCIS, VWorld, AirKorea, and KMA.
+- Backend health and data-operations endpoints.
 
 Required checks before completion:
 
 - Formatting command passes
 - Linting command passes
 - Type-checking command passes
-- Empty or scaffold tests pass
+- Backend tests pass
 - No fake public datasets are introduced
 
-## Phase 2: Data Source Registry And Metadata Model
+## Phase 2: Production Ingestion
 
-Goal: define how official data sources, reference periods, update cadences, licenses, and retrieval metadata are represented.
+Status: current phase.
 
-Planned deliverables:
+Goal: implement explicit, reproducible, one-shot production ingestion jobs for official public data. Phase 2 jobs must preserve sanitized raw responses, write normalized tables idempotently, and fail visibly without fixture fallback.
 
-- Source registry schema
-- Data cadence taxonomy: annual, monthly, periodically updated, real-time
-- Ingestion run metadata model
-- Raw response storage convention
-- Source and reference-period requirements for backend responses
+### Phase 2.0: Reusable Production Ingestion Framework
 
-Required checks before completion:
+Deliverables:
 
-- Unit tests for metadata validation
-- Documentation for source registration
-- Review confirming unavailable sources cannot silently fall back to sample data
+- CLI entrypoint for explicit ingestion jobs.
+- Shared credential loading from environment variables.
+- Provider-result validation and sanitized error handling.
+- Sanitized raw-response preservation through `raw_api_responses`.
+- Visible ingestion lifecycle through `ingestion_runs`.
+- Dataset freshness updates only after successful writes.
+- Idempotent upsert conventions.
+- Docker Compose one-shot ingestion command.
 
-## Phase 3: Database And Spatial Foundation
+### Phase 2.1: SGIS Canonical Geography And Population Ingestion
 
-Goal: implement the initial PostgreSQL and PostGIS foundation for administrative boundaries, facilities, source metadata, and ingestion runs.
+Deliverables:
 
-Planned deliverables:
-
-- Database migrations
-- Spatial reference system conventions
-- Raw, normalized, and derived schema separation
-- Administrative boundary versioning approach
-- Test fixtures that are clearly marked as synthetic test fixtures, not official data
-
-Required checks before completion:
-
-- Migration tests pass
-- Spatial indexes are defined where needed
-- Test fixtures cannot be confused with public data
-
-## Phase 4: First Official Data Ingestion
-
-Goal: ingest the first approved official dataset for the full Seoul Metropolitan Area.
-
-Planned deliverables:
-
-- Idempotent ingestion job
-- Sanitized raw response preservation
-- Normalized table writes
-- Source, retrieval time, reference period, and transformation metadata
-- Visible failure behavior when official data is unavailable
+- Reuse the live-verified SGIS authentication/client logic.
+- Validate SGIS population and boundary contracts for Seoul, Incheon, and Gyeonggi-do.
+- Select a mutually compatible SGIS population/boundary reference year.
+- Transform SGIS boundary geometries from source CRS EPSG:5179 to target CRS EPSG:4326.
+- Populate canonical `regions` rows and SGIS `region_code_map` entries.
+- Add and populate normalized `regional_population`.
+- Preserve source/reference-period/raw-response/ingestion-run provenance.
+- Verify idempotent second run behavior.
 
 Required checks before completion:
 
-- Ingestion job can be rerun without duplicating records
-- Tests cover idempotency and metadata requirements
-- No fallback sample data path exists
+- Live SGIS authentication succeeds.
+- Population and boundary contracts are validated for the full Seoul Metropolitan Area.
+- Migration and Docker/PostGIS integration tests pass.
+- Dry-run and write CLI modes work.
+- Identical second write creates no duplicate regions or population rows.
+- Formatting, linting, type checking, compile checks, and tests pass.
+- No secret, access token, fixture fallback, or sample data is used for production writes.
 
-## Phase 5: Backend API Foundation
+Later Phase 2 subphases will cover RCIS waste statistics, VWorld structural spatial data, AirKorea, and KMA. They must not begin until explicitly scoped.
 
-Goal: serve normalized data and metadata to the frontend through backend APIs.
+## Phase 3: Backend Product API Foundation
+
+Goal: serve normalized official data and metadata to the frontend through backend APIs beyond the Phase 1 data-operations endpoints.
 
 Planned deliverables:
 
-- FastAPI endpoints for initial datasets
-- Pydantic response models requiring source and reference period
-- Error responses for unavailable data
-- No frontend exposure of government API credentials
+- FastAPI endpoints for initial normalized datasets.
+- Pydantic response models requiring source and reference period.
+- Error responses for unavailable data.
+- No frontend exposure of government API credentials.
 
 Required checks before completion:
 
-- Backend unit and integration tests pass
-- API responses include required metadata
-- Type checking passes
+- Backend unit and integration tests pass.
+- API responses include required metadata.
+- Type checking passes.
 
-## Phase 6: Interactive Map Prototype
+## Phase 4: Interactive Map Prototype
 
 Goal: build the first MapLibre GL interface using backend-provided data.
 
 Planned deliverables:
 
-- Map view covering Seoul, Incheon, and Gyeonggi-do
-- Layer controls and legends
-- Metric display with source and reference period
-- Clear labels for annual, monthly, periodically updated, and real-time data
+- Map view covering Seoul, Incheon, and Gyeonggi-do.
+- Layer controls and legends.
+- Metric display with source and reference period.
+- Clear labels for annual, monthly, periodically updated, and real-time data.
 
 Required checks before completion:
 
-- Frontend tests pass
-- Playwright smoke test confirms map loads
-- Frontend does not call Korean government APIs directly
+- Frontend tests pass.
+- Playwright smoke test confirms map loads.
+- Frontend does not call Korean government APIs directly.
 
-## Phase 7: Equity And Suitability Analysis
+## Phase 5: Equity And Suitability Analysis
 
 Goal: implement documented spatial analysis and facility-siting decision support.
 
 Planned deliverables:
 
-- Equity indicators
-- Suitability constraints and scoring
-- Spatial joins, buffers, and aggregation
-- Assumption and weighting documentation
-- Review workflow for analytical outputs
+- Equity indicators.
+- Suitability constraints and scoring.
+- Spatial joins, buffers, and aggregation.
+- Assumption and weighting documentation.
+- Review workflow for analytical outputs.
 
 Required checks before completion:
 
-- Analytical tests cover scoring and edge cases
-- Every metric includes source and reference period
-- Real-time readings are not treated as permanent siting evidence
-- Waste origin-to-destination movement is used only when explicitly sourced
+- Analytical tests cover scoring and edge cases.
+- Every metric includes source and reference period.
+- Real-time readings are not treated as permanent siting evidence.
+- Waste origin-to-destination movement is used only when explicitly sourced.
 
-## Phase 8: Automated Refresh And Operations
+## Phase 6: Automated Refresh And Operations
 
 Goal: run periodic data refresh through a separate scheduler process.
 
 Planned deliverables:
 
-- Scheduler process
-- Source-specific refresh schedules
-- Job status and logging
-- Retry and alerting conventions
-- Reproducibility documentation
+- Scheduler process.
+- Source-specific refresh schedules.
+- Job status and logging.
+- Retry and alerting conventions.
+- Reproducibility documentation.
 
 Required checks before completion:
 
-- Scheduler tests pass
-- Failed ingestion is visible
-- Idempotency is verified for each job
-
+- Scheduler tests pass.
+- Failed ingestion is visible.
+- Idempotency is verified for each job.

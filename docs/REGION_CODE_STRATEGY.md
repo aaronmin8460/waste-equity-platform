@@ -36,6 +36,20 @@ SGIS documents administrative code depth as:
 
 SGIS codes should be stored separately from Korean legal-dong codes and VWorld parcel codes.
 
+Phase 2.1 canonical geography ingestion uses SGIS as the first platform
+canonical geography source:
+
+- Canonical region codes are derived as `KR-SGIS-{adm_cd}`.
+- The native SGIS code is preserved separately in `source_administrative_code`
+  and in `region_code_map`.
+- SGIS-confirmed mappings are marked with SGIS provenance for the selected
+  source reference period.
+- Cross-source mappings to RCIS, VWorld, legal-dong codes, administrative-dong
+  codes, AirKorea names, and KMA grids remain review-required until each source
+  is explicitly validated.
+- SGIS codes must not be treated as RCIS codes, VWorld PNU values, Korean
+  legal-dong codes, or Korean administrative-dong codes.
+
 ### Korean Administrative Codes
 
 Use Korean administrative/legal code systems as a separate mapping axis. Do not collapse legal dong, administrative dong, sigungu, and local administrative district codes into one field.
@@ -109,6 +123,27 @@ Do not assume city-level, county-level, and district-level reporting are interch
 - The crosswalk must therefore map RCIS Korean region-name pairs (sido name, sigungu name) to canonical codes, versioned by reference year.
 - RCIS data embeds pseudo-region rows: `CTS_JIDT_CD_NM` values `합계` and `소계`, and `CITY_JIDT_CD_NM` value `전국`. These must be excluded from the crosswalk and from regional aggregation.
 - 2023/2024 RCIS statistics use pre-2026 Incheon administrative names; the crosswalk validity dates must handle the 2026 Incheon restructuring explicitly.
+
+## Phase 2.1 SGIS Canonical Geography Notes
+
+- SGIS population and administrative boundaries are live verified for Seoul,
+  Incheon, and Gyeonggi-do using reference year `2024`.
+- The selected `2024` SGIS geography preserves the pre-2026 Incheon structure
+  observed for that reference period: one Incheon SIDO record and 10
+  county/district child records. The platform must not force the 2026 Incheon
+  administrative structure onto this data.
+- Seoul coverage is one SIDO record and 25 autonomous districts.
+- Gyeonggi-do coverage is one SIDO record and 44 SGIS-native child regions for
+  `2024`. These are preserved at the granularity SGIS returns; city, county,
+  and city administrative district levels must not be treated as
+  interchangeable.
+- Phase 2.1 does not create RCIS mappings. RCIS region-name mapping remains a
+  later reviewed crosswalk task because RCIS live responses provide Korean
+  region names, not numeric region codes.
+- Phase 2.1 does not create VWorld mappings. VWorld parcel and spatial-layer
+  joins remain future work and must use validated code or geometry crosswalks.
+- Any unmatched or cross-source mapping remains publication-blocking for
+  metrics until manually reviewed.
 
 ## Initial Crosswalk Workflow
 

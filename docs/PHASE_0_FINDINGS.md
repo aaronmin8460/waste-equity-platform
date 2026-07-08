@@ -36,6 +36,13 @@ Phase 1 (infrastructure) may proceed without waste-metric conditions, provided t
 | KMA | CREDENTIAL_MISSING | NOT_APPLICABLE | NOT_APPLICABLE | SCHEMA_UNVERIFIED | SCHEMA_UNVERIFIED | NOT_APPLICABLE | Credential required before weather/wind observation schemas can be live-verified. |
 | VWorld | LIVE_VERIFIED | LIVE_VERIFIED | LIVE_VERIFIED | Small Seoul cadastral bounding-box probe returned one feature; broader Seoul/Incheon/Gyeonggi coverage requires tiled or download validation. | SCHEMA_UNVERIFIED | `data/samples/vworld.live.json` | Zoning, public-land ownership, protected-area, road, and sensitive-facility layers still require layer-specific validation. |
 
+Phase 2.1 follow-up note: the Phase 0.5 SGIS gaps for the administrative
+boundary endpoint and Incheon/Gyeonggi-do coverage were resolved later during
+Phase 2.1 production-ingestion validation. SGIS canonical geography and total
+population were live verified for Seoul, Incheon, and Gyeonggi-do using
+reference year `2024`. This note is a follow-up to the historical Phase 0.5
+status, not a rewrite of the Phase 0 findings.
+
 ## Phase 0.6 RCIS Validation Status
 
 | Source | Credential status | Configuration status | Live probe status | Schema validation status | Sample file | Remaining issue |

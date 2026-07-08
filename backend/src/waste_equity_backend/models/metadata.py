@@ -7,11 +7,13 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
@@ -50,6 +52,8 @@ class IngestionRun(Base):
     rows_inserted: Mapped[int] = mapped_column(Integer, default=0)
     rows_updated: Mapped[int] = mapped_column(Integer, default=0)
     rows_rejected: Mapped[int] = mapped_column(Integer, default=0)
+    reference_period: Mapped[str | None] = mapped_column(String(50))
+    transformation_version: Mapped[str | None] = mapped_column(String(100))
     error_category: Mapped[str | None] = mapped_column(String(50))
     error_message: Mapped[str | None] = mapped_column(Text)
 
@@ -69,16 +73,54 @@ class DatasetFreshness(Base):
 
 class RawApiResponse(Base):
     __tablename__ = "raw_api_responses"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "endpoint_identifier",
+            "reference_period",
+            "response_hash",
+            "transformation_version",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         BigInteger().with_variant(Integer(), "sqlite"), primary_key=True
     )
     source_id: Mapped[str] = mapped_column(ForeignKey("data_sources.source_id"), index=True)
     endpoint_identifier: Mapped[str] = mapped_column(String(200))
+    reference_period: Mapped[str | None] = mapped_column(String(50))
     request_timestamp: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     response_hash: Mapped[str] = mapped_column(String(64), index=True)
+    transformation_version: Mapped[str | None] = mapped_column(String(100))
     # Sanitized only: credentials are removed before persistence.
     sanitized_response: Mapped[Any] = mapped_column(JsonVariant)
     ingestion_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("ingestion_runs.run_id"), index=True
     )
+
+
+class RegionalPopulation(Base):
+    __tablename__ = "regional_population"
+    __table_args__ = (
+        UniqueConstraint("region_id", "reference_year", "source_id", "population_definition"),
+        CheckConstraint("population >= 0", name="regional_population_population_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True
+    )
+    region_id: Mapped[int] = mapped_column(ForeignKey("regions.id"), index=True)
+    reference_year: Mapped[int] = mapped_column(Integer)
+    reference_period: Mapped[str] = mapped_column(String(50))
+    population: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"))
+    unit: Mapped[str] = mapped_column(String(20))
+    population_definition: Mapped[str] = mapped_column(String(100))
+    source_id: Mapped[str] = mapped_column(ForeignKey("data_sources.source_id"), index=True)
+    source_administrative_code: Mapped[str] = mapped_column(String(20), index=True)
+    source_geographic_level: Mapped[str] = mapped_column(String(20))
+    retrieved_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    transformation_version: Mapped[str] = mapped_column(String(100))
+    raw_response_id: Mapped[int | None] = mapped_column(ForeignKey("raw_api_responses.id"))
+    ingestion_run_id: Mapped[int] = mapped_column(ForeignKey("ingestion_runs.run_id"), index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))

@@ -1,6 +1,6 @@
 # Waste Equity Backend
 
-FastAPI backend and core metadata schema (Phase 1).
+FastAPI backend and core metadata schema.
 
 ## What Phase 1 provides
 
@@ -9,6 +9,10 @@ FastAPI backend and core metadata schema (Phase 1).
   `regions`, `region_code_map`, `data_sources`, `ingestion_runs`,
   `dataset_freshness`, `raw_api_responses`.
 - Seeded `data_sources` registry for the five Phase 0 validated sources.
+- Phase 2.1 SGIS ingestion schema additions:
+  - provenance columns on `ingestion_runs`, `raw_api_responses`, and `regions`
+  - mapping-review columns on `region_code_map`
+  - normalized `regional_population`
 - Health and data-operations endpoints:
   - `GET /health`
   - `GET /api/v1/data-sources`
@@ -80,9 +84,16 @@ TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/
   .venv/bin/pytest tests/test_migration_integration.py
 ```
 
-Phase 1 is limited to infrastructure, metadata tables, source registry seed
-metadata, and health/data-operations APIs. Phase 2 production ingestion has
-not begun.
+Run the SGIS migration and integration test against Docker PostgreSQL/PostGIS:
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/waste_equity \
+  .venv/bin/pytest tests/test_migration_integration.py
+```
+
+Phase 2.1 production ingestion is limited to SGIS canonical geography and total
+population. RCIS, VWorld, AirKorea, KMA, frontend, scheduler, equity metrics,
+and facility recommendation logic are not implemented here.
 
 ## Data-integrity rules enforced here
 

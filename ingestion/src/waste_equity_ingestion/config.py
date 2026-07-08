@@ -3,23 +3,22 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 
 
 @dataclass(frozen=True)
 class ProbeSettings:
-    rcis_api_key: Optional[str]
-    rcis_user_id: Optional[str]
+    rcis_api_key: str | None
+    rcis_user_id: str | None
     rcis_api_base_url: str
-    sgis_consumer_key: Optional[str]
-    sgis_consumer_secret: Optional[str]
-    data_go_kr_service_key: Optional[str]
-    airkorea_service_key: Optional[str]
-    kma_service_key: Optional[str]
-    vworld_api_key: Optional[str]
-    vworld_api_domain: Optional[str]
+    sgis_consumer_key: str | None
+    sgis_consumer_secret: str | None
+    data_go_kr_service_key: str | None
+    airkorea_service_key: str | None
+    kma_service_key: str | None
+    vworld_api_key: str | None
+    vworld_api_domain: str | None
     sample_dir: str
 
     @classmethod
@@ -45,14 +44,14 @@ class ProbeSettings:
             sample_dir=sample_dir,
         )
 
-    def airkorea_key(self) -> Optional[str]:
+    def airkorea_key(self) -> str | None:
         return self.airkorea_service_key or self.data_go_kr_service_key
 
-    def kma_key(self) -> Optional[str]:
+    def kma_key(self) -> str | None:
         return self.kma_service_key or self.data_go_kr_service_key
 
     def missing(self, names: list[str]) -> list[str]:
-        values: dict[str, Optional[str]] = {
+        values: dict[str, str | None] = {
             "RCIS_API_KEY": self.rcis_api_key,
             "RCIS_USER_ID": self.rcis_user_id,
             "SGIS_CONSUMER_KEY": self.sgis_consumer_key,
