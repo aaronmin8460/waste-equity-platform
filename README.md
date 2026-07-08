@@ -8,7 +8,29 @@ The first implementation scope covers the full Seoul Metropolitan Area:
 - Incheon
 - Gyeonggi-do
 
-This repository currently contains project governance documents and a minimal Phase 0.5 local API-probe package. It does not yet contain frontend or backend application source code, production database infrastructure, fake datasets, facility recommendation logic, or production API ingestion.
+This repository currently contains project governance documents, the Phase 0 local API-probe package (with live-verified RCIS, SGIS, and VWorld contracts), and the Phase 1 backend: a Docker Compose stack with PostgreSQL/PostGIS, a FastAPI service, Alembic migrations for the core metadata schema, and health/data-operations endpoints. It does not yet contain the frontend, production API ingestion, waste metrics, or facility recommendation logic.
+
+## Run the Phase 1 stack
+
+```bash
+docker compose up --build
+```
+
+Shutdown:
+
+```bash
+docker compose down
+```
+
+The Phase 1 API runs at:
+
+- Health: `http://localhost:8000/health`
+- Data sources: `http://localhost:8000/api/v1/data-sources`
+- Data freshness: `http://localhost:8000/api/v1/data-freshness`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
+- Swagger UI: `http://localhost:8000/docs`
+
+See [backend/README.md](backend/README.md) for local development without Docker.
 
 ## Planned Technical Direction
 
@@ -37,7 +59,7 @@ The frontend must not call Korean government APIs directly. Future ingestion and
 
 ## Current Status
 
-Phase 0 established governance and planning. Phase 0.5 adds local validation probes for official data-source feasibility without starting application implementation. See:
+Phase 0 established governance, planning, and live data-source validation through Phase 0.7 (RCIS PID discovery, recommendation GO). Phase 1 adds the Docker Compose infrastructure, PostGIS database, core metadata schema, and backend health/data-operations API. Phase 2 production ingestion has not begun. See:
 
 - [AGENTS.md](AGENTS.md)
 - [Project Specification](docs/PROJECT_SPEC.md)

@@ -29,6 +29,9 @@ coverage/
 test-results/
 playwright-report/
 .coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
 # Local infrastructure
 .docker/
@@ -51,4 +54,6 @@ data/processed/
 data/samples/*.json
 !data/samples/README.md
 *.sqlite
+*.sqlite3
 *.db
+*.db-journal

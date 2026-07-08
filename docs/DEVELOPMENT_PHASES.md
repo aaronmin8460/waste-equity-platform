@@ -4,7 +4,7 @@ Development must proceed in small, reviewable phases. A phase is complete only w
 
 ## Phase 0: Governance And Planning
 
-Status: current phase.
+Status: complete, including Phase 0.5 (probe package, SGIS/VWorld live validation), Phase 0.6 (RCIS authentication and connectivity), and Phase 0.7 (RCIS PID discovery; recommendation GO — see `PHASE_0_FINDINGS.md`).
 
 Deliverables:
 
@@ -30,6 +30,8 @@ Completion checks:
 - Technical direction is documented without implying implementation has started.
 
 ## Phase 1: Repository And Tooling Scaffold
+
+Status: complete for the backend and infrastructure (2026-07-08). The master project context consolidates this phase with the metadata model and database foundation below as "Phase 1: Infrastructure"; the delivered scope is the `backend/` package (FastAPI, SQLAlchemy 2.0, Alembic, ruff/mypy/pytest all passing), `docker-compose.yml` (PostGIS database + backend), the core metadata tables (`regions`, `region_code_map`, `data_sources`, `ingestion_runs`, `dataset_freshness`, `raw_api_responses`) with a seeded source registry, and the health/data-operations endpoints. Frontend scaffold and CI remain open.
 
 Goal: create the minimal project structure and developer tooling without implementing product features or data integrations.
 
