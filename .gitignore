@@ -1,0 +1,59 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Node and frontend tooling
+node_modules/
+.next/
+out/
+dist/
+coverage/
+.turbo/
+
+# Test and automation artifacts
+test-results/
+playwright-report/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Local infrastructure
+.docker/
+docker-data/
+postgres-data/
+
+# Logs
+*.log
+logs/
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Local data artifacts
+data/raw/
+data/interim/
+data/processed/
+data/samples/*.json
+!data/samples/README.md
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal

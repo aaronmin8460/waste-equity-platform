@@ -1,0 +1,45 @@
+# Local development stack (Phase 1: database + backend).
+# Frontend and scheduler services are added in later phases.
+#
+# Credentials: the defaults below are for local development only.
+# Override them with a local .env file; never commit real credentials.
+
+services:
+  database:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-waste_equity}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-waste_equity}
+      POSTGRES_DB: ${POSTGRES_DB:-waste_equity}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-waste_equity} -d ${POSTGRES_DB:-waste_equity}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      # The postgis image restarts postgres once during first initialization;
+      # start_period keeps that window out of the health verdict.
+      start_period: 15s
+
+  backend:
+    build: ./backend
+    # Survive the database's first-boot restart window.
+    restart: on-failure
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-waste_equity}:${POSTGRES_PASSWORD:-waste_equity}@database:5432/${POSTGRES_DB:-waste_equity}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn waste_equity_backend.api.app:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+
+volumes:
+  pgdata:

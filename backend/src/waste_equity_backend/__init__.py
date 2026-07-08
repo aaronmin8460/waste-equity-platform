@@ -1,0 +1,1 @@
+"""Waste Equity Platform backend."""
