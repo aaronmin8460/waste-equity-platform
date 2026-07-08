@@ -95,7 +95,37 @@ Required checks before completion:
 - Formatting, linting, type checking, compile checks, and tests pass.
 - No secret, access token, fixture fallback, or sample data is used for production writes.
 
-Later Phase 2 subphases will cover RCIS waste statistics, VWorld structural spatial data, AirKorea, and KMA. They must not begin until explicitly scoped.
+### Phase 2.2: RCIS Regional Waste Generation And Treatment Ingestion
+
+Status: complete (2026-07-08).
+
+Deliverables:
+
+- Reuse the Phase 0.6/0.7 RCIS client, request builder, provider-code handling,
+  and sanitization, plus the Phase 2.0/2.1 ingestion-run/raw-response/freshness
+  framework and CLI/Docker one-shot pattern.
+- Live-validate the four documented sigungu generation PIDs (`NTN007`, `NTN008`,
+  `NTN018`, `NTN022`) for `YEAR=2024`, 2020-onward schema era only.
+- Add and populate normalized `regional_waste_statistics` (Alembic revision
+  `0003`): region grand-total generation and treatment-by-method in 톤/년,
+  accounting basis `ORIGIN_BASED_TREATMENT_OUTCOME`.
+- Map RCIS Korean region-name pairs to SGIS 2024 canonical regions with a
+  deterministic, reviewed crosswalk (no silent fuzzy matching); report unmatched,
+  ambiguous, and city-vs-city-district-mismatch records and exclude them.
+- Preserve sanitized raw responses and source/transformation provenance; update
+  RCIS freshness only after a successful run; verify idempotent second run.
+
+Required checks before completion (met):
+
+- All four PIDs live-validated for 2024 (`E000`).
+- Data mapped to canonical SGIS regions without silent fuzzy matching.
+- Migration `0003` and Docker/PostGIS integration tests pass.
+- Dry-run and write CLI modes work through the Compose ingestion service.
+- Identical second write creates no duplicate rows.
+- Formatting, linting, type checking, compile checks, and tests pass.
+- No secret, access token, fixture fallback, or sample data used for writes.
+
+Later Phase 2 subphases will cover RCIS facilities (Phase 2.3), VWorld structural spatial data, AirKorea, and KMA. They must not begin until explicitly scoped. RCIS facility ingestion is not implemented.
 
 ## Phase 3: Backend Product API Foundation
 

@@ -193,6 +193,69 @@ No PID in the official catalog provides origin-to-destination waste flows. Class
 - Quantity fields arrive as strings and may be blank; blank must be handled explicitly, not coerced to zero silently.
 - `TOT_RECY_M_QTY`/`TOT_RECY_E_QTY` (material/energy recycling splits) exist only for `YEAR >= 2023` per the guide.
 
+## Phase 2.2 Production Ingestion (Regional Generation PIDs)
+
+Live-verified and ingested for `YEAR=2024`, 2020-onward schema era only. Years
+`<= 2019` are rejected with an unsupported-schema-era error and never parsed with
+the 2020+ transformation.
+
+Ingested PIDs and official form names (from `result[0].TITLE`):
+
+| PID | Official form name | Waste stream | Region grand-total label |
+| --- | --- | --- | --- |
+| `NTN007` | 2-나-1). (시군구) 생활(가정)폐기물 발생량 | `HOUSEHOLD` | `총계` |
+| `NTN008` | 2-나-2). (시군구) 사업장비(非)배출시설계폐기물 | `BUSINESS_NON_FACILITY` | `합계` |
+| `NTN018` | 1-나. (시군구) 사업장배출시설계폐기물 발생량 | `INDUSTRIAL_FACILITY` | `총계` |
+| `NTN022` | 1-나. (시군구) 건설폐기물 발생량 | `CONSTRUCTION` | `합계` |
+
+Response structure (all four PIDs): top-level `result` (metadata envelope with
+`ERR_CODE`, `RESULT`, `YEAR`, `PID`, `TITLE`, `DUNIT`), `dataHeader` (field
+specification), `data` (region × waste-category matrix), `searchOption`.
+`NTN008` additionally carries a `WSTE_S_CODE_NM` sub-category column that the
+other three PIDs do not; PIDs are not assumed to share identical field sets.
+
+Row grain (documented): one normalized row per `(region, reference_year,
+source_pid)` — the region grand total across all waste categories. The
+grand-total row is uniquely identified by waste-type group `총계`/`합계` **and**
+`WSTE_M_CODE_NM = EMPTY` **and** `WSTE_CODE_NM = EMPTY`. The `EMPTY` placeholder
+alone is insufficient: each region also carries a memo re-breakdown line
+(`음식물류 폐기물 분리배출` for NTN007/008, `기타` for NTN022) that is `EMPTY` at
+major/detail level but is not the grand total.
+
+Quantity fields (unit `톤/년`, read from `result[0].DUNIT = "( 단위 : 톤/년 )"`,
+never inferred from field names):
+
+| Column | Source field | Direct/derived |
+| --- | --- | --- |
+| generation | `WSTE_QTY` | direct |
+| recycling | `TOT_RECY_QTY` | direct |
+| incineration | `TOT_INCI_QTY` | direct |
+| landfill | `TOT_FILL_QTY` | direct |
+| other treatment | `TOT_ETC_QTY` | direct |
+| total treatment | sum of the four disposition components | derived (no direct total column) |
+
+Stored as exact `NUMERIC(20,6)`. Blank/null cells are parsed explicitly and kept
+distinct from zero; invalid numeric strings and negatives are rejected. Live
+verification found generation reconciles exactly with the sum of the four
+disposition totals for every ingested region (mismatch count 0).
+
+Accounting basis: `ORIGIN_BASED_TREATMENT_OUTCOME` — how the reporting region's
+own generated waste was treated by method. Not facility throughput, not
+import/export, not transfer, not treatment responsibility. No origin-to-
+destination flow field exists.
+
+Provider codes handled: `E000` success; `E099` no data (returns empty, not a
+failure); `E005`/`E006` quota (raised, not retried); `E001`–`E004`/`E888`/`E999`
+raised as classified provider errors.
+
+Geographic pseudo-region rows (`CITY_JIDT_CD_NM` `전국`; `CTS_JIDT_CD_NM`
+`합계`/`소계`/`총계`) are excluded before mapping. Region name pairs
+(`CITY_JIDT_CD_NM` sido, `CTS_JIDT_CD_NM` sigungu) are mapped to SGIS 2024
+canonical regions by the deterministic crosswalk (see REGION_CODE_STRATEGY);
+2024 coverage: Seoul 25/25, Incheon 10/10, Gyeonggi 24/44 (seven multi-district
+cities reported by RCIS at city level are excluded as `REQUIRES_AGGREGATION`),
+plus `인천 경제청` unmatched.
+
 ## Sample Policy
 
 - If credentials are absent, connector status is `CREDENTIAL_MISSING`.

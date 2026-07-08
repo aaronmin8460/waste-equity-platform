@@ -22,6 +22,7 @@ EXPECTED_TABLES = {
     "dataset_freshness",
     "raw_api_responses",
     "regional_population",
+    "regional_waste_statistics",
 }
 EXPECTED_SOURCE_IDS = {"waste_statistics", "sgis", "airkorea", "kma", "vworld"}
 

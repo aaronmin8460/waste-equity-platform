@@ -145,6 +145,49 @@ Do not assume city-level, county-level, and district-level reporting are interch
 - Any unmatched or cross-source mapping remains publication-blocking for
   metrics until manually reviewed.
 
+## Phase 2.2 RCIS Waste Region Crosswalk
+
+Phase 2.2 builds the reviewed RCIS name-pair crosswalk that Phase 2.1 deferred.
+RCIS regional waste responses carry Korean names only (`CITY_JIDT_CD_NM` sido,
+`CTS_JIDT_CD_NM` sigungu); no numeric code. Mapping to the SGIS 2024 canonical
+regions uses exact deterministic rules only — there is no silent fuzzy matching.
+
+Rules:
+
+- Original RCIS sido and sigungu names are preserved verbatim; normalization
+  (whitespace collapse, sido short/long alias `서울`≡`서울특별시`, `인천`≡
+  `인천광역시`, `경기`≡`경기도`) is used only for candidate matching.
+- Match only on exact normalized `(sido, sigungu)` equality, disambiguated by
+  sido. Ambiguous keys (a normalized name resolving to more than one SGIS
+  region) are reported, never silently selected.
+- Pseudo-region rows (`전국`, `합계`, `소계`, `총계`) are excluded and never
+  inserted into `regions`; RCIS names are never reinterpreted as SGIS codes and
+  `rcis_code` is not populated with invented values.
+- Matched name pairs are stored on the shared `region_code_map` row for the
+  canonical region (`rcis_sido_name`, `rcis_sigungu_name`,
+  `cross_source_review_status = RCIS_NAME_MATCHED`, `mapping_source =
+  RCIS_WASTE_NAME_CROSSWALK`, `source_reference_period`), preserving the existing
+  SGIS provenance on that row.
+- Unmatched records are reported and excluded from publishable normalized
+  metrics.
+
+2024 live-verified coverage:
+
+- **Seoul**: 25/25 autonomous districts exact-matched.
+- **Incheon**: 10/10 counties/districts exact-matched using the 2024 structure
+  (`미추홀구`). The 2026 restructuring is not forced onto 2024 data. RCIS also
+  reports `인천 경제청` (Incheon Free Economic Zone office), not a canonical
+  administrative region — reported as unmatched RCIS label and excluded.
+- **Gyeonggi-do**: 24/44 SGIS regions exact-matched. The seven cities SGIS
+  represents at the administrative-district (구) level — `고양시`, `부천시`,
+  `성남시`, `수원시`, `안산시`, `안양시`, `용인시` — are reported by RCIS at the
+  **city** level. Because a city-level record cannot be split across the SGIS
+  districts without a documented rule, these are classified
+  `REQUIRES_AGGREGATION` and excluded; the 20 corresponding SGIS 구 regions are
+  reported as missing RCIS records. Exact matches, missing RCIS regions,
+  unmatched RCIS labels, and city-vs-city-district mismatches are all reported;
+  nothing is aggregated or split silently.
+
 ## Initial Crosswalk Workflow
 
 1. Load SGIS boundary codes for the chosen boundary year.

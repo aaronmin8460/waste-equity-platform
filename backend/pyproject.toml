@@ -36,8 +36,13 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+# python_version tracks the interpreter used for development and CI (3.12).
+# numpy 2.x ships stubs using the 3.12 `type` statement that mypy cannot parse
+# under an older analysis target; the local environment runs 3.12, so the
+# analysis target is aligned to it. Runtime support remains >=3.11 (see
+# requires-python) and ruff's target-version stays py311.
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 files = ["src/waste_equity_backend"]
 plugins = ["pydantic.mypy"]

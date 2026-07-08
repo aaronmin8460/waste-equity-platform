@@ -50,6 +50,11 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-waste_equity}:${POSTGRES_PASSWORD:-waste_equity}@database:5432/${POSTGRES_DB:-waste_equity}
       SGIS_CONSUMER_KEY: ${SGIS_CONSUMER_KEY:-}
       SGIS_CONSUMER_SECRET: ${SGIS_CONSUMER_SECRET:-}
+      # RCIS waste-statistics ingestion (Phase 2.2). Credentials come from the
+      # environment only; never pass them on the command line.
+      RCIS_API_KEY: ${RCIS_API_KEY:-}
+      RCIS_USER_ID: ${RCIS_USER_ID:-}
+      RCIS_API_BASE_URL: ${RCIS_API_BASE_URL:-https://www.recycling-info.or.kr}
     depends_on:
       database:
         condition: service_healthy
