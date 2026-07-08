@@ -17,4 +17,10 @@ Phase 0.6 created a sanitized live RCIS waste-statistics sample:
 
 The RCIS sample is `LIVE_VERIFIED` for `wss/JsonApi/NTN001`, `YEAR=2024`. It verifies the management-area table only; it does not provide waste generation or treatment quantities.
 
+Phase 2.1 SGIS production ingestion does not add committed live response
+samples. Successful production responses are sanitized and stored in the
+database `raw_api_responses` table with source, endpoint, reference period,
+response hash, transformation version, and ingestion-run provenance. SGIS
+authentication tokens and credentials are not stored.
+
 These `.json` samples are ignored by Git through `.gitignore`.

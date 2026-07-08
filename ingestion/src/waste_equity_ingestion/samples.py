@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -74,7 +74,7 @@ def build_envelope(
         endpoint=endpoint,
         verification_status=verification_status,
         schema_validation_status=schema_validation_status,
-        retrieved_at=datetime.now(timezone.utc).isoformat(),
+        retrieved_at=datetime.now(UTC).isoformat(),
         request_metadata=sanitize(deepcopy(request_metadata or {})),
         payload=sanitize(deepcopy(payload)),
     )

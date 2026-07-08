@@ -1,7 +1,7 @@
 """SQLAlchemy models for the core metadata schema."""
 
 from .base import Base
-from .metadata import DatasetFreshness, DataSource, IngestionRun, RawApiResponse
+from .metadata import DatasetFreshness, DataSource, IngestionRun, RawApiResponse, RegionalPopulation
 from .regions import Region, RegionCodeMap
 
 __all__ = [
@@ -12,4 +12,5 @@ __all__ = [
     "RawApiResponse",
     "Region",
     "RegionCodeMap",
+    "RegionalPopulation",
 ]

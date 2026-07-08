@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "ingestion_runs",
     "dataset_freshness",
     "raw_api_responses",
+    "regional_population",
 }
 EXPECTED_SOURCE_IDS = {"waste_statistics", "sgis", "airkorea", "kma", "vworld"}
 
@@ -67,6 +68,13 @@ def test_migration_creates_schema_and_seeds() -> None:
                 )
             ).scalar()
             assert geometry_type == "MULTIPOLYGON"
+
+            population_unique = connection.execute(
+                text(
+                    "SELECT 1 FROM pg_constraint WHERE conname = 'uq_regional_population_region_id'"
+                )
+            ).scalar()
+            assert population_unique == 1
     finally:
         engine.dispose()
 

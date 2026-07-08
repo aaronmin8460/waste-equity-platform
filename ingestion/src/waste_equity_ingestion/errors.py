@@ -31,3 +31,7 @@ class SchemaValidationError(ProbeError):
 
 class UnverifiedContractError(ProbeError):
     """Raised when official documentation is insufficient for a live contract."""
+
+
+class IngestionError(ProbeError):
+    """Raised when a production ingestion job cannot safely complete."""

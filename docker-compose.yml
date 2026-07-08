@@ -1,4 +1,4 @@
-# Local development stack (Phase 1: database + backend).
+# Local development stack.
 # Frontend and scheduler services are added in later phases.
 #
 # Credentials: the defaults below are for local development only.
@@ -37,6 +37,19 @@ services:
              uvicorn waste_equity_backend.api.app:app --host 0.0.0.0 --port 8000"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+
+  ingestion:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    profiles: ["ingestion"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-waste_equity}:${POSTGRES_PASSWORD:-waste_equity}@database:5432/${POSTGRES_DB:-waste_equity}
+      SGIS_CONSUMER_KEY: ${SGIS_CONSUMER_KEY:-}
+      SGIS_CONSUMER_SECRET: ${SGIS_CONSUMER_SECRET:-}
     depends_on:
       database:
         condition: service_healthy

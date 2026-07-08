@@ -48,5 +48,7 @@ class IngestionRunOut(BaseModel):
     rows_inserted: int
     rows_updated: int
     rows_rejected: int
+    reference_period: str | None
+    transformation_version: str | None
     error_category: str | None
     error_message: str | None

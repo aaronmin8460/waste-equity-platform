@@ -10,7 +10,7 @@ import datetime
 from typing import Any
 
 from geoalchemy2 import Geometry
-from sqlalchemy import Date, Integer, String, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
@@ -28,6 +28,14 @@ class Region(Base):
     region_level: Mapped[str] = mapped_column(String(20))
     parent_region_code: Mapped[str | None] = mapped_column(String(20), index=True)
     geometry: Mapped[Any | None] = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=4326))
+    source_id: Mapped[str | None] = mapped_column(ForeignKey("data_sources.source_id"))
+    source_administrative_code: Mapped[str | None] = mapped_column(String(20), index=True)
+    source_geographic_level: Mapped[str | None] = mapped_column(String(20))
+    boundary_reference_period: Mapped[str | None] = mapped_column(String(50))
+    boundary_source_crs: Mapped[str | None] = mapped_column(String(20))
+    boundary_target_crs: Mapped[str | None] = mapped_column(String(20))
+    boundary_geometry_hash: Mapped[str | None] = mapped_column(String(64))
+    boundary_retrieved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     valid_from: Mapped[datetime.date] = mapped_column(Date)
     valid_to: Mapped[datetime.date | None] = mapped_column(Date)
 
@@ -47,5 +55,9 @@ class RegionCodeMap(Base):
     airkorea_name: Mapped[str | None] = mapped_column(String(50))
     kma_grid_x: Mapped[int | None] = mapped_column(Integer)
     kma_grid_y: Mapped[int | None] = mapped_column(Integer)
+    mapping_status: Mapped[str] = mapped_column(String(40), default="NEEDS_REVIEW")
+    cross_source_review_status: Mapped[str] = mapped_column(String(40), default="NEEDS_REVIEW")
+    mapping_source: Mapped[str | None] = mapped_column(String(100))
+    source_reference_period: Mapped[str | None] = mapped_column(String(50))
     valid_from: Mapped[datetime.date] = mapped_column(Date)
     valid_to: Mapped[datetime.date | None] = mapped_column(Date)
