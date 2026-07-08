@@ -82,6 +82,46 @@ Dataset freshness is updated only after the SGIS job completes successfully.
 Failed SGIS runs remain visible in `ingestion_runs`, retain sanitized error
 categories, and must not update `last_success_at`.
 
+## Phase 2.2 RCIS Waste Production Refresh
+
+Implemented as an explicit one-shot CLI job (`rcis-waste-ingest`), not a
+scheduler. Source id `waste_statistics`; reference year 2024; PIDs `NTN007`,
+`NTN008`, `NTN018`, `NTN022`; 2020-onward schema era only.
+
+```bash
+python -m waste_equity_ingestion.cli rcis-waste-ingest \
+  --year 2024 --scope capital-region --dry-run
+python -m waste_equity_ingestion.cli rcis-waste-ingest \
+  --year 2024 --scope capital-region --write
+docker compose --profile ingestion run --rm ingestion \
+  rcis-waste-ingest --year 2024 --scope capital-region --write
+```
+
+Idempotency and deduplication:
+
+- Normalized `regional_waste_statistics` rows are upserted by
+  `(region_id, reference_year, source_pid, waste_category_name)`. Re-running the
+  same year/scope creates no duplicate waste rows and no duplicate crosswalk
+  rows; the normalized count stays stable.
+- Provenance fields (retrieved-at, ingestion-run id, raw-response id) are
+  refreshed only when the material official values change, so an identical
+  re-run reports zero inserts and zero updates.
+- Each RCIS response carries fresh transaction metadata (`result[0].callId`), so
+  identical re-runs append new sanitized raw-response rows (deduplication is by
+  exact response hash), while normalized rows remain idempotent — the same
+  behavior documented for SGIS.
+- Counters are capital-region-scoped: `rows_received` counts in-scope source
+  grand-total records; `rows_inserted`/`rows_updated`/`rows_rejected` count
+  database row operations / in-scope records excluded from writes. One source
+  grand-total record maps to at most one normalized row.
+
+Dataset freshness (`waste_statistics`) is updated only after a successful run.
+Failed RCIS runs remain visible in `ingestion_runs`, retain a sanitized error
+category, roll back partial normalized writes, and do not update
+`last_success_at`. Provider quota errors (`E005`/`E006`) are not retried; only
+transient network failures get bounded retries. The dry-run makes real RCIS
+requests and never falls back to local samples.
+
 ## Phase 0.6 Refresh Implications
 
 - SGIS source-registry and code-crosswalk planning from Phase 0.6 has been

@@ -13,6 +13,12 @@ FastAPI backend and core metadata schema.
   - provenance columns on `ingestion_runs`, `raw_api_responses`, and `regions`
   - mapping-review columns on `region_code_map`
   - normalized `regional_population`
+- Phase 2.2 RCIS waste ingestion schema addition (Alembic revision `0003`):
+  - normalized `regional_waste_statistics` (region grand-total generation and
+    treatment-by-method per PID; accounting basis
+    `ORIGIN_BASED_TREATMENT_OUTCOME`). The `region_code_map` RCIS name-pair
+    columns already existed from revision `0001`, so revision `0003` only adds
+    the new table.
 - Health and data-operations endpoints:
   - `GET /health`
   - `GET /api/v1/data-sources`
@@ -91,9 +97,13 @@ TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/
   .venv/bin/pytest tests/test_migration_integration.py
 ```
 
-Phase 2.1 production ingestion is limited to SGIS canonical geography and total
-population. RCIS, VWorld, AirKorea, KMA, frontend, scheduler, equity metrics,
-and facility recommendation logic are not implemented here.
+Phase 2.2 adds RCIS regional waste generation/treatment production ingestion
+(see [ingestion/README.md](../ingestion/README.md)). RCIS facility ingestion
+(Phase 2.3), VWorld, AirKorea, KMA, frontend, scheduler, equity metrics, and
+facility recommendation logic are not implemented here. RCIS freshness and
+ingestion runs surface through the existing `GET /api/v1/data-freshness` and
+`GET /api/v1/ingestion-runs` endpoints (source id `waste_statistics`); no new
+backend route was added.
 
 ## Data-integrity rules enforced here
 

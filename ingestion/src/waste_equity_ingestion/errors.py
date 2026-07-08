@@ -35,3 +35,15 @@ class UnverifiedContractError(ProbeError):
 
 class IngestionError(ProbeError):
     """Raised when a production ingestion job cannot safely complete."""
+
+
+class QuotaExceededError(ProviderResultError):
+    """Raised when the provider signals a per-minute or daily quota breach."""
+
+
+class UnsupportedSchemaEraError(ProbeError):
+    """Raised when a requested YEAR falls in a schema era this phase rejects."""
+
+
+class RegionMappingError(IngestionError):
+    """Raised when RCIS region records cannot be mapped without assumptions."""

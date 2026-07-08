@@ -3,6 +3,7 @@
 from .base import Base
 from .metadata import DatasetFreshness, DataSource, IngestionRun, RawApiResponse, RegionalPopulation
 from .regions import Region, RegionCodeMap
+from .waste import RegionalWasteStatistics
 
 __all__ = [
     "Base",
@@ -13,4 +14,5 @@ __all__ = [
     "Region",
     "RegionCodeMap",
     "RegionalPopulation",
+    "RegionalWasteStatistics",
 ]

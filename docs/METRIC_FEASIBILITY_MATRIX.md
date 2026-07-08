@@ -8,7 +8,7 @@ Classification definitions:
 - `UNVERIFIED`: official documentation is insufficient or live validation is still required.
 - `UNAVAILABLE`: the necessary data is not publicly documented as available.
 
-Classifications distinguish source feasibility from live validation. Phase 0.5 live-verified SGIS population and VWorld cadastral feature probes. Phase 0.6 live-verified RCIS `NTN001` for 2024. Phase 0.7 (2026-07-08) live-verified the RCIS generation/treatment/facility PIDs at sigungu granularity for 2023 and 2024; see `API_CONTRACTS/waste_statistics.md`.
+Classifications distinguish source feasibility from live validation. Phase 0.5 live-verified SGIS population and VWorld cadastral feature probes. Phase 0.6 live-verified RCIS `NTN001` for 2024. Phase 0.7 (2026-07-08) live-verified the RCIS generation/treatment/facility PIDs at sigungu granularity for 2023 and 2024; see `API_CONTRACTS/waste_statistics.md`. Phase 2.2 (2026-07-08) production-ingested the four regional generation PIDs (`NTN007`, `NTN008`, `NTN018`, `NTN022`) for 2024 into normalized `regional_waste_statistics` — region grand-total generation and treatment-by-method in 톤/년, accounting basis `ORIGIN_BASED_TREATMENT_OUTCOME`, mapped to SGIS canonical regions (Seoul 25/25, Incheon 10/10, Gyeonggi 24/44; seven multi-district cities excluded as city-vs-district mismatches). Generation reconciles exactly with the sum of the four disposition totals. Per-capita and disposition-mix metrics remain the derived analysis of later phases; this phase ingests the inputs only and does not compute the equity index.
 
 | Platform input | Classification | Primary source family | Notes |
 | --- | --- | --- | --- |

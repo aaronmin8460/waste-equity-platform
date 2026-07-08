@@ -41,8 +41,11 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+# python_version is 3.12 to match the development/CI interpreter; numpy 2.x
+# (a transitive shapely dependency) ships 3.12-only stub syntax that mypy cannot
+# parse under an older analysis target. Runtime support remains >=3.11.
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 files = ["src/waste_equity_ingestion"]
 mypy_path = "../backend/src"

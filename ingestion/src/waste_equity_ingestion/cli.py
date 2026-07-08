@@ -10,6 +10,8 @@ from collections.abc import Callable
 from .config import ProbeSettings
 from .errors import IngestionError, MissingConfigurationError, MissingCredentialsError, ProbeError
 from .probes import airkorea, kma, sgis, vworld, waste_statistics, waste_statistics_discovery
+from .rcis_waste_contract import PID_SPECS, TARGET_PIDS
+from .rcis_waste_ingestion import DEFAULT_REQUEST_DELAY_SECONDS, run_rcis_waste_ingestion
 from .result import ProbeResult
 from .samples import build_envelope, save_sample
 from .sgis_ingestion import run_sgis_ingestion
@@ -26,21 +28,31 @@ PROBES: dict[str, ProbeFunc] = {
 
 DISCOVERY_SOURCE = "waste-statistics-discovery"
 SGIS_INGEST = "sgis-ingest"
+RCIS_WASTE_INGEST = "rcis-waste-ingest"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a Phase 0 API feasibility probe.")
-    parser.add_argument("source", choices=sorted([*PROBES, DISCOVERY_SOURCE, SGIS_INGEST]))
+    parser.add_argument(
+        "source", choices=sorted([*PROBES, DISCOVERY_SOURCE, SGIS_INGEST, RCIS_WASTE_INGEST])
+    )
     parser.add_argument("--save-sample", action="store_true")
     parser.add_argument(
         "--pids",
         help="Comma-separated RCIS PIDs to discover (default: documented target PIDs).",
     )
     parser.add_argument(
+        "--pid",
+        help=(
+            "Comma-separated RCIS waste PID allowlist for rcis-waste-ingest "
+            "(default: NTN007,NTN008,NTN018,NTN022)."
+        ),
+    )
+    parser.add_argument(
         "--year",
         help=(
-            "Reference year. Required for sgis-ingest; defaults to the RCIS discovery "
-            "year for waste-statistics-discovery."
+            "Reference year. Required for sgis-ingest and rcis-waste-ingest; defaults to "
+            "the RCIS discovery year for waste-statistics-discovery."
         ),
     )
     parser.add_argument(
@@ -48,6 +60,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default="capital-region",
         choices=["capital-region"],
         help="Production ingestion geographic scope.",
+    )
+    parser.add_argument(
+        "--request-delay",
+        type=float,
+        default=DEFAULT_REQUEST_DELAY_SECONDS,
+        help="Seconds between RCIS PID requests (respects the 100 calls/minute quota).",
+    )
+    parser.add_argument(
+        "--fail-on-unmatched",
+        action="store_true",
+        help="Fail the run if any in-scope RCIS record is unmatched or ambiguous.",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -94,6 +117,36 @@ def run_discovery(settings: ProbeSettings, args: argparse.Namespace) -> int:
     return 0
 
 
+def run_rcis_waste(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    if not args.year:
+        raise IngestionError("rcis-waste-ingest requires --year YYYY")
+    if not args.dry_run and not args.write:
+        raise IngestionError("rcis-waste-ingest requires either --dry-run or --write")
+    if args.pid:
+        requested = tuple(pid.strip().upper() for pid in args.pid.split(",") if pid.strip())
+        unsupported = [pid for pid in requested if pid not in PID_SPECS]
+        if unsupported:
+            raise IngestionError(
+                "Unsupported RCIS waste PID(s): "
+                + ", ".join(unsupported)
+                + f". Allowed: {', '.join(TARGET_PIDS)}"
+            )
+        pids = requested
+    else:
+        pids = TARGET_PIDS
+    report = run_rcis_waste_ingestion(
+        settings,
+        year=int(args.year),
+        scope=args.scope,
+        write=bool(args.write),
+        pids=pids,
+        request_delay=float(args.request_delay),
+        fail_on_unmatched=bool(args.fail_on_unmatched),
+    )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     settings = ProbeSettings.from_env()
@@ -113,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
             return 0
+        if args.source == RCIS_WASTE_INGEST:
+            return run_rcis_waste(settings, args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)
