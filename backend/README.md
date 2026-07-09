@@ -33,6 +33,40 @@ FastAPI backend and core metadata schema.
   - `GET /api/v1/data-freshness`
   - `GET /api/v1/ingestion-runs`
 
+## Phase 3: normalized-dataset endpoints
+
+Read-only `GET` endpoints serving the Phase 2 normalized tables. Handlers
+never call government APIs and never read credentials; every item carries
+required `source_id` and reference-period fields, and quantities serialize as
+exact decimal strings (scale-padded by the database, e.g. `"83721.300000"`).
+
+- `GET /api/v1/regions?year=&level=` — canonical region list for a boundary
+  vintage year (default: latest available), no geometry payload.
+- `GET /api/v1/regions/boundaries?year=&level=` — GeoJSON FeatureCollection
+  (EPSG:4326, served exactly as stored). `level` defaults to `SIGUNGU`.
+- `GET /api/v1/population?year=&region_code=` — SGIS regional population.
+- `GET /api/v1/waste-statistics?year=&waste_stream=&region_code=` — RCIS
+  origin-based statistics (accounting basis `ORIGIN_BASED_TREATMENT_OUTCOME`).
+- `GET /api/v1/facilities?year=&facility_category=&ownership=&region_code=&has_coordinates=`
+  — RCIS facilities (accounting basis `FACILITY_LOCATION_BASED_THROUGHPUT`);
+  `longitude`/`latitude` are present only where VWorld geocoding succeeded and
+  are `null` otherwise (coordinates are never fabricated), with
+  `region_mapping_status`/`geocode_status` exposed for review.
+
+Availability semantics: a reference year that is not in the database returns a
+structured `404` (`NO_DATA_FOR_PERIOD` with `available_years`, or
+`NO_DATA_AVAILABLE` when nothing has been ingested); an unknown `region_code`
+returns `404` `REGION_NOT_FOUND`; a legitimately empty filtered result within
+an available year returns `200` with `count: 0`. Region rows missing
+provenance or boundary geometry raise a visible `500` instead of being served
+incomplete. The two accounting bases stay on separate endpoints and must never
+be merged.
+
+Live-verified 2026-07-09 against the docker database: 82 regions (3 SIDO + 79
+SIGUNGU boundaries), 82 population rows, 234 waste-statistics rows, 651
+facilities (547 with coordinates, 104 explicit `FAILED` geocodes with `null`
+coordinates), matching the Phase 2 ingestion totals exactly.
+
 ## Run locally with Docker Compose
 
 From the repository root:
@@ -55,6 +89,11 @@ API URLs:
 - `GET http://localhost:8000/api/v1/data-sources`
 - `GET http://localhost:8000/api/v1/data-freshness`
 - `GET http://localhost:8000/api/v1/ingestion-runs`
+- `GET http://localhost:8000/api/v1/regions`
+- `GET http://localhost:8000/api/v1/regions/boundaries`
+- `GET http://localhost:8000/api/v1/population`
+- `GET http://localhost:8000/api/v1/waste-statistics`
+- `GET http://localhost:8000/api/v1/facilities`
 - `GET http://localhost:8000/openapi.json`
 - Swagger UI: `http://localhost:8000/docs`
 
@@ -90,8 +129,11 @@ DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/waste
 .venv/bin/python -m compileall src tests
 ```
 
-Unit tests run against in-memory SQLite (metadata tables only). Integration
-tests that need PostGIS run only when `TEST_DATABASE_URL` is set, for example:
+Unit tests run against in-memory SQLite (non-spatial tables only). Integration
+tests that need PostGIS — the migration chain and the Phase 3 dataset routes
+(`tests/test_dataset_routes_integration.py`, synthetic rows at isolated
+reference year 1999, rolled back) — run only when `TEST_DATABASE_URL` is set,
+for example:
 
 ```bash
 TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/waste_equity \
@@ -105,14 +147,14 @@ TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/
   .venv/bin/pytest tests/test_migration_integration.py
 ```
 
-Phase 2.2 adds RCIS regional waste generation/treatment ingestion and Phase 2.3
-adds RCIS waste-treatment facility ingestion (see
-[ingestion/README.md](../ingestion/README.md)). VWorld (including facility
-geocoding), AirKorea, KMA, frontend, scheduler, equity metrics, and facility
-recommendation logic are not implemented here. RCIS freshness and ingestion runs
-surface through the existing `GET /api/v1/data-freshness` and
-`GET /api/v1/ingestion-runs` endpoints (source id `waste_statistics`); no new
-backend route was added.
+Phases 2.2–2.4 add RCIS regional waste statistics, RCIS waste-treatment
+facilities, and VWorld facility geocoding through the ingestion package (see
+[ingestion/README.md](../ingestion/README.md)); Phase 3 serves those
+normalized tables through the dataset endpoints above. AirKorea, KMA, VWorld
+structural spatial layers, frontend, scheduler, equity metrics, and facility
+recommendation logic are not implemented here. Ingestion freshness and runs
+surface through `GET /api/v1/data-freshness` and `GET /api/v1/ingestion-runs`
+(source ids `waste_statistics`, `sgis`, `vworld`).
 
 ## Data-integrity rules enforced here
 
