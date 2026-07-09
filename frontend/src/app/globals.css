@@ -24,3 +24,19 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* MapLibre popups keep a white background but inherit the page text color,
+   which is near-white in dark mode; pin readable colors explicitly. */
+.maplibregl-popup-content {
+  color: #1e293b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.maplibregl-popup-content small {
+  color: #64748b;
+}
+
+.maplibregl-popup-close-button {
+  color: #475569;
+}
