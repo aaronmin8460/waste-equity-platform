@@ -251,20 +251,51 @@ Required checks before completion:
 
 ## Phase 4: Interactive Map Prototype
 
+Status: complete (2026-07-10). Live-verified with the backend serving the
+real 2024 datasets: map rendered the 79-SIGUNGU choropleth and 547 of 651
+facilities (the 104 without official coordinates reported in the sidebar,
+never drawn); metric panel showed source, reference period, publication
+frequency, and accounting basis; Playwright smoke passed, including the
+guard that no browser request left for any host other than the platform
+backend and the basemap tile service; eslint, tsc, and 13 Vitest unit tests
+green.
+
 Goal: build the first MapLibre GL interface using backend-provided data.
 
-Planned deliverables:
+Deliverables:
 
-- Map view covering Seoul, Incheon, and Gyeonggi-do.
-- Layer controls and legends.
-- Metric display with source and reference period.
-- Clear labels for annual, monthly, periodically updated, and real-time data.
+- `frontend/` package: Next.js (App Router), TypeScript, Tailwind CSS, and
+  MapLibre GL, per the project spec; Vitest for unit tests and Playwright for
+  the browser smoke test.
+- Map view fitted to Seoul, Incheon, and Gyeonggi-do, rendering the Phase 3
+  backend data only:
+  - SIGUNGU choropleth layers for regional metrics served as-is (regional
+    population; per-stream RCIS waste generation) — no client-side derived
+    aggregates in this phase.
+  - Waste-treatment facility point layer showing only facilities with
+    backend-served VWorld coordinates; facilities without coordinates are
+    reported as an explicit count, never placed on the map.
+- Layer controls (metric selector, facility toggle) and a legend computed
+  from the served values.
+- Metric panel showing, for every displayed layer: official source,
+  reference period, quantity unit, accounting basis where applicable, and
+  the publication-frequency label (annual, monthly, periodic, real-time)
+  from the backend source registry.
+- The frontend requests data exclusively from the platform backend
+  (`NEXT_PUBLIC_API_BASE_URL`); it never calls Korean government APIs and
+  holds no credentials. Basemap tiles, if any, come from a non-government
+  public tile service with attribution.
+- Backend-unavailable and no-data states render explicit errors; the UI
+  never falls back to bundled or fabricated data.
 
 Required checks before completion:
 
-- Frontend tests pass.
-- Playwright smoke test confirms map loads.
-- Frontend does not call Korean government APIs directly.
+- Frontend lint, type check, and Vitest unit tests pass.
+- Playwright smoke test (gated on a live backend URL, mirroring the
+  TEST_DATABASE_URL convention) confirms the map loads, layers render, and
+  source/reference-period metadata is visible against the real database.
+- Frontend does not call Korean government APIs directly and contains no
+  government credentials or mock official data.
 
 ## Phase 5: Equity And Suitability Analysis
 
