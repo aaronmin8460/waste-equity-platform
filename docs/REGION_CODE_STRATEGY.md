@@ -188,6 +188,24 @@ Rules:
   unmatched RCIS labels, and city-vs-city-district mismatches are all reported;
   nothing is aggregated or split silently.
 
+## Phase 2.3 RCIS Facility Region Mapping
+
+Phase 2.3 reuses the same deterministic RCIS name crosswalk for facility
+locations, but treats non-matches differently from the aggregate regional rows.
+A facility is a discrete real record worth preserving even before it can be tied
+to a precise canonical region, so in-scope facilities are always stored with a
+`region_mapping_status`:
+
+- `EXACT_MATCH`: RCIS sigungu maps to one SGIS canonical region; `region_id` set.
+- `REQUIRES_GEOCODE`: facility in an SGIS multi-district city (RCIS reports the
+  city, e.g. `수원시`); `region_id` NULL until the address is geocoded.
+- `UNMATCHED` / `AMBIGUOUS`: non-canonical or ambiguous label; `region_id` NULL.
+
+Geocoding of the facility street address (no coordinates are provided by RCIS) is
+deferred to a later VWorld phase; a nullable POINT `geometry` column is reserved.
+2024 live coverage: 651 capital-region facilities — 552 `EXACT_MATCH`, 99
+`REQUIRES_GEOCODE`, 0 unmatched/ambiguous.
+
 ## Initial Crosswalk Workflow
 
 1. Load SGIS boundary codes for the chosen boundary year.

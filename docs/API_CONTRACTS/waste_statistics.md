@@ -256,6 +256,32 @@ canonical regions by the deterministic crosswalk (see REGION_CODE_STRATEGY);
 cities reported by RCIS at city level are excluded as `REQUIRES_AGGREGATION`),
 plus `인천 경제청` unmatched.
 
+## Phase 2.3 Production Ingestion (Facility PIDs)
+
+Live-verified and ingested for `YEAR=2024`, 2020-onward era. Six facility PIDs:
+`NTN031` (공공소각), `NTN032` (공공기타), `NTN033` (공공매립), `NTN040`
+(중간처분 소각), `NTN043` (최종처분), `NTN046` (재활용처리 중간).
+
+Facility PIDs return one row per facility line with location
+(`CITY_JIDT_CD_NM`/`CTS_JIDT_CD_NM` + `ADDR`, no coordinates), name
+(`FAC_NM` public / `COM_NM`+`CEO_NM` private), capacity, throughput, and
+residue/landfill attributes. `DUNIT` is blank; units are per field from the
+guide: `FAC_CAP`/`ABILITY_QTY` 톤/일, `DISP_QTY`/`FILL_QTY_TON` 톤/년,
+`TOT_FILL_CAP`/`RMN_FILL_CAP` ㎥, `TOT_FILL_AREA` ㎡. Aggregate rows (national
+`전국`/`합계`, per-sido `소계`; `N개소` count in `SEQ`, null name) are excluded.
+
+Row grain: one row per facility line, normalized into `waste_treatment_facilities`.
+Facilities have no official id and a single site can report multiple lines that
+share every business attribute, so the reviewed identity key is
+`(source_pid, reference_year, source_row_index)` (stable source row position).
+
+Accounting basis: `FACILITY_LOCATION_BASED_THROUGHPUT` (activity at the
+facility's location), distinct from the Phase 2.2 origin-based regional
+accounting. Geocoding of `ADDR` is deferred to a later VWorld phase; a nullable
+POINT `geometry` column is reserved but not populated. In-scope facilities that
+do not map to a single SGIS region (multi-district cities) are retained with
+`region_mapping_status = REQUIRES_GEOCODE` and a NULL `region_id`.
+
 ## Sample Policy
 
 - If credentials are absent, connector status is `CREDENTIAL_MISSING`.

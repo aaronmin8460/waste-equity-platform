@@ -23,12 +23,13 @@ database `raw_api_responses` table with source, endpoint, reference period,
 response hash, transformation version, and ingestion-run provenance. SGIS
 authentication tokens and credentials are not stored.
 
-Phase 2.2 RCIS waste production ingestion likewise stores sanitized production
-responses in `raw_api_responses` (source id `waste_statistics`), not in
-committed sample files. The RCIS `KEY` and `USRID` request parameters are never
-part of a stored response and are never printed. The truncated Phase 0.7
-discovery samples (`waste-statistics.<PID>.<YEAR>.live.json`, 20 records each)
-remain Git-ignored and are the only committed-format RCIS samples; they are not
-used as a fallback for production ingestion.
+Phase 2.2 and Phase 2.3 RCIS production ingestion (regional waste statistics and
+waste-treatment facilities) likewise store sanitized production responses in
+`raw_api_responses` (source id `waste_statistics`), not in committed sample
+files. The RCIS `KEY` and `USRID` request parameters are never part of a stored
+response and are never printed. The truncated Phase 0.7 discovery samples
+(`waste-statistics.<PID>.<YEAR>.live.json`, 20 records each) remain Git-ignored
+and are the only committed-format RCIS samples; they are not used as a fallback
+for production ingestion.
 
 These `.json` samples are ignored by Git through `.gitignore`.

@@ -125,7 +125,74 @@ Required checks before completion (met):
 - Formatting, linting, type checking, compile checks, and tests pass.
 - No secret, access token, fixture fallback, or sample data used for writes.
 
-Later Phase 2 subphases will cover RCIS facilities (Phase 2.3), VWorld structural spatial data, AirKorea, and KMA. They must not begin until explicitly scoped. RCIS facility ingestion is not implemented.
+### Phase 2.3: RCIS Waste-Treatment Facility Ingestion
+
+Status: complete (implemented 2026-07-08; live verification gates passed
+2026-07-09 — dry-run VALIDATED on all six PIDs, 651 in-scope facilities,
+write + identical second write idempotent with zero identity-key duplicates).
+
+Deliverables:
+
+- Reuse the RCIS client, provider-code handling, sanitization, ingestion-run
+  framework, and the Phase 2.2 region crosswalk.
+- Live-validate and ingest the six facility PIDs (`NTN031`, `NTN032`, `NTN033`
+  public; `NTN040`, `NTN043`, `NTN046` private) for `YEAR=2024`.
+- Add and populate normalized `waste_treatment_facilities` (Alembic revision
+  `0004`): one row per reported facility line, typed core (identity, address,
+  category, capacity, throughput, residue, landfill volume/area, permit dates) +
+  `source_fields` JSONB; accounting basis `FACILITY_LOCATION_BASED_THROUGHPUT`.
+- Retain in-scope facilities that do not map to a single SGIS region with a
+  `region_mapping_status` (multi-district-city facilities → `REQUIRES_GEOCODE`).
+- Add a nullable POINT `geometry` column; geocoding is deferred to a later
+  VWorld phase and is not performed here.
+- Verify idempotent second run (identity `(source_pid, reference_year,
+  source_row_index)`).
+
+### Phase 2.4: VWorld Facility Geocoding
+
+Status: complete (2026-07-09). Live results: 547 of 651 facilities geocoded;
+97 of 99 REQUIRES_GEOCODE facilities resolved to GEOCODED_MATCH via
+point-in-polygon with all cross-checks; 104 non-geocodable addresses kept as
+the explicit GEOCODE_FAILED review queue with NULL geometry; zero
+point-in-polygon disagreements with Phase 2.3 EXACT_MATCH assignments;
+identical second run made zero API calls and zero row changes.
+
+Goal: resolve facility point locations and multi-district region assignment
+using the official VWorld geocoder, without fabricating coordinates.
+
+Deliverables:
+
+- Live-validate the VWorld geocoder contract (`/req/address`, `getcoord`)
+  including request type (road/parcel), response status values, refined
+  address, match level, and CRS, and record it in
+  `docs/API_CONTRACTS/vworld.md`.
+- Geocode `waste_treatment_facilities` addresses (RCIS `ADDR` prefixed with the
+  RCIS sido/sigungu names) to EPSG:4326 POINT `geometry`, preserving the
+  geocoder match level, refined address, request timestamp, and sanitized raw
+  responses with ingestion-run lifecycle records under the `vworld` source.
+- Resolve `REQUIRES_GEOCODE` facilities to a single canonical region via
+  point-in-polygon against SGIS region geometry; set a distinct
+  `region_mapping_status` (for example `GEOCODED_MATCH`).
+- Never invent coordinates: geocoder misses keep `geometry` NULL with an
+  explicit failure status (for example `GEOCODE_FAILED`) and are listed in the
+  run report for review.
+- Idempotent re-run: unchanged addresses are not re-geocoded and re-runs
+  produce zero row changes.
+- Respect VWorld request quotas with an inter-request delay.
+
+Required checks before completion:
+
+- Live geocoder contract validation succeeds and is documented.
+- Dry-run and write CLI modes work.
+- Second identical run produces zero row changes.
+- Point-in-polygon assignments agree with the RCIS sido for every facility
+  (mismatches are flagged, not silently accepted).
+- Formatting, linting, type checking, compile checks, and tests pass.
+- No secret, fixture fallback, or fabricated coordinate is written.
+
+Later Phase 2 subphases will cover VWorld structural spatial layers (zoning,
+protected areas, roads), AirKorea, and KMA (both currently CREDENTIAL_MISSING).
+They must not begin until explicitly scoped.
 
 ## Phase 3: Backend Product API Foundation
 

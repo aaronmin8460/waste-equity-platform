@@ -19,6 +19,14 @@ FastAPI backend and core metadata schema.
     `ORIGIN_BASED_TREATMENT_OUTCOME`). The `region_code_map` RCIS name-pair
     columns already existed from revision `0001`, so revision `0003` only adds
     the new table.
+- Phase 2.3 RCIS facility ingestion schema addition (Alembic revision `0004`):
+  - normalized `waste_treatment_facilities` (one row per facility line;
+    accounting basis `FACILITY_LOCATION_BASED_THROUGHPUT`; nullable POINT
+    `geometry` reserved for a later VWorld geocoding phase).
+- Phase 2.4 VWorld facility geocoding schema addition (Alembic revision
+  `0005`): geocode provenance columns on `waste_treatment_facilities`
+  (status, request/refined address, `level4AC`, note, raw-response link) and
+  the `GEOCODED_MATCH` region-mapping status.
 - Health and data-operations endpoints:
   - `GET /health`
   - `GET /api/v1/data-sources`
@@ -97,11 +105,12 @@ TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/
   .venv/bin/pytest tests/test_migration_integration.py
 ```
 
-Phase 2.2 adds RCIS regional waste generation/treatment production ingestion
-(see [ingestion/README.md](../ingestion/README.md)). RCIS facility ingestion
-(Phase 2.3), VWorld, AirKorea, KMA, frontend, scheduler, equity metrics, and
-facility recommendation logic are not implemented here. RCIS freshness and
-ingestion runs surface through the existing `GET /api/v1/data-freshness` and
+Phase 2.2 adds RCIS regional waste generation/treatment ingestion and Phase 2.3
+adds RCIS waste-treatment facility ingestion (see
+[ingestion/README.md](../ingestion/README.md)). VWorld (including facility
+geocoding), AirKorea, KMA, frontend, scheduler, equity metrics, and facility
+recommendation logic are not implemented here. RCIS freshness and ingestion runs
+surface through the existing `GET /api/v1/data-freshness` and
 `GET /api/v1/ingestion-runs` endpoints (source id `waste_statistics`); no new
 backend route was added.
 

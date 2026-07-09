@@ -8,7 +8,7 @@ The first implementation scope covers the full Seoul Metropolitan Area:
 - Incheon
 - Gyeonggi-do
 
-This repository currently contains project governance documents, the Phase 0 local API-probe package (with live-verified RCIS, SGIS, and VWorld contracts), the Phase 1 backend infrastructure, Phase 2.1 SGIS production ingestion for canonical geography and total population, and Phase 2.2 RCIS production ingestion for regional waste generation and treatment statistics (four sigungu generation PIDs). It does not yet contain the frontend, RCIS facility ingestion, VWorld/AirKorea/KMA production ingestion, waste equity metrics, equity analysis, scheduler automation, or facility recommendation logic.
+This repository currently contains project governance documents, the Phase 0 local API-probe package (with live-verified RCIS, SGIS, and VWorld contracts), the Phase 1 backend infrastructure, Phase 2.1 SGIS production ingestion for canonical geography and total population, Phase 2.2 RCIS production ingestion for regional waste generation and treatment statistics (four sigungu generation PIDs), and Phase 2.3 RCIS production ingestion for waste-treatment facilities (six facility PIDs). It does not yet contain the frontend, VWorld/AirKorea/KMA production ingestion, facility geocoding, waste equity metrics, equity analysis, scheduler automation, or facility recommendation logic.
 
 ## Run the local stack
 
@@ -87,8 +87,23 @@ generation and treatment-by-method (recycling/incineration/landfill/other). The
 accounting basis is `ORIGIN_BASED_TREATMENT_OUTCOME` (how the origin region's
 own generated waste was treated), not facility throughput and not waste
 movement. See [ingestion/README.md](ingestion/README.md) for PID details,
-geographic mapping, and idempotency. RCIS facility ingestion is Phase 2.3 and is
-not implemented.
+geographic mapping, and idempotency.
+
+## Run RCIS facility ingestion
+
+Phase 2.3 ingests waste-treatment facilities for the six facility PIDs
+(`NTN031`, `NTN032`, `NTN033`, `NTN040`, `NTN043`, `NTN046`) at 2024 into
+`waste_treatment_facilities` (one row per facility line; accounting basis
+`FACILITY_LOCATION_BASED_THROUGHPUT`). Addresses are stored without coordinates;
+geocoding is deferred to a later VWorld phase.
+
+```bash
+docker compose --profile ingestion run --rm ingestion \
+  rcis-facility-ingest --year 2024 --scope capital-region --write
+```
+
+See [ingestion/README.md](ingestion/README.md) for PID details, the facility
+identity key, and region-mapping status handling.
 
 ## Planned Technical Direction
 
@@ -117,7 +132,7 @@ The frontend must not call Korean government APIs directly. Future ingestion and
 
 ## Current Status
 
-Phase 0 established governance, planning, and live data-source validation through Phase 0.7 (RCIS PID discovery, recommendation GO). Phase 1 added the Docker Compose infrastructure, PostGIS database, core metadata schema, and backend health/data-operations API. Phase 2.1 adds SGIS canonical geography and population ingestion. Phase 2.2 adds RCIS regional waste generation/treatment ingestion for four sigungu PIDs; later Phase 2 subphases will cover RCIS facilities (2.3), VWorld, AirKorea, and KMA. See:
+Phase 0 established governance, planning, and live data-source validation through Phase 0.7 (RCIS PID discovery, recommendation GO). Phase 1 added the Docker Compose infrastructure, PostGIS database, core metadata schema, and backend health/data-operations API. Phase 2.1 adds SGIS canonical geography and population ingestion. Phase 2.2 adds RCIS regional waste generation/treatment ingestion for four sigungu PIDs. Phase 2.3 adds RCIS waste-treatment facility ingestion for six facility PIDs; later Phase 2 subphases will cover VWorld (including facility geocoding), AirKorea, and KMA. See:
 
 - [AGENTS.md](AGENTS.md)
 - [Project Specification](docs/PROJECT_SPEC.md)
