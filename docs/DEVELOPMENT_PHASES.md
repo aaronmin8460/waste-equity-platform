@@ -198,7 +198,13 @@ They must not begin until explicitly scoped.
 
 ## Phase 3: Backend Product API Foundation
 
-Status: current phase.
+Status: complete (2026-07-09). Live smoke against the docker database served
+the real 2024 datasets with counts matching the Phase 2 ingestion totals
+exactly: 82 regions (3 SIDO + 79 SIGUNGU GeoJSON boundaries), 82 population
+rows, 234 waste-statistics rows, 651 facilities (547 with coordinates, 104
+explicit failed geocodes with null coordinates, zero rows where coordinate
+presence disagrees with geocode status); structured 404s verified for an
+unavailable year and an unknown region code.
 
 Goal: serve normalized official data and metadata to the frontend through backend APIs beyond the Phase 1 data-operations endpoints.
 

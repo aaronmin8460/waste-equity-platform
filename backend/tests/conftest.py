@@ -1,7 +1,8 @@
 """Test fixtures: FastAPI client backed by in-memory SQLite.
 
-Only the non-spatial metadata tables are created here; the regions tables
-use PostGIS geometry and are covered by the migration integration test.
+Only non-spatial tables are created here; the regions and facilities tables
+use PostGIS geometry and are covered by the migration and dataset-route
+integration tests (TEST_DATABASE_URL).
 """
 
 from collections.abc import Iterator
@@ -20,6 +21,8 @@ from waste_equity_backend.models import (
     DataSource,
     IngestionRun,
     RawApiResponse,
+    RegionalPopulation,
+    RegionalWasteStatistics,
 )
 
 METADATA_TABLES = [
@@ -27,6 +30,8 @@ METADATA_TABLES = [
     IngestionRun.__table__,
     DatasetFreshness.__table__,
     RawApiResponse.__table__,
+    RegionalPopulation.__table__,
+    RegionalWasteStatistics.__table__,
 ]
 
 
