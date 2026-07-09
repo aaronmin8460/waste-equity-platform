@@ -55,7 +55,9 @@ Required checks before completion:
 
 ## Phase 2: Production Ingestion
 
-Status: current phase.
+Status: subphases 2.0–2.4 complete. Remaining subphases (VWorld structural
+spatial layers, AirKorea, KMA) are blocked on explicit scoping and, for
+AirKorea/KMA, on credentials (CREDENTIAL_MISSING); Phase 3 proceeds first.
 
 Goal: implement explicit, reproducible, one-shot production ingestion jobs for official public data. Phase 2 jobs must preserve sanitized raw responses, write normalized tables idempotently, and fail visibly without fixture fallback.
 
@@ -196,20 +198,50 @@ They must not begin until explicitly scoped.
 
 ## Phase 3: Backend Product API Foundation
 
+Status: current phase.
+
 Goal: serve normalized official data and metadata to the frontend through backend APIs beyond the Phase 1 data-operations endpoints.
 
-Planned deliverables:
+Deliverables:
 
-- FastAPI endpoints for initial normalized datasets.
-- Pydantic response models requiring source and reference period.
-- Error responses for unavailable data.
-- No frontend exposure of government API credentials.
+- Read-only `GET /api/v1` dataset endpoints backed solely by the normalized
+  tables (no live government API calls from request handlers):
+  - `regions` — canonical region list for a boundary vintage year (no
+    geometry payload).
+  - `regions/boundaries` — GeoJSON FeatureCollection of region boundaries
+    (EPSG:4326, served exactly as stored, no simplification or rounding).
+  - `population` — SGIS regional population.
+  - `waste-statistics` — RCIS origin-based regional waste statistics
+    (accounting basis `ORIGIN_BASED_TREATMENT_OUTCOME` exposed per item).
+  - `facilities` — RCIS waste-treatment facilities (accounting basis
+    `FACILITY_LOCATION_BASED_THROUGHPUT` exposed per item), with EPSG:4326
+    longitude/latitude only where VWorld geocoding succeeded; failed
+    geocodes stay NULL (no fabricated coordinates), with
+    `region_mapping_status`/`geocode_status` visible for review.
+- Every dataset item carries required (non-optional) `source_id` and
+  reference-period fields; a row missing provenance fails response
+  validation visibly rather than being served unsourced.
+- The two accounting bases stay on separate endpoints and are never merged
+  or conflated.
+- Dataset responses use an envelope echoing the resolved `reference_year`
+  (default: latest year available in the database) and row `count`.
+- Unavailable data returns a structured `404` error body (error code,
+  requested year, available years) instead of an empty `200`; unknown
+  `region_code` filters return a structured `404`; legitimately empty
+  filtered results within an available year return `200` with `count: 0`.
+- No new migrations; no credentials are read, logged, or exposed by any
+  endpoint.
 
 Required checks before completion:
 
-- Backend unit and integration tests pass.
-- API responses include required metadata.
-- Type checking passes.
+- Formatting, linting, strict type checking, and tests pass in both packages.
+- Unit tests cover parameter-validation and error paths; integration tests
+  (TEST_DATABASE_URL, synthetic rows at an isolated reference year, rolled
+  back) cover data-bearing responses against real PostGIS.
+- Live smoke check: the API served from the docker compose database returns
+  the real 2024 datasets with counts matching the ingested totals and
+  correct source/reference-period metadata.
+- No mock data, fixture fallback, or fabricated coordinate/metric is served.
 
 ## Phase 4: Interactive Map Prototype
 
