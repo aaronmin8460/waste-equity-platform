@@ -251,7 +251,14 @@ Required checks before completion:
 
 ## Phase 4: Interactive Map Prototype
 
-Status: current phase.
+Status: complete (2026-07-10). Live-verified with the backend serving the
+real 2024 datasets: map rendered the 79-SIGUNGU choropleth and 547 of 651
+facilities (the 104 without official coordinates reported in the sidebar,
+never drawn); metric panel showed source, reference period, publication
+frequency, and accounting basis; Playwright smoke passed, including the
+guard that no browser request left for any host other than the platform
+backend and the basemap tile service; eslint, tsc, and 13 Vitest unit tests
+green.
 
 Goal: build the first MapLibre GL interface using backend-provided data.
 
