@@ -8,8 +8,10 @@ facility's own location, NOT the origin region's generated waste (that is the
 Phase 2.2 ``regional_waste_statistics`` origin-based accounting). The two must
 never be conflated.
 
-Geocoding is deferred to a later VWorld phase: ``geometry`` is added now but is
-always NULL in this phase. Six PIDs are ingested across two archetypes:
+Phase 2.4 populates ``geometry`` from the official VWorld geocoder and records
+the geocode provenance columns; coordinates are never fabricated, so a failed
+geocode keeps ``geometry`` NULL with ``geocode_status = 'FAILED'``. Six PIDs
+are ingested across two archetypes:
 
 - Processing facilities (NTN031/032/040/046): ``capacity_quantity`` in 톤/일,
   ``throughput_quantity`` (DISP_QTY) in 톤/년, residue breakdown in 톤/년.
@@ -75,8 +77,13 @@ class WasteTreatmentFacility(Base):
             name="waste_treatment_facilities_throughput_nonnegative",
         ),
         CheckConstraint(
-            "region_mapping_status IN ('EXACT_MATCH','REQUIRES_GEOCODE','UNMATCHED','AMBIGUOUS')",
+            "region_mapping_status IN "
+            "('EXACT_MATCH','GEOCODED_MATCH','REQUIRES_GEOCODE','UNMATCHED','AMBIGUOUS')",
             name="waste_treatment_facilities_region_status_allowed",
+        ),
+        CheckConstraint(
+            "geocode_status IS NULL OR geocode_status IN ('SUCCEEDED','FAILED')",
+            name="waste_treatment_facilities_geocode_status_allowed",
         ),
     )
 
@@ -104,16 +111,32 @@ class WasteTreatmentFacility(Base):
     # identity key because facilities have no natural unique business key.
     source_row_index: Mapped[int] = mapped_column(Integer)
 
-    # Location. region_id is set only for an exact SGIS name match; facilities in
-    # SGIS multi-district cities or with non-canonical labels are retained with a
-    # NULL region_id and a region_mapping_status pending geocoding/review.
+    # Location. region_id is set for an exact SGIS name match (EXACT_MATCH) or a
+    # geocoded point-in-polygon resolution of a multi-district-city facility
+    # (GEOCODED_MATCH); other statuses keep a NULL region_id pending review.
     region_id: Mapped[int | None] = mapped_column(ForeignKey("regions.id"), index=True)
     rcis_sido_name: Mapped[str] = mapped_column(String(50))
     rcis_sigungu_name: Mapped[str] = mapped_column(String(50))
     source_geographic_level: Mapped[str] = mapped_column(String(20))
     region_mapping_status: Mapped[str] = mapped_column(String(20), index=True)
-    # Deferred to a later VWorld geocoding phase; always NULL here.
+    # EPSG:4326 point from the VWorld geocoder (Phase 2.4); NULL until geocoded
+    # and NULL forever if the geocoder cannot resolve the address.
     geometry: Mapped[Any | None] = mapped_column(Geometry(geometry_type="POINT", srid=4326))
+
+    # VWorld geocode provenance (Phase 2.4). geocode_request_address is the
+    # exact query string sent; together with geocode_status it is the
+    # idempotency key that prevents re-geocoding unchanged addresses.
+    geocode_status: Mapped[str | None] = mapped_column(String(20), index=True)
+    geocode_request_address: Mapped[str | None] = mapped_column(String(600))
+    geocode_address_type: Mapped[str | None] = mapped_column(String(10))
+    geocode_refined_address: Mapped[str | None] = mapped_column(String(600))
+    # Legal-dong code from refined.structure.level4AC; its 2-digit prefix is a
+    # sido-level cross-check (서울 11, 인천 28, 경기 41).
+    geocode_level4ac: Mapped[str | None] = mapped_column(String(10))
+    geocode_crs: Mapped[str | None] = mapped_column(String(20))
+    geocode_note: Mapped[str | None] = mapped_column(Text)
+    geocoded_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    geocode_raw_response_id: Mapped[int | None] = mapped_column(ForeignKey("raw_api_responses.id"))
 
     # Processing capacity (톤/일 for NTN031/032/040, ABILITY_QTY for NTN046);
     # NULL for landfills, which use volume capacity instead.

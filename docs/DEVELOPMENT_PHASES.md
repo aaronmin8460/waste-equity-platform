@@ -150,7 +150,12 @@ Deliverables:
 
 ### Phase 2.4: VWorld Facility Geocoding
 
-Status: current subphase (scoped 2026-07-09).
+Status: complete (2026-07-09). Live results: 547 of 651 facilities geocoded;
+97 of 99 REQUIRES_GEOCODE facilities resolved to GEOCODED_MATCH via
+point-in-polygon with all cross-checks; 104 non-geocodable addresses kept as
+the explicit GEOCODE_FAILED review queue with NULL geometry; zero
+point-in-polygon disagreements with Phase 2.3 EXACT_MATCH assignments;
+identical second run made zero API calls and zero row changes.
 
 Goal: resolve facility point locations and multi-district region assignment
 using the official VWorld geocoder, without fabricating coordinates.

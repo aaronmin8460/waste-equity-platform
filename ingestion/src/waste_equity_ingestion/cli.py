@@ -18,6 +18,7 @@ from .rcis_waste_ingestion import DEFAULT_REQUEST_DELAY_SECONDS, run_rcis_waste_
 from .result import ProbeResult
 from .samples import build_envelope, save_sample
 from .sgis_ingestion import run_sgis_ingestion
+from .vworld_geocoding_ingestion import run_vworld_geocoding
 
 ProbeFunc = Callable[[ProbeSettings], ProbeResult]
 
@@ -33,6 +34,7 @@ DISCOVERY_SOURCE = "waste-statistics-discovery"
 SGIS_INGEST = "sgis-ingest"
 RCIS_WASTE_INGEST = "rcis-waste-ingest"
 RCIS_FACILITY_INGEST = "rcis-facility-ingest"
+VWORLD_GEOCODE = "vworld-geocode"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -40,7 +42,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "source",
         choices=sorted(
-            [*PROBES, DISCOVERY_SOURCE, SGIS_INGEST, RCIS_WASTE_INGEST, RCIS_FACILITY_INGEST]
+            [
+                *PROBES,
+                DISCOVERY_SOURCE,
+                SGIS_INGEST,
+                RCIS_WASTE_INGEST,
+                RCIS_FACILITY_INGEST,
+                VWORLD_GEOCODE,
+            ]
         ),
     )
     parser.add_argument("--save-sample", action="store_true")
@@ -79,6 +88,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--fail-on-unmatched",
         action="store_true",
         help="Fail the run if any in-scope RCIS record is unmatched or ambiguous.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="vworld-geocode: geocode at most N pending facilities this run.",
+    )
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="vworld-geocode: re-attempt facilities whose previous geocode failed.",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -184,6 +203,20 @@ def run_rcis_facility(settings: ProbeSettings, args: argparse.Namespace) -> int:
     return 0
 
 
+def run_vworld_geocode(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    if not args.dry_run and not args.write:
+        raise IngestionError("vworld-geocode requires either --dry-run or --write")
+    report = run_vworld_geocoding(
+        settings,
+        write=bool(args.write),
+        request_delay=float(args.request_delay),
+        limit=args.limit,
+        retry_failed=bool(args.retry_failed),
+    )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     settings = ProbeSettings.from_env()
@@ -207,6 +240,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_rcis_waste(settings, args)
         if args.source == RCIS_FACILITY_INGEST:
             return run_rcis_facility(settings, args)
+        if args.source == VWORLD_GEOCODE:
+            return run_vworld_geocode(settings, args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)

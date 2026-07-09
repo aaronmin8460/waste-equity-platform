@@ -4,7 +4,9 @@ This directory contains API probes and explicit one-shot production ingestion
 jobs. Phase 2.1 implements SGIS canonical geography and total population
 ingestion; Phase 2.2 adds RCIS regional waste generation/treatment ingestion for
 the four documented sigungu generation PIDs; Phase 2.3 adds RCIS waste-treatment
-facility ingestion for the six documented facility PIDs.
+facility ingestion for the six documented facility PIDs; Phase 2.4 geocodes
+facility addresses through the VWorld geocoder and resolves multi-district-city
+facilities by point-in-polygon.
 
 Current constraints:
 
@@ -408,3 +410,43 @@ Phase 0.7 live result (2026-07-08):
 - RCIS generation/treatment PIDs (`NTN007`, `NTN008`, `NTN018`, `NTN022`) and facility PIDs (`NTN031`, `NTN032`, `NTN033`, `NTN040`, `NTN043`, `NTN046`): LIVE_VERIFIED at sigungu granularity for 2023 and 2024; sanitized truncated samples saved as `data/samples/waste-statistics.<PID>.<YEAR>.live.json`.
 - `NTN044`: SCHEMA_UNVERIFIED (single placeholder-like record).
 - See `docs/API_CONTRACTS/waste_statistics.md` for the full PID contract.
+
+## Phase 2.4 VWorld Facility Geocoding
+
+Geocode `waste_treatment_facilities` addresses through the official VWorld
+geocoder and resolve multi-district-city facilities by point-in-polygon:
+
+```bash
+DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/waste_equity \
+PYTHONPATH=src:../backend/src \
+python -m waste_equity_ingestion.cli vworld-geocode --dry-run --limit 5
+
+DATABASE_URL=... PYTHONPATH=src:../backend/src \
+python -m waste_equity_ingestion.cli vworld-geocode --write
+```
+
+Rules enforced by the job (see `docs/API_CONTRACTS/vworld.md`):
+
+- The request address is the RCIS sido/sigungu prefix plus `ADDR`; the attempt
+  ladder tries ROAD, PARCEL, then a simplified form of each.
+- Coordinates come only from provider `OK` responses; `NOT_FOUND`/`ERROR`
+  keeps `geometry` NULL with `geocode_status='FAILED'` (the review queue).
+- `GEOCODED_MATCH` requires point-in-polygon agreement with the RCIS sido,
+  the RCIS city name, and the `level4AC` legal-dong sido prefix.
+- `EXACT_MATCH` region assignments are never changed; point-in-polygon
+  disagreements are recorded in `geocode_note` for review.
+- Idempotent: the stored `geocode_request_address` is the built canonical
+  address, so an identical re-run makes zero API calls and zero row changes;
+  `--retry-failed` re-attempts prior failures.
+
+Live result (2026-07-09, after Phase 2.3 data): 547/651 geocoded, 97/99
+`REQUIRES_GEOCODE` resolved, 104 failures queued for review, zero
+point-in-polygon disagreements with exact name matches.
+
+Live integration test:
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/waste_equity \
+RUN_LIVE_VWORLD=1 \
+  PYTHONPATH=../backend/src:src pytest tests/test_vworld_geocoding_integration.py
+```

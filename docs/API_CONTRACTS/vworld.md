@@ -128,3 +128,18 @@ Phase 2.4 usage rules:
 - `NOT_FOUND`/`ERROR` results must keep `geometry` NULL with an explicit failure status; coordinates must never be fabricated or approximated.
 - Region resolution uses point-in-polygon against SGIS region geometry as the primary signal, with the `level4AC` sigungu prefix and RCIS sido name as independent cross-checks; disagreements are flagged for review, not silently accepted.
 - Respect provider quotas with an inter-request delay; the documented daily quota for the address API is provider-controlled and request pacing must be configurable.
+
+### Phase 2.4 Live Run Result (2026-07-09)
+
+- 651 facilities considered; 547 geocoded to EPSG:4326 points (all inside the
+  Korea bounding box, SRID 4326 verified).
+- 97 of 99 `REQUIRES_GEOCODE` multi-district-city facilities resolved to
+  `GEOCODED_MATCH` via point-in-polygon with sido/city/`level4AC` cross-checks;
+  the remaining 2 had non-geocodable addresses.
+- 104 addresses returned provider `NOT_FOUND` across the full attempt ladder
+  (site names such as `자원순환센터`, island facilities, building names).
+  They keep `geometry` NULL with `geocode_status = 'FAILED'` and are the
+  documented review queue; no coordinate was fabricated.
+- Zero point-in-polygon disagreements against the 450 geocoded `EXACT_MATCH`
+  facilities, independently confirming the Phase 2.3 name-based mapping.
+- Identical second run: zero API calls, zero row changes (live-verified).

@@ -23,6 +23,10 @@ FastAPI backend and core metadata schema.
   - normalized `waste_treatment_facilities` (one row per facility line;
     accounting basis `FACILITY_LOCATION_BASED_THROUGHPUT`; nullable POINT
     `geometry` reserved for a later VWorld geocoding phase).
+- Phase 2.4 VWorld facility geocoding schema addition (Alembic revision
+  `0005`): geocode provenance columns on `waste_treatment_facilities`
+  (status, request/refined address, `level4AC`, note, raw-response link) and
+  the `GEOCODED_MATCH` region-mapping status.
 - Health and data-operations endpoints:
   - `GET /health`
   - `GET /api/v1/data-sources`
