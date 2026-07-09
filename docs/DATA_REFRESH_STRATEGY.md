@@ -122,6 +122,34 @@ category, roll back partial normalized writes, and do not update
 transient network failures get bounded retries. The dry-run makes real RCIS
 requests and never falls back to local samples.
 
+## Phase 2.3 RCIS Facility Production Refresh
+
+Explicit one-shot CLI job (`rcis-facility-ingest`), not a scheduler. Source id
+`waste_statistics`; year 2024; PIDs `NTN031`, `NTN032`, `NTN033`, `NTN040`,
+`NTN043`, `NTN046`.
+
+```bash
+python -m waste_equity_ingestion.cli rcis-facility-ingest \
+  --year 2024 --scope capital-region --write
+docker compose --profile ingestion run --rm ingestion \
+  rcis-facility-ingest --year 2024 --scope capital-region --write
+```
+
+- `waste_treatment_facilities` rows are upserted by
+  `(source_pid, reference_year, source_row_index)`. Facilities have no official
+  id and can share every business attribute, so the stable source row position
+  is the reviewed identity key. Re-running the same year creates no duplicate
+  rows; identical data updates nothing.
+- Each RCIS response carries fresh transaction metadata (`callId`), so identical
+  re-runs append new sanitized raw-response rows (dedup by exact hash) while
+  normalized rows remain idempotent.
+- `rows_received` counts in-scope capital-region facility lines. In-scope
+  facilities are always stored (including those pending geocoding), so
+  `rows_rejected` is 0; nationwide structural parse rejects are reported as a
+  per-PID diagnostic.
+- Freshness updates only on success; failed runs are visible, roll back, and do
+  not update `last_success_at`.
+
 ## Phase 0.6 Refresh Implications
 
 - SGIS source-registry and code-crosswalk planning from Phase 0.6 has been

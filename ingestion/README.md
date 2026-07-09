@@ -3,7 +3,8 @@
 This directory contains API probes and explicit one-shot production ingestion
 jobs. Phase 2.1 implements SGIS canonical geography and total population
 ingestion; Phase 2.2 adds RCIS regional waste generation/treatment ingestion for
-the four documented sigungu generation PIDs.
+the four documented sigungu generation PIDs; Phase 2.3 adds RCIS waste-treatment
+facility ingestion for the six documented facility PIDs.
 
 Current constraints:
 
@@ -288,6 +289,84 @@ Verified 2024 live run: first run received 263 / inserted 234 / updated 0 /
 rejected 29; identical second run received 263 / inserted 0 / updated 0 /
 rejected 29; final normalized table count 234 (NTN007 59, NTN008 59, NTN018 57,
 NTN022 59). Reconciliation mismatches: 0.
+
+## RCIS Facility Production Ingestion (Phase 2.3)
+
+One-shot production ingestion of waste-treatment facilities from the six RCIS
+facility PIDs (source id `waste_statistics`, endpoint `/sds/JsonApi.do`) into
+`waste_treatment_facilities`.
+
+### PIDs, categories, and archetypes (2024, 2020-onward era)
+
+| PID | Official form name | Category | Archetype | Ownership |
+| --- | --- | --- | --- | --- |
+| `NTN031` | 1-가. 공공소각 | `PUBLIC_INCINERATION` | PROCESSING | PUBLIC |
+| `NTN032` | 1-나. 공공기타 | `PUBLIC_OTHER` | PROCESSING | PUBLIC |
+| `NTN033` | 1-다. 공공매립 | `PUBLIC_LANDFILL` | LANDFILL | PUBLIC |
+| `NTN040` | 4-가. 중간처분(소각) | `PRIVATE_INTERMEDIATE_INCINERATION` | PROCESSING | PRIVATE |
+| `NTN043` | 5. 최종처분 | `PRIVATE_FINAL_DISPOSAL` | LANDFILL | PRIVATE |
+| `NTN046` | 8-가. 재활용처리(중간) | `PRIVATE_RECYCLING` | PROCESSING | PRIVATE |
+
+### Row grain and identity
+
+One row per reported facility line. `DUNIT` is blank; units are per field and
+per PID from the official guide: capacity `FAC_CAP`/`ABILITY_QTY` 톤/일,
+throughput `DISP_QTY` (processing) / `FILL_QTY_TON` (landfill) 톤/년, landfill
+`TOT_FILL_CAP`/`RMN_FILL_CAP` ㎥, `TOT_FILL_AREA` ㎡. Public PIDs give facility
+name (`FAC_NM`); private PIDs give company name (`COM_NM`) + operator (`CEO_NM`).
+PID-specific fields (costs, energy, landfill gas, waste-type descriptors) are
+preserved verbatim in `source_fields` (JSONB).
+
+Facilities have no official id, and a single site can report multiple process
+lines sharing every business attribute (name, address, SEQ, sub-type) and
+differing only in quantities. The reviewed identity key is therefore
+`(source_pid, reference_year, source_row_index)`, where `source_row_index` is the
+stable 0-based position of the facility among the real facility rows in the PID
+response. This is idempotent for identical published data.
+
+Aggregate rows (`전국`/`합계` national and per-sido `소계`, with a `N개소` count
+in `SEQ` and a null facility name) are excluded.
+
+### Accounting basis
+
+`FACILITY_LOCATION_BASED_THROUGHPUT` — quantities describe activity at the
+facility's own location. This is distinct from the Phase 2.2 origin-based
+regional accounting and must never be conflated with it (see
+METRIC_FEASIBILITY_MATRIX); it is not proof of waste movement.
+
+### Geographic mapping
+
+Reuses the Phase 2.2 deterministic name crosswalk. Unlike the aggregate regional
+rows, in-scope facilities are always stored, with a `region_mapping_status`:
+
+- `EXACT_MATCH`: RCIS sigungu maps to one SGIS canonical region; `region_id` set.
+- `REQUIRES_GEOCODE`: facility in an SGIS multi-district city (RCIS reports the
+  city); `region_id` NULL pending geocoding.
+- `UNMATCHED` / `AMBIGUOUS`: non-canonical or ambiguous label; `region_id` NULL.
+
+Geocoding is deferred to a later VWorld phase; the nullable POINT `geometry`
+column is added now but never populated here.
+
+Verified 2024 live run: 651 in-scope facilities (552 `EXACT_MATCH`, 99
+`REQUIRES_GEOCODE`, 0 unmatched/ambiguous), by sido 서울 38 / 인천 164 / 경기
+449. First run inserted 651; identical second run inserted 0 / updated 0; final
+count 651. Freshness (`waste_statistics`) updates only on success; failed runs
+are visible and roll back.
+
+### CLI and Docker
+
+```bash
+python -m waste_equity_ingestion.cli rcis-facility-ingest \
+  --year 2024 --scope capital-region --dry-run
+python -m waste_equity_ingestion.cli rcis-facility-ingest \
+  --year 2024 --scope capital-region --write
+docker compose --profile ingestion run --rm ingestion \
+  rcis-facility-ingest --year 2024 --scope capital-region --write
+```
+
+Options mirror `rcis-waste-ingest`: `--year`, `--scope capital-region`,
+`--dry-run`/`--write`, `--pid` (allowlist within the six facility PIDs),
+`--request-delay`. Credentials are environment-only.
 
 ## Probe Commands
 

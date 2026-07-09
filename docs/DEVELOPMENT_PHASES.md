@@ -125,7 +125,30 @@ Required checks before completion (met):
 - Formatting, linting, type checking, compile checks, and tests pass.
 - No secret, access token, fixture fallback, or sample data used for writes.
 
-Later Phase 2 subphases will cover RCIS facilities (Phase 2.3), VWorld structural spatial data, AirKorea, and KMA. They must not begin until explicitly scoped. RCIS facility ingestion is not implemented.
+### Phase 2.3: RCIS Waste-Treatment Facility Ingestion
+
+Status: complete (2026-07-08).
+
+Deliverables:
+
+- Reuse the RCIS client, provider-code handling, sanitization, ingestion-run
+  framework, and the Phase 2.2 region crosswalk.
+- Live-validate and ingest the six facility PIDs (`NTN031`, `NTN032`, `NTN033`
+  public; `NTN040`, `NTN043`, `NTN046` private) for `YEAR=2024`.
+- Add and populate normalized `waste_treatment_facilities` (Alembic revision
+  `0004`): one row per reported facility line, typed core (identity, address,
+  category, capacity, throughput, residue, landfill volume/area, permit dates) +
+  `source_fields` JSONB; accounting basis `FACILITY_LOCATION_BASED_THROUGHPUT`.
+- Retain in-scope facilities that do not map to a single SGIS region with a
+  `region_mapping_status` (multi-district-city facilities → `REQUIRES_GEOCODE`).
+- Add a nullable POINT `geometry` column; geocoding is deferred to a later
+  VWorld phase and is not performed here.
+- Verify idempotent second run (identity `(source_pid, reference_year,
+  source_row_index)`).
+
+Later Phase 2 subphases will cover VWorld structural spatial data (including
+facility geocoding), AirKorea, and KMA. They must not begin until explicitly
+scoped.
 
 ## Phase 3: Backend Product API Foundation
 
