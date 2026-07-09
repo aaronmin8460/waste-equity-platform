@@ -122,6 +122,9 @@ export default function MapView({
               ...feature.properties,
               has_value: value !== undefined,
               metric_value: value?.numeric ?? 0,
+              // The popup reads these from the feature so a metric switch can
+              // never pair a stale label with fresh values.
+              metric_label: metricLabel,
               metric_display: value
                 ? `${value.display} ${metricUnit}`
                 : "데이터 없음 (no served value)",
@@ -180,9 +183,9 @@ export default function MapView({
           new maplibregl.Popup()
             .setLngLat(event.lngLat)
             .setHTML(
-              `<strong>${props.region_name}</strong><br/>${metricLabel}<br/>` +
+              `<strong>${props.region_name}</strong><br/>${props.metric_label}<br/>` +
                 `${props.metric_display}<br/>` +
-                `<small>출처: ${props.source_id} · 경계 기준연도: ${props.boundary_reference_period}</small>`,
+                `<small>경계 출처: ${props.source_id} (${props.boundary_reference_period}) · 지표 출처는 좌측 패널 참조</small>`,
             )
             .addTo(map);
         });
