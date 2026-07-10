@@ -12,14 +12,25 @@ export type MetricKey =
   | "HOUSEHOLD"
   | "BUSINESS_NON_FACILITY"
   | "INDUSTRIAL_FACILITY"
-  | "CONSTRUCTION";
+  | "CONSTRUCTION"
+  | "PER_CAPITA_HOUSEHOLD"
+  | "PER_CAPITA_BUSINESS_NON_FACILITY"
+  | "PER_CAPITA_INDUSTRIAL_FACILITY"
+  | "PER_CAPITA_CONSTRUCTION";
 
 export interface MetricDefinition {
   key: MetricKey;
   label: string;
-  dataset: "population" | "waste-statistics";
+  // "waste-per-capita" metrics are BACKEND-derived (Phase 5.1); the client
+  // still renders served values only.
+  dataset: "population" | "waste-statistics" | "waste-per-capita";
   wasteStream?: string;
+  /** Extra interpretation caveat rendered with the metric metadata. */
+  caveat?: string;
 }
+
+const NON_RESIDENTIAL_CAVEAT =
+  "사업장·건설 폐기물은 지역 내 사업장/현장 활동으로 발생하므로 주민 1인당 값 해석에 주의가 필요합니다.";
 
 export const METRICS: MetricDefinition[] = [
   { key: "population", label: "인구 (Population)", dataset: "population" },
@@ -46,6 +57,33 @@ export const METRICS: MetricDefinition[] = [
     label: "건설 폐기물 발생량 (Construction waste)",
     dataset: "waste-statistics",
     wasteStream: "CONSTRUCTION",
+  },
+  {
+    key: "PER_CAPITA_HOUSEHOLD",
+    label: "1인당 생활계 발생량 (Household per capita) — 형평성 지표",
+    dataset: "waste-per-capita",
+    wasteStream: "HOUSEHOLD",
+  },
+  {
+    key: "PER_CAPITA_BUSINESS_NON_FACILITY",
+    label: "1인당 사업장 비배출시설계 (Business non-facility per capita)",
+    dataset: "waste-per-capita",
+    wasteStream: "BUSINESS_NON_FACILITY",
+    caveat: NON_RESIDENTIAL_CAVEAT,
+  },
+  {
+    key: "PER_CAPITA_INDUSTRIAL_FACILITY",
+    label: "1인당 사업장 배출시설계 (Industrial facility per capita)",
+    dataset: "waste-per-capita",
+    wasteStream: "INDUSTRIAL_FACILITY",
+    caveat: NON_RESIDENTIAL_CAVEAT,
+  },
+  {
+    key: "PER_CAPITA_CONSTRUCTION",
+    label: "1인당 건설 폐기물 (Construction per capita)",
+    dataset: "waste-per-capita",
+    wasteStream: "CONSTRUCTION",
+    caveat: NON_RESIDENTIAL_CAVEAT,
   },
 ];
 
@@ -98,6 +136,20 @@ export function formatQuantity(decimalString: string): string {
 
 export function formatCount(value: number): string {
   return value.toLocaleString("en-US");
+}
+
+/**
+ * Format a legend boundary without collapsing classes: large values round to
+ * grouped integers, small values (per-capita kg ranges) keep enough decimals
+ * to stay distinguishable.
+ */
+export function formatLegendValue(value: number): string {
+  const magnitude = Math.abs(value);
+  const decimals = magnitude >= 1000 ? 0 : magnitude >= 10 ? 1 : 2;
+  const [integerPart, fractionPart] = value.toFixed(decimals).split(".");
+  const grouped = Number(integerPart).toLocaleString("en-US");
+  const fraction = (fractionPart ?? "").replace(/0+$/, "");
+  return fraction ? `${grouped}.${fraction}` : grouped;
 }
 
 /** Human label for a source registry publication frequency. */

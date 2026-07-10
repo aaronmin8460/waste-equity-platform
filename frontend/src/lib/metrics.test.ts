@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   CHOROPLETH_PALETTE,
+  METRICS,
   colorFor,
   computeBreaks,
+  formatLegendValue,
   formatQuantity,
   frequencyLabel,
 } from "./metrics";
@@ -52,6 +54,46 @@ describe("formatQuantity", () => {
 
   it("returns unparseable input unchanged rather than guessing", () => {
     expect(formatQuantity("N/A")).toBe("N/A");
+  });
+});
+
+describe("formatLegendValue", () => {
+  it("rounds large values to grouped integers", () => {
+    expect(formatLegendValue(83721.3)).toBe("83,721");
+    expect(formatLegendValue(1000)).toBe("1,000");
+  });
+
+  it("keeps decimals for small per-capita ranges instead of collapsing them", () => {
+    expect(formatLegendValue(0.493824)).toBe("0.49");
+    expect(formatLegendValue(345.67)).toBe("345.7");
+    expect(formatLegendValue(0.4)).toBe("0.4");
+  });
+
+  it("distinguishes adjacent per-capita class boundaries", () => {
+    expect(formatLegendValue(0.31)).not.toBe(formatLegendValue(0.38));
+  });
+});
+
+describe("per-capita metric definitions (Phase 5.1)", () => {
+  const perCapita = METRICS.filter((metric) => metric.dataset === "waste-per-capita");
+
+  it("offers one backend-derived per-capita metric per waste stream", () => {
+    expect(perCapita.map((metric) => metric.wasteStream).sort()).toEqual([
+      "BUSINESS_NON_FACILITY",
+      "CONSTRUCTION",
+      "HOUSEHOLD",
+      "INDUSTRIAL_FACILITY",
+    ]);
+  });
+
+  it("carries an interpretation caveat on every non-residential stream", () => {
+    for (const metric of perCapita) {
+      if (metric.wasteStream === "HOUSEHOLD") {
+        expect(metric.caveat).toBeUndefined();
+      } else {
+        expect(metric.caveat).toBeTruthy();
+      }
+    }
   });
 });
 
