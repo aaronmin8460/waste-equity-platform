@@ -43,17 +43,24 @@ router = APIRouter(prefix="/api/v1/equity", tags=["equity"])
 INDICATOR_NAME = "PER_CAPITA_WASTE_GENERATION"
 
 # Served with every response so displayed values carry their caveats.
+# Korean-first with an English gloss, matching the platform UI convention.
 ASSUMPTIONS = [
-    "Denominator is the SGIS total population of the region "
-    "(population_definition per item), not a service population or "
-    "household count.",
-    "Numerator is origin-based generation (ORIGIN_BASED_TREATMENT_OUTCOME); "
-    "the indicator is a residential burden proxy, not facility throughput.",
-    "Region/stream pairs missing either dataset for the reference year are "
-    "excluded and listed in excluded_regions, never zero-filled or estimated.",
-    "INDUSTRIAL_FACILITY and CONSTRUCTION generation is driven by workplaces "
-    "and sites located in the region; dividing it by resident population "
-    "must be interpreted with caution.",
+    "분모는 지역의 SGIS 총인구입니다(항목별 population_definition 참조). "
+    "서비스 인구나 가구 수가 아닙니다. "
+    "(Denominator is the SGIS total population of the region, "
+    "not a service population or household count.)",
+    "분자는 발생지 기준 발생량(ORIGIN_BASED_TREATMENT_OUTCOME)이며, 이 지표는 "
+    "주민 부담의 근사치이지 시설 처리량이 아닙니다. "
+    "(Numerator is origin-based generation; the indicator is a residential "
+    "burden proxy, not facility throughput.)",
+    "기준 연도에 두 데이터셋 중 하나라도 없는 지역·폐기물군 조합은 제외하고 "
+    "excluded_regions에 보고하며, 0으로 대체하거나 추정하지 않습니다. "
+    "(Region/stream pairs missing either dataset are excluded and reported, "
+    "never zero-filled or estimated.)",
+    "사업장 배출시설계(INDUSTRIAL_FACILITY)·건설(CONSTRUCTION) 폐기물은 지역 내 "
+    "사업장과 현장 활동으로 발생하므로 주민 1인당 값 해석에 주의가 필요합니다. "
+    "(Workplace-driven generation divided by resident population must be "
+    "interpreted with caution.)",
 ]
 
 WasteStreamParam = Annotated[
