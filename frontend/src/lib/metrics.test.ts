@@ -74,6 +74,20 @@ describe("formatLegendValue", () => {
   });
 });
 
+describe("facility-burden metric definitions (Phase 5.2)", () => {
+  const burden = METRICS.filter((metric) => metric.dataset === "facility-burden");
+
+  it("offers the located and within-buffer burden measures", () => {
+    expect(burden.map((metric) => metric.burdenMeasure).sort()).toEqual(["buffer", "located"]);
+  });
+
+  it("always carries the accounting-basis caveat", () => {
+    for (const metric of burden) {
+      expect(metric.caveat).toContain("FACILITY_LOCATION_BASED_THROUGHPUT");
+    }
+  });
+});
+
 describe("per-capita metric definitions (Phase 5.1)", () => {
   const perCapita = METRICS.filter((metric) => metric.dataset === "waste-per-capita");
 

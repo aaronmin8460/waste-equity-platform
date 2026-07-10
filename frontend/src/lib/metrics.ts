@@ -16,21 +16,29 @@ export type MetricKey =
   | "PER_CAPITA_HOUSEHOLD"
   | "PER_CAPITA_BUSINESS_NON_FACILITY"
   | "PER_CAPITA_INDUSTRIAL_FACILITY"
-  | "PER_CAPITA_CONSTRUCTION";
+  | "PER_CAPITA_CONSTRUCTION"
+  | "FACILITY_BURDEN_LOCATED"
+  | "FACILITY_BURDEN_5KM";
 
 export interface MetricDefinition {
   key: MetricKey;
   label: string;
-  // "waste-per-capita" metrics are BACKEND-derived (Phase 5.1); the client
-  // still renders served values only.
-  dataset: "population" | "waste-statistics" | "waste-per-capita";
+  // "waste-per-capita" and "facility-burden" metrics are BACKEND-derived
+  // (Phase 5.1/5.2); the client still renders served values only.
+  dataset: "population" | "waste-statistics" | "waste-per-capita" | "facility-burden";
   wasteStream?: string;
+  /** Which served facility-burden measure this metric displays. */
+  burdenMeasure?: "located" | "buffer";
   /** Extra interpretation caveat rendered with the metric metadata. */
   caveat?: string;
 }
 
 const NON_RESIDENTIAL_CAVEAT =
   "사업장·건설 폐기물은 지역 내 사업장/현장 활동으로 발생하므로 주민 1인당 값 해석에 주의가 필요합니다.";
+
+const FACILITY_BURDEN_CAVEAT =
+  "시설 소재지 기준 처리량(FACILITY_LOCATION_BASED_THROUGHPUT)으로, 발생지 기준 " +
+  "폐기물 통계와 합산하거나 비교할 수 없습니다.";
 
 export const METRICS: MetricDefinition[] = [
   { key: "population", label: "인구 (Population)", dataset: "population" },
@@ -84,6 +92,20 @@ export const METRICS: MetricDefinition[] = [
     dataset: "waste-per-capita",
     wasteStream: "CONSTRUCTION",
     caveat: NON_RESIDENTIAL_CAVEAT,
+  },
+  {
+    key: "FACILITY_BURDEN_LOCATED",
+    label: "1인당 소재 시설 처리량 (Facility throughput per capita, located) — 부담 지표",
+    dataset: "facility-burden",
+    burdenMeasure: "located",
+    caveat: FACILITY_BURDEN_CAVEAT,
+  },
+  {
+    key: "FACILITY_BURDEN_5KM",
+    label: "1인당 인근 5km 시설 처리량 (Facility throughput per capita, within 5 km)",
+    dataset: "facility-burden",
+    burdenMeasure: "buffer",
+    caveat: FACILITY_BURDEN_CAVEAT,
   },
 ];
 

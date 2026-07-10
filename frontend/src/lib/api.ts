@@ -149,6 +149,52 @@ export interface EquityEnvelope {
   excluded_regions: ExcludedRegion[];
 }
 
+export interface FacilityBurdenItem {
+  region_code: string;
+  region_name: string;
+  region_level: string;
+  facility_count_located: number;
+  throughput_located_tons_per_year: string;
+  throughput_located_kg_per_capita: string;
+  located_missing_throughput_count: number;
+  located_throughput_is_partial: boolean;
+  facility_count_within_buffer: number;
+  throughput_within_buffer_tons_per_year: string;
+  throughput_within_buffer_kg_per_capita: string;
+  buffer_missing_throughput_count: number;
+  buffer_throughput_is_partial: boolean;
+  quantity_unit: string;
+  accounting_basis: string;
+  facility_source_id: string;
+  facility_reference_period: string;
+  population: number;
+  population_definition: string;
+  population_source_id: string;
+  population_reference_period: string;
+  reference_year: number;
+}
+
+export interface ExcludedBurdenRegion {
+  region_code: string;
+  region_name: string;
+  reason: string;
+}
+
+export interface FacilityBurdenEnvelope {
+  indicator: string;
+  derivation_version: string;
+  derivation_formula: string;
+  buffer_meters: number;
+  unit: string;
+  assumptions: string[];
+  reference_year: number;
+  count: number;
+  items: FacilityBurdenItem[];
+  excluded_regions: ExcludedBurdenRegion[];
+  facilities_without_coordinates: number;
+  facilities_without_region: number;
+}
+
 export interface DataSourceItem {
   source_id: string;
   source_name: string;
@@ -225,6 +271,10 @@ export function fetchFacilities(): Promise<DatasetEnvelope<FacilityItem>> {
 
 export function fetchWastePerCapita(): Promise<EquityEnvelope> {
   return fetchJson<EquityEnvelope>("/api/v1/equity/waste-per-capita");
+}
+
+export function fetchFacilityBurden(): Promise<FacilityBurdenEnvelope> {
+  return fetchJson<FacilityBurdenEnvelope>("/api/v1/equity/facility-burden");
 }
 
 export function fetchDataSources(): Promise<DataSourceItem[]> {

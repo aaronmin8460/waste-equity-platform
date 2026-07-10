@@ -16,12 +16,14 @@ import {
   fetchBoundaries,
   fetchDataSources,
   fetchFacilities,
+  fetchFacilityBurden,
   fetchPopulation,
   fetchWastePerCapita,
   fetchWasteStatistics,
   type DataSourceItem,
   type DatasetEnvelope,
   type EquityEnvelope,
+  type FacilityBurdenEnvelope,
   type FacilityItem,
   type PopulationItem,
   type RegionBoundaryCollection,
@@ -48,6 +50,7 @@ interface LoadedData {
   waste: DatasetEnvelope<WasteStatisticsItem>;
   facilities: DatasetEnvelope<FacilityItem>;
   perCapita: EquityEnvelope;
+  facilityBurden: FacilityBurdenEnvelope;
   sources: DataSourceItem[];
 }
 
@@ -64,10 +67,11 @@ export default function Home() {
       fetchWasteStatistics(),
       fetchFacilities(),
       fetchWastePerCapita(),
+      fetchFacilityBurden(),
       fetchDataSources(),
     ])
-      .then(([boundaries, population, waste, facilities, perCapita, sources]) => {
-        setData({ boundaries, population, waste, facilities, perCapita, sources });
+      .then(([boundaries, population, waste, facilities, perCapita, facilityBurden, sources]) => {
+        setData({ boundaries, population, waste, facilities, perCapita, facilityBurden, sources });
       })
       .catch((cause: unknown) => {
         const message =
@@ -112,6 +116,19 @@ export default function Home() {
       }
       return { regionValues: values, unit: data.perCapita.unit };
     }
+    if (metric.dataset === "facility-burden") {
+      for (const item of data.facilityBurden.items) {
+        const served =
+          metric.burdenMeasure === "buffer"
+            ? item.throughput_within_buffer_kg_per_capita
+            : item.throughput_located_kg_per_capita;
+        values.set(item.region_code, {
+          numeric: Number(served),
+          display: formatQuantity(served),
+        });
+      }
+      return { regionValues: values, unit: data.facilityBurden.unit };
+    }
     let quantityUnit = "";
     for (const item of data.waste.items) {
       if (item.waste_stream !== metric.wasteStream) continue;
@@ -129,32 +146,77 @@ export default function Home() {
     [regionValues],
   );
 
-  // Dual-source panel for the backend-derived per-capita indicator.
+  // Dual-source panel for the backend-derived indicators (Phase 5.1/5.2).
   const derivedInfo = useMemo(() => {
-    if (!data || metric.dataset !== "waste-per-capita") return null;
+    if (!data) return null;
+    if (metric.dataset !== "waste-per-capita" && metric.dataset !== "facility-burden") {
+      return null;
+    }
     const wasteRegistry = data.sources.find((source) => source.source_id === "waste_statistics");
     const populationRegistry = data.sources.find((source) => source.source_id === "sgis");
+    const numeratorFrequency = wasteRegistry
+      ? frequencyLabel(wasteRegistry.publication_frequency)
+      : "UNKNOWN";
+    const populationCommon = {
+      populationSourceName: populationRegistry?.source_name ?? "sgis",
+      populationFrequency: populationRegistry
+        ? frequencyLabel(populationRegistry.publication_frequency)
+        : "UNKNOWN",
+    };
+    if (metric.dataset === "facility-burden") {
+      const burden = data.facilityBurden;
+      const item = burden.items[0];
+      const partialCount = burden.items.filter((entry) =>
+        metric.burdenMeasure === "buffer"
+          ? entry.buffer_throughput_is_partial
+          : entry.located_throughput_is_partial,
+      ).length;
+      return {
+        numeratorLabel: "시설 출처",
+        derivationVersion: burden.derivation_version,
+        formula: burden.derivation_formula,
+        unit: burden.unit,
+        assumptions: burden.assumptions,
+        excludedCount: burden.excluded_regions.length,
+        numeratorSourceName: wasteRegistry?.source_name ?? "waste_statistics",
+        numeratorFrequency,
+        numeratorReferencePeriod:
+          item?.facility_reference_period ?? String(burden.reference_year),
+        officialDatasetName: null,
+        accountingBasis: item?.accounting_basis ?? "FACILITY_LOCATION_BASED_THROUGHPUT",
+        coverageNote:
+          `좌표 없는 시설 ${formatCount(burden.facilities_without_coordinates)}개는 인근(5km) ` +
+          `측정에서 제외되고, 지역 미배정 시설 ${formatCount(burden.facilities_without_region)}개는 ` +
+          `소재 집계에 포함되지 않습니다.` +
+          (partialCount > 0
+            ? ` 처리량 미보고 시설이 있는 ${formatCount(partialCount)}개 지역의 합계는 ` +
+              `과소집계로 표시됩니다(추정하지 않음).`
+            : ""),
+        ...populationCommon,
+        populationReferencePeriod:
+          item?.population_reference_period ?? String(burden.reference_year),
+        populationDefinition: item?.population_definition ?? null,
+      };
+    }
     const item = data.perCapita.items.find((entry) => entry.waste_stream === metric.wasteStream);
     const excluded = data.perCapita.excluded_regions.filter(
       (entry) => entry.waste_stream === metric.wasteStream,
     );
     return {
-      indicator: data.perCapita.indicator,
+      numeratorLabel: "발생량 출처",
       derivationVersion: data.perCapita.derivation_version,
       formula: data.perCapita.derivation_formula,
       unit: data.perCapita.unit,
       assumptions: data.perCapita.assumptions,
       excludedCount: excluded.length,
-      wasteSourceName: wasteRegistry?.source_name ?? "waste_statistics",
-      wasteFrequency: wasteRegistry ? frequencyLabel(wasteRegistry.publication_frequency) : "UNKNOWN",
-      wasteReferencePeriod:
+      numeratorSourceName: wasteRegistry?.source_name ?? "waste_statistics",
+      numeratorFrequency,
+      numeratorReferencePeriod:
         item?.waste_reference_period ?? String(data.perCapita.reference_year),
-      wasteOfficialDatasetName: item?.waste_official_dataset_name ?? null,
+      officialDatasetName: item?.waste_official_dataset_name ?? null,
       accountingBasis: item?.accounting_basis ?? "ORIGIN_BASED_TREATMENT_OUTCOME",
-      populationSourceName: populationRegistry?.source_name ?? "sgis",
-      populationFrequency: populationRegistry
-        ? frequencyLabel(populationRegistry.publication_frequency)
-        : "UNKNOWN",
+      coverageNote: null,
+      ...populationCommon,
       populationReferencePeriod:
         item?.population_reference_period ?? String(data.perCapita.reference_year),
       populationDefinition: item?.population_definition ?? null,
@@ -310,17 +372,19 @@ export default function Home() {
             </p>
             <dl className="space-y-1">
               <div>
-                <dt className="inline font-medium">발생량 출처: </dt>
+                <dt className="inline font-medium">{derivedInfo.numeratorLabel}: </dt>
                 <dd className="inline">
-                  {derivedInfo.wasteSourceName} · 기준 기간{" "}
-                  <span data-testid="reference-period">{derivedInfo.wasteReferencePeriod}</span> ·{" "}
-                  {derivedInfo.wasteFrequency}
+                  {derivedInfo.numeratorSourceName} · 기준 기간{" "}
+                  <span data-testid="reference-period">
+                    {derivedInfo.numeratorReferencePeriod}
+                  </span>{" "}
+                  · {derivedInfo.numeratorFrequency}
                 </dd>
               </div>
-              {derivedInfo.wasteOfficialDatasetName && (
+              {derivedInfo.officialDatasetName && (
                 <div>
                   <dt className="inline font-medium">공식 데이터셋: </dt>
-                  <dd className="inline">{derivedInfo.wasteOfficialDatasetName}</dd>
+                  <dd className="inline">{derivedInfo.officialDatasetName}</dd>
                 </div>
               )}
               <div>
@@ -341,6 +405,11 @@ export default function Home() {
                 </div>
               )}
             </dl>
+            {derivedInfo.coverageNote && (
+              <p className="mt-2" data-testid="coverage-note">
+                {derivedInfo.coverageNote}
+              </p>
+            )}
             {derivedInfo.excludedCount > 0 && (
               <p className="mt-2" data-testid="excluded-regions-note">
                 <strong>{formatCount(derivedInfo.excludedCount)}개 지역</strong>은 분모(인구) 또는

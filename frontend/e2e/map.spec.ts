@@ -63,6 +63,13 @@ test("map loads with official data, metadata, and no government API calls", asyn
   await expect(derived).toContainText("인구 출처");
   await expect(page.getByTestId("legend")).toContainText("kg/인/년");
 
+  // Switching to the facility-burden metric (Phase 5.2) shows the
+  // facility-location accounting basis and the coverage note.
+  await page.getByRole("radio", { name: /1인당 소재 시설 처리량/ }).check();
+  await expect(derived).toBeVisible({ timeout: 15_000 });
+  await expect(derived).toContainText("FACILITY_LOCATION_BASED_THROUGHPUT");
+  await expect(page.getByTestId("coverage-note")).toContainText("좌표 없는 시설");
+
   // Facility toggle keeps the map alive.
   await page.getByTestId("facilities-toggle").uncheck();
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
