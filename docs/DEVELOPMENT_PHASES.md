@@ -311,7 +311,11 @@ Planned deliverables:
 
 ### Phase 5.1: Per-Capita Waste Generation Equity Indicator
 
-Status: in progress.
+Status: complete (2026-07-10, PR #8). Live-verified against the real 2024
+datasets: 234 SIGUNGU–stream items served with dual provenance and zero
+exclusions; backend ruff/mypy/pytest (35, including PostGIS integration),
+frontend eslint/tsc/Vitest (18), and the Playwright live smoke — including
+the government-API egress guard — all passed.
 
 Goal: serve the first derived equity indicator — per-capita waste generation
 per SIGUNGU and waste stream — computed server-side from the normalized Phase 2
