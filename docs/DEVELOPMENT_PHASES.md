@@ -365,6 +365,51 @@ Required checks before completion:
 - Real-time readings are not treated as permanent siting evidence.
 - Waste origin-to-destination movement is used only when explicitly sourced.
 
+### Phase 5.2: Facility-Burden Spatial Equity Indicator
+
+Status: in progress.
+
+Goal: the first spatial equity indicator — waste-treatment facility burden
+per SIGUNGU — using PostGIS spatial joins and distance buffers over the
+Phase 2.3/2.4 facility data, computed server-side with full provenance.
+
+Deliverables:
+
+- Read-only `GET /api/v1/equity/facility-burden`: per SIGUNGU of the region
+  vintage, (a) facilities located in the region (canonical `region_id`
+  assignment, which includes name-crosswalk matches without coordinates) with
+  their summed throughput (톤/년, accounting basis
+  `FACILITY_LOCATION_BASED_THROUGHPUT`) and per-capita conversion to
+  kg/인/년, and (b) facilities within a documented 5,000 m geodesic buffer of
+  the region boundary (`ST_DWithin` on geography; EPSG:4326 validated before
+  measuring), same aggregates.
+- The facility-location accounting basis is exposed on every item and never
+  merged with the origin-based statistics; the endpoint serves burden, not
+  waste origin.
+- Reference-year availability is the intersection of the facility and
+  population years; the population denominator reuses the Phase 5.1
+  derivation (exact Decimal, documented precision, zero-population refused).
+- Facilities without coordinates cannot participate in the buffer measure and
+  facilities with no canonical region cannot be located: both counts are
+  served in the envelope, and per-region items flag partial throughput sums
+  (`throughput_is_partial`) whenever a summed facility had no usable
+  throughput value. Nothing is fabricated to fill the gaps.
+- Regions with population and zero facilities serve real zeros (an actual
+  observed absence, not fill).
+- Frontend: two derived burden metrics (located per capita; within-5km per
+  capita) with the derived-indicator panel showing both provenances, the
+  buffer definition, coverage caveats, and served assumptions.
+
+Required checks before completion:
+
+- Analytical tests cover aggregation, buffer membership, partial-throughput
+  flagging, exclusion reporting, and the structured 404/422 paths; PostGIS
+  integration tests verify the geodesic buffer against seeded geometries.
+- Formatting, linting, strict type checking, and tests pass in both packages;
+  Playwright live smoke passes.
+- Every displayed value cites sources and reference periods; the two
+  accounting bases stay separate.
+
 ## Phase 6: Automated Refresh And Operations
 
 Goal: run periodic data refresh through a separate scheduler process.
