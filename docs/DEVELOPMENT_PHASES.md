@@ -367,7 +367,13 @@ Required checks before completion:
 
 ### Phase 5.2: Facility-Burden Spatial Equity Indicator
 
-Status: in progress.
+Status: complete (2026-07-10, PR #10). Live-verified against the real 2024
+datasets: 79 SIGUNGU items with zero exclusions; coverage gaps served (104
+facilities without coordinates, 2 without a canonical region); geodesic
+buffer membership verified in PostGIS integration tests; the GiST bbox
+prefilter cut the live response from 72 s to 1.7 s with byte-identical
+results; backend ruff/mypy/pytest (43), frontend eslint/tsc/Vitest (20),
+and the Playwright live smoke all passed.
 
 Goal: the first spatial equity indicator — waste-treatment facility burden
 per SIGUNGU — using PostGIS spatial joins and distance buffers over the
@@ -409,6 +415,36 @@ Required checks before completion:
   Playwright live smoke passes.
 - Every displayed value cites sources and reference periods; the two
   accounting bases stay separate.
+
+### Phase 5.3: Analytical Methods, Weighting Policy, And Review Workflow
+
+Status: complete (2026-07-10). Documentation subphase; no code changes.
+
+Deliverables:
+
+- `docs/ANALYTICAL_METHODS.md`: the registry of served derived indicators
+  (formulas, inputs, precision, exclusion rules, caveats, derivation
+  versions), the never-merge rule for the two accounting bases, the spatial
+  method documentation (CRS validation, geodesic distance, conservative
+  prefilters, boundary vintages), the weighting policy (no composite is
+  served; adoption requirements are documented), the real-time data rule,
+  the review workflow checklist for analytical outputs, and current known
+  limitations.
+- README status refresh to reflect the implemented platform.
+
+### Phase 5.4: Suitability Constraints And Scoring
+
+Status: blocked — must not begin until explicitly scoped.
+
+Blocking prerequisites:
+
+- VWorld structural spatial layers (land-use, zoning, protected areas,
+  roads) are an unscoped Phase 2 subphase; a suitability score without
+  constraint layers would present burden/demand alone as siting suitability,
+  which the data-integrity rules forbid.
+- Any weighting must satisfy the adoption requirements in
+  `docs/ANALYTICAL_METHODS.md` (documented rationale and sensitivity,
+  review sign-off, distinct derivation version, honest UI labeling).
 
 ## Phase 6: Automated Refresh And Operations
 

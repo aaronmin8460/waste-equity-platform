@@ -8,7 +8,7 @@ The first implementation scope covers the full Seoul Metropolitan Area:
 - Incheon
 - Gyeonggi-do
 
-This repository currently contains project governance documents, the Phase 0 local API-probe package (with live-verified RCIS, SGIS, and VWorld contracts), the Phase 1 backend infrastructure, Phase 2.1 SGIS production ingestion for canonical geography and total population, Phase 2.2 RCIS production ingestion for regional waste generation and treatment statistics (four sigungu generation PIDs), and Phase 2.3 RCIS production ingestion for waste-treatment facilities (six facility PIDs). It does not yet contain the frontend, VWorld/AirKorea/KMA production ingestion, facility geocoding, waste equity metrics, equity analysis, scheduler automation, or facility recommendation logic.
+This repository currently contains project governance documents, the Phase 0 local API-probe package (with live-verified RCIS, SGIS, and VWorld contracts), the Phase 1 backend infrastructure, production ingestion for SGIS geography/population (2.1), RCIS waste statistics (2.2), RCIS waste-treatment facilities (2.3), and VWorld facility geocoding (2.4), the Phase 3 backend product API, the Phase 4 interactive MapLibre GL frontend, and the Phase 5.1/5.2 derived equity indicators (per-capita waste generation; facility burden with geodesic buffers) documented in [docs/ANALYTICAL_METHODS.md](docs/ANALYTICAL_METHODS.md). It does not yet contain AirKorea/KMA ingestion (credentials missing), VWorld structural spatial layers, suitability scoring (blocked; see Phase 5.4), or scheduler automation.
 
 ## Run the local stack
 
@@ -132,12 +132,13 @@ The frontend must not call Korean government APIs directly. Future ingestion and
 
 ## Current Status
 
-Phase 0 established governance, planning, and live data-source validation through Phase 0.7 (RCIS PID discovery, recommendation GO). Phase 1 added the Docker Compose infrastructure, PostGIS database, core metadata schema, and backend health/data-operations API. Phase 2.1 adds SGIS canonical geography and population ingestion. Phase 2.2 adds RCIS regional waste generation/treatment ingestion for four sigungu PIDs. Phase 2.3 adds RCIS waste-treatment facility ingestion for six facility PIDs; later Phase 2 subphases will cover VWorld (including facility geocoding), AirKorea, and KMA. See:
+Phase 0 established governance, planning, and live data-source validation through Phase 0.7 (RCIS PID discovery, recommendation GO). Phase 1 added the Docker Compose infrastructure, PostGIS database, core metadata schema, and backend health/data-operations API. Phase 2 (2.1–2.4) ingested SGIS geography/population, RCIS waste statistics and facilities, and VWorld facility geocoding. Phase 3 added the read-only product API over the normalized tables. Phase 4 added the interactive MapLibre GL map frontend. Phase 5.1–5.3 added the derived equity indicators (per-capita generation; facility burden with geodesic buffers) and the analytical methods/review-workflow documentation; Phase 5.4 (suitability scoring) is blocked pending VWorld structural spatial layers. AirKorea/KMA ingestion remains blocked on credentials. See:
 
 - [AGENTS.md](AGENTS.md)
 - [Project Specification](docs/PROJECT_SPEC.md)
 - [Development Phases](docs/DEVELOPMENT_PHASES.md)
 - [Data Requirements](docs/DATA_REQUIREMENTS.md)
+- [Analytical Methods](docs/ANALYTICAL_METHODS.md)
 - [Phase 0 Findings](docs/PHASE_0_FINDINGS.md)
 
 # waste-equity-platform
