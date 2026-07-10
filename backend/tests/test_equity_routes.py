@@ -116,3 +116,10 @@ def test_parameters_are_validated(client: TestClient) -> None:
         ).status_code
         == 422
     )
+
+
+def test_facility_burden_parameters_are_validated(client: TestClient) -> None:
+    # Data-bearing behavior needs the PostGIS facilities/regions tables and is
+    # covered in test_equity_routes_integration.py.
+    assert client.get("/api/v1/equity/facility-burden", params={"year": 1889}).status_code == 422
+    assert client.get("/api/v1/equity/facility-burden", params={"year": 2101}).status_code == 422

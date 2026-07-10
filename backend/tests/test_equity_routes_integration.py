@@ -23,6 +23,7 @@ from waste_equity_backend.models import (
     Region,
     RegionalPopulation,
     RegionalWasteStatistics,
+    WasteTreatmentFacility,
 )
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -216,6 +217,221 @@ def test_unservable_regions_are_reported_not_zero_filled(
     exclusions = {entry["region_code"]: entry["reason"] for entry in body["excluded_regions"]}
     assert exclusions[NO_POPULATION_CODE] == "NO_POPULATION_DENOMINATOR"
     assert exclusions[ZERO_POPULATION_CODE] == "ZERO_POPULATION"
+
+
+# --- Phase 5.2: facility burden -------------------------------------------
+#
+# Geometry plan (lat ~30°: 0.01° lon ≈ 0.96 km, 0.01° lat ≈ 1.11 km):
+#   Region A square 30.00–30.02; Region B square 30.15–30.17 (~12 km apart,
+#   far outside the 5 km buffer of each other).
+#   F1 (30.01, 30.01) inside A            → located A; buffer A only.
+#   F2 (30.05, 30.01) ≈2.9 km east of A   → located B (crosswalk); buffer A
+#     only (≈9.6 km from B).
+#   F3 no coordinates                     → located B; no buffer membership.
+#   F4 (30.16, 30.16) inside B, NULL
+#     throughput                          → located B and buffer B, partial.
+#   F5 (31.5, 31.5), no region            → unallocated; outside every buffer.
+
+BURDEN_SIDO_CODE = "TESTP5FS"
+BURDEN_A_CODE = "TESTP5FA"
+BURDEN_B_CODE = "TESTP5FB"
+BURDEN_NO_POP_CODE = "TESTP5FD"
+BURDEN_ZERO_POP_CODE = "TESTP5FE"
+
+
+def _square_wkt(origin: float, size: float) -> str:
+    low, high = origin, origin + size
+    return f"MULTIPOLYGON((({low} {low}, {high} {low}, {high} {high}, {low} {high}, {low} {low})))"
+
+
+_BURDEN_REGION_WKT = {
+    BURDEN_SIDO_CODE: _square_wkt(30.0, 0.3),
+    BURDEN_A_CODE: _square_wkt(30.0, 0.02),
+    BURDEN_B_CODE: _square_wkt(30.15, 0.02),
+    BURDEN_NO_POP_CODE: _square_wkt(30.25, 0.02),
+    BURDEN_ZERO_POP_CODE: _square_wkt(30.2, 0.02),
+}
+
+
+def _burden_region(code: str, name: str, level: str, parent: str | None) -> Region:
+    region = _region(code, name, level, parent)
+    region.geometry = WKTElement(_BURDEN_REGION_WKT[code], srid=4326)
+    return region
+
+
+def _burden_facility(
+    *,
+    run_id: int,
+    row_index: int,
+    region_id: int | None,
+    point_wkt: str | None,
+    throughput: str | None,
+) -> WasteTreatmentFacility:
+    return WasteTreatmentFacility(
+        source_id="waste_statistics",
+        source_pid="NTN032",
+        official_dataset_name="Test Facility Dataset",
+        reference_year=ISOLATED_YEAR,
+        reference_period=str(ISOLATED_YEAR),
+        facility_category="PUBLIC_OTHER",
+        facility_kind="PROCESSING",
+        ownership="PUBLIC",
+        facility_name=f"테스트 시설 {row_index}",
+        operator_name=None,
+        address="테스트 주소",
+        source_seq=None,
+        source_row_index=row_index,
+        region_id=region_id,
+        rcis_sido_name="테스트시",
+        rcis_sigungu_name="테스트구",
+        source_geographic_level="SIGUNGU",
+        region_mapping_status="EXACT_MATCH" if region_id is not None else "REQUIRES_GEOCODE",
+        geometry=(WKTElement(point_wkt, srid=4326) if point_wkt is not None else None),
+        geocode_status="SUCCEEDED" if point_wkt is not None else "FAILED",
+        capacity_quantity=None,
+        capacity_unit=None,
+        throughput_quantity=None if throughput is None else Decimal(throughput),
+        throughput_unit=None if throughput is None else "톤/년",
+        remaining_fill_capacity_m3=None,
+        accounting_basis="FACILITY_LOCATION_BASED_THROUGHPUT",
+        source_fields={},
+        retrieved_at=NOW,
+        transformation_version="test-v1",
+        ingestion_run_id=run_id,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+@pytest.fixture
+def burden_seeded(pg_session: Session) -> None:
+    run = IngestionRun(
+        source_id="waste_statistics",
+        started_at=NOW,
+        completed_at=NOW,
+        status="SUCCEEDED",
+    )
+    pg_session.add(run)
+    pg_session.flush()
+
+    sido = _burden_region(BURDEN_SIDO_CODE, "테스트시", "SIDO", None)
+    region_a = _burden_region(BURDEN_A_CODE, "테스트 A구", "SIGUNGU", BURDEN_SIDO_CODE)
+    region_b = _burden_region(BURDEN_B_CODE, "테스트 B구", "SIGUNGU", BURDEN_SIDO_CODE)
+    no_pop = _burden_region(BURDEN_NO_POP_CODE, "테스트 무인구구", "SIGUNGU", BURDEN_SIDO_CODE)
+    zero_pop = _burden_region(BURDEN_ZERO_POP_CODE, "테스트 영인구구", "SIGUNGU", BURDEN_SIDO_CODE)
+    pg_session.add_all([sido, region_a, region_b, no_pop, zero_pop])
+    pg_session.flush()
+
+    pg_session.add_all(
+        [
+            _population(region_a.id, run.run_id, 100000),
+            _population(region_b.id, run.run_id, 50000),
+            _population(zero_pop.id, run.run_id, 0),
+            _burden_facility(
+                run_id=run.run_id,
+                row_index=0,
+                region_id=region_a.id,
+                point_wkt="POINT(30.01 30.01)",
+                throughput="1000",
+            ),
+            _burden_facility(
+                run_id=run.run_id,
+                row_index=1,
+                region_id=region_b.id,
+                point_wkt="POINT(30.05 30.01)",
+                throughput="2000",
+            ),
+            _burden_facility(
+                run_id=run.run_id,
+                row_index=2,
+                region_id=region_b.id,
+                point_wkt=None,
+                throughput="500",
+            ),
+            _burden_facility(
+                run_id=run.run_id,
+                row_index=3,
+                region_id=region_b.id,
+                point_wkt="POINT(30.16 30.16)",
+                throughput=None,
+            ),
+            _burden_facility(
+                run_id=run.run_id,
+                row_index=4,
+                region_id=None,
+                point_wkt="POINT(31.5 31.5)",
+                throughput="42",
+            ),
+        ]
+    )
+    pg_session.flush()
+
+
+def test_facility_burden_located_and_buffer_aggregates(
+    pg_client: TestClient, burden_seeded: None
+) -> None:
+    body = pg_client.get("/api/v1/equity/facility-burden", params={"year": ISOLATED_YEAR}).json()
+
+    assert body["indicator"] == "FACILITY_BURDEN"
+    assert body["derivation_version"] == "facility-burden-v1"
+    assert body["buffer_meters"] == 5000
+    assert body["unit"] == "kg/인/년"
+    assert body["facilities_without_coordinates"] == 1
+    assert body["facilities_without_region"] == 1
+    assert body["count"] == 2  # A and B; no-pop and zero-pop are excluded
+
+    by_code = {item["region_code"]: item for item in body["items"]}
+
+    region_a = by_code[BURDEN_A_CODE]
+    assert region_a["facility_count_located"] == 1
+    assert Decimal(region_a["throughput_located_tons_per_year"]) == Decimal("1000")
+    # 1000 t × 1000 / 100,000 persons = 10 kg/인/년.
+    assert Decimal(region_a["throughput_located_kg_per_capita"]) == Decimal("10")
+    assert region_a["located_throughput_is_partial"] is False
+    # Buffer: F1 (inside) + F2 (≈2.9 km east) = 3000 t → 30 kg/인/년.
+    assert region_a["facility_count_within_buffer"] == 2
+    assert Decimal(region_a["throughput_within_buffer_tons_per_year"]) == Decimal("3000")
+    assert Decimal(region_a["throughput_within_buffer_kg_per_capita"]) == Decimal("30")
+    assert region_a["buffer_throughput_is_partial"] is False
+    assert region_a["accounting_basis"] == "FACILITY_LOCATION_BASED_THROUGHPUT"
+    assert region_a["facility_source_id"] == "waste_statistics"
+    assert region_a["facility_reference_period"] == str(ISOLATED_YEAR)
+    assert region_a["population_source_id"] == "sgis"
+    assert region_a["population_reference_period"] == str(ISOLATED_YEAR)
+
+    region_b = by_code[BURDEN_B_CODE]
+    # Located: F2 (2000) + F3 (500, no coordinates) + F4 (NULL throughput).
+    assert region_b["facility_count_located"] == 3
+    assert Decimal(region_b["throughput_located_tons_per_year"]) == Decimal("2500")
+    # 2500 t × 1000 / 50,000 persons = 50 kg/인/년, flagged as undercount.
+    assert Decimal(region_b["throughput_located_kg_per_capita"]) == Decimal("50")
+    assert region_b["located_missing_throughput_count"] == 1
+    assert region_b["located_throughput_is_partial"] is True
+    # Buffer: only F4 (inside B); F2 is ≈9.6 km away, F3 has no coordinates.
+    assert region_b["facility_count_within_buffer"] == 1
+    assert Decimal(region_b["throughput_within_buffer_tons_per_year"]) == Decimal("0")
+    assert region_b["buffer_missing_throughput_count"] == 1
+    assert region_b["buffer_throughput_is_partial"] is True
+
+
+def test_facility_burden_exclusions_and_filters(pg_client: TestClient, burden_seeded: None) -> None:
+    body = pg_client.get("/api/v1/equity/facility-burden", params={"year": ISOLATED_YEAR}).json()
+    exclusions = {entry["region_code"]: entry["reason"] for entry in body["excluded_regions"]}
+    assert exclusions[BURDEN_NO_POP_CODE] == "NO_POPULATION_DENOMINATOR"
+    assert exclusions[BURDEN_ZERO_POP_CODE] == "ZERO_POPULATION"
+
+    filtered = pg_client.get(
+        "/api/v1/equity/facility-burden",
+        params={"year": ISOLATED_YEAR, "region_code": BURDEN_A_CODE},
+    ).json()
+    assert filtered["count"] == 1
+    assert filtered["items"][0]["region_code"] == BURDEN_A_CODE
+
+    wrong_year = pg_client.get("/api/v1/equity/facility-burden", params={"year": 1998})
+    assert wrong_year.status_code == 404
+    detail = wrong_year.json()["detail"]
+    assert detail["error"] == "NO_DATA_FOR_PERIOD"
+    assert ISOLATED_YEAR in detail["available_years"]
 
 
 def test_stream_and_region_filters(pg_client: TestClient, seeded: None) -> None:
