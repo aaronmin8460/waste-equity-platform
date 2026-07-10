@@ -11,12 +11,15 @@ from .datasets import (
     UnavailableDataError,
     WasteStatisticsOut,
 )
+from .equity import EquityEnvelope, ExcludedRegion, WastePerCapitaOut
 from .metadata import DataFreshnessOut, DataSourceOut, HealthOut, IngestionRunOut
 
 __all__ = [
     "DataFreshnessOut",
     "DataSourceOut",
     "DatasetEnvelope",
+    "EquityEnvelope",
+    "ExcludedRegion",
     "FacilityOut",
     "HealthOut",
     "IngestionRunOut",
@@ -26,5 +29,6 @@ __all__ = [
     "RegionBoundaryProperties",
     "RegionOut",
     "UnavailableDataError",
+    "WastePerCapitaOut",
     "WasteStatisticsOut",
 ]

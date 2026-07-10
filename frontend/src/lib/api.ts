@@ -104,6 +104,51 @@ export interface FacilityItem {
   reference_period: string;
 }
 
+export interface WastePerCapitaItem {
+  region_code: string;
+  region_name: string;
+  region_level: string;
+  waste_stream: string;
+  per_capita_kg_per_year: string;
+  per_capita_unit: string;
+  generation_quantity: string;
+  quantity_unit: string;
+  accounting_basis: string;
+  waste_source_id: string;
+  waste_source_pid: string;
+  waste_official_dataset_name: string;
+  waste_reference_period: string;
+  population: number;
+  population_definition: string;
+  population_source_id: string;
+  population_reference_period: string;
+  reference_year: number;
+}
+
+export interface ExcludedRegion {
+  region_code: string;
+  region_name: string;
+  waste_stream: string;
+  reason: string;
+}
+
+/**
+ * Envelope for backend-derived indicators. The derivation happens entirely
+ * server-side; this client renders the served values, formula, assumptions,
+ * and exclusions as-is and never computes its own aggregates.
+ */
+export interface EquityEnvelope {
+  indicator: string;
+  derivation_version: string;
+  derivation_formula: string;
+  unit: string;
+  assumptions: string[];
+  reference_year: number;
+  count: number;
+  items: WastePerCapitaItem[];
+  excluded_regions: ExcludedRegion[];
+}
+
 export interface DataSourceItem {
   source_id: string;
   source_name: string;
@@ -176,6 +221,10 @@ export function fetchWasteStatistics(): Promise<DatasetEnvelope<WasteStatisticsI
 
 export function fetchFacilities(): Promise<DatasetEnvelope<FacilityItem>> {
   return fetchJson<DatasetEnvelope<FacilityItem>>("/api/v1/facilities");
+}
+
+export function fetchWastePerCapita(): Promise<EquityEnvelope> {
+  return fetchJson<EquityEnvelope>("/api/v1/equity/waste-per-capita");
 }
 
 export function fetchDataSources(): Promise<DataSourceItem[]> {

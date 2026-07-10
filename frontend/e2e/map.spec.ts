@@ -51,6 +51,18 @@ test("map loads with official data, metadata, and no government API calls", asyn
     { timeout: 15_000 },
   );
 
+  // Switching to the derived per-capita metric (Phase 5.1) shows the
+  // derived-indicator panel with dual-source provenance and unit.
+  await page
+    .getByRole("radio", { name: /1인당 생활계|Household per capita/ })
+    .check();
+  const derived = page.getByTestId("derived-metric-metadata");
+  await expect(derived).toBeVisible({ timeout: 15_000 });
+  await expect(derived).toContainText("kg/인/년");
+  await expect(derived).toContainText("ORIGIN_BASED_TREATMENT_OUTCOME");
+  await expect(derived).toContainText("인구 출처");
+  await expect(page.getByTestId("legend")).toContainText("kg/인/년");
+
   // Facility toggle keeps the map alive.
   await page.getByTestId("facilities-toggle").uncheck();
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();

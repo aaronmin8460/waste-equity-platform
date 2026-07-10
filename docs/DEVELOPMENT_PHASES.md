@@ -309,6 +309,51 @@ Planned deliverables:
 - Assumption and weighting documentation.
 - Review workflow for analytical outputs.
 
+### Phase 5.1: Per-Capita Waste Generation Equity Indicator
+
+Status: in progress.
+
+Goal: serve the first derived equity indicator — per-capita waste generation
+per SIGUNGU and waste stream — computed server-side from the normalized Phase 2
+tables, with full dual-source provenance and explicit exclusion reporting.
+
+Deliverables:
+
+- Read-only `GET /api/v1/equity/waste-per-capita`: RCIS generation
+  (`ORIGIN_BASED_TREATMENT_OUTCOME`, 톤/년) divided by SGIS total population
+  for the same reference year, converted to kg/인/년 with exact `Decimal`
+  arithmetic at a documented precision. No new migration; the indicator is
+  computed on read and versioned with a `derivation_version`.
+- A reference year is available only when both the waste statistics and the
+  population dataset have rows for it; requests outside that intersection
+  return the structured 404 with the intersected `available_years`.
+- Every item carries both provenances (waste `source_id`/PID/reference period
+  and accounting basis; population `source_id`/definition/reference period).
+  The envelope names the indicator, formula, unit, derivation version, and
+  documented assumptions.
+- Regions that cannot be served honestly are excluded and reported in the
+  envelope with a reason, never zero-filled or estimated: missing population
+  denominator, zero population, or an unexpected source quantity unit
+  (anything other than 톤/년 refuses to convert).
+- The two accounting bases remain unmerged; facility throughput is not used.
+- Frontend: per-capita metric options (one per waste stream, household as the
+  headline equity indicator) in the metric selector; the metric panel labels
+  the indicator as derived, shows the formula, both sources with reference
+  periods, and the served assumptions; industrial per-capita carries an
+  interpretation caveat. Legend formatting handles small decimal ranges
+  without collapsing classes to equal rounded labels.
+
+Required checks before completion:
+
+- Analytical unit tests cover the derivation math (exact decimals, zero
+  population, unexpected unit) and the structured 404/422 paths.
+- Integration tests (TEST_DATABASE_URL, isolated year, rolled back) cover the
+  served indicator, dual provenance, and exclusion reporting against PostGIS.
+- Frontend lint, type check, and Vitest tests pass; backend formatting,
+  linting, strict type checking, and tests pass.
+- Every displayed value cites both sources and reference periods; no mock,
+  estimated, or zero-filled value is served or displayed.
+
 Required checks before completion:
 
 - Analytical tests cover scoring and edge cases.

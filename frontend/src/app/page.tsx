@@ -17,9 +17,11 @@ import {
   fetchDataSources,
   fetchFacilities,
   fetchPopulation,
+  fetchWastePerCapita,
   fetchWasteStatistics,
   type DataSourceItem,
   type DatasetEnvelope,
+  type EquityEnvelope,
   type FacilityItem,
   type PopulationItem,
   type RegionBoundaryCollection,
@@ -31,6 +33,7 @@ import {
   NO_DATA_COLOR,
   computeBreaks,
   formatCount,
+  formatLegendValue,
   formatQuantity,
   frequencyLabel,
   type MetricKey,
@@ -44,6 +47,7 @@ interface LoadedData {
   population: DatasetEnvelope<PopulationItem>;
   waste: DatasetEnvelope<WasteStatisticsItem>;
   facilities: DatasetEnvelope<FacilityItem>;
+  perCapita: EquityEnvelope;
   sources: DataSourceItem[];
 }
 
@@ -59,10 +63,11 @@ export default function Home() {
       fetchPopulation(),
       fetchWasteStatistics(),
       fetchFacilities(),
+      fetchWastePerCapita(),
       fetchDataSources(),
     ])
-      .then(([boundaries, population, waste, facilities, sources]) => {
-        setData({ boundaries, population, waste, facilities, sources });
+      .then(([boundaries, population, waste, facilities, perCapita, sources]) => {
+        setData({ boundaries, population, waste, facilities, perCapita, sources });
       })
       .catch((cause: unknown) => {
         const message =
@@ -97,6 +102,16 @@ export default function Home() {
       }
       return { regionValues: values, unit: data.population.items[0]?.unit ?? "persons" };
     }
+    if (metric.dataset === "waste-per-capita") {
+      for (const item of data.perCapita.items) {
+        if (item.waste_stream !== metric.wasteStream) continue;
+        values.set(item.region_code, {
+          numeric: Number(item.per_capita_kg_per_year),
+          display: formatQuantity(item.per_capita_kg_per_year),
+        });
+      }
+      return { regionValues: values, unit: data.perCapita.unit };
+    }
     let quantityUnit = "";
     for (const item of data.waste.items) {
       if (item.waste_stream !== metric.wasteStream) continue;
@@ -114,8 +129,40 @@ export default function Home() {
     [regionValues],
   );
 
+  // Dual-source panel for the backend-derived per-capita indicator.
+  const derivedInfo = useMemo(() => {
+    if (!data || metric.dataset !== "waste-per-capita") return null;
+    const wasteRegistry = data.sources.find((source) => source.source_id === "waste_statistics");
+    const populationRegistry = data.sources.find((source) => source.source_id === "sgis");
+    const item = data.perCapita.items.find((entry) => entry.waste_stream === metric.wasteStream);
+    const excluded = data.perCapita.excluded_regions.filter(
+      (entry) => entry.waste_stream === metric.wasteStream,
+    );
+    return {
+      indicator: data.perCapita.indicator,
+      derivationVersion: data.perCapita.derivation_version,
+      formula: data.perCapita.derivation_formula,
+      unit: data.perCapita.unit,
+      assumptions: data.perCapita.assumptions,
+      excludedCount: excluded.length,
+      wasteSourceName: wasteRegistry?.source_name ?? "waste_statistics",
+      wasteFrequency: wasteRegistry ? frequencyLabel(wasteRegistry.publication_frequency) : "UNKNOWN",
+      wasteReferencePeriod:
+        item?.waste_reference_period ?? String(data.perCapita.reference_year),
+      wasteOfficialDatasetName: item?.waste_official_dataset_name ?? null,
+      accountingBasis: item?.accounting_basis ?? "ORIGIN_BASED_TREATMENT_OUTCOME",
+      populationSourceName: populationRegistry?.source_name ?? "sgis",
+      populationFrequency: populationRegistry
+        ? frequencyLabel(populationRegistry.publication_frequency)
+        : "UNKNOWN",
+      populationReferencePeriod:
+        item?.population_reference_period ?? String(data.perCapita.reference_year),
+      populationDefinition: item?.population_definition ?? null,
+    };
+  }, [data, metric]);
+
   const sourceInfo = useMemo(() => {
-    if (!data) return null;
+    if (!data || metric.dataset === "waste-per-capita") return null;
     const sourceId = metric.dataset === "population" ? "sgis" : "waste_statistics";
     const registry = data.sources.find((source) => source.source_id === sourceId);
     const wasteItem = data.waste.items.find((item) => item.waste_stream === metric.wasteStream);
@@ -189,10 +236,10 @@ export default function Home() {
     const upper = index < breaks.length ? breaks[index] : null;
     const label =
       lower === null
-        ? `< ${upper === null ? "…" : formatCount(Math.round(upper))}`
+        ? `< ${upper === null ? "…" : formatLegendValue(upper)}`
         : upper === null
-          ? `≥ ${formatCount(Math.round(lower))}`
-          : `${formatCount(Math.round(lower))} – ${formatCount(Math.round(upper))}`;
+          ? `≥ ${formatLegendValue(lower)}`
+          : `${formatLegendValue(lower)} – ${formatLegendValue(upper)}`;
     return { color, label };
   });
 
@@ -247,6 +294,70 @@ export default function Home() {
             </li>
           </ul>
         </section>
+
+        {derivedInfo && (
+          <section
+            aria-label="파생 지표 출처"
+            className="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-slate-700"
+            data-testid="derived-metric-metadata"
+          >
+            <h2 className="mb-1 text-sm font-semibold text-slate-800">
+              파생 지표 (Derived indicator)
+            </h2>
+            <p className="mb-2 text-xs text-slate-600">
+              백엔드에서 공식 데이터 2종으로 산출: {derivedInfo.formula} · 단위 {derivedInfo.unit}{" "}
+              · 산출 버전 {derivedInfo.derivationVersion}
+            </p>
+            <dl className="space-y-1">
+              <div>
+                <dt className="inline font-medium">발생량 출처: </dt>
+                <dd className="inline">
+                  {derivedInfo.wasteSourceName} · 기준 기간{" "}
+                  <span data-testid="reference-period">{derivedInfo.wasteReferencePeriod}</span> ·{" "}
+                  {derivedInfo.wasteFrequency}
+                </dd>
+              </div>
+              {derivedInfo.wasteOfficialDatasetName && (
+                <div>
+                  <dt className="inline font-medium">공식 데이터셋: </dt>
+                  <dd className="inline">{derivedInfo.wasteOfficialDatasetName}</dd>
+                </div>
+              )}
+              <div>
+                <dt className="inline font-medium">집계 기준: </dt>
+                <dd className="inline">{derivedInfo.accountingBasis}</dd>
+              </div>
+              <div>
+                <dt className="inline font-medium">인구 출처: </dt>
+                <dd className="inline">
+                  {derivedInfo.populationSourceName} · 기준 기간{" "}
+                  {derivedInfo.populationReferencePeriod} · {derivedInfo.populationFrequency}
+                </dd>
+              </div>
+              {derivedInfo.populationDefinition && (
+                <div>
+                  <dt className="inline font-medium">인구 정의: </dt>
+                  <dd className="inline">{derivedInfo.populationDefinition}</dd>
+                </div>
+              )}
+            </dl>
+            {derivedInfo.excludedCount > 0 && (
+              <p className="mt-2" data-testid="excluded-regions-note">
+                <strong>{formatCount(derivedInfo.excludedCount)}개 지역</strong>은 분모(인구) 또는
+                단위 문제로 산출할 수 없어 표시하지 않습니다 (0으로 대체하지 않습니다).
+              </p>
+            )}
+            {metric.caveat && <p className="mt-2 font-medium text-amber-800">{metric.caveat}</p>}
+            <details className="mt-2">
+              <summary className="cursor-pointer font-medium">산출 가정 (assumptions)</summary>
+              <ul className="mt-1 list-disc space-y-1 pl-4">
+                {derivedInfo.assumptions.map((assumption) => (
+                  <li key={assumption}>{assumption}</li>
+                ))}
+              </ul>
+            </details>
+          </section>
+        )}
 
         {sourceInfo && (
           <section
