@@ -16,7 +16,7 @@ This audit uses only official primary documentation from the required source fam
 | SGIS population and administrative boundary APIs | Feasible | LIVE_VERIFIED | Seoul district-level population probe returned 25 records; other regions and boundary endpoint still need live probes. |
 | AirKorea real-time air-quality and station APIs | Feasible | CREDENTIAL_MISSING | Real-time observations are contextual and must not be used as permanent siting evidence. |
 | Korea Meteorological Administration short-term forecast API | Feasible | CREDENTIAL_MISSING | Candidate sites must be converted to KMA forecast grid coordinates, and one request covers one grid/time query. |
-| VWorld spatial-data services | Feasible with licensing review | LIVE_VERIFIED | Cadastral feature probe succeeded; layer-specific zoning/ownership/road/protected-area validation remains. |
+| VWorld spatial-data services | Feasible with licensing review | LIVE_VERIFIED | Cadastral, geocoder, and (Phase 2.5A) 16 structural layers live-verified; storage-consent/NC-ND licensing conflict and bulk-download reproducibility remain (see `VWORLD_STRUCTURAL_LAYER_AUDIT.md`). |
 
 ## Official References
 
@@ -239,7 +239,18 @@ Phase 0.5 live validation:
 - Probe parameters: one small Seoul bounding box in EPSG:4326.
 - Result: provider status `OK`; schema validation LIVE_VERIFIED; one cadastral feature observed with PNU and parcel attributes.
 - Sample: `data/samples/vworld.live.json`, ignored by Git.
-- Remaining issue: zoning, land-use restrictions, public land ownership, protected areas, road accessibility, and sensitive-facility layers still require layer-specific live validation.
+
+Phase 2.5A structural-layer validation (2026-07-11): 14 officially documented
+WFS/2D layers (용도지역 UQ111–UQ114, 개발제한구역, 상수원보호구역,
+습지보호지역, 야생생물보호구역, 산림보호구역, 교육환경보호구역, 국가유산
+보호구역, 도시자연공원 계열, 국립자연공원, 교통링크, 도로중심선) plus the NED
+토지소유(dt_d160)/토지이용계획(dt_d154) WFS are LIVE_VERIFIED across small
+Seoul/Incheon/Gyeonggi bounding boxes. Full findings, provider limits,
+licensing conflicts, and the CONDITIONAL_GO recommendation are in
+`docs/VWORLD_STRUCTURAL_LAYER_AUDIT.md`; suitability-input classification is
+in `docs/SUITABILITY_DATA_REQUIREMENTS.md`. Remaining issues: per-dataset
+storage/derivative licensing resolution, reproducible bulk-download workflow,
+full-coverage completeness validation, and ownership-field completeness.
 
 ## Overall Build Feasibility
 

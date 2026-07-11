@@ -13,7 +13,7 @@ Refresh jobs must be idempotent, preserve sanitized raw responses, and fail visi
 | Waste-facility information | Monthly check after source validation | UNVERIFIED | `source_id`, `facility_id_or_name`, `address`, `reference_date` | Match on official ID if available; otherwise reviewed composite key | Warn after 90 days without refreshed facility status unless annual source dictates otherwise | 3 attempts, then manual source review | Preserve previous verified data with stale warning; do not infer closures or capacities. |
 | AirKorea real-time observations | Every 10-15 minutes for selected stations, respecting traffic limits | Real-time/hourly operational updates | `station_name_or_id`, `data_time`, `pollutant` | Ignore exact duplicate station/time/pollutant records | Warn when observations are older than 2 hours | Retry twice with short backoff; skip cycle on repeated provider failure | Display unavailable/stale status; do not use stale real-time values as current. |
 | KMA weather observations and forecasts | Every 30-60 minutes by unique grid and base time | Real-time forecast cycle | `nx`, `ny`, `base_date`, `base_time`, `category`, `forecast_time` | Upsert by grid/base/forecast/category | Warn when current context is older than 2 hours or forecast base is superseded | Retry twice with provider-aware base-time fallback only if documented | Display unavailable/stale status; do not invent weather. |
-| VWorld structural spatial datasets | Monthly metadata check; refresh on new dataset date | Change-based or monthly depending on dataset | `dataset_id`, `dataset_reference_date`, `feature_id_or_geometry_hash` | Versioned spatial loads; keep prior geometries | Warn if zoning/cadastral data are more than 90 days behind VWorld metadata or source-specific threshold | Retry download/API 3 times; checksum and schema validation | Block affected siting screens until layer status is clear. |
+| VWorld structural spatial datasets | Monthly metadata check; refresh on new dataset date | Documented per dataset (Phase 2.5A): LSMD zone bulk 변경발생시, NA_24 용도지역지구 전체 매월/변동 매일, NGII 도로중심선 연간, 표준노드링크 수시, ownership bulk 매년/매월 | `dataset_id`, `dataset_reference_date`, `feature_id_or_geometry_hash` (API feature-id stability across provider refreshes is unverified — prefer geometry hash + attributes) | Versioned spatial loads; keep prior geometries | Warn if zoning/cadastral data are more than 90 days behind VWorld metadata or source-specific threshold | Retry download/API 3 times; checksum and schema validation; `OVER_REQUEST_LIMIT` is not retried within the same window | Block affected siting screens until layer status is clear. |
 
 ## Idempotency Rules
 
@@ -149,6 +149,22 @@ docker compose --profile ingestion run --rm ingestion \
   per-PID diagnostic.
 - Freshness updates only on success; failed runs are visible, roll back, and do
   not update `last_success_at`.
+
+## Phase 2.5A VWorld Structural Layer Implications
+
+The Phase 2.5A audit (2026-07-11, `docs/VWORLD_STRUCTURAL_LAYER_AUDIT.md`)
+scoped the future Phase 2.5B refresh design without implementing it:
+
+- Area-complete polygon layers should come from official bulk downloads
+  (per-시도 LSMD SHP, EPSG:5186/2097; NGII 도로중심선 EPSG:5179), transformed
+  to EPSG:4326 with both CRS recorded, loaded as versioned datasets by
+  reference date.
+- API-side refresh must use 2D Data API paging (`size` ≤ 1000, verified
+  `page`/`record` metadata); WFS `startindex` paging did not work under
+  version 1.1.0 and must not be relied on.
+- Production storage of API-fetched features is blocked until the VWorld
+  terms 제19조 storage-consent question and the CC BY-NC-ND bulk licenses are
+  resolved per dataset.
 
 ## Phase 0.6 Refresh Implications
 

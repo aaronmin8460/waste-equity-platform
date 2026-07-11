@@ -385,6 +385,12 @@ python -m waste_equity_ingestion.cli waste-statistics
 # or an explicit list, and save sanitized truncated samples per PID/year.
 python -m waste_equity_ingestion.cli waste-statistics-discovery --year 2023 --save-sample
 python -m waste_equity_ingestion.cli waste-statistics-discovery --pids NTN007,NTN018 --year 2024
+
+# Phase 2.5A VWorld structural-layer contract audit: smallest possible live
+# probes (WFS + 2D Data API + NED ownership/land-use) across three regional
+# bounding boxes; saves sanitized samples. Audit tooling only — not ingestion.
+python -m waste_equity_ingestion.cli vworld-structural-audit --save-sample
+python -m waste_equity_ingestion.cli vworld-structural-audit --service wfs,data
 ```
 
 Discovery respects the documented provider quota (100 calls/minute, 3,000 calls/day) with an inter-request delay, and classifies each PID as `LIVE_VERIFIED`, `NO_DATA_FOR_CONDITION` (`E099`), `PROVIDER_ERROR`, `SCHEMA_UNVERIFIED`, or `HTTP_ERROR`.

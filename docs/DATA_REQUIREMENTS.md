@@ -164,6 +164,9 @@ These assumptions must be verified during source discovery:
 - Suitable official datasets exist for all planned categories across Seoul, Incheon, and Gyeonggi-do.
 - Waste-treatment facility records include enough location precision for spatial analysis.
 - Waste statistics are comparable across the three administrative areas.
-- Land-use and zoning data can be obtained with sufficient spatial resolution and licensing clarity.
+- Land-use and zoning data: feature availability and spatial resolution were
+  verified by the Phase 2.5A audit (`docs/VWORLD_STRUCTURAL_LAYER_AUDIT.md`);
+  licensing clarity (storage consent, derivative use) remains unverified and
+  blocks production ingestion.
 - Real-time air-quality and weather APIs provide reliable timestamps and documented update intervals.
 

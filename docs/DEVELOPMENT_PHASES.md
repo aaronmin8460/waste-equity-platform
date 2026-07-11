@@ -192,9 +192,37 @@ Required checks before completion:
 - Formatting, linting, type checking, compile checks, and tests pass.
 - No secret, fixture fallback, or fabricated coordinate is written.
 
-Later Phase 2 subphases will cover VWorld structural spatial layers (zoning,
-protected areas, roads), AirKorea, and KMA (both currently CREDENTIAL_MISSING).
-They must not begin until explicitly scoped.
+### Phase 2.5A: VWorld Structural Spatial Layer Feasibility Audit
+
+Status: complete (2026-07-11). Documentation, official-source research, and
+live-contract-validation subphase; no production ingestion, migrations, or
+scoring.
+
+Delivered:
+
+- `docs/VWORLD_STRUCTURAL_LAYER_AUDIT.md`: official-source evidence, live
+  contract findings, provider limits/licensing, CRS documentation, coverage
+  strategy, and the **CONDITIONAL_GO** recommendation for Phase 2.5B.
+- `docs/SUITABILITY_DATA_REQUIREMENTS.md`: mandatory/optional/informational/
+  unavailable inputs, unresolved policy and legal decisions, and the minimum
+  package required to unblock Phase 5.4.
+- Reusable probe command `vworld-structural-audit`
+  (`ingestion/src/waste_equity_ingestion/probes/vworld_structural.py`) with
+  fixture contract tests; sanitized Git-ignored samples for every live probe.
+- Live results: 14 officially documented WFS/2D structural layers and the 2
+  NED layers (토지소유 `dt_d160`, 토지이용계획 `dt_d154`) LIVE_VERIFIED
+  across small Seoul/Incheon/Gyeonggi bounding boxes; WFS 1.1.0 `startindex`
+  paging defect and a malformed provider JSON error body recorded.
+
+### Phase 2.5B: VWorld Structural Layer Production Ingestion
+
+Status: blocked — must not begin until explicitly scoped. Preconditions from
+the 2.5A audit: per-dataset license/storage-consent resolution, a
+reproducible bulk-download workflow, and full-coverage completeness
+validation per 시도.
+
+Later Phase 2 subphases will also cover AirKorea and KMA (both currently
+CREDENTIAL_MISSING). They must not begin until explicitly scoped.
 
 ## Phase 3: Backend Product API Foundation
 
@@ -438,10 +466,16 @@ Status: blocked — must not begin until explicitly scoped.
 
 Blocking prerequisites:
 
-- VWorld structural spatial layers (land-use, zoning, protected areas,
-  roads) are an unscoped Phase 2 subphase; a suitability score without
+- The minimum structural-layer package defined in
+  `docs/SUITABILITY_DATA_REQUIREMENTS.md` (zoning, protected/restricted
+  areas, roads) must be production-ingested through Phase 2.5B; the Phase
+  2.5A audit (2026-07-11) found the official feature sources
+  (CONDITIONAL_GO) but ingestion has not begun. A suitability score without
   constraint layers would present burden/demand alone as siting suitability,
   which the data-integrity rules forbid.
+- The unresolved licensing, exclusion-classification, and buffer/weighting
+  policy decisions listed in `docs/SUITABILITY_DATA_REQUIREMENTS.md` must be
+  recorded.
 - Any weighting must satisfy the adoption requirements in
   `docs/ANALYTICAL_METHODS.md` (documented rationale and sensitivity,
   review sign-off, distinct derivation version, honest UI labeling).
