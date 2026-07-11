@@ -24,9 +24,16 @@ def get_json(
     return get_json_response(url, params, timeout).payload
 
 
-def get_json_response(
+@dataclass(frozen=True)
+class TextResponse:
+    status: int
+    content_type: str
+    text: str
+
+
+def get_text_response(
     url: str, params: dict[str, Any], timeout: float = DEFAULT_TIMEOUT_SECONDS
-) -> JsonResponse:
+) -> TextResponse:
     query = urlencode(params)
     request_url = f"{url}?{query}" if query else url
     request = Request(request_url, headers={"Accept": "application/json"})
@@ -36,13 +43,23 @@ def get_json_response(
         body = response.read()
     if status < 200 or status >= 300:
         raise RuntimeError(f"HTTP status {status}")
-    if "json" not in content_type.lower():
-        raise RuntimeError(f"Expected JSON content type, got {content_type!r}")
-    decoded = body.decode("utf-8", errors="replace")
-    payload = json.loads(decoded)
+    return TextResponse(
+        status=status,
+        content_type=content_type,
+        text=body.decode("utf-8", errors="replace"),
+    )
+
+
+def get_json_response(
+    url: str, params: dict[str, Any], timeout: float = DEFAULT_TIMEOUT_SECONDS
+) -> JsonResponse:
+    response = get_text_response(url, params, timeout)
+    if "json" not in response.content_type.lower():
+        raise RuntimeError(f"Expected JSON content type, got {response.content_type!r}")
+    payload = json.loads(response.text)
     if not isinstance(payload, dict):
         raise RuntimeError("Expected a JSON object response")
-    return JsonResponse(status=status, content_type=content_type, payload=payload)
+    return JsonResponse(status=response.status, content_type=response.content_type, payload=payload)
 
 
 def nested_get(payload: dict[str, Any], dotted_path: str) -> Any | None:

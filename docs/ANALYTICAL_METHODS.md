@@ -102,9 +102,11 @@ served:
    claims to represent and its sensitivity (how the ranking changes under
    reasonable alternative weights).
 2. Constraint layers appropriate to the claim. A "suitability" score in
-   particular is blocked until official land-use, zoning, and protected-area
-   layers are ingested (see Phase 5.4); burden and demand indicators alone
-   must not be presented as siting suitability.
+   particular is blocked until the minimum official constraint package in
+   `docs/SUITABILITY_DATA_REQUIREMENTS.md` (land-use/zoning, protected-area,
+   and road feature layers audited in Phase 2.5A) is production-ingested
+   (see Phase 5.4); burden and demand indicators alone must not be presented
+   as siting suitability.
 3. The review workflow below, with the reviewer recorded in the PR.
 4. A distinct `derivation_version` and clear UI labeling as a weighted,
    assumption-laden composite.

@@ -9,7 +9,15 @@ from collections.abc import Callable
 
 from .config import ProbeSettings
 from .errors import IngestionError, MissingConfigurationError, MissingCredentialsError, ProbeError
-from .probes import airkorea, kma, sgis, vworld, waste_statistics, waste_statistics_discovery
+from .probes import (
+    airkorea,
+    kma,
+    sgis,
+    vworld,
+    vworld_structural,
+    waste_statistics,
+    waste_statistics_discovery,
+)
 from .rcis_facility_contract import PID_SPECS as FACILITY_PID_SPECS
 from .rcis_facility_contract import TARGET_PIDS as FACILITY_TARGET_PIDS
 from .rcis_facility_ingestion import run_rcis_facility_ingestion
@@ -35,6 +43,7 @@ SGIS_INGEST = "sgis-ingest"
 RCIS_WASTE_INGEST = "rcis-waste-ingest"
 RCIS_FACILITY_INGEST = "rcis-facility-ingest"
 VWORLD_GEOCODE = "vworld-geocode"
+VWORLD_STRUCTURAL_AUDIT = "vworld-structural-audit"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -49,6 +58,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 RCIS_WASTE_INGEST,
                 RCIS_FACILITY_INGEST,
                 VWORLD_GEOCODE,
+                VWORLD_STRUCTURAL_AUDIT,
             ]
         ),
     )
@@ -93,6 +103,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--limit",
         type=int,
         help="vworld-geocode: geocode at most N pending facilities this run.",
+    )
+    parser.add_argument(
+        "--service",
+        help=(
+            "vworld-structural-audit: comma-separated probe services "
+            "(wfs, data, ownership, landuse; default: all)."
+        ),
     )
     parser.add_argument(
         "--retry-failed",
@@ -203,6 +220,23 @@ def run_rcis_facility(settings: ProbeSettings, args: argparse.Namespace) -> int:
     return 0
 
 
+def run_vworld_structural_audit(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    services = (
+        tuple(service.strip().lower() for service in args.service.split(",") if service.strip())
+        if args.service
+        else vworld_structural.SUPPORTED_SERVICES
+    )
+    summaries = vworld_structural.run_structural_audit(
+        settings,
+        save_samples=bool(args.save_sample),
+        services=services,
+        request_delay=float(args.request_delay),
+    )
+    for summary in summaries:
+        print(json.dumps(summary, ensure_ascii=False))
+    return 0
+
+
 def run_vworld_geocode(settings: ProbeSettings, args: argparse.Namespace) -> int:
     if not args.dry_run and not args.write:
         raise IngestionError("vworld-geocode requires either --dry-run or --write")
@@ -242,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_rcis_facility(settings, args)
         if args.source == VWORLD_GEOCODE:
             return run_vworld_geocode(settings, args)
+        if args.source == VWORLD_STRUCTURAL_AUDIT:
+            return run_vworld_structural_audit(settings, args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)
