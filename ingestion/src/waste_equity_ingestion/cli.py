@@ -27,6 +27,7 @@ from .result import ProbeResult
 from .samples import build_envelope, save_sample
 from .sgis_ingestion import run_sgis_ingestion
 from .structural_layer_ingestion import run_structural_ingestion
+from .suitability_build import run_suitability_build
 from .vworld_geocoding_ingestion import run_vworld_geocoding
 from .vworld_zoning_ingestion import run_zoning_ingestion
 
@@ -49,6 +50,7 @@ VWORLD_STRUCTURAL_AUDIT = "vworld-structural-audit"
 VWORLD_ZONING_INGEST = "vworld-zoning-ingest"
 VWORLD_PROTECTED_INGEST = "vworld-protected-ingest"
 VWORLD_ROADS_INGEST = "vworld-roads-ingest"
+SUITABILITY_BUILD = "suitability-build"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -67,6 +69,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 VWORLD_ZONING_INGEST,
                 VWORLD_PROTECTED_INGEST,
                 VWORLD_ROADS_INGEST,
+                SUITABILITY_BUILD,
             ]
         ),
     )
@@ -140,6 +143,24 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--source-encoding",
         default=None,
         help="vworld-zoning-ingest: source DBF attribute encoding (default cp949).",
+    )
+    parser.add_argument(
+        "--reference-year",
+        type=int,
+        help="suitability-build: analysis reference year (default 2024).",
+    )
+    parser.add_argument(
+        "--policy-version",
+        default="suitability-policy-v1",
+        help="suitability-build: screening policy version (default suitability-policy-v1).",
+    )
+    parser.add_argument(
+        "--profile",
+        default="baseline",
+        help=(
+            "suitability-build: active weight profile "
+            "(baseline, equal, equity_focused, access_focused; default baseline)."
+        ),
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -319,6 +340,21 @@ def run_vworld_geocode(settings: ProbeSettings, args: argparse.Namespace) -> int
     return 0
 
 
+def run_suitability(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    if not args.dry_run and not args.write:
+        raise IngestionError("suitability-build requires either --dry-run or --write")
+    report = run_suitability_build(
+        settings,
+        reference_year=int(args.reference_year) if args.reference_year else 2024,
+        policy_version=args.policy_version,
+        profile=args.profile,
+        scope=args.scope,
+        write=bool(args.write),
+    )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     settings = ProbeSettings.from_env()
@@ -352,6 +388,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_vworld_structural(settings, args, "protected")
         if args.source == VWORLD_ROADS_INGEST:
             return run_vworld_structural(settings, args, "roads")
+        if args.source == SUITABILITY_BUILD:
+            return run_suitability(settings, args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)
