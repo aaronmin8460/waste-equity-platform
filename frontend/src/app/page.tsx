@@ -154,13 +154,19 @@ export default function Home() {
       });
   }, [mode, suit, profile]);
 
-  // Refresh the summary when the profile changes.
+  // Refresh the summary when the profile changes. Deliberately depends only on
+  // profile/mode — NOT suit. Updating suit here must never re-trigger this
+  // effect: doing so created an infinite summary-refetch loop (each run built a
+  // new suit object, which re-ran the effect), which also churned suit's
+  // identity fast enough to keep resetting the candidate-fetch debounce below so
+  // candidates intermittently never loaded. The functional update is a no-op
+  // until the initial meta load has populated suit.
   useEffect(() => {
-    if (mode !== "suitability" || suit === null) return;
+    if (mode !== "suitability") return;
     fetchSuitabilitySummary(profile)
       .then((summary) => setSuit((prev) => (prev ? { ...prev, summary } : prev)))
       .catch(() => undefined);
-  }, [profile, mode, suit]);
+  }, [profile, mode]);
 
   // Candidate fetch: bbox + profile, debounced, cancelable, controlled limit.
   useEffect(() => {
