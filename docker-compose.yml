@@ -55,6 +55,11 @@ services:
       RCIS_API_KEY: ${RCIS_API_KEY:-}
       RCIS_USER_ID: ${RCIS_USER_ID:-}
       RCIS_API_BASE_URL: ${RCIS_API_BASE_URL:-https://www.recycling-info.or.kr}
+    volumes:
+      # Read-only local official bulk source files for file-based ingestion
+      # (e.g. vworld-zoning-ingest --source-path data/raw/vworld/zoning). These
+      # directories are Git-ignored and are never exposed to backend/frontend.
+      - ./data:/app/data:ro
     depends_on:
       database:
         condition: service_healthy

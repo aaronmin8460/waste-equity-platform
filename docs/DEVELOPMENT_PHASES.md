@@ -216,13 +216,47 @@ Delivered:
 
 ### Phase 2.5B: VWorld Structural Layer Production Ingestion
 
-Status: blocked — must not begin until explicitly scoped. Preconditions from
-the 2.5A audit: per-dataset license/storage-consent resolution, a
-reproducible bulk-download workflow, and full-coverage completeness
-validation per 시도.
+Status: in progress.
+
+Authorization: this project is conducted with a government partner. The
+project owner has confirmed that prior government-project authorization for
+the use, local storage, transformation, database ingestion, and analytical
+processing of the relevant VWorld and government spatial datasets has been
+obtained. The 2.5A audit-time licensing/storage-consent uncertainty (VWorld
+terms 제19조 vs KOGL/CC BY-NC-ND signals) is therefore resolved for this
+project by that prior authorization; it is no longer a blocker for Phase 2.5B.
+No approval number, date, contact, or confidential document is recorded here —
+only that the project owner has confirmed the authorization.
+
+The remaining 2.5A preconditions are still engineering work, not blockers: a
+reproducible bulk-download workflow (documented manual placement of official
+archives into Git-ignored local directories, with checksums), and
+full-coverage completeness validation per 시도.
+
+Subphases:
+
+- **2.5B-1 (in progress): versioned structural spatial ingestion foundation
+  and zoning.** Reusable official bulk spatial-file (ZIP/shapefile) ingestion
+  infrastructure, normalized versioned structural-layer schema
+  (`structural_dataset_versions`, `structural_features`), and zoning ingestion
+  for 용도지역 UQ111–UQ114 (도시/관리/농림/자연환경보전지역) via the
+  `vworld-zoning-ingest` CLI (dry-run/write, `capital-region` scope). CRS is
+  read from the source `.prj`/metadata, rejected when missing or unsupported,
+  and transformed to EPSG:4326 for PostGIS. Coverage is validated as a
+  region-by-layer completeness matrix distinguishing evaluated-with-features,
+  evaluated-with-zero-features, not-evaluated, source-missing, and
+  validation-failure. Protected areas, roads, ownership, sensitive facilities,
+  and per-parcel land-use are out of scope for this subphase.
+- Later 2.5B subphases: mandatory protected/restricted layers and road
+  features, with full Seoul/Incheon/Gyeonggi coverage.
 
 Later Phase 2 subphases will also cover AirKorea and KMA (both currently
 CREDENTIAL_MISSING). They must not begin until explicitly scoped.
+
+Phase 5.4 remains blocked until zoning, the mandatory protected/restricted
+layers, and road features are all production-ingested with complete Seoul,
+Incheon, and Gyeonggi-do coverage and the required analytical policy decisions
+are recorded.
 
 ## Phase 3: Backend Product API Foundation
 
@@ -468,14 +502,17 @@ Blocking prerequisites:
 
 - The minimum structural-layer package defined in
   `docs/SUITABILITY_DATA_REQUIREMENTS.md` (zoning, protected/restricted
-  areas, roads) must be production-ingested through Phase 2.5B; the Phase
-  2.5A audit (2026-07-11) found the official feature sources
-  (CONDITIONAL_GO) but ingestion has not begun. A suitability score without
+  areas, roads) must be production-ingested through Phase 2.5B with complete
+  Seoul/Incheon/Gyeonggi-do coverage; the Phase 2.5A audit (2026-07-11) found
+  the official feature sources (CONDITIONAL_GO) and Phase 2.5B is now in
+  progress (2.5B-1 delivers the versioned schema and zoning ingestion), but
+  the full mandatory package is not yet ingested. A suitability score without
   constraint layers would present burden/demand alone as siting suitability,
   which the data-integrity rules forbid.
-- The unresolved licensing, exclusion-classification, and buffer/weighting
-  policy decisions listed in `docs/SUITABILITY_DATA_REQUIREMENTS.md` must be
-  recorded.
+- The exclusion-classification and buffer/weighting policy decisions listed in
+  `docs/SUITABILITY_DATA_REQUIREMENTS.md` must be recorded. (Dataset
+  storage/licensing is resolved for this project by the confirmed prior
+  government-project authorization recorded under Phase 2.5B.)
 - Any weighting must satisfy the adoption requirements in
   `docs/ANALYTICAL_METHODS.md` (documented rationale and sensitivity,
   review sign-off, distinct derivation version, honest UI labeling).

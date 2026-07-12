@@ -165,8 +165,12 @@ These assumptions must be verified during source discovery:
 - Waste-treatment facility records include enough location precision for spatial analysis.
 - Waste statistics are comparable across the three administrative areas.
 - Land-use and zoning data: feature availability and spatial resolution were
-  verified by the Phase 2.5A audit (`docs/VWORLD_STRUCTURAL_LAYER_AUDIT.md`);
-  licensing clarity (storage consent, derivative use) remains unverified and
-  blocks production ingestion.
+  verified by the Phase 2.5A audit (`docs/VWORLD_STRUCTURAL_LAYER_AUDIT.md`).
+  For this government-partner project, prior authorization for use, local
+  storage, transformation, and analytical processing of the relevant
+  VWorld/government spatial datasets has been confirmed by the project owner,
+  so the audit-time licensing/storage-consent uncertainty no longer blocks
+  production ingestion. Phase 2.5B is in progress (2.5B-1 ingests 용도지역
+  UQ111–UQ114 from official bulk files).
 - Real-time air-quality and weather APIs provide reliable timestamps and documented update intervals.
 
