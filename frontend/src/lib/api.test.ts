@@ -25,7 +25,20 @@ function stubFetch(status: number, body: unknown) {
 }
 
 describe("apiBaseUrl", () => {
-  it("defaults to the local backend", () => {
+  it("defaults to the local backend (local development)", () => {
+    expect(apiBaseUrl()).toBe("http://localhost:8000");
+  });
+
+  it("uses a same-origin (empty) base in production", () => {
+    // Production bakes NEXT_PUBLIC_API_BASE_URL="" so the browser calls
+    // relative /api/v1/... paths through the reverse proxy — never an internal
+    // container host. An empty string must pass through (?? only catches null).
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "");
+    expect(apiBaseUrl()).toBe("");
+  });
+
+  it("honors an explicit API base URL", () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:8000");
     expect(apiBaseUrl()).toBe("http://localhost:8000");
   });
 });
