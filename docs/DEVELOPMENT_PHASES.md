@@ -235,20 +235,39 @@ full-coverage completeness validation per 시도.
 
 Subphases:
 
-- **2.5B-1 (in progress): versioned structural spatial ingestion foundation
-  and zoning.** Reusable official bulk spatial-file (ZIP/shapefile) ingestion
-  infrastructure, normalized versioned structural-layer schema
+- **2.5B-1: versioned structural spatial ingestion foundation and zoning —
+  zoning now live-ingested.** Reusable official bulk spatial-file (ZIP/shapefile)
+  ingestion infrastructure, normalized versioned structural-layer schema
   (`structural_dataset_versions`, `structural_features`), and zoning ingestion
   for 용도지역 UQ111–UQ114 (도시/관리/농림/자연환경보전지역) via the
   `vworld-zoning-ingest` CLI (dry-run/write, `capital-region` scope). CRS is
-  read from the source `.prj`/metadata, rejected when missing or unsupported,
-  and transformed to EPSG:4326 for PostGIS. Coverage is validated as a
+  read from the source `.prj`/metadata (including the ESRI-WKT EPSG authority
+  used by official LSMD files), rejected when missing or unsupported, and
+  transformed to EPSG:4326 for PostGIS. Coverage is validated as a
   region-by-layer completeness matrix distinguishing evaluated-with-features,
-  evaluated-with-zero-features, not-evaluated, source-missing, and
-  validation-failure. Protected areas, roads, ownership, sensitive facilities,
-  and per-parcel land-use are out of scope for this subphase.
-- Later 2.5B subphases: mandatory protected/restricted layers and road
-  features, with full Seoul/Incheon/Gyeonggi coverage.
+  evaluated-with-zero-features, not-evaluated, source-missing,
+  validation-failure, and `OFFICIAL_SOURCE_UNAVAILABLE` (a Git-ignored
+  `source_manifest.json` records layers the official source does not publish).
+  **Live result (2026-07-12):** the 9 official LSMD ZIPs (release 202606,
+  EPSG:5186 → 4326) ingested **88,252 features** (538 invalid polygons rejected,
+  not repaired); Seoul UQ112–114 are `OFFICIAL_SOURCE_UNAVAILABLE`; coverage
+  `COMPLETE_FOR_AVAILABLE_SOURCES`; idempotent second write inserted 0. See
+  `docs/PHASE_2_5B_INGESTION_STATUS.md`. Protected areas, roads, ownership,
+  sensitive facilities, and per-parcel land-use are out of scope for this
+  subphase.
+- **2.5B framework extension (in progress): protected + road loaders.** The
+  versioned structural schema is extended with a `structural_line_features`
+  table (MULTILINESTRING/4326, migration 0007) so road/transport line geometry
+  is not forced into the polygon table, and a generalized loader
+  (`structural_layer_ingestion.py` + `structural_layers.py` registry) ingests
+  the mandatory protected/restricted polygon layers (UD801, UM710, UM901,
+  UF151, WGISNPGUG, UO101, UO301; optional UM221, UQ162) via
+  `vworld-protected-ingest` and the road line layers (STDLINK, N3A0020000,
+  MOCTLINK) via `vworld-roads-ingest`. The framework is PostGIS-verified with
+  synthetic fixtures; **no official structural data has been ingested yet**
+  because the official bulk downloads are browser-mediated (manual download
+  required — see `docs/PHASE_2_5B_INGESTION_STATUS.md` for the checklist and
+  the current all-`SOURCE_MISSING` completeness state).
 
 Later Phase 2 subphases will also cover AirKorea and KMA (both currently
 CREDENTIAL_MISSING). They must not begin until explicitly scoped.

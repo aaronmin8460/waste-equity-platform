@@ -76,6 +76,31 @@ def test_source_crs_detection_from_prj() -> None:
     assert epsg_from_prj(prj) == 5179
 
 
+# Real official LSMD .prj WKT (Korea 2000 / Central Belt 2010). pyproj cannot
+# map it to an EPSG code, but it declares its own AUTHORITY["EPSG","5186"].
+_LSMD_ESRI_PRJ = (
+    'PROJCS["Korea 2000 / Central Belt 2010", GEOGCS["Korea 2000", '
+    'DATUM["Geocentric datum of Korea", SPHEROID["GRS 1980", 6378137.0, '
+    '298.257222101, AUTHORITY["EPSG","7019"]], TOWGS84[0.0, 0.0, 0.0, 0.0, 0.0, '
+    '0.0, 0.0], AUTHORITY["EPSG","6737"]], PRIMEM["Greenwich", 0.0, '
+    'AUTHORITY["EPSG","8901"]], UNIT["degree", 0.017453292519943295], '
+    'AXIS["Geodetic longitude", EAST], AXIS["Geodetic latitude", NORTH], '
+    'AUTHORITY["EPSG","4737"]], PROJECTION["Transverse_Mercator", '
+    'AUTHORITY["EPSG","9807"]], PARAMETER["central_meridian", 127.0], '
+    'PARAMETER["latitude_of_origin", 38.0], PARAMETER["scale_factor", 1.0], '
+    'PARAMETER["false_easting", 200000.0], PARAMETER["false_northing", 600000.0], '
+    'UNIT["m", 1.0], AXIS["Easting", EAST], AXIS["Northing", NORTH], '
+    'AUTHORITY["EPSG","5186"]]'
+)
+
+
+def test_esri_prj_epsg_authority_is_honored() -> None:
+    # The official LSMD WKT is unresolvable by pyproj.to_epsg() yet declares its
+    # own EPSG:5186 authority; that declared top-level authority must be honored.
+    assert epsg_from_prj(_LSMD_ESRI_PRJ) == 5186
+    assert require_supported_source_crs(epsg_from_prj(_LSMD_ESRI_PRJ)) == "EPSG:5186"
+
+
 def test_missing_crs_is_rejected_not_guessed() -> None:
     assert epsg_from_prj("") is None
     assert epsg_from_prj("   ") is None
@@ -120,10 +145,11 @@ def test_invalid_geometry_is_reported_not_repaired() -> None:
         normalize_polygonal_geometry(bowtie)
 
 
-def test_missing_required_attributes_detected() -> None:
-    assert validate_required_attributes({"uname": "도시지역"}) == []
-    assert validate_required_attributes({"uname": ""}) == ["uname"]
-    assert validate_required_attributes({"ucode": "UQA100"}) == ["uname"]
+def test_no_dbf_attribute_is_required_for_bulk_zoning() -> None:
+    # Official LSMD bulk zoning shapefiles carry no zone-name column; the zone
+    # type is the layer itself, so no per-feature DBF attribute is mandatory.
+    assert validate_required_attributes({"mnum": "1", "ntfdate": "20090413"}) == []
+    assert validate_required_attributes({}) == []
 
 
 def test_fingerprint_is_deterministic() -> None:

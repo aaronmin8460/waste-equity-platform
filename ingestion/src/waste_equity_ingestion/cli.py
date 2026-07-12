@@ -26,6 +26,7 @@ from .rcis_waste_ingestion import DEFAULT_REQUEST_DELAY_SECONDS, run_rcis_waste_
 from .result import ProbeResult
 from .samples import build_envelope, save_sample
 from .sgis_ingestion import run_sgis_ingestion
+from .structural_layer_ingestion import run_structural_ingestion
 from .vworld_geocoding_ingestion import run_vworld_geocoding
 from .vworld_zoning_ingestion import run_zoning_ingestion
 
@@ -46,6 +47,8 @@ RCIS_FACILITY_INGEST = "rcis-facility-ingest"
 VWORLD_GEOCODE = "vworld-geocode"
 VWORLD_STRUCTURAL_AUDIT = "vworld-structural-audit"
 VWORLD_ZONING_INGEST = "vworld-zoning-ingest"
+VWORLD_PROTECTED_INGEST = "vworld-protected-ingest"
+VWORLD_ROADS_INGEST = "vworld-roads-ingest"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -62,6 +65,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 VWORLD_GEOCODE,
                 VWORLD_STRUCTURAL_AUDIT,
                 VWORLD_ZONING_INGEST,
+                VWORLD_PROTECTED_INGEST,
+                VWORLD_ROADS_INGEST,
             ]
         ),
     )
@@ -280,6 +285,28 @@ def run_vworld_zoning(settings: ProbeSettings, args: argparse.Namespace) -> int:
     return 0
 
 
+def run_vworld_structural(settings: ProbeSettings, args: argparse.Namespace, family: str) -> int:
+    if not args.dry_run and not args.write:
+        raise IngestionError(f"vworld-{family}-ingest requires either --dry-run or --write")
+    if not args.reference_date:
+        raise IngestionError(f"vworld-{family}-ingest requires --reference-date YYYY-MM-DD")
+    source_path = args.source_path or f"data/raw/vworld/{family}"
+    kwargs: dict[str, str] = {}
+    if args.source_encoding:
+        kwargs["encoding"] = args.source_encoding
+    report = run_structural_ingestion(
+        settings,
+        family=family,
+        source_path=source_path,
+        reference_date=args.reference_date,
+        scope=args.scope,
+        write=bool(args.write),
+        **kwargs,
+    )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    return 0
+
+
 def run_vworld_geocode(settings: ProbeSettings, args: argparse.Namespace) -> int:
     if not args.dry_run and not args.write:
         raise IngestionError("vworld-geocode requires either --dry-run or --write")
@@ -323,6 +350,10 @@ def main(argv: list[str] | None = None) -> int:
             return run_vworld_structural_audit(settings, args)
         if args.source == VWORLD_ZONING_INGEST:
             return run_vworld_zoning(settings, args)
+        if args.source == VWORLD_PROTECTED_INGEST:
+            return run_vworld_structural(settings, args, "protected")
+        if args.source == VWORLD_ROADS_INGEST:
+            return run_vworld_structural(settings, args, "roads")
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)

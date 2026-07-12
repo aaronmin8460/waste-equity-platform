@@ -84,10 +84,11 @@ class StructuralDatasetVersion(Base):
     total_feature_count: Mapped[int] = mapped_column(Integer, default=0)
     accepted_feature_count: Mapped[int] = mapped_column(Integer, default=0)
     rejected_feature_count: Mapped[int] = mapped_column(Integer, default=0)
-    # COMPLETE, PARTIAL, or INCOMPLETE — whether all target regions were
-    # evaluated with a valid source (never conflates zero-features with
-    # not-evaluated; see coverage_matrix for the honest per-region breakdown).
-    coverage_status: Mapped[str] = mapped_column(String(20))
+    # COMPLETE, COMPLETE_FOR_AVAILABLE_SOURCES, PARTIAL, or INCOMPLETE — whether
+    # all target regions were evaluated with a valid source (never conflates
+    # zero-features with not-evaluated or officially-unavailable sources; see
+    # coverage_matrix for the honest per-region breakdown).
+    coverage_status: Mapped[str] = mapped_column(String(40))
     # Per-file provenance: [{filename, checksum, region, layer, features...}].
     source_files: Mapped[Any] = mapped_column(JsonVariant, default=list)
     # Region-by-layer completeness matrix, per-region/per-layer counts, and
@@ -143,6 +144,53 @@ class StructuralFeature(Base):
     # Deterministic sha256 over normalized geometry + relevant attributes.
     feature_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     # Source provenance: {source_filename, region, source_crs, target_crs}.
+    source_provenance: Mapped[Any] = mapped_column(JsonVariant, default=dict)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    ingested_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class StructuralLineFeature(Base):
+    """A normalized EPSG:4326 line structural feature (roads) within a version.
+
+    Road/transport structural layers are line geometry and must not be forced
+    into the polygon-only ``structural_features`` table. This mirror table
+    reuses ``structural_dataset_versions`` for versioning/provenance and shares
+    the fingerprint-based idempotency contract, with a MULTILINESTRING geometry
+    column and generic (non-zoning) attribute names.
+    """
+
+    __tablename__ = "structural_line_features"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_version_id",
+            "feature_fingerprint",
+            name="uq_structural_line_features_version_fingerprint",
+        ),
+        Index("ix_structural_line_features_category", "layer_category"),
+        Index("ix_structural_line_features_target_region", "target_region_code"),
+        # geoalchemy2 attaches the GIST spatial index on ``geometry`` itself.
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True
+    )
+    dataset_version_id: Mapped[int] = mapped_column(
+        ForeignKey("structural_dataset_versions.id"), index=True
+    )
+    # Official layer identifier for this feature (e.g. LT_L_N3A0020000).
+    layer_identifier: Mapped[str] = mapped_column(String(100), index=True)
+    provider_feature_id: Mapped[str | None] = mapped_column(String(200))
+    # Normalized road/transport category (e.g. ROAD_CENTERLINE, ROAD_LINK).
+    layer_category: Mapped[str] = mapped_column(String(40), index=True)
+    official_layer_code: Mapped[str] = mapped_column(String(20))
+    official_layer_name: Mapped[str] = mapped_column(String(100))
+    target_region_code: Mapped[str | None] = mapped_column(String(20))
+    target_region_name: Mapped[str | None] = mapped_column(String(50))
+    # Official source attributes preserved for interpretation (road class, lane
+    # count, width, node ids, restriction fields) after explicit decoding.
+    source_attributes: Mapped[Any] = mapped_column(JsonVariant, default=dict)
+    geometry: Mapped[Any] = mapped_column(Geometry(geometry_type="MULTILINESTRING", srid=4326))
+    feature_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     source_provenance: Mapped[Any] = mapped_column(JsonVariant, default=dict)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     ingested_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))

@@ -17,6 +17,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import shapely
@@ -85,12 +86,14 @@ TARGET_REGIONS: tuple[TargetRegion, ...] = (
 
 TARGET_REGIONS_BY_DIR: dict[str, TargetRegion] = {r.dir_name: r for r in TARGET_REGIONS}
 
-# Official source attributes preserved for interpretation (audit WFS schema).
-# Kept verbatim in ``source_attributes``; a subset feeds the fingerprint.
+# Official source attributes preserved for interpretation. Covers both the WFS
+# schema (uname/ucode/...) and the official LSMD bulk-shapefile schema
+# (mnum/sgg_oid/col_adm_se/ntfdate/alias/remark). Absent keys are simply skipped
+# by the fingerprint. Kept verbatim in ``source_attributes``.
 INTERPRETATION_ATTRIBUTES: tuple[str, ...] = (
+    # WFS schema
     "uname",
     "ucode",
-    "mnum",
     "dyear",
     "dnum",
     "sido_cd",
@@ -98,11 +101,22 @@ INTERPRETATION_ATTRIBUTES: tuple[str, ...] = (
     "admin_cd",
     "sido_name",
     "sigg_name",
+    # LSMD bulk-shapefile schema
+    "mnum",
+    "sgg_oid",
+    "col_adm_se",
+    "ntfdate",
+    "alias",
+    "remark",
 )
 
-# The minimum attribute needed to interpret a zoning feature. VWorld zone WFS
-# exposes ``uname``/``ucode``; bulk LSMD DBFs carry the same columns.
-REQUIRED_ATTRIBUTES: tuple[str, ...] = ("uname",)
+# Per-feature required DBF attributes. The official LSMD bulk zoning shapefiles
+# carry NO zone-name column — the zone type (도시지역/관리지역/농림지역/
+# 자연환경보전지역) is authoritatively the layer itself (UQ111–UQ114), which the
+# loader always resolves from the filename. A valid polygon with a known layer
+# is therefore a complete feature, so no DBF attribute is mandatory. (The WFS
+# path, which does expose ``uname``, is validated separately.)
+REQUIRED_ATTRIBUTES: tuple[str, ...] = ()
 
 _UPPER_ALNUM = re.compile(r"[^A-Z0-9]")
 
@@ -155,7 +169,18 @@ def epsg_from_prj(prj_text: str) -> int | None:
     except (CRSError, ValueError):
         return None
     epsg = crs.to_epsg()
-    return int(epsg) if epsg is not None else None
+    if epsg is not None:
+        return int(epsg)
+    # Official Korean LSMD .prj files ship an ESRI-style WKT that pyproj cannot
+    # map to an EPSG code even at low confidence, yet the WKT explicitly declares
+    # its own authority (the outermost AUTHORITY["EPSG","5186"] on the PROJCS).
+    # Trust the file's declared top-level authority — this reads the CRS the
+    # official file states it is, and the supported-CRS allowlist still validates
+    # it rather than guessing. A .prj with no EPSG authority stays unresolved.
+    matches = re.findall(r'AUTHORITY\s*\[\s*"EPSG"\s*,\s*"?(\d+)"?\s*\]', text)
+    if matches:
+        return int(matches[-1])
+    return None
 
 
 def require_supported_source_crs(epsg: int | None) -> str:
@@ -257,15 +282,21 @@ def classify_region_layer(
     validation_failed: bool,
     feature_count: int,
     evaluated: bool,
+    official_unavailable: bool = False,
 ) -> RegionLayerCoverage:
     """Classify a (region, layer) cell honestly.
 
     Never treats zero features as equivalent to not-evaluated: a region whose
     source was read and validated but yielded no matching features is
-    ``EVALUATED_ZERO_FEATURES``, distinct from ``NOT_EVALUATED``.
+    ``EVALUATED_ZERO_FEATURES``, distinct from ``NOT_EVALUATED``. A cell with no
+    local file that an official-source manifest documents as not published is
+    ``OFFICIAL_SOURCE_UNAVAILABLE`` — distinct from an unexpectedly missing file
+    (``SOURCE_MISSING``) and never conflated with zero features.
     """
 
     if not source_present:
+        if official_unavailable:
+            return RegionLayerCoverage("OFFICIAL_SOURCE_UNAVAILABLE")
         return RegionLayerCoverage("SOURCE_MISSING")
     if validation_failed:
         return RegionLayerCoverage("VALIDATION_FAILURE", feature_count=feature_count)
@@ -274,6 +305,34 @@ def classify_region_layer(
     if feature_count > 0:
         return RegionLayerCoverage("EVALUATED_WITH_FEATURES", feature_count=feature_count)
     return RegionLayerCoverage("EVALUATED_ZERO_FEATURES", feature_count=0)
+
+
+def load_availability_manifest(source_path: Path) -> dict[tuple[str, str], dict[str, Any]]:
+    """Read the optional Git-ignored ``source_manifest.json`` availability map.
+
+    Returns a ``{(region, layer): {status, evidence}}`` mapping. Missing or
+    unreadable manifests yield an empty map (all absent cells then default to
+    ``SOURCE_MISSING``). Only availability metadata is read; no data is
+    fabricated from it.
+    """
+
+    manifest_path = source_path / "source_manifest.json"
+    if not manifest_path.is_file():
+        return {}
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    result: dict[tuple[str, str], dict[str, Any]] = {}
+    for entry in raw.get("entries", []):
+        region = str(entry.get("region", "")).strip().lower()
+        layer = str(entry.get("layer", "")).strip().upper()
+        if region and layer:
+            result[(region, layer)] = {
+                "status": entry.get("status"),
+                "evidence": entry.get("evidence"),
+            }
+    return result
 
 
 @dataclass
