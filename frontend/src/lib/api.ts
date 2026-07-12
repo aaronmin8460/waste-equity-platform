@@ -280,3 +280,196 @@ export function fetchFacilityBurden(): Promise<FacilityBurdenEnvelope> {
 export function fetchDataSources(): Promise<DataSourceItem[]> {
   return fetchJson<DataSourceItem[]>("/api/v1/data-sources");
 }
+
+// --------------------------------------------------------------------------- //
+// Suitability screening (Phase 5.4) — analytical screening only, never legal.
+// --------------------------------------------------------------------------- //
+
+export type SuitabilityProfile = "baseline" | "equal" | "equity_focused" | "access_focused";
+export type SuitabilityStatus = "ELIGIBLE" | "REVIEW_REQUIRED" | "EXCLUDED";
+
+export interface SuitabilityPolicy {
+  policy_version: string;
+  derivation_version: string;
+  candidate_grid_version: string;
+  statuses: string[];
+  weight_profiles: Record<string, Record<string, string>>;
+  weight_rationale: Record<string, string>;
+  hard_exclusion_codes: Record<string, string>;
+  review_codes: Record<string, string>;
+  zoning_registry: Record<string, unknown>;
+  road_distance_curve: string[][];
+  grid: Record<string, unknown>;
+  disclaimer: string;
+}
+
+export interface SuitabilityRun {
+  id: number;
+  derivation_version: string;
+  policy_version: string;
+  candidate_grid_version: string;
+  reference_year: number;
+  boundary_vintage: string;
+  weight_profile: string;
+  analysis_signature: string;
+  status: string;
+  candidate_count_total: number;
+  candidate_count_eligible: number;
+  candidate_count_review: number;
+  candidate_count_excluded: number;
+  input_dataset_version_ids: number[];
+  input_provenance: Record<string, unknown>;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface SuitabilitySummary {
+  run_id: number;
+  reference_year: number;
+  policy_version: string;
+  derivation_version: string;
+  candidate_grid_version: string;
+  weight_profile: string;
+  candidate_count_total: number;
+  candidate_count_eligible: number;
+  candidate_count_review: number;
+  candidate_count_excluded: number;
+  exclusion_reason_counts: Record<string, number>;
+  review_reason_counts: Record<string, number>;
+  sido_distribution: Record<string, Record<string, number>>;
+  top_candidates: Array<Record<string, unknown>>;
+  coverage_notes: string[];
+  assumptions: string[];
+  disclaimer: string;
+}
+
+export interface CandidateProperties {
+  candidate_id: number;
+  candidate_key: string;
+  status: SuitabilityStatus;
+  profile: string;
+  is_excluded: boolean;
+  rank: number | null;
+  total_score: string | null;
+  provisional_score: string | null;
+  zoning_score: string | null;
+  road_score: string | null;
+  equity_score: string | null;
+  demand_score: string | null;
+  sido_region_code: string | null;
+  sido_region_name: string | null;
+  sigungu_region_code: string | null;
+  sigungu_region_name: string | null;
+  nearest_road_distance_m: string | null;
+  exclusion_reasons: string[];
+  review_reasons: string[];
+}
+
+export interface CandidateFeature {
+  type: "Feature";
+  geometry: GeoJSON.Geometry;
+  properties: CandidateProperties;
+}
+
+export interface SuitabilityCandidateCollection {
+  type: "FeatureCollection";
+  indicator: string;
+  derivation_version: string;
+  policy_version: string;
+  candidate_grid_version: string;
+  weight_profile: string;
+  reference_year: number;
+  run_id: number;
+  count: number;
+  total_matched: number;
+  limit: number;
+  offset: number;
+  features: CandidateFeature[];
+  assumptions: string[];
+  disclaimer: string;
+}
+
+export interface CandidateDetail extends CandidateProperties {
+  run_id: number;
+  profile_totals: Record<string, string | null>;
+  profile_ranks: Record<string, number | null>;
+  penalties: string[];
+  raw_components: Record<string, unknown>;
+  nearest_road_provenance: Record<string, unknown>;
+  component_provenance: Record<string, unknown>;
+  original_area_m2: string;
+  clipped_area_m2: string;
+  clipped_area_ratio: string;
+  geometry: GeoJSON.Geometry;
+  reference_year: number;
+  policy_version: string;
+  derivation_version: string;
+  candidate_grid_version: string;
+  weights: Record<string, string>;
+  disclaimer: string;
+}
+
+/** fetchJson variant that supports cancellation via an AbortSignal. */
+export async function fetchJsonSignal<T>(path: string, signal: AbortSignal): Promise<T> {
+  const response = await fetch(`${apiBaseUrl()}${path}`, { cache: "no-store", signal });
+  if (!response.ok) {
+    let detail: UnavailableDataDetail | null = null;
+    try {
+      detail = parseStructuredDetail(await response.json());
+    } catch {
+      detail = null;
+    }
+    const message = detail
+      ? `${detail.error}: ${detail.detail}`
+      : `Backend request failed with status ${response.status}`;
+    throw new ApiError(response.status, detail, message);
+  }
+  return (await response.json()) as T;
+}
+
+export function fetchSuitabilityPolicy(): Promise<SuitabilityPolicy> {
+  return fetchJson<SuitabilityPolicy>("/api/v1/suitability/policies");
+}
+
+export function fetchSuitabilityLatestRun(): Promise<SuitabilityRun> {
+  return fetchJson<SuitabilityRun>("/api/v1/suitability/runs/latest");
+}
+
+export function fetchSuitabilitySummary(profile: SuitabilityProfile): Promise<SuitabilitySummary> {
+  return fetchJson<SuitabilitySummary>(`/api/v1/suitability/summary?profile=${profile}`);
+}
+
+export interface CandidateQuery {
+  profile: SuitabilityProfile;
+  bbox?: string;
+  status?: SuitabilityStatus;
+  sido?: string;
+  top?: number;
+  limit?: number;
+}
+
+export function fetchSuitabilityCandidates(
+  query: CandidateQuery,
+  signal: AbortSignal,
+): Promise<SuitabilityCandidateCollection> {
+  const params = new URLSearchParams({ profile: query.profile });
+  if (query.bbox) params.set("bbox", query.bbox);
+  if (query.status) params.set("status", query.status);
+  if (query.sido) params.set("sido", query.sido);
+  if (query.top !== undefined) params.set("top", String(query.top));
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  return fetchJsonSignal<SuitabilityCandidateCollection>(
+    `/api/v1/suitability/candidates?${params.toString()}`,
+    signal,
+  );
+}
+
+export function fetchSuitabilityCandidateDetail(
+  candidateId: number,
+  profile: SuitabilityProfile,
+): Promise<CandidateDetail> {
+  return fetchJson<CandidateDetail>(
+    `/api/v1/suitability/candidates/${candidateId}?profile=${profile}`,
+  );
+}
