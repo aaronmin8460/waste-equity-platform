@@ -76,3 +76,61 @@ test("map loads with official data, metadata, and no government API calls", asyn
 
   expect(disallowedRequests).toEqual([]);
 });
+
+test("suitability mode screens candidates with provenance and no government API calls", async ({
+  page,
+}) => {
+  const disallowedRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.protocol === "blob:" || url.protocol === "data:") return;
+    const host = url.hostname;
+    if (!ALLOWED_HOST_SUFFIXES.some((allowed) => host === allowed || host.endsWith(`.${allowed}`))) {
+      disallowedRequests.push(request.url());
+    }
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".maplibregl-canvas")).toBeVisible({ timeout: 30_000 });
+
+  // Enter suitability mode.
+  await page.getByTestId("mode-suitability").click();
+
+  // Analysis summary + counts render.
+  const summary = page.getByTestId("suitability-summary");
+  await expect(summary).toBeVisible({ timeout: 20_000 });
+  await expect(summary).toContainText("suitability-policy-v1");
+  await expect(page.getByTestId("candidate-counts")).toContainText("적합");
+
+  // The analytical-screening disclaimer is prominent (never a legal claim).
+  await expect(page.getByTestId("suitability-disclaimer")).toContainText("legal");
+
+  // Candidate cells load into the viewport (controlled, bbox-limited).
+  await expect(page.getByTestId("candidate-viewport-count")).toContainText("표시", {
+    timeout: 20_000,
+  });
+
+  // Exclusion + review reasons are shown (never fabricated).
+  await expect(page.getByText("제외 사유 (Exclusion reasons)")).toBeVisible();
+  await expect(page.getByText("PROJECT_SCREENING_EXCLUSION:UD801")).toBeVisible();
+  await expect(page.getByText("검토 사유 (Review reasons)")).toBeVisible();
+
+  // Coverage warnings surface OFFICIAL_SOURCE_UNAVAILABLE gaps.
+  await expect(page.getByTestId("coverage-warnings")).toContainText("COVERAGE_GAP");
+
+  // Profile switching re-weights (updates the top-candidate list).
+  await page.getByRole("radio", { name: /접근성 중심/ }).check();
+  await expect(page.getByTestId("top-candidates")).toBeVisible();
+
+  // Clicking a top candidate opens the evidence panel with component scores and
+  // accounting-basis provenance.
+  await page.getByTestId("top-candidate-item").first().click();
+  const detail = page.getByTestId("candidate-detail");
+  await expect(detail).toBeVisible({ timeout: 15_000 });
+  await expect(detail).toContainText("토지이용 Zoning");
+  await expect(detail).toContainText("FACILITY_LOCATION_BASED_THROUGHPUT");
+  await expect(detail).toContainText("ORIGIN_BASED_TREATMENT_OUTCOME");
+  await expect(page.getByTestId("candidate-sensitivity")).toBeVisible();
+
+  expect(disallowedRequests).toEqual([]);
+});

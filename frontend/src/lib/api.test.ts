@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, apiBaseUrl, fetchJson } from "./api";
+import {
+  ApiError,
+  apiBaseUrl,
+  fetchJson,
+  fetchSuitabilityCandidateDetail,
+  fetchSuitabilityCandidates,
+  fetchSuitabilityPolicy,
+} from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -58,5 +65,52 @@ describe("fetchJson", () => {
       status: 500,
       detail: null,
     });
+  });
+});
+
+describe("suitability client", () => {
+  it("fetches the policy from the backend", async () => {
+    stubFetch(200, { policy_version: "suitability-policy-v1", statuses: ["ELIGIBLE"] });
+    await expect(fetchSuitabilityPolicy()).resolves.toMatchObject({
+      policy_version: "suitability-policy-v1",
+    });
+  });
+
+  it("builds the candidate query and forwards the abort signal to fetch", async () => {
+    const fetchMock = stubFetch(200, { type: "FeatureCollection", features: [] });
+    const controller = new AbortController();
+    await fetchSuitabilityCandidates(
+      { profile: "equity_focused", bbox: "1,2,3,4", top: 5, limit: 2000 },
+      controller.signal,
+    );
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/suitability/candidates?");
+    expect(url).toContain("profile=equity_focused");
+    expect(url).toContain("bbox=1%2C2%2C3%2C4");
+    expect(url).toContain("top=5");
+    expect(url).toContain("limit=2000");
+    expect(init.signal).toBe(controller.signal);
+  });
+
+  it("surfaces a structured 404 for a candidate detail", async () => {
+    stubFetch(404, { detail: { error: "CANDIDATE_NOT_FOUND", detail: "x" } });
+    const failure = fetchSuitabilityCandidateDetail(1, "baseline");
+    await expect(failure).rejects.toBeInstanceOf(ApiError);
+    await failure.catch((error: ApiError) => {
+      expect(error.status).toBe(404);
+      expect(error.detail?.error).toBe("CANDIDATE_NOT_FOUND");
+    });
+  });
+
+  it("propagates an abort error without swallowing it", async () => {
+    const abortError = new DOMException("aborted", "AbortError");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(abortError),
+    );
+    const controller = new AbortController();
+    await expect(
+      fetchSuitabilityCandidates({ profile: "baseline" }, controller.signal),
+    ).rejects.toBe(abortError);
   });
 });
