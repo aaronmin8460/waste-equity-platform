@@ -149,6 +149,57 @@ class StructuralFeature(Base):
     ingested_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
 
 
+class StructuralProtectedFeature(Base):
+    """A normalized EPSG:4326 protected/restricted polygon feature in a version.
+
+    Protected/restricted areas (개발제한구역, 상수원보호구역, 국립자연공원, …) are
+    polygon geometry but carry non-zoning semantics, so they use this dedicated
+    table with generic ``layer_*`` columns rather than the zoning-specific
+    columns of ``structural_features`` (whose 88,252 zoning rows stay untouched).
+    It reuses ``structural_dataset_versions`` for versioning/provenance and shares
+    the fingerprint-based idempotency contract, with a MULTIPOLYGON/4326 geometry.
+    """
+
+    __tablename__ = "structural_protected_features"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_version_id",
+            "feature_fingerprint",
+            name="uq_structural_protected_features_version_fingerprint",
+        ),
+        Index("ix_structural_protected_features_category", "layer_category"),
+        Index("ix_structural_protected_features_target_region", "target_region_code"),
+        # geoalchemy2 attaches the GIST spatial index on ``geometry`` itself.
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True
+    )
+    dataset_version_id: Mapped[int] = mapped_column(
+        ForeignKey("structural_dataset_versions.id"), index=True
+    )
+    # Official layer identifier for this feature (e.g. LT_C_UD801, LT_C_WGISNPGUG).
+    layer_identifier: Mapped[str] = mapped_column(String(100), index=True)
+    provider_feature_id: Mapped[str | None] = mapped_column(String(200))
+    # Normalized protected/restricted category (DEVELOPMENT_RESTRICTION,
+    # WATER_SOURCE_PROTECTION, WETLAND_PROTECTION, FOREST_PROTECTION,
+    # EDUCATION_PROTECTION, HERITAGE_PROTECTION, NATIONAL_PARK, …).
+    layer_category: Mapped[str] = mapped_column(String(40), index=True)
+    official_layer_code: Mapped[str] = mapped_column(String(20))
+    official_layer_name: Mapped[str] = mapped_column(String(100))
+    target_region_code: Mapped[str | None] = mapped_column(String(20))
+    target_region_name: Mapped[str | None] = mapped_column(String(50))
+    # Official source attributes preserved for interpretation, plus (for
+    # nationwide sources clipped to a target 시도) a ``clipped_from_nationwide``
+    # marker and the clipped region.
+    source_attributes: Mapped[Any] = mapped_column(JsonVariant, default=dict)
+    geometry: Mapped[Any] = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=4326))
+    feature_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    source_provenance: Mapped[Any] = mapped_column(JsonVariant, default=dict)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    ingested_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
 class StructuralLineFeature(Base):
     """A normalized EPSG:4326 line structural feature (roads) within a version.
 

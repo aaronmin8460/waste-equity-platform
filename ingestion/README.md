@@ -495,44 +495,89 @@ TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/
   PYTHONPATH=src:../backend/src pytest tests/test_vworld_zoning_persistence.py
 ```
 
-## Protected and Road Structural Layers (Phase 2.5B, framework)
+## Protected and Road Structural Layers (Phase 2.5B — live)
 
-The versioned structural schema is reused beyond zoning by a generalized loader
-(`structural_layer_ingestion.py`) driven by a layer registry
-(`structural_layers.py`):
+The versioned structural schema is reused beyond zoning by a **manifest-driven**
+loader (`structural_layer_ingestion.py`) with two supporting modules
+(`structural_manifest.py`, `structural_clipping.py`). Protected/restricted
+polygons persist to a dedicated `structural_protected_features` table
+(MULTIPOLYGON/4326, generic `layer_*` columns — migration 0009); road/transport
+lines persist to `structural_line_features` (MULTILINESTRING/4326). The zoning
+`structural_features` table (88,252 rows) is not touched.
 
-- **Protected/restricted polygon layers** (`vworld-protected-ingest`) persist to
-  `structural_features`: mandatory UD801 개발제한구역, UM710 상수원보호구역,
-  UM901 습지보호지역, UF151 산림보호구역, WGISNPGUG 국립자연공원, UO101
-  교육환경보호구역, UO301 국가유산 지정/보호구역; optional (flagged) UM221
-  야생생물보호구역, UQ162 도시자연공원·녹지.
-- **Road/transport line layers** (`vworld-roads-ingest`) persist to the
-  `structural_line_features` table (MULTILINESTRING/4326) — line geometry is
-  **not** forced into the polygon table: STDLINK 표준노드링크 (preferred bulk),
-  N3A0020000 도로중심선, MOCTLINK (API cross-check only). Road-class/lane/width/
-  node/restriction attributes are preserved; geometric proximity never proves
-  truck accessibility.
+### Source manifest (Git-ignored, per family)
 
-Same contract as zoning: bulk-file loader (no API key, no sample fallback),
-`.prj` CRS read and validated against the allowlist, transform to EPSG:4326,
-polygon→MultiPolygon / line→MultiLineString normalization, deterministic
-fingerprint idempotency, versioned dataset releases, coverage matrix over
-Seoul/Incheon/Gyeonggi (COMPLETE_WITH_FEATURES / COMPLETE_ZERO_FEATURES /
-SOURCE_MISSING / VALIDATION_FAILURE / NOT_EVALUATED).
+`data/raw/vworld/{protected,roads}/source_manifest.json` is the authority for
+layer identity, per-dataset official reference dates, source CRS, filename
+aliases, and officially-unavailable cells. It records **provenance and mapping
+only** — never feature data — and the loader still reads and validates every
+actual `.prj`/`.dbf`/`.shp`. Because different sources have different official
+reference periods, one `structural_dataset_versions` row is created **per
+provider dataset release** (never one family-wide invented reference date), and
+a family-level coverage report aggregates over the versions.
+
+Nationwide layer identity is **never** taken from the archive filename: the KNPS
+national-park shapefile is `BSI_NPK_BBNDR` (mapped to `WGISNPGUG`/`국립자연공원`
+by manifest alias, not filename), and the 표준노드링크 LINK line shapefile is
+`MOCT_LINK` (the `MOCT_NODE` point file, `MULTILINK`/`TURNINFO` tables, and the
+`내역서.csv` changelog are excluded by alias and by a geometry-family guard).
+
+### Datasets, CRS, and official reference dates
+
+| Family | Dataset | Coverage | Layers | Source CRS | Reference date | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| protected | LSMD 용도구역·보호구역 (국토교통부) | regional | UD801/UM710/UM901/UF151/UO101/UO301 | EPSG:5186 | 2026-06-01 | internal `..._202606.shp` = release 202606 |
+| protected | 국립공원 공원경계 (국립공원공단) | nationwide | WGISNPGUG | EPSG:5179 | 2023-12-31 | archive 기준일자 `..._20231231` (data.go.kr convention) |
+| roads | 연속수치지형도 도로중심선 (국토지리정보원) | regional | N3A0020000 | EPSG:5179 | 2024-04-18 | internal XML `mdDateSt`/`ModDate` 20240418 (all 3 regions) |
+| roads | 표준노드링크 (ITS 국가교통정보센터) | nationwide | STDLINK | EPSG:5186 | 2026-07-01 | release filename `[2026-07-01]NODELINKDATA.zip`; `.prj` ESRI WKT `ITRF2000_Central_Belt_60` → 5186 by exact TM params |
+
+### Nationwide spatial clipping
+
+Nationwide sources (national park, 표준노드링크) are reprojected to EPSG:4326 and
+spatially **clipped** to the Seoul/Incheon/Gyeonggi SIDO boundaries already in
+PostGIS (`regions`). A feature fully inside a 시도 is kept unchanged; a feature
+crossing a 시도 boundary is cut and yields one clipped feature per 시도 (e.g.
+북한산국립공원 → a Seoul feature + a Gyeonggi feature); a feature outside all
+three 시도 is skipped. Fingerprints are computed after clipping, and a
+source-CRS bounding-box prefilter (an optimization only) skips the majority of
+out-of-region features before any reprojection. Regional sources are assigned
+their 시도 from the directory and are not clipped.
+
+Same core contract as zoning: bulk-file loader (no API key, no sample fallback),
+`.prj` CRS read and validated against the allowlist (rejected, never guessed),
+polygon→MultiPolygon / line→MultiLineString normalization, invalid geometry
+rejected and reported (never repaired), deterministic-fingerprint idempotency,
+and coverage statuses `COMPLETE_WITH_FEATURES` / `COMPLETE_ZERO_FEATURES` /
+`OFFICIAL_SOURCE_UNAVAILABLE` / `SOURCE_MISSING` / `VALIDATION_FAILURE` /
+`NATIONWIDE_SOURCE_EVALUATED`. Multi-million-row road sources stream to PostGIS
+in batches with `ON CONFLICT DO NOTHING`, so nothing is held in memory and an
+identical re-run inserts zero rows.
+
+`--reference-date` is no longer required for these two commands (per-dataset
+dates come from the manifest):
 
 ```bash
 python -m waste_equity_ingestion.cli vworld-protected-ingest \
-  --source-path data/raw/vworld/protected --reference-date YYYY-MM-DD \
-  --scope capital-region --dry-run   # then --write
+  --source-path data/raw/vworld/protected --scope capital-region --dry-run  # then --write
 python -m waste_equity_ingestion.cli vworld-roads-ingest \
-  --source-path data/raw/vworld/roads --reference-date YYYY-MM-DD \
-  --scope capital-region --write
+  --source-path data/raw/vworld/roads --scope capital-region --dry-run      # then --write
 ```
 
-Official bulk source files require manual download (browser/솔루션-mediated);
-see `docs/PHASE_2_5B_INGESTION_STATUS.md` for the exact per-layer checklist and
-destination directories. As of the 2026-07-12 recovery run no structural data
-had been ingested (all layers `SOURCE_MISSING`).
+### Live result (2026-07-12)
+
+- **Protected:** 2 dataset versions (LSMD 202606 EPSG:5186→4326; KNPS national
+  park 2023-12-31 EPSG:5179→4326). **20,892 features** written to
+  `structural_protected_features` (20,890 regional + 2 national-park clipped
+  features — 북한산 Seoul + Gyeonggi; 47 invalid polygons rejected, not
+  repaired; 22 national parks outside the capital region skipped). Seoul UM901,
+  Seoul UF151, and Gyeonggi UM901 are `OFFICIAL_SOURCE_UNAVAILABLE`; coverage
+  `COMPLETE_FOR_AVAILABLE_SOURCES`. All geometry SRID 4326 MultiPolygon, 0
+  invalid, 0 null, 0 duplicate fingerprints; idempotent second write inserted 0.
+- **Roads:** see `docs/PHASE_2_5B_INGESTION_STATUS.md` for the live N3A0020000 +
+  STDLINK counts, per-region line totals, and idempotency result.
+
+Official bulk source files are Git-ignored and never committed; see
+`docs/PHASE_2_5B_INGESTION_STATUS.md` for the per-layer source catalogue.
 
 ## Probe Commands
 

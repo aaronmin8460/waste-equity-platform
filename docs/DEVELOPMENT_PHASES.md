@@ -255,27 +255,38 @@ Subphases:
   `docs/PHASE_2_5B_INGESTION_STATUS.md`. Protected areas, roads, ownership,
   sensitive facilities, and per-parcel land-use are out of scope for this
   subphase.
-- **2.5B framework extension (in progress): protected + road loaders.** The
-  versioned structural schema is extended with a `structural_line_features`
-  table (MULTILINESTRING/4326, migration 0007) so road/transport line geometry
-  is not forced into the polygon table, and a generalized loader
-  (`structural_layer_ingestion.py` + `structural_layers.py` registry) ingests
-  the mandatory protected/restricted polygon layers (UD801, UM710, UM901,
-  UF151, WGISNPGUG, UO101, UO301; optional UM221, UQ162) via
-  `vworld-protected-ingest` and the road line layers (STDLINK, N3A0020000,
-  MOCTLINK) via `vworld-roads-ingest`. The framework is PostGIS-verified with
-  synthetic fixtures; **no official structural data has been ingested yet**
-  because the official bulk downloads are browser-mediated (manual download
-  required — see `docs/PHASE_2_5B_INGESTION_STATUS.md` for the checklist and
-  the current all-`SOURCE_MISSING` completeness state).
+- **2.5B protected + road layers — now live-ingested.** The versioned schema is
+  extended with `structural_line_features` (MULTILINESTRING/4326, migration
+  0007) for roads and `structural_protected_features` (MULTIPOLYGON/4326, generic
+  `layer_*` columns, migration 0009) for protected areas, so neither is forced
+  into the zoning-specific `structural_features` table (which stays untouched).
+  A **manifest-driven** loader (`structural_layer_ingestion.py` with
+  `structural_manifest.py` and `structural_clipping.py`) ingests the protected
+  polygon layers (UD801, UM710, UM901, UF151, UO101, UO301 regional +
+  WGISNPGUG national park nationwide) via `vworld-protected-ingest` and the road
+  line layers (N3A0020000 도로중심선 regional + STDLINK 표준노드링크 nationwide)
+  via `vworld-roads-ingest`. Each provider dataset release is its own
+  `structural_dataset_versions` row with its own official reference date and CRS
+  (protected: LSMD 202606/EPSG:5186 + KNPS 2023-12-31/EPSG:5179; roads: NGII
+  도로중심선 2024-04-18/EPSG:5179 + ITS STDLINK 2026-07-01/EPSG:5186). Nationwide
+  sources are spatially clipped to the Seoul/Incheon/Gyeonggi SIDO boundaries in
+  PostGIS (cross-boundary features, e.g. 북한산, yield one clipped feature per
+  시도). **Live result (2026-07-12):** protected = **20,892 features**
+  (`COMPLETE_FOR_AVAILABLE_SOURCES`; Seoul UM901/UF151 and Gyeonggi UM901
+  `OFFICIAL_SOURCE_UNAVAILABLE`); roads = N3A0020000 + STDLINK live counts in
+  `docs/PHASE_2_5B_INGESTION_STATUS.md`. Invalid geometry is rejected and
+  reported (never repaired); identical second writes insert 0 rows (idempotent).
+  Optional layers (UM221, UQ162, MOCTLINK) are not blockers and are out of scope.
 
 Later Phase 2 subphases will also cover AirKorea and KMA (both currently
 CREDENTIAL_MISSING). They must not begin until explicitly scoped.
 
-Phase 5.4 remains blocked until zoning, the mandatory protected/restricted
-layers, and road features are all production-ingested with complete Seoul,
-Incheon, and Gyeonggi-do coverage and the required analytical policy decisions
-are recorded.
+The Phase 5.4 constraint-layer **data** prerequisite is now met: zoning,
+protected/restricted areas, and road features are production-ingested with
+Seoul/Incheon/Gyeonggi-do coverage (only documented `OFFICIAL_SOURCE_UNAVAILABLE`
+cells excepted). Phase 5.4 still may not begin until the required analytical
+policy decisions (exclusion/penalty rules, weighting rationale, review workflow)
+are recorded — those are separate human decisions, unchanged by this ingestion.
 
 ## Phase 3: Backend Product API Foundation
 
@@ -522,12 +533,13 @@ Blocking prerequisites:
 - The minimum structural-layer package defined in
   `docs/SUITABILITY_DATA_REQUIREMENTS.md` (zoning, protected/restricted
   areas, roads) must be production-ingested through Phase 2.5B with complete
-  Seoul/Incheon/Gyeonggi-do coverage; the Phase 2.5A audit (2026-07-11) found
-  the official feature sources (CONDITIONAL_GO) and Phase 2.5B is now in
-  progress (2.5B-1 delivers the versioned schema and zoning ingestion), but
-  the full mandatory package is not yet ingested. A suitability score without
-  constraint layers would present burden/demand alone as siting suitability,
-  which the data-integrity rules forbid.
+  Seoul/Incheon/Gyeonggi-do coverage. **Satisfied (2026-07-12):** zoning
+  (88,252), protected/restricted (20,892), and road/road-network lines
+  (2,971,494) are production-ingested for all three regions, with the only gaps
+  being documented `OFFICIAL_SOURCE_UNAVAILABLE` cells (Seoul UM901/UF151,
+  Gyeonggi UM901). So the constraint-layer data prerequisite is now met; a
+  suitability score still may not present burden/demand alone as siting
+  suitability. These are spatial screening layers, not legal determinations.
 - The exclusion-classification and buffer/weighting policy decisions listed in
   `docs/SUITABILITY_DATA_REQUIREMENTS.md` must be recorded. (Dataset
   storage/licensing is resolved for this project by the confirmed prior

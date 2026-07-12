@@ -106,7 +106,16 @@ served:
    `docs/SUITABILITY_DATA_REQUIREMENTS.md` (land-use/zoning, protected-area,
    and road feature layers audited in Phase 2.5A) is production-ingested
    (see Phase 5.4); burden and demand indicators alone must not be presented
-   as siting suitability.
+   as siting suitability. As of Phase 2.5B the capital-region package is
+   production-ingested — zoning (88,252 features), protected/restricted areas
+   (`structural_protected_features`), and road/road-network lines
+   (`structural_line_features`) for Seoul/Incheon/Gyeonggi. These are **spatial
+   screening layers**, not legal determinations: a boundary intersection (e.g.
+   with a national-park screening polygon or a proximity buffer to a road line)
+   flags a location for review and never proves a permitting outcome, legal
+   protection status, or truck accessibility. Some official cells are documented
+   `OFFICIAL_SOURCE_UNAVAILABLE` (the provider publishes no shapefile), which is
+   distinct from a verified absence of the constraint on the ground.
 3. The review workflow below, with the reviewer recorded in the PR.
 4. A distinct `derivation_version` and clear UI labeling as a weighted,
    assumption-laden composite.
