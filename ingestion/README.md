@@ -454,9 +454,25 @@ docker compose --profile ingestion run --rm ingestion \
 The result reports per-region and per-layer feature counts and a
 region-by-layer completeness matrix over Seoul, Incheon, and Gyeonggi-do that
 distinguishes `EVALUATED_WITH_FEATURES`, `EVALUATED_ZERO_FEATURES` (an honest
-zero, e.g. no 관리지역 in urban Seoul), `NOT_EVALUATED`, `SOURCE_MISSING`, and
-`VALIDATION_FAILURE`. Zero features is never treated as not-evaluated, and a
-layer legitimately absent in a jurisdiction does not fail the run.
+zero, e.g. no 관리지역 in urban Seoul), `NOT_EVALUATED`, `SOURCE_MISSING`,
+`VALIDATION_FAILURE`, and `OFFICIAL_SOURCE_UNAVAILABLE`. Zero features is never
+treated as not-evaluated, and a layer legitimately absent in a jurisdiction does
+not fail the run.
+
+An optional Git-ignored `source_manifest.json` in the source root records
+official-source availability: a layer the official provider does not publish for
+a region (e.g. Seoul UQ112–UQ114, which VWorld does not distribute) is
+classified `OFFICIAL_SOURCE_UNAVAILABLE` (with evidence) rather than the
+`SOURCE_MISSING` used for an unexpectedly absent local file. When every target
+region is evaluated, every present file validates, and each gap is a documented
+`OFFICIAL_SOURCE_UNAVAILABLE`, the run reports
+`COMPLETE_FOR_AVAILABLE_SOURCES`.
+
+Live result (2026-07-12): the 9 official LSMD ZIPs (release `202606`, reference
+date `2026-06-01`, source EPSG:5186 → EPSG:4326) ingested **88,252** features
+(88,790 received, 538 invalid polygons rejected — reported, never repaired);
+Seoul UQ112–114 `OFFICIAL_SOURCE_UNAVAILABLE`; identical second write inserted 0
+(idempotent). All stored geometries are SRID 4326 MultiPolygon, 0 invalid.
 
 A `structural_dataset_versions` row identifies one reproducible official release
 (provider dataset + reference date + combined source checksum + transformation

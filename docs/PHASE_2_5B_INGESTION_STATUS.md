@@ -38,24 +38,43 @@ Facilities by 시도: 서울 38 / 인천 164 / 경기 449. RCIS coverage: Seoul 
 Incheon 10/10, Gyeonggi 24/44 exact (20 large-city districts documented as
 `REQUIRES_AGGREGATION`, not loaded).
 
-## Structural layer completeness (as of this run)
+## Structural layer completeness (as of 2026-07-12 live zoning ingestion)
 
-Structural tables (`structural_dataset_versions`, `structural_features`,
-`structural_line_features`) exist and are **empty (0 rows)**. Official bulk
-source files are **not present locally** and the official bulk downloads are
-browser/솔루션-mediated (interactive login/approval per the Phase 2.5A audit),
-so they cannot be fetched from the CLI. No mirror or synthetic substitute was
-used.
+**Zoning is now production-ingested** from the 9 official VWorld LSMD ZIP files
+(release `202606`, reference date `2026-06-01`, source CRS EPSG:5186 → EPSG:4326).
+`structural_dataset_versions` = 1, `structural_features` = **88,252** (received
+88,790; 538 rejected as invalid polygon geometry — reported, never repaired).
+Protected and road bulk files are still absent (browser/솔루션-mediated
+downloads); their tables remain empty.
 
-Per-layer / per-region status — every mandatory cell is `SOURCE_MISSING`
-(distinct from “zero features”); no region has been evaluated yet:
+Zoning per-region / per-layer feature counts:
+
+| Layer | Seoul | Incheon | Gyeonggi |
+| --- | --- | --- | --- |
+| UQ111 도시지역 | 6,702 | 2,046 | 15,462 |
+| UQ112 관리지역 | OFFICIAL_SOURCE_UNAVAILABLE | 4,153 | 49,507 |
+| UQ113 농림지역 | OFFICIAL_SOURCE_UNAVAILABLE | 1,134 | 9,164 |
+| UQ114 자연환경보전지역 | OFFICIAL_SOURCE_UNAVAILABLE | 3 | 81 |
+
+Seoul UQ112–UQ114 are `OFFICIAL_SOURCE_UNAVAILABLE` (the official VWorld LSMD
+download page publishes no Seoul SHP for those layers — see the Git-ignored
+`data/raw/vworld/zoning/source_manifest.json`). This is explicitly **not**
+`SOURCE_MISSING` and **not** a verified zero-occurrence. Zoning coverage status
+is therefore `COMPLETE_FOR_AVAILABLE_SOURCES`.
+
+Family-level status:
 
 | Family | Layers | Seoul | Incheon | Gyeonggi | Coverage |
 | --- | --- | --- | --- | --- | --- |
-| zoning | UQ111–UQ114 | SOURCE_MISSING | SOURCE_MISSING | SOURCE_MISSING | INCOMPLETE |
+| zoning | UQ111–UQ114 | UQ111 loaded; UQ112–114 OFFICIAL_SOURCE_UNAVAILABLE | UQ111–114 loaded | UQ111–114 loaded | COMPLETE_FOR_AVAILABLE_SOURCES |
 | protected (mandatory) | UD801, UM710, UM901, UF151, WGISNPGUG, UO101, UO301 | SOURCE_MISSING | SOURCE_MISSING | SOURCE_MISSING | INCOMPLETE |
 | protected (optional) | UM221, UQ162 | SOURCE_MISSING | SOURCE_MISSING | SOURCE_MISSING | INCOMPLETE |
 | roads | STDLINK / N3A0020000 / MOCTLINK | SOURCE_MISSING | SOURCE_MISSING | SOURCE_MISSING | INCOMPLETE |
+
+Verification (2026-07-12): all 88,252 stored geometries are SRID 4326
+MultiPolygon, 0 invalid (ST_IsValid), 0 null, 0 duplicate fingerprints;
+identical second write inserted 0 / skipped 88,252 (idempotent); freshness
+`vworld_structural` = `2026-06-01 / FRESH`.
 
 The ingestion framework is ready: place the official files and run the write
 command; the loader validates sidecars, reads/validates the source CRS,
@@ -129,14 +148,19 @@ structural suitability. Left as remaining Phase 2 work; no data fabricated.
 
 ## Phase status
 
-- **Phase 2.5B-1 (zoning foundation): not complete** — schema/loader/CLI/tests
-  are done and PostGIS-verified, but no official zoning data has been ingested
-  (files require manual download).
-- **Phase 2.5B (full structural package): not complete** — protected and road
-  layers are also awaiting manual downloads.
-- **Phase 5.4: remains blocked** — mandatory zoning + protected/restricted +
-  road data are not yet ingested for all three regions. Storage/licensing is
-  resolved for this project by the confirmed prior government-project
-  authorization; the remaining conditions are the manual downloads, live
-  ingestion with per-시도 completeness, and the exclusion/penalty policy
-  decisions (separate human decisions, unchanged).
+- **Phase 2.5B-1 zoning: operationally complete for the available official
+  source package** — all 9 published LSMD ZIPs validated and ingested (88,252
+  features), Seoul UQ112–114 documented `OFFICIAL_SOURCE_UNAVAILABLE`, no
+  required published source unexpectedly missing, idempotency verified. It is
+  not "complete for every UQ112–114 nationwide cell" because the official source
+  does not publish those Seoul layers.
+- **Phase 2.5B (full structural package): not complete** — the mandatory
+  protected/restricted and road layers are still awaiting their (browser-
+  mediated) manual downloads and ingestion.
+- **Phase 5.4: remains blocked** — zoning is now ingested, but the mandatory
+  protected/restricted and road layers are not, so the minimum package is
+  incomplete for all three regions. Storage/licensing is resolved for this
+  project by the confirmed prior government-project authorization; the remaining
+  conditions are the protected/road downloads + ingestion with per-시도
+  completeness, and the exclusion/penalty policy decisions (separate human
+  decisions, unchanged).

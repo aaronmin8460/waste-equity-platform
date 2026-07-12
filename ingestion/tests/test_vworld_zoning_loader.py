@@ -205,22 +205,26 @@ def test_undecodable_attribute_is_not_silently_replaced(tmp_path: Path) -> None:
     assert any("undecodable" in warning for warning in result.warnings)
 
 
-def test_missing_required_attribute_record_is_rejected(tmp_path: Path) -> None:
+def test_bulk_feature_without_zone_name_attribute_is_accepted(tmp_path: Path) -> None:
+    # Official LSMD bulk zoning shapefiles carry no zone-name column; the zone
+    # type comes from the layer (UQ111). A feature with a blank/absent name is
+    # therefore a valid feature, not a rejection.
     seoul = tmp_path / "seoul"
     write_zoning_shapefile(
         seoul,
         "UQ111",
         epsg=5179,
         rings=[_SEOUL_5179_SQUARE],
-        records=[("", "UQA100", 1)],  # blank uname (required)
+        records=[("", "UQA100", 1)],  # blank name; layer supplies the zone type
     )
     region = TARGET_REGIONS_BY_DIR["seoul"]
     sources = discover_region_sources(seoul, region, tmp_path / "extract")
     result = build_load_result(
         sources, present_region_dirs={"seoul"}, reference_date="2026-05-20", encoding="cp949"
     )
-    assert result.rejected_feature_count == 1
-    assert any("missing required attribute" in warning for warning in result.warnings)
+    assert result.accepted_feature_count == 1
+    assert result.rejected_feature_count == 0
+    assert result.features[0].official_zoning_name == "도시지역"
 
 
 # --------------------------------------------------------------------------- #
@@ -374,7 +378,9 @@ def test_dry_run_evaluates_all_three_regions_without_writing(tmp_path: Path) -> 
     assert report.status == "VALIDATED"
     assert report.features_inserted == 0
     assert set(report.regions_evaluated) == {"seoul", "incheon", "gyeonggi"}
-    assert report.coverage_status == "COMPLETE"
+    # Only UQ111 is present per region and no manifest documents the others, so
+    # the undocumented UQ112-114 gaps make this PARTIAL (not COMPLETE).
+    assert report.coverage_status == "PARTIAL"
 
 
 def test_honest_zero_occurrence_is_not_not_evaluated(tmp_path: Path) -> None:
@@ -446,6 +452,85 @@ def test_no_production_fallback_when_sources_absent(tmp_path: Path) -> None:
     assert report.accepted_feature_count == 0
     assert report.required_sources  # tells the operator exactly what to place
     assert report.next_command is not None
+
+
+def test_official_source_unavailable_is_not_source_missing(tmp_path: Path) -> None:
+    # Mirror the real capital-region package: Seoul UQ111 only (UQ112-114
+    # officially unavailable, documented), Incheon + Gyeonggi UQ111-114. Those
+    # Seoul cells must be OFFICIAL_SOURCE_UNAVAILABLE (with evidence), never
+    # SOURCE_MISSING or EVALUATED_ZERO_FEATURES, and the run is complete for the
+    # available official sources.
+    root = tmp_path / "zoning"
+    write_zoning_shapefile(
+        root / "seoul",
+        "UQ111",
+        epsg=5179,
+        rings=[_SEOUL_5179_SQUARE],
+        records=[("도시지역", "UQA100", 1)],
+    )
+    for region in ("incheon", "gyeonggi"):
+        for layer in ("UQ111", "UQ112", "UQ113", "UQ114"):
+            write_zoning_shapefile(
+                root / region,
+                layer,
+                epsg=5179,
+                rings=[_SEOUL_5179_SQUARE],
+                records=[("지역", "UQX", 1)],
+            )
+    (root / "source_manifest.json").write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "region": "seoul",
+                        "layer": "UQ112",
+                        "status": "OFFICIAL_SOURCE_UNAVAILABLE",
+                        "evidence": "not published",
+                    },
+                    {
+                        "region": "seoul",
+                        "layer": "UQ113",
+                        "status": "OFFICIAL_SOURCE_UNAVAILABLE",
+                        "evidence": "not published",
+                    },
+                    {
+                        "region": "seoul",
+                        "layer": "UQ114",
+                        "status": "OFFICIAL_SOURCE_UNAVAILABLE",
+                        "evidence": "not published",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = run_zoning_ingestion(
+        _settings(),
+        source_path=str(root),
+        reference_date="2026-06-01",
+        scope="capital-region",
+        write=False,
+    )
+    seoul = report.coverage_matrix["seoul"]["layers"]
+    assert seoul["UQ111"]["status"] == "EVALUATED_WITH_FEATURES"
+    assert seoul["UQ112"]["status"] == "OFFICIAL_SOURCE_UNAVAILABLE"
+    assert seoul["UQ112"]["evidence"] == "not published"
+    assert seoul["UQ113"]["status"] == "OFFICIAL_SOURCE_UNAVAILABLE"
+    assert report.coverage_status == "COMPLETE_FOR_AVAILABLE_SOURCES"
+
+
+def test_undocumented_missing_source_stays_source_missing(tmp_path: Path) -> None:
+    # Without a manifest entry, a missing Seoul UQ112 is an unexpected gap.
+    root = tmp_path / "zoning"
+    _make_capital_region_tree(root)
+    report = run_zoning_ingestion(
+        _settings(),
+        source_path=str(root),
+        reference_date="2026-06-01",
+        scope="capital-region",
+        write=False,
+    )
+    assert report.coverage_matrix["seoul"]["layers"]["UQ112"]["status"] == "SOURCE_MISSING"
 
 
 def test_ignored_local_directory_expectations() -> None:

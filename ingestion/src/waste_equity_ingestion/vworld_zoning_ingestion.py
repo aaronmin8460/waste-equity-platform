@@ -59,6 +59,7 @@ from .vworld_zoning_contract import (
     combined_checksum,
     epsg_from_prj,
     feature_fingerprint,
+    load_availability_manifest,
     normalize_polygonal_geometry,
     require_supported_source_crs,
     validate_required_attributes,
@@ -418,9 +419,17 @@ def build_load_result(
     present_region_dirs: set[str],
     reference_date: str,
     encoding: str,
+    availability: dict[tuple[str, str], dict[str, Any]] | None = None,
 ) -> ZoningLoadResult:
-    """Validate/normalize all sources and build the coverage matrix."""
+    """Validate/normalize all sources and build the coverage matrix.
 
+    ``availability`` is the optional official-source manifest map
+    ``{(region, layer): {status, evidence}}``; a missing cell that the manifest
+    marks ``OFFICIAL_SOURCE_UNAVAILABLE`` is classified as such rather than
+    ``SOURCE_MISSING``.
+    """
+
+    availability = availability or {}
     result = ZoningLoadResult(reference_date=reference_date)
     per_cell: dict[tuple[str, str], dict[str, Any]] = {}
     failed_cells: set[tuple[str, str]] = set()
@@ -459,16 +468,21 @@ def build_load_result(
         for layer in ZONING_LAYERS:
             cell = (region.dir_name, layer.layer_code)
             cell_data = per_cell.get(cell)
+            manifest_entry = availability.get(cell, {})
+            official_unavailable = manifest_entry.get("status") == "OFFICIAL_SOURCE_UNAVAILABLE"
             coverage = classify_region_layer(
                 source_present=region_present and cell in sources_by_cell,
                 validation_failed=cell in failed_cells,
                 feature_count=(cell_data or {}).get("accepted", 0),
                 evaluated=cell in per_cell and cell not in failed_cells,
+                official_unavailable=official_unavailable,
             )
             layer_cells[layer.layer_code] = {
                 "status": coverage.status,
                 "feature_count": coverage.feature_count,
             }
+            if coverage.status == "OFFICIAL_SOURCE_UNAVAILABLE" and manifest_entry.get("evidence"):
+                layer_cells[layer.layer_code]["evidence"] = manifest_entry["evidence"]
         matrix[region.dir_name] = {
             "region_code": region.sido_code,
             "region_name": region.sido_name,
@@ -484,9 +498,23 @@ def build_load_result(
     result.rejected_feature_count = sum(c["rejected"] for c in per_cell.values())
     result.combined_checksum = combined_checksum(all_checksums) if all_checksums else None
 
+    # Count undocumented gaps (SOURCE_MISSING) vs documented-unavailable cells.
+    unexpected_missing = 0
+    documented_unavailable = 0
+    for region_entry in matrix.values():
+        for cell in region_entry["layers"].values():
+            if cell["status"] == "SOURCE_MISSING":
+                unexpected_missing += 1
+            elif cell["status"] == "OFFICIAL_SOURCE_UNAVAILABLE":
+                documented_unavailable += 1
+
     evaluated_count = len(regions_evaluated)
-    if evaluated_count == len(TARGET_REGIONS) and not failed_cells:
-        result.coverage_status = "COMPLETE"
+    if evaluated_count == len(TARGET_REGIONS) and not failed_cells and unexpected_missing == 0:
+        # Every target region evaluated, every present file validated, and every
+        # gap is an officially-unavailable source documented in the manifest.
+        result.coverage_status = (
+            "COMPLETE_FOR_AVAILABLE_SOURCES" if documented_unavailable else "COMPLETE"
+        )
     elif evaluated_count > 0:
         result.coverage_status = "PARTIAL"
     else:
@@ -556,6 +584,7 @@ def run_zoning_ingestion(
             present_region_dirs=present_region_dirs,
             reference_date=reference_date,
             encoding=encoding,
+            availability=load_availability_manifest(root),
         )
 
         if not write:

@@ -84,10 +84,11 @@ class StructuralDatasetVersion(Base):
     total_feature_count: Mapped[int] = mapped_column(Integer, default=0)
     accepted_feature_count: Mapped[int] = mapped_column(Integer, default=0)
     rejected_feature_count: Mapped[int] = mapped_column(Integer, default=0)
-    # COMPLETE, PARTIAL, or INCOMPLETE — whether all target regions were
-    # evaluated with a valid source (never conflates zero-features with
-    # not-evaluated; see coverage_matrix for the honest per-region breakdown).
-    coverage_status: Mapped[str] = mapped_column(String(20))
+    # COMPLETE, COMPLETE_FOR_AVAILABLE_SOURCES, PARTIAL, or INCOMPLETE — whether
+    # all target regions were evaluated with a valid source (never conflates
+    # zero-features with not-evaluated or officially-unavailable sources; see
+    # coverage_matrix for the honest per-region breakdown).
+    coverage_status: Mapped[str] = mapped_column(String(40))
     # Per-file provenance: [{filename, checksum, region, layer, features...}].
     source_files: Mapped[Any] = mapped_column(JsonVariant, default=list)
     # Region-by-layer completeness matrix, per-region/per-layer counts, and
