@@ -64,6 +64,33 @@ this registry in the same change.
   before distance is measured) and `MIXED_PROVENANCE` (facility rows that
   disagree on source, period, or basis are refused as one aggregate).
 
+### SUITABILITY_SCREENING (`suitability-screening-v1`) — Phase 5.4
+
+- Endpoints: `GET /api/v1/suitability/*` (policies, runs, latest, summary,
+  candidates, candidate detail).
+- The first served **weighted composite**, adopted under the project-approved
+  analytical screening policy v1 (`docs/SUITABILITY_POLICY_V1.md`,
+  `policy_version: suitability-policy-v1`, `candidate_grid_version:
+  capital-grid-500m-v1`). It screens a deterministic 500 m candidate grid over
+  Seoul/Incheon/Gyeonggi for waste-facility siting decision support.
+- Composite: `Σ (component_score × weight)` over four dimensionless `[0,100]`
+  components — zoning compatibility (0.35), road proximity (0.25), equity burden
+  avoidance (0.25), waste demand context (0.15) — in exact `Decimal`
+  (`ROUND_HALF_EVEN`, 4 dp). Weights sum to 1.0; three alternative sensitivity
+  profiles (equal / equity-focused / access-focused) are served for robustness.
+- Components reuse existing derivations without merging accounting bases: equity
+  reuses `facility-burden-v1` (`FACILITY_LOCATION_BASED_THROUGHPUT`, located per
+  SIGUNGU, lower burden → higher score) and demand reuses `per-capita-v1`
+  (`ORIGIN_BASED_TREATMENT_OUTCOME`, HOUSEHOLD per SIGUNGU, higher → higher
+  score); only the normalized dimensionless scores are combined, never the raw
+  quantities. Zoning and road are structural-layer screens.
+- Statuses are analytical: `ELIGIBLE` (official rank), `REVIEW_REQUIRED`
+  (provisional score, no rank), `EXCLUDED` (`PROJECT_SCREENING_EXCLUSION`, no
+  score). `ELIGIBLE` is never "legally eligible"; no legal-eligibility boolean is
+  emitted. `OFFICIAL_SOURCE_UNAVAILABLE` coverage is `REVIEW_REQUIRED`, never a
+  confirmed absence. Full classification/exclusion/review/weight registry and
+  live counts: `docs/SUITABILITY_POLICY_V1.md`.
+
 ## Accounting Bases Are Never Merged
 
 `ORIGIN_BASED_TREATMENT_OUTCOME` (how a region's own generated waste was
@@ -92,11 +119,15 @@ provides it (none is ingested).
 
 ## Weighting Policy
 
-No composite (multi-indicator weighted) score is currently served. The
-platform serves single-derivation indicators only.
+One weighted composite is served: `SUITABILITY_SCREENING`
+(`suitability-screening-v1`, Phase 5.4), adopted under the project-approved
+analytical screening policy v1 (`docs/SUITABILITY_POLICY_V1.md`). It satisfies
+the adoption requirements below — per-weight rationale and sensitivity profiles,
+the review workflow recorded in its PR, a distinct `derivation_version`, and
+honest UI labeling as analytical screening (never a legal/permit determination).
+All other served indicators remain single-derivation.
 
-Adopting any weighted composite in a future phase requires, before it is
-served:
+Adopting any weighted composite requires, before it is served:
 
 1. A written rationale per weight in this document, including what the weight
    claims to represent and its sensitivity (how the ranking changes under
