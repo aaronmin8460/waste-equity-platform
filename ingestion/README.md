@@ -479,6 +479,45 @@ TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/
   PYTHONPATH=src:../backend/src pytest tests/test_vworld_zoning_persistence.py
 ```
 
+## Protected and Road Structural Layers (Phase 2.5B, framework)
+
+The versioned structural schema is reused beyond zoning by a generalized loader
+(`structural_layer_ingestion.py`) driven by a layer registry
+(`structural_layers.py`):
+
+- **Protected/restricted polygon layers** (`vworld-protected-ingest`) persist to
+  `structural_features`: mandatory UD801 개발제한구역, UM710 상수원보호구역,
+  UM901 습지보호지역, UF151 산림보호구역, WGISNPGUG 국립자연공원, UO101
+  교육환경보호구역, UO301 국가유산 지정/보호구역; optional (flagged) UM221
+  야생생물보호구역, UQ162 도시자연공원·녹지.
+- **Road/transport line layers** (`vworld-roads-ingest`) persist to the
+  `structural_line_features` table (MULTILINESTRING/4326) — line geometry is
+  **not** forced into the polygon table: STDLINK 표준노드링크 (preferred bulk),
+  N3A0020000 도로중심선, MOCTLINK (API cross-check only). Road-class/lane/width/
+  node/restriction attributes are preserved; geometric proximity never proves
+  truck accessibility.
+
+Same contract as zoning: bulk-file loader (no API key, no sample fallback),
+`.prj` CRS read and validated against the allowlist, transform to EPSG:4326,
+polygon→MultiPolygon / line→MultiLineString normalization, deterministic
+fingerprint idempotency, versioned dataset releases, coverage matrix over
+Seoul/Incheon/Gyeonggi (COMPLETE_WITH_FEATURES / COMPLETE_ZERO_FEATURES /
+SOURCE_MISSING / VALIDATION_FAILURE / NOT_EVALUATED).
+
+```bash
+python -m waste_equity_ingestion.cli vworld-protected-ingest \
+  --source-path data/raw/vworld/protected --reference-date YYYY-MM-DD \
+  --scope capital-region --dry-run   # then --write
+python -m waste_equity_ingestion.cli vworld-roads-ingest \
+  --source-path data/raw/vworld/roads --reference-date YYYY-MM-DD \
+  --scope capital-region --write
+```
+
+Official bulk source files require manual download (browser/솔루션-mediated);
+see `docs/PHASE_2_5B_INGESTION_STATUS.md` for the exact per-layer checklist and
+destination directories. As of the 2026-07-12 recovery run no structural data
+had been ingested (all layers `SOURCE_MISSING`).
+
 ## Probe Commands
 
 Probe commands remain available for Phase 0 source validation:

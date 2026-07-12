@@ -247,8 +247,19 @@ Subphases:
   evaluated-with-zero-features, not-evaluated, source-missing, and
   validation-failure. Protected areas, roads, ownership, sensitive facilities,
   and per-parcel land-use are out of scope for this subphase.
-- Later 2.5B subphases: mandatory protected/restricted layers and road
-  features, with full Seoul/Incheon/Gyeonggi coverage.
+- **2.5B framework extension (in progress): protected + road loaders.** The
+  versioned structural schema is extended with a `structural_line_features`
+  table (MULTILINESTRING/4326, migration 0007) so road/transport line geometry
+  is not forced into the polygon table, and a generalized loader
+  (`structural_layer_ingestion.py` + `structural_layers.py` registry) ingests
+  the mandatory protected/restricted polygon layers (UD801, UM710, UM901,
+  UF151, WGISNPGUG, UO101, UO301; optional UM221, UQ162) via
+  `vworld-protected-ingest` and the road line layers (STDLINK, N3A0020000,
+  MOCTLINK) via `vworld-roads-ingest`. The framework is PostGIS-verified with
+  synthetic fixtures; **no official structural data has been ingested yet**
+  because the official bulk downloads are browser-mediated (manual download
+  required — see `docs/PHASE_2_5B_INGESTION_STATUS.md` for the checklist and
+  the current all-`SOURCE_MISSING` completeness state).
 
 Later Phase 2 subphases will also cover AirKorea and KMA (both currently
 CREDENTIAL_MISSING). They must not begin until explicitly scoped.
