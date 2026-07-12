@@ -1,0 +1,14 @@
+# Keep the build context minimal and free of host/local artifacts.
+node_modules
+.next
+out
+build
+test-results
+playwright-report
+.turbo
+npm-debug.log*
+.env
+.env.*
+!.env.example
+.git
+.DS_Store

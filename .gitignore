@@ -2,9 +2,15 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
 *.pem
 *.key
 *.crt
+
+# Local database backups / dumps (never commit dump contents)
+backups/
+*.dump
+*.sql.gz
 
 # Python
 __pycache__/

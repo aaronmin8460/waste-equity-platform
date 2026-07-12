@@ -1,0 +1,157 @@
+# Production single-server stack (AWS Lightsail, Ubuntu, Docker Compose).
+#
+# Only Caddy publishes host ports (80/443). The database, backend, and frontend
+# are internal-only (no host port publication) — PostgreSQL is never reachable
+# from the public Internet. Frontend and backend are served through one public
+# origin (https://${PUBLIC_DOMAIN}); the browser calls relative /api/v1/... paths
+# that Caddy routes to the backend (same-origin, no internal host in browser JS).
+#
+# Required environment (from .env.production; see .env.production.example):
+#   PUBLIC_DOMAIN, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+# Missing/empty required values fail this file immediately (the `:?` guards).
+# Run: docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  database:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      TZ: ${TZ:-Asia/Seoul}
+    # No host port publication — internal network only.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Modest tuning for the recommended 8 GB / 2 vCPU instance. Adjust for other
+    # sizes; these are conservative, not aggressively over-tuned.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - effective_cache_size=6GB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - max_connections=100
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - internal
+    logging: *default-logging
+
+  backend:
+    build: ./backend
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      # Same-origin proxying makes normal browser calls same-origin, but the
+      # public origin is still allowed explicitly for defense in depth.
+      CORS_ALLOW_ORIGINS: https://${PUBLIC_DOMAIN}
+      TZ: ${TZ:-Asia/Seoul}
+    # Apply migrations idempotently, then serve behind Caddy with proxy headers
+    # trusted (only Caddy on the internal network can reach this service).
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn waste_equity_backend.api.app:app --host 0.0.0.0 --port 8000
+             --proxy-headers --forwarded-allow-ips='*'"
+    # No host port publication — internal network only.
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import urllib.request,sys;
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - internal
+    logging: *default-logging
+
+  frontend:
+    build:
+      context: ./frontend
+      # Empty base URL -> same-origin relative API calls (never backend:8000 in
+      # browser JS). Overridable, but the default is correct for this deployment.
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ""
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Seoul}
+    # No host port publication — internal network only.
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2.10-alpine
+    # The ONLY service publishing host ports.
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+    networks:
+      - internal
+    logging: *default-logging
+
+  # ---- optional operational profiles (never run by default) ----
+
+  # One-off ingestion / suitability-build helper. Not used for this
+  # deployment (public-data ingestion is not re-run here). Internal only.
+  ingestion:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    profiles: ["ingestion"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      TZ: ${TZ:-Asia/Seoul}
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - internal
+    logging: *default-logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge
