@@ -391,6 +391,12 @@ Required checks before completion:
 
 ## Phase 5: Equity And Suitability Analysis
 
+Status: complete (2026-07-13). Phase 5.1 (per-capita waste generation), 5.2
+(facility-burden spatial equity), 5.3 (analytical methods, weighting policy,
+review workflow), and 5.4 (suitability constraints and scoring) are all
+production-implemented and live-verified. Phase 6 (automated refresh /
+scheduler) has not been started.
+
 Goal: implement documented spatial analysis and facility-siting decision support.
 
 Planned deliverables:
@@ -526,7 +532,24 @@ Deliverables:
 
 ### Phase 5.4: Suitability Constraints And Scoring
 
-Status: in progress — analytical screening policy v1 approved and scoped.
+Status: complete (2026-07-13). Live-verified against the real capital-region
+PostGIS database: one reproducible suitability run (`suitability-screening-v1`,
+`suitability-policy-v1`, `capital-grid-500m-v1`, reference year 2024, input
+structural dataset versions zoning 18 / protected 62,63 / roads 77,100) over
+**47,893** 500 m candidate cells — **1,099 ELIGIBLE / 34,534 REVIEW_REQUIRED /
+12,260 EXCLUDED**. An identical second write is idempotent (0 new candidates,
+run reused, ~2.7 s). All candidate geometries are valid EPSG:4326 MultiPolygon
+(0 null/empty/invalid), 0 duplicate candidate keys, all scores in [0,100], all
+eligible carry four components + provenance, ranks 1..1,099 contiguous, and the
+production zoning/protected/road counts are unchanged. Sensitivity (four
+profiles): the eligible set is profile-invariant and rank correlation is high
+(Spearman vs baseline 0.86–0.94), but the top set is **not** robust (baseline
+top-50 overlap 0 with the equal/access profiles) — reported, not smoothed over.
+Backend ruff/mypy/pytest (96) + ingestion pytest (258), compileall, alembic
+round-trip, frontend eslint/tsc/Vitest (24) + production build, and the
+Playwright live smoke (with the government-API egress guard) all pass. The
+output is analytical decision-support screening only — never a legal permit,
+engineering certification, final facility decision, or statutory determination.
 
 Prerequisites (now satisfied):
 

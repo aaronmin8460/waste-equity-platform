@@ -90,6 +90,17 @@ this registry in the same change.
   emitted. `OFFICIAL_SOURCE_UNAVAILABLE` coverage is `REVIEW_REQUIRED`, never a
   confirmed absence. Full classification/exclusion/review/weight registry and
   live counts: `docs/SUITABILITY_POLICY_V1.md`.
+- Live result (2026-07-13, reference year 2024): 47,893 candidate cells —
+  **1,099 ELIGIBLE / 34,534 REVIEW_REQUIRED / 12,260 EXCLUDED**; identical second
+  write is idempotent (0 new candidates); all candidate geometry valid EPSG:4326
+  MultiPolygon (0 null/empty/invalid), 0 duplicate keys, all scores in [0,100];
+  the eligible set is profile-invariant with high rank correlation (Spearman
+  0.86–0.94) but a top set that is **not** robust across profiles (baseline
+  top-50 overlap 0 with equal/access) — reported honestly, never claimed robust.
+  Hand-checks (zoning class, geodesic nearest-road distance, equity/demand
+  percentile) reproduce the served values against the stored inputs. Spatial
+  work is set-based PostGIS (`ST_SquareGrid`, GiST nearest-road KNN, bounding-box
+  viewport queries); a full build is ~6 minutes.
 
 ## Accounting Bases Are Never Merged
 

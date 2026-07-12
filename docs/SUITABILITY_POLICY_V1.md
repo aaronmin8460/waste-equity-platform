@@ -361,3 +361,42 @@ overwritten.
 - Real-time weather/air-quality is not used as siting evidence.
 - No mock, estimated, fallback, or generated value is ever presented as public
   data or as a screening result.
+
+## 12. Live results (2026-07-13)
+
+The first production run (`suitability-build --reference-year 2024 --profile
+baseline --write`) over the real capital-region PostGIS database:
+
+- **Candidates:** 47,893 (500 m cells whose centroid is inside the capital
+  region). **1,099 ELIGIBLE · 34,534 REVIEW_REQUIRED · 12,260 EXCLUDED.**
+- **Inputs:** structural dataset versions zoning 18, protected 62 + 63, roads 77
+  + 100; population/waste/facility reference period 2024; boundary vintage 2024.
+- **Exclusion reasons** (a cell may match several): UD801 6,781; UF151 3,118;
+  UQ114 1,821; WGISNPGUG 1,033; UM710 1,016; UM901 337.
+- **Review reasons:** COVERAGE_GAP_UM901 32,064; UNRESOLVED_URBAN_ZONING_SUBCLASS
+  10,240; EDUCATION_PROTECTION_UO101 7,284; NO_ZONING_COVERAGE 4,278;
+  MISSING_DEMAND_COMPONENT 4,283; COVERAGE_GAP_UF151 1,396; HERITAGE_PROTECTION_
+  UO301; AMBIGUOUS_OR_MISSING_SIGUNGU; MISSING_EQUITY_COMPONENT 455. Because
+  wetland (UM901) coverage is `OFFICIAL_SOURCE_UNAVAILABLE` in Seoul and
+  Gyeonggi, the `ELIGIBLE` set is concentrated in Incheon (full coverage) — an
+  honest consequence of the data gaps, not a claim that Seoul/Gyeonggi are
+  unsuitable.
+- **Idempotency:** an identical second write reused the run and inserted 0
+  candidates (~2.7 s vs ~6 min for the first build).
+- **Integrity:** all candidate geometry is valid EPSG:4326 MultiPolygon (0 null,
+  0 empty, 0 invalid); 0 duplicate candidate keys; all scores in [0,100]; every
+  eligible candidate carries four components + provenance; ranks 1..1,099 are
+  contiguous; production zoning/protected/road counts unchanged.
+- **Hand-checks:** the top candidate (인천 강화군, UQ112 management zoning →
+  zoning 55; geodesic nearest road 54.544 m → road 100; lowest-burden SIGUNGU →
+  equity 100; lowest household per-capita → demand 0; total 69.25) reproduces
+  exactly against the stored inputs; a sampled excluded cell truly intersects its
+  UD801 layer; coverage-gap review cells are only in Seoul/Gyeonggi.
+- **Sensitivity (four profiles):** the eligible set is identical across profiles
+  (only the ranking changes). Spearman rank correlation vs baseline: equal
+  0.939, equity-focused 0.861, access-focused 0.939. Top-set stability is **low**
+  — the baseline top-10/top-50 overlap is 0 with the equal and access-focused
+  profiles (the demand=0 rural leaders drop when demand/road weight rises), so
+  the leading candidates are **not** robust to weight choice; all top-50 fall in
+  Incheon under every profile. This is reported as-is; rank similarity is not
+  taken as robustness.

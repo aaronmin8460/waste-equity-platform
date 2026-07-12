@@ -67,6 +67,29 @@ SIGUNGU boundaries), 82 population rows, 234 waste-statistics rows, 651
 facilities (547 with coordinates, 104 explicit `FAILED` geocodes with `null`
 coordinates), matching the Phase 2 ingestion totals exactly.
 
+## Phase 5: derived indicators + suitability screening
+
+Read-only derived indicators (computed server-side, dual provenance, exact
+`Decimal`; `docs/ANALYTICAL_METHODS.md`):
+
+- `GET /api/v1/equity/waste-per-capita?year=&waste_stream=&region_code=` (5.1).
+- `GET /api/v1/equity/facility-burden?year=&region_code=` (5.2).
+
+Phase 5.4 suitability screening over the stored analysis run (analytical
+decision-support only — never a legal/permit determination; no legal-eligibility
+boolean; `docs/SUITABILITY_POLICY_V1.md`):
+
+- `GET /api/v1/suitability/policies` — versions, weights, profiles,
+  classification registry, distance curve, disclaimer.
+- `GET /api/v1/suitability/runs`, `/runs/latest`, `/summary?run_id=&profile=`.
+- `GET /api/v1/suitability/candidates?run_id=&profile=&bbox=&sido=&sigungu=&status=&min_score=&max_score=&top=&limit=&offset=`
+  — GeoJSON FeatureCollection, always bounded by a controlled limit.
+- `GET /api/v1/suitability/candidates/{id}?profile=` — full candidate evidence.
+
+Live-verified 2026-07-13: one run over 47,893 candidates (1,099 ELIGIBLE /
+34,534 REVIEW_REQUIRED / 12,260 EXCLUDED), all geometry valid EPSG:4326
+MultiPolygon; served values reproduce the stored inputs on hand-check.
+
 ## Run locally with Docker Compose
 
 From the repository root:

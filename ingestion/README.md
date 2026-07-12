@@ -579,6 +579,41 @@ python -m waste_equity_ingestion.cli vworld-roads-ingest \
 Official bulk source files are Git-ignored and never committed; see
 `docs/PHASE_2_5B_INGESTION_STATUS.md` for the per-layer source catalogue.
 
+## Suitability Screening Build (Phase 5.4)
+
+`suitability-build` runs the versioned, idempotent suitability screen over a
+deterministic 500 m candidate grid for the capital region. The engine lives in
+the backend (`waste_equity_backend.analysis.suitability`); this CLI is a thin
+adapter. It reads only the already-ingested normalized tables and writes one
+reproducible `suitability_analysis_runs` row + its `suitability_candidates`
+rows — no government API calls, no source files. Output is analytical
+decision-support screening only, never a legal/permit determination. Full policy:
+`docs/SUITABILITY_POLICY_V1.md`.
+
+```bash
+PYTHONPATH=ingestion/src:backend/src \
+DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/waste_equity \
+python -m waste_equity_ingestion.cli suitability-build \
+  --reference-year 2024 --policy-version suitability-policy-v1 \
+  --profile baseline --scope capital-region --dry-run   # then --write
+```
+
+The build (`VALIDATING_INPUTS → GENERATING_GRID → APPLYING_HARD_EXCLUSIONS →
+CALCULATING_ROAD_DISTANCE → JOINING_EQUITY_CONTEXT → CALCULATING_SCORES →
+RANKING → WRITING_RESULTS → VERIFYING_WRITE`) generates the grid in EPSG:5179,
+retains cells whose centroid is inside the capital-region union, clips them,
+applies the hard/review/soft policy, computes the four dimensionless component
+scores (zoning, road, equity, demand) reusing `facility-burden-v1` +
+`per-capita-v1` without merging accounting bases, ranks eligible candidates per
+profile, and writes atomically. Idempotency is keyed on a deterministic
+`analysis_signature` (policy/grid/derivation versions, reference year, boundary
+vintage, input dataset-version ids, component reference periods, active
+profile): an identical `--write` reuses the existing run and inserts 0 rows.
+
+Live result (2026-07-13): 47,893 candidates — 1,099 ELIGIBLE / 34,534
+REVIEW_REQUIRED / 12,260 EXCLUDED (reference year 2024); the second write reused
+the run and inserted 0 candidates.
+
 ## Probe Commands
 
 Probe commands remain available for Phase 0 source validation:
