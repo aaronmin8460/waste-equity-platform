@@ -4,6 +4,7 @@ from .base import Base
 from .facilities import WasteTreatmentFacility
 from .metadata import DatasetFreshness, DataSource, IngestionRun, RawApiResponse, RegionalPopulation
 from .regions import Region, RegionCodeMap
+from .structural import StructuralDatasetVersion, StructuralFeature
 from .waste import RegionalWasteStatistics
 
 __all__ = [
@@ -16,5 +17,7 @@ __all__ = [
     "RegionCodeMap",
     "RegionalPopulation",
     "RegionalWasteStatistics",
+    "StructuralDatasetVersion",
+    "StructuralFeature",
     "WasteTreatmentFacility",
 ]

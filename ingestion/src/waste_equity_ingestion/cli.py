@@ -27,6 +27,7 @@ from .result import ProbeResult
 from .samples import build_envelope, save_sample
 from .sgis_ingestion import run_sgis_ingestion
 from .vworld_geocoding_ingestion import run_vworld_geocoding
+from .vworld_zoning_ingestion import run_zoning_ingestion
 
 ProbeFunc = Callable[[ProbeSettings], ProbeResult]
 
@@ -44,6 +45,7 @@ RCIS_WASTE_INGEST = "rcis-waste-ingest"
 RCIS_FACILITY_INGEST = "rcis-facility-ingest"
 VWORLD_GEOCODE = "vworld-geocode"
 VWORLD_STRUCTURAL_AUDIT = "vworld-structural-audit"
+VWORLD_ZONING_INGEST = "vworld-zoning-ingest"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -59,6 +61,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 RCIS_FACILITY_INGEST,
                 VWORLD_GEOCODE,
                 VWORLD_STRUCTURAL_AUDIT,
+                VWORLD_ZONING_INGEST,
             ]
         ),
     )
@@ -115,6 +118,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--retry-failed",
         action="store_true",
         help="vworld-geocode: re-attempt facilities whose previous geocode failed.",
+    )
+    parser.add_argument(
+        "--source-path",
+        help=(
+            "vworld-zoning-ingest: local root directory containing the official "
+            "seoul/incheon/gyeonggi zoning bulk files (Git-ignored; defaults to "
+            "data/raw/vworld/zoning)."
+        ),
+    )
+    parser.add_argument(
+        "--reference-date",
+        help="vworld-zoning-ingest: official dataset reference date (YYYY-MM-DD).",
+    )
+    parser.add_argument(
+        "--source-encoding",
+        default=None,
+        help="vworld-zoning-ingest: source DBF attribute encoding (default cp949).",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -237,6 +257,29 @@ def run_vworld_structural_audit(settings: ProbeSettings, args: argparse.Namespac
     return 0
 
 
+def run_vworld_zoning(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    if not args.dry_run and not args.write:
+        raise IngestionError("vworld-zoning-ingest requires either --dry-run or --write")
+    if not args.reference_date:
+        raise IngestionError("vworld-zoning-ingest requires --reference-date YYYY-MM-DD")
+    source_path = args.source_path or "data/raw/vworld/zoning"
+    kwargs: dict[str, str] = {}
+    if args.source_encoding:
+        kwargs["encoding"] = args.source_encoding
+    report = run_zoning_ingestion(
+        settings,
+        source_path=source_path,
+        reference_date=args.reference_date,
+        scope=args.scope,
+        write=bool(args.write),
+        **kwargs,
+    )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    # A run that found no official source files is honest, not a crash: exit 0
+    # but never claim success.
+    return 0
+
+
 def run_vworld_geocode(settings: ProbeSettings, args: argparse.Namespace) -> int:
     if not args.dry_run and not args.write:
         raise IngestionError("vworld-geocode requires either --dry-run or --write")
@@ -278,6 +321,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_vworld_geocode(settings, args)
         if args.source == VWORLD_STRUCTURAL_AUDIT:
             return run_vworld_structural_audit(settings, args)
+        if args.source == VWORLD_ZONING_INGEST:
+            return run_vworld_zoning(settings, args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)

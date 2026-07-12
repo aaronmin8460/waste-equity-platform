@@ -4,7 +4,20 @@ Derived from the Phase 2.5A audit (`docs/VWORLD_STRUCTURAL_LAYER_AUDIT.md`,
 2026-07-11). This document separates what data is technically available from
 what remains a legal interpretation or a human policy decision. Nothing here
 authorizes suitability scoring; Phase 5.4 stays blocked until the minimum
-package below is production-ingested and the listed decisions are made.
+package below is production-ingested (complete Seoul/Incheon/Gyeonggi-do
+coverage) and the listed policy decisions are made.
+
+Authorization update (Phase 2.5B): the project owner has confirmed prior
+government-project authorization for the use, local storage, transformation,
+database ingestion, and analytical processing of the relevant VWorld and
+government spatial datasets. The audit-time dataset-storage/licensing
+uncertainty (VWorld 제19조 vs KOGL/CC BY-NC-ND) is therefore resolved for this
+project and is no longer an open condition; the remaining open conditions are
+the human policy decisions and completeness, not data-storage permission.
+Phase 2.5B is in progress: subphase 2.5B-1 production-ingests the 용도지역
+zoning family (UQ111–UQ114). Phase 5.4 nonetheless remains blocked until the
+full mandatory package (zoning + protected/restricted + roads) is ingested
+with complete coverage.
 
 ## Input Classification
 
@@ -66,9 +79,11 @@ package below is production-ingested and the listed decisions are made.
 3. Weighting of any composite suitability score (governed by the adoption
    requirements in `docs/ANALYTICAL_METHODS.md`).
 4. Candidate-site geometry (grid cell size vs parcel-based candidates).
-5. License posture: acceptance/clarification of VWorld terms 제19조
-   (storage consent) and the CC BY-NC-ND bulk licenses (비영리·변경금지)
-   versus this platform's public derived-analysis use.
+5. License posture — RESOLVED for this project: prior government-project
+   authorization for use, storage, transformation, and analytical processing
+   of the relevant VWorld/government datasets has been confirmed by the
+   project owner, addressing the VWorld 제19조 storage-consent and CC BY-NC-ND
+   questions for this project's derived-analysis use.
 
 ### Legal interpretation still required
 
@@ -101,7 +116,9 @@ with provenance, versioning, and license notes, per
 
 And when ALL of the following decisions are recorded:
 
-5. License/storage-consent resolution per ingested dataset.
+5. License/storage-consent posture — RESOLVED for this project by the
+   confirmed prior government-project authorization (see the authorization
+   update above); no longer an open condition.
 6. Reviewed exclusion/penalty/display classification per layer (policy
    sign-off, recorded in `docs/ANALYTICAL_METHODS.md` review workflow).
 
@@ -111,7 +128,10 @@ scoring later without blocking it.
 
 If any mandatory item above cannot be obtained for the full Seoul
 Metropolitan Area, Phase 5.4 remains blocked. As of 2026-07-11 the audit
-found no data-availability blocker for the mandatory items; the open
-conditions are licensing, bulk-workflow reproducibility, completeness
-validation, and the human decisions listed above (hence CONDITIONAL_GO, not
-GO).
+found no data-availability blocker for the mandatory items; with dataset
+licensing/storage now resolved for this project by the confirmed prior
+authorization, the remaining open conditions are bulk-workflow reproducibility,
+per-시도 completeness validation, and the human policy decisions listed above.
+Phase 2.5B-1 delivers the versioned schema and the first mandatory item
+(용도지역 zoning); the protected/restricted and road layers remain to be
+ingested before Phase 5.4 can be unblocked.

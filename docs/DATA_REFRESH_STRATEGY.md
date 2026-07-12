@@ -150,21 +150,30 @@ docker compose --profile ingestion run --rm ingestion \
 - Freshness updates only on success; failed runs are visible, roll back, and do
   not update `last_success_at`.
 
-## Phase 2.5A VWorld Structural Layer Implications
+## Phase 2.5A/2.5B VWorld Structural Layer Implications
 
 The Phase 2.5A audit (2026-07-11, `docs/VWORLD_STRUCTURAL_LAYER_AUDIT.md`)
-scoped the future Phase 2.5B refresh design without implementing it:
+scoped the Phase 2.5B refresh design; Phase 2.5B is now in progress (2.5B-1
+implements the versioned schema and zoning ingestion):
 
 - Area-complete polygon layers should come from official bulk downloads
   (per-시도 LSMD SHP, EPSG:5186/2097; NGII 도로중심선 EPSG:5179), transformed
   to EPSG:4326 with both CRS recorded, loaded as versioned datasets by
-  reference date.
+  reference date. Phase 2.5B-1 implements this for 용도지역 (UQ111–UQ114):
+  official ZIP/shapefile bulk files are placed in Git-ignored local
+  directories (`data/raw/vworld/zoning/<region>/`), the CRS is read from the
+  `.prj`/metadata and rejected when missing/unsupported, and each load is
+  recorded as a `structural_dataset_versions` row with source/target CRS,
+  checksum, feature counts, and coverage status.
 - API-side refresh must use 2D Data API paging (`size` ≤ 1000, verified
   `page`/`record` metadata); WFS `startindex` paging did not work under
   version 1.1.0 and must not be relied on.
-- Production storage of API-fetched features is blocked until the VWorld
-  terms 제19조 storage-consent question and the CC BY-NC-ND bulk licenses are
-  resolved per dataset.
+- Production storage of these datasets is authorized for this project: the
+  project owner has confirmed prior government-project authorization for use,
+  storage, transformation, and analytical processing, resolving the audit-time
+  VWorld 제19조 storage-consent and CC BY-NC-ND uncertainty for this project.
+  Bulk source files themselves are never committed (Git-ignored); only
+  sanitized normalized features, provenance, and checksums are persisted.
 
 ## Phase 0.6 Refresh Implications
 

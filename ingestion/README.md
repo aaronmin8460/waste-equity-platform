@@ -370,6 +370,115 @@ Options mirror `rcis-waste-ingest`: `--year`, `--scope capital-region`,
 `--dry-run`/`--write`, `--pid` (allowlist within the six facility PIDs),
 `--request-delay`. Credentials are environment-only.
 
+## VWorld Zoning Production Ingestion (Phase 2.5B-1)
+
+One-shot production ingestion of the 용도지역 (zoning) structural spatial layers
+UQ111–UQ114 from **official bulk shapefiles** into the versioned structural
+schema (`structural_dataset_versions`, `structural_features`). This is a
+bulk-file loader: it requires **no `VWORLD_API_KEY`** and never falls back to
+`data/samples` probe files or any synthetic data.
+
+Authorization: this project is conducted with a government partner; prior
+authorization for use, local storage, transformation, and analytical processing
+of the relevant VWorld/government spatial datasets has been confirmed by the
+project owner (see `docs/DEVELOPMENT_PHASES.md`, Phase 2.5B).
+
+### Zoning layers
+
+| Layer | Code | Category | Korean name |
+| --- | --- | --- | --- |
+| `LT_C_UQ111` | UQ111 | `URBAN` | 도시지역 |
+| `LT_C_UQ112` | UQ112 | `MANAGEMENT` | 관리지역 |
+| `LT_C_UQ113` | UQ113 | `AGRICULTURAL_FOREST` | 농림지역 |
+| `LT_C_UQ114` | UQ114 | `NATURAL_ENV_CONSERVATION` | 자연환경보전지역 |
+
+### Source files (Git-ignored; never committed)
+
+Place the official ZIP archives or extracted shapefile sets under the per-region
+directories (all under the ignored `data/raw/` tree):
+
+- `data/raw/vworld/zoning/seoul/`
+- `data/raw/vworld/zoning/incheon/`
+- `data/raw/vworld/zoning/gyeonggi/`
+
+Each shapefile must ship its `.shp`, `.shx`, `.dbf`, and `.prj` sidecars. The
+source CRS is read from the `.prj`/metadata and rejected when missing or not in
+the supported allowlist (EPSG:4326/2097/5174/5179/5185–5188; LSMD zone bulk is
+natively EPSG:5186, 일부 2097). Korean DBF attributes are decoded explicitly
+(default `cp949`); undecodable values are recorded and rejected, never silently
+replaced. Geometry is validated as polygon/multipolygon, single polygons are
+normalized to MultiPolygon (counted), invalid/point/line geometry is rejected
+(no silent topology-changing repair), and accepted geometry is transformed to
+EPSG:4326 for PostGIS.
+
+If the official archives are absent the command reports exactly which archives
+and directories are required plus the write command to run afterwards, and it
+does **not** claim success or mark the subphase complete.
+
+### CLI
+
+```bash
+# Dry run: validate archives, sidecars, attributes, CRS, geometry, and coverage
+# without any database write.
+PYTHONPATH=src:../backend/src \
+  python -m waste_equity_ingestion.cli vworld-zoning-ingest \
+  --source-path data/raw/vworld/zoning --reference-date 2026-05-20 \
+  --scope capital-region --dry-run
+
+# Write: same validation, then transactional persistence (partial writes roll
+# back; a dedicated ingestion_runs row records the outcome).
+PYTHONPATH=src:../backend/src \
+DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/waste_equity \
+  python -m waste_equity_ingestion.cli vworld-zoning-ingest \
+  --source-path data/raw/vworld/zoning --reference-date 2026-05-20 \
+  --scope capital-region --write
+```
+
+Options: `--source-path` (default `data/raw/vworld/zoning`), `--reference-date`
+(required, `YYYY-MM-DD`), `--scope capital-region` (required), one of
+`--dry-run`/`--write` (required), `--source-encoding` (default `cp949`). No API
+keys or credentials are accepted as CLI arguments.
+
+### Docker one-shot
+
+The `ingestion` service mounts `./data` read-only at `/app/data`, so the default
+`--source-path` resolves inside the container:
+
+```bash
+docker compose --profile ingestion run --rm ingestion \
+  vworld-zoning-ingest --reference-date 2026-05-20 --scope capital-region --dry-run
+```
+
+### Coverage and idempotency
+
+The result reports per-region and per-layer feature counts and a
+region-by-layer completeness matrix over Seoul, Incheon, and Gyeonggi-do that
+distinguishes `EVALUATED_WITH_FEATURES`, `EVALUATED_ZERO_FEATURES` (an honest
+zero, e.g. no 관리지역 in urban Seoul), `NOT_EVALUATED`, `SOURCE_MISSING`, and
+`VALIDATION_FAILURE`. Zero features is never treated as not-evaluated, and a
+layer legitimately absent in a jurisdiction does not fail the run.
+
+A `structural_dataset_versions` row identifies one reproducible official release
+(provider dataset + reference date + combined source checksum + transformation
+version); previous versions are preserved, never overwritten. Features are
+unique per `(dataset_version_id, feature_fingerprint)`, where the fingerprint is
+a deterministic hash of normalized geometry plus relevant official attributes
+(the provider feature id is not used as identity because its cross-refresh
+stability is unverified). An identical second write reuses the version and
+inserts zero features; `dataset_freshness` (`vworld_structural`) is updated only
+after a successful complete write, and failed runs roll back and remain visible.
+
+### Tests
+
+```bash
+# Pure loader/contract tests (synthetic pyshp fixtures, no database):
+PYTHONPATH=src:../backend/src pytest tests/test_vworld_zoning_contract.py \
+  tests/test_vworld_zoning_loader.py
+# PostGIS-backed persistence/idempotency tests:
+TEST_DATABASE_URL=postgresql+psycopg://waste_equity:waste_equity@localhost:5432/waste_equity \
+  PYTHONPATH=src:../backend/src pytest tests/test_vworld_zoning_persistence.py
+```
+
 ## Probe Commands
 
 Probe commands remain available for Phase 0 source validation:
