@@ -237,8 +237,14 @@ def _build_grid(session: Session) -> int:
                 WHERE ST_Covers(u.g, ST_Centroid(c.geom))
             ),
             clipped AS (
+                -- ST_MakeValid + polygonal extraction: intersecting a square with
+                -- a complex coastal boundary can yield a self-intersecting ring,
+                -- so every stored candidate geometry is repaired to a valid
+                -- MultiPolygon (a valid input is returned unchanged).
                 SELECT cells.i, cells.j, cells.cell_5179, cells.cen_5179,
-                       ST_Intersection(cells.cell_5179, u.g) AS clip_5179
+                       ST_CollectionExtract(
+                           ST_MakeValid(ST_Intersection(cells.cell_5179, u.g)), 3
+                       ) AS clip_5179
                 FROM cells, u5179 u
             )
             SELECT

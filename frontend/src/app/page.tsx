@@ -438,6 +438,7 @@ export default function Home() {
             candidates={candidates}
             selected={selected}
             clearSelected={() => setSelected(null)}
+            onSelect={onCandidateClick}
           />
         )}
       </aside>
@@ -477,6 +478,7 @@ function SuitabilityPanel({
   candidates,
   selected,
   clearSelected,
+  onSelect,
 }: {
   suit: SuitabilityMeta | null;
   suitError: string | null;
@@ -487,6 +489,7 @@ function SuitabilityPanel({
   candidates: SuitabilityCandidateCollection | null;
   selected: CandidateDetail | null;
   clearSelected: () => void;
+  onSelect: (id: number) => void;
 }) {
   if (suitError) {
     return (
@@ -607,12 +610,19 @@ function SuitabilityPanel({
         ) : (
           <ol className="flex flex-col gap-1 text-xs text-slate-700">
             {s.top_candidates.map((c) => (
-              <li key={String(c.candidate_id)} className="rounded bg-slate-50 px-2 py-1">
-                #{String(c.rank)} · {String(c.total_score)} · {String(c.sigungu ?? "")}{" "}
-                <span className="text-slate-400">
-                  (Z {String(c.zoning_score)} R {String(c.road_score)} E {String(c.equity_score)} D{" "}
-                  {String(c.demand_score)})
-                </span>
+              <li key={String(c.candidate_id)}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(Number(c.candidate_id))}
+                  className="w-full rounded bg-slate-50 px-2 py-1 text-left hover:bg-slate-100"
+                  data-testid="top-candidate-item"
+                >
+                  #{String(c.rank)} · {String(c.total_score)} · {String(c.sigungu ?? "")}{" "}
+                  <span className="text-slate-400">
+                    (Z {String(c.zoning_score)} R {String(c.road_score)} E {String(c.equity_score)} D{" "}
+                    {String(c.demand_score)})
+                  </span>
+                </button>
               </li>
             ))}
           </ol>

@@ -76,32 +76,35 @@ interface MapViewProps {
   onCandidateClick: (candidateId: number) => void;
 }
 
-function fillColorExpression(breaks: number[]): maplibregl.ExpressionSpecification {
+// A MapLibre "step" needs at least one stop; with no breaks (e.g. before data
+// loads) fall back to a single constant color so the layer is always valid.
+function scoreStep(breaks: number[]): unknown {
+  if (breaks.length === 0) return CHOROPLETH_PALETTE[CHOROPLETH_PALETTE.length - 1];
   const step: unknown[] = ["step", ["get", "metric_value"], CHOROPLETH_PALETTE[0]];
   breaks.forEach((threshold, index) => {
     step.push(threshold, CHOROPLETH_PALETTE[Math.min(index + 1, CHOROPLETH_PALETTE.length - 1)]);
   });
+  return step;
+}
+
+function fillColorExpression(breaks: number[]): maplibregl.ExpressionSpecification {
   return [
     "case",
     ["==", ["get", "has_value"], true],
-    step as unknown as maplibregl.ExpressionSpecification,
+    scoreStep(breaks),
     NO_DATA_COLOR,
   ] as unknown as maplibregl.ExpressionSpecification;
 }
 
 // Candidate fill: eligible -> score step; review -> distinct amber; excluded -> muted.
 function candidateColorExpression(breaks: number[]): maplibregl.ExpressionSpecification {
-  const step: unknown[] = ["step", ["get", "metric_value"], CHOROPLETH_PALETTE[0]];
-  breaks.forEach((threshold, index) => {
-    step.push(threshold, CHOROPLETH_PALETTE[Math.min(index + 1, CHOROPLETH_PALETTE.length - 1)]);
-  });
   return [
     "case",
     ["==", ["get", "status"], "EXCLUDED"],
     EXCLUDED_COLOR,
     ["==", ["get", "status"], "REVIEW_REQUIRED"],
     REVIEW_COLOR,
-    step as unknown as maplibregl.ExpressionSpecification,
+    scoreStep(breaks),
   ] as unknown as maplibregl.ExpressionSpecification;
 }
 
@@ -163,8 +166,10 @@ export default function MapView({
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.on("load", () => {
       loadedRef.current = true;
-      map.fire("wep:refresh");
+      // Emit the viewport before refreshing layers so the candidate bbox fetch
+      // starts even if a layer build hiccups.
       emitViewport(map);
+      map.fire("wep:refresh");
     });
     map.on("moveend", () => emitViewport(map));
     mapRef.current = map;

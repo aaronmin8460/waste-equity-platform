@@ -314,7 +314,11 @@ def list_candidates(
     conditions = ["analysis_run_id = :id"]
     params: dict[str, Any] = {"id": resolved, "profile": profile}
     if box is not None:
-        conditions.append("ST_Intersects(geometry, ST_MakeEnvelope(:x1,:y1,:x2,:y2,4326))")
+        # Viewport filter: bounding-box overlap (index-only GiST, no per-row exact
+        # recheck) — the right, fast predicate for "cells in view". Exact geometry
+        # intersection would recheck tens of thousands of polygons for a
+        # region-wide envelope.
+        conditions.append("geometry && ST_MakeEnvelope(:x1,:y1,:x2,:y2,4326)")
         params.update({"x1": box[0], "y1": box[1], "x2": box[2], "y2": box[3]})
     if sido is not None:
         conditions.append("sido_region_code = :sido")
@@ -342,10 +346,15 @@ def list_candidates(
     )
 
     effective_limit = min(top, limit) if top is not None else limit
+    # For `top`, order by the requested profile's rank over the (small) eligible
+    # set. For the general list (which can match the whole ~48k grid), order by
+    # the indexed first-class `rank` column (active-profile rank; NULL for
+    # review/excluded) so eligible cells surface first without an expensive
+    # per-row JSONB extract+cast over tens of thousands of rows.
     order = (
         "ORDER BY (profile_ranks->>:profile)::int ASC"
         if top is not None
-        else "ORDER BY (profile_ranks->>:profile)::int ASC NULLS LAST, candidate_key ASC"
+        else "ORDER BY rank ASC NULLS LAST, candidate_key ASC"
     )
     params.update({"limit": effective_limit, "offset": offset})
     rows = (
