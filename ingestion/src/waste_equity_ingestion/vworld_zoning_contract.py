@@ -150,12 +150,71 @@ def region_for_dir_name(name: str) -> TargetRegion | None:
     return TARGET_REGIONS_BY_DIR.get(name.strip().lower())
 
 
+# Korean Transverse-Mercator CRS family, keyed by the exact projection
+# parameters (proj=tmerc on a GRS80 ellipsoid, latitude of origin 38). ESRI-style
+# WKT written by some official tools (e.g. the ITS 표준노드링크 ``MOCT_LINK.prj``,
+# which names itself ``ITRF2000_Central_Belt_60``) omits an EPSG AUTHORITY and
+# uses a datum name pyproj will not map to an EPSG code, yet the projection
+# parameters uniquely identify the CRS. Matching those exact parameters resolves
+# the code deterministically from the file — it does not guess. Korea 2000 is the
+# ITRF2000 (epoch 2002.0) realization on GRS80, so an ITRF2000 central-belt WKT
+# is the same projected CRS as EPSG:5186. Only codes on the supported allowlist
+# are matched. Key: (central_meridian, scale_factor, false_easting, false_northing).
+_KOREAN_TM_PARAMS: dict[tuple[float, float, float, float], int] = {
+    (125.0, 1.0, 200000.0, 600000.0): 5185,  # Korea 2000 / West Belt 2010
+    (127.0, 1.0, 200000.0, 600000.0): 5186,  # Korea 2000 / Central Belt 2010
+    (129.0, 1.0, 200000.0, 600000.0): 5187,  # Korea 2000 / East Belt 2010
+    (131.0, 1.0, 200000.0, 600000.0): 5188,  # Korea 2000 / East Sea Belt 2010
+    (127.0, 1.0, 200000.0, 500000.0): 2097,  # Korea 2000 / Central Belt (legacy)
+    (127.5, 0.9996, 1000000.0, 2000000.0): 5179,  # Korea 2000 / Unified (UTM-K)
+}
+
+
+def _epsg_from_projection_params(crs: Any) -> int | None:
+    """Resolve a supported EPSG from a CRS's exact TM projection parameters.
+
+    Deterministic, evidence-based fallback for ESRI WKT that omits an EPSG
+    authority: it matches only the exact Korean GRS80 Transverse-Mercator
+    parameter sets above, so a match is an identification, not a guess.
+    """
+
+    import warnings
+
+    try:
+        with warnings.catch_warnings():
+            # crs.to_dict() round-trips through PROJ4 and warns about lossiness;
+            # only the exact TM parameters are read, for which PROJ4 is faithful.
+            warnings.simplefilter("ignore")
+            params = crs.to_dict()
+    except Exception:  # noqa: BLE001 - non-projected or unconvertible CRS
+        return None
+    if params.get("proj") != "tmerc":
+        return None
+    ellps = str(params.get("ellps") or "")
+    if "GRS" not in ellps.upper():
+        return None
+    if params.get("lat_0") not in (38, 38.0):
+        return None
+    try:
+        key = (
+            float(params["lon_0"]),
+            float(params.get("k") or params.get("k_0") or 1.0),
+            float(params["x_0"]),
+            float(params["y_0"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+    return _KOREAN_TM_PARAMS.get(key)
+
+
 def epsg_from_prj(prj_text: str) -> int | None:
     """Read the EPSG code from a shapefile ``.prj`` WKT, or ``None``.
 
     Uses pyproj to interpret the projection WKT. Returns ``None`` when the WKT
-    is absent/unparseable or pyproj cannot resolve a definite EPSG code; the
-    caller rejects rather than guesses.
+    is absent/unparseable or the CRS cannot be resolved to a definite,
+    supported EPSG code by (a) pyproj, (b) an explicit EPSG AUTHORITY, or
+    (c) an exact Korean-TM parameter match; the caller rejects rather than
+    guesses.
     """
 
     text = prj_text.strip()
@@ -180,7 +239,9 @@ def epsg_from_prj(prj_text: str) -> int | None:
     matches = re.findall(r'AUTHORITY\s*\[\s*"EPSG"\s*,\s*"?(\d+)"?\s*\]', text)
     if matches:
         return int(matches[-1])
-    return None
+    # Final fallback: identify the CRS from its exact TM projection parameters
+    # (needed for the 표준노드링크 ITRF2000 central-belt WKT → EPSG:5186).
+    return _epsg_from_projection_params(crs)
 
 
 def require_supported_source_crs(epsg: int | None) -> str:

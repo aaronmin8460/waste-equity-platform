@@ -288,12 +288,10 @@ def run_vworld_zoning(settings: ProbeSettings, args: argparse.Namespace) -> int:
 def run_vworld_structural(settings: ProbeSettings, args: argparse.Namespace, family: str) -> int:
     if not args.dry_run and not args.write:
         raise IngestionError(f"vworld-{family}-ingest requires either --dry-run or --write")
-    if not args.reference_date:
-        raise IngestionError(f"vworld-{family}-ingest requires --reference-date YYYY-MM-DD")
+    # Reference dates are now per-dataset from the Git-ignored source_manifest.json
+    # (protected and road sources have different official reference periods), so
+    # --reference-date is optional and no longer forced family-wide.
     source_path = args.source_path or f"data/raw/vworld/{family}"
-    kwargs: dict[str, str] = {}
-    if args.source_encoding:
-        kwargs["encoding"] = args.source_encoding
     report = run_structural_ingestion(
         settings,
         family=family,
@@ -301,7 +299,7 @@ def run_vworld_structural(settings: ProbeSettings, args: argparse.Namespace, fam
         reference_date=args.reference_date,
         scope=args.scope,
         write=bool(args.write),
-        **kwargs,
+        encoding=args.source_encoding or "cp949",
     )
     print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
     return 0
