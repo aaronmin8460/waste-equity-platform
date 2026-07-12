@@ -21,6 +21,14 @@ waste generation, served as-is) and a waste-treatment facility point layer.
   no-data color.
 - If the backend is unreachable or reports no data, the UI shows an explicit
   error — there is no bundled or fallback dataset.
+- The Equity/Suitability mode switch adds a 500 m candidate-grid screen
+  (Phase 5.4). Candidate cells are fetched by viewport bbox with a controlled
+  limit and stale-request cancellation (never the whole grid at once). Every
+  candidate is labelled ELIGIBLE / REVIEW_REQUIRED / EXCLUDED with its score,
+  component evidence, sources, and reasons; excluded cells show reasons and no
+  score, review cells show a provisional score and no rank. The suitability
+  result is analytical screening only — never a legal, permit, or final siting
+  determination, and no legal-eligibility flag is shown.
 - Quantities arrive as exact decimal strings and are formatted without
   changing their value.
 - The basemap is OpenStreetMap raster tiles (public, non-government) with

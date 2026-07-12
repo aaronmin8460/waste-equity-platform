@@ -23,6 +23,7 @@ from waste_equity_backend.models import (
     RawApiResponse,
     RegionalPopulation,
     RegionalWasteStatistics,
+    SuitabilityAnalysisRun,
 )
 
 METADATA_TABLES = [
@@ -32,6 +33,9 @@ METADATA_TABLES = [
     RawApiResponse.__table__,
     RegionalPopulation.__table__,
     RegionalWasteStatistics.__table__,
+    # Non-spatial; the candidates table is spatial and is covered by the
+    # suitability route integration tests (TEST_DATABASE_URL).
+    SuitabilityAnalysisRun.__table__,
 ]
 
 

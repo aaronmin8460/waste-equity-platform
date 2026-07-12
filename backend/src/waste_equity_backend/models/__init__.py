@@ -10,6 +10,7 @@ from .structural import (
     StructuralLineFeature,
     StructuralProtectedFeature,
 )
+from .suitability import SuitabilityAnalysisRun, SuitabilityCandidate
 from .waste import RegionalWasteStatistics
 
 __all__ = [
@@ -26,5 +27,7 @@ __all__ = [
     "StructuralFeature",
     "StructuralLineFeature",
     "StructuralProtectedFeature",
+    "SuitabilityAnalysisRun",
+    "SuitabilityCandidate",
     "WasteTreatmentFacility",
 ]

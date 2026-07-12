@@ -391,6 +391,12 @@ Required checks before completion:
 
 ## Phase 5: Equity And Suitability Analysis
 
+Status: complete (2026-07-13). Phase 5.1 (per-capita waste generation), 5.2
+(facility-burden spatial equity), 5.3 (analytical methods, weighting policy,
+review workflow), and 5.4 (suitability constraints and scoring) are all
+production-implemented and live-verified. Phase 6 (automated refresh /
+scheduler) has not been started.
+
 Goal: implement documented spatial analysis and facility-siting decision support.
 
 Planned deliverables:
@@ -526,27 +532,79 @@ Deliverables:
 
 ### Phase 5.4: Suitability Constraints And Scoring
 
-Status: blocked — must not begin until explicitly scoped.
+Status: complete (2026-07-13). Live-verified against the real capital-region
+PostGIS database: one reproducible suitability run (`suitability-screening-v1`,
+`suitability-policy-v1`, `capital-grid-500m-v1`, reference year 2024, input
+structural dataset versions zoning 18 / protected 62,63 / roads 77,100) over
+**47,893** 500 m candidate cells — **1,099 ELIGIBLE / 34,534 REVIEW_REQUIRED /
+12,260 EXCLUDED**. An identical second write is idempotent (0 new candidates,
+run reused, ~2.7 s). All candidate geometries are valid EPSG:4326 MultiPolygon
+(0 null/empty/invalid), 0 duplicate candidate keys, all scores in [0,100], all
+eligible carry four components + provenance, ranks 1..1,099 contiguous, and the
+production zoning/protected/road counts are unchanged. Sensitivity (four
+profiles): the eligible set is profile-invariant and rank correlation is high
+(Spearman vs baseline 0.86–0.94), but the top set is **not** robust (baseline
+top-50 overlap 0 with the equal/access profiles) — reported, not smoothed over.
+Backend ruff/mypy/pytest (96) + ingestion pytest (258), compileall, alembic
+round-trip, frontend eslint/tsc/Vitest (24) + production build, and the
+Playwright live smoke (with the government-API egress guard) all pass. The
+output is analytical decision-support screening only — never a legal permit,
+engineering certification, final facility decision, or statutory determination.
 
-Blocking prerequisites:
+Prerequisites (now satisfied):
 
 - The minimum structural-layer package defined in
   `docs/SUITABILITY_DATA_REQUIREMENTS.md` (zoning, protected/restricted
-  areas, roads) must be production-ingested through Phase 2.5B with complete
-  Seoul/Incheon/Gyeonggi-do coverage. **Satisfied (2026-07-12):** zoning
-  (88,252), protected/restricted (20,892), and road/road-network lines
-  (2,971,494) are production-ingested for all three regions, with the only gaps
-  being documented `OFFICIAL_SOURCE_UNAVAILABLE` cells (Seoul UM901/UF151,
-  Gyeonggi UM901). So the constraint-layer data prerequisite is now met; a
-  suitability score still may not present burden/demand alone as siting
-  suitability. These are spatial screening layers, not legal determinations.
-- The exclusion-classification and buffer/weighting policy decisions listed in
-  `docs/SUITABILITY_DATA_REQUIREMENTS.md` must be recorded. (Dataset
-  storage/licensing is resolved for this project by the confirmed prior
-  government-project authorization recorded under Phase 2.5B.)
-- Any weighting must satisfy the adoption requirements in
-  `docs/ANALYTICAL_METHODS.md` (documented rationale and sensitivity,
-  review sign-off, distinct derivation version, honest UI labeling).
+  areas, roads) is production-ingested through Phase 2.5B with complete
+  Seoul/Incheon/Gyeonggi-do coverage (2026-07-12): zoning (88,252),
+  protected/restricted (20,892), road/road-network lines (2,971,494), with the
+  only gaps being documented `OFFICIAL_SOURCE_UNAVAILABLE` cells (Seoul
+  UM901/UF151, Gyeonggi UM901). These are spatial screening layers, not legal
+  determinations; a score may not present burden/demand alone as suitability.
+- The exclusion-classification and weighting policy decisions in
+  `docs/SUITABILITY_DATA_REQUIREMENTS.md` are recorded as the project-approved
+  **analytical screening policy v1** (`docs/SUITABILITY_POLICY_V1.md`,
+  `policy_version: suitability-policy-v1`). Dataset storage/licensing is
+  resolved for this project by the confirmed prior government-project
+  authorization recorded under Phase 2.5B.
+- The weighting satisfies the adoption requirements in
+  `docs/ANALYTICAL_METHODS.md` (documented rationale + sensitivity profiles,
+  review sign-off in the PR, distinct `derivation_version:
+  suitability-screening-v1`, and honest UI labeling as analytical screening —
+  never a legal/permit determination).
+
+Scope authorization: analytical screening policy v1 only. The output is
+decision-support screening, never a legal permit decision, engineering
+certification, final facility decision, or statutory determination.
+
+Subphases:
+
+- **5.4A — policy, candidate model, and derivation contract.** The approved
+  policy, the deterministic 500 m candidate grid (`capital-grid-500m-v1`,
+  EPSG:5179 origin), the classification/exclusion/review registry, weights, and
+  sensitivity profiles are recorded in `docs/SUITABILITY_POLICY_V1.md` and the
+  single machine-readable registry
+  `backend/.../analysis/suitability/policy.py`.
+- **5.4B — PostGIS suitability engine and persistence.** A versioned,
+  idempotent build (`suitability_analysis_runs` + `suitability_candidates`,
+  migration 0010) generates the grid, applies hard exclusions and review rules,
+  computes zoning/road/equity/demand components server-side with set-based
+  PostGIS, and writes one reproducible run keyed by an analysis signature. CLI:
+  `suitability-build --reference-year --policy-version --profile --scope
+  capital-region --dry-run|--write`.
+- **5.4C — suitability API.** Read-only `/api/v1/suitability/*` endpoints
+  (policies, runs, latest, summary, candidates with bbox/filter/pagination,
+  candidate detail) serving stored results with full provenance and analytical
+  -screening disclaimers.
+- **5.4D — frontend suitability dashboard.** An Equity/Suitability mode switch
+  with a candidate-grid score choropleth, status styling, profile selector,
+  filters, candidate detail evidence panel, layer controls, sensitivity
+  comparison, coverage warnings, and the analytical-screening disclaimer;
+  bbox/limited/debounced/cancelable candidate fetching.
+- **5.4E — sensitivity analysis and live verification.** The four profiles
+  (baseline / equal / equity-focused / access-focused), top-set overlap, rank
+  stability, distributions, and a full live PostGIS verification with idempotency
+  and hand-checks.
 
 ## Phase 6: Automated Refresh And Operations
 

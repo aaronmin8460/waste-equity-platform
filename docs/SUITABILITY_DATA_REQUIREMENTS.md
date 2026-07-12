@@ -19,6 +19,19 @@ zoning family (UQ111–UQ114). Phase 5.4 nonetheless remains blocked until the
 full mandatory package (zoning + protected/restricted + roads) is ingested
 with complete coverage.
 
+**Update (Phase 5.4, 2026-07-12): prerequisites satisfied and Phase 5.4
+unblocked.** The full mandatory package is production-ingested for
+Seoul/Incheon/Gyeonggi (zoning 88,252; protected/restricted 20,892; road lines
+2,971,494), with the only gaps documented `OFFICIAL_SOURCE_UNAVAILABLE`. The
+human policy decisions below — hard exclusion vs soft penalty vs display per
+layer, buffers (none invented), composite weighting, and candidate geometry (a
+500 m grid, not parcel-based) — are now recorded as the project-approved
+analytical screening policy v1 in `docs/SUITABILITY_POLICY_V1.md`
+(`policy_version: suitability-policy-v1`). The screen is analytical
+decision-support only, never a legal/permit/statutory determination. The
+statutory-effect and per-parcel legal-boundary interpretations in the sections
+below remain open and are explicitly out of scope for the v1 screening policy.
+
 ## Input Classification
 
 ### Mandatory exclusion/constraint inputs (official feature data confirmed)

@@ -24,6 +24,12 @@ EXPECTED_TABLES = {
     "regional_population",
     "regional_waste_statistics",
     "waste_treatment_facilities",
+    "structural_dataset_versions",
+    "structural_features",
+    "structural_line_features",
+    "structural_protected_features",
+    "suitability_analysis_runs",
+    "suitability_candidates",
 }
 EXPECTED_SOURCE_IDS = {"waste_statistics", "sgis", "airkorea", "kma", "vworld"}
 
