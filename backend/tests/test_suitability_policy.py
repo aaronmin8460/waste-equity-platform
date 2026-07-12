@@ -53,9 +53,10 @@ def test_zoning_registry_completeness_and_bounds() -> None:
     assert policy.ZONING_REGISTRY["UQ112"].score == Decimal("55")
     assert policy.ZONING_REGISTRY["UQ113"].score == Decimal("25")
     # No industrial high-compatibility class exists in v1.
-    assert max(
-        r.score for r in policy.ZONING_REGISTRY.values() if r.score is not None
-    ) == policy.MAX_V1_ZONING_SCORE
+    assert (
+        max(r.score for r in policy.ZONING_REGISTRY.values() if r.score is not None)
+        == policy.MAX_V1_ZONING_SCORE
+    )
 
 
 @pytest.mark.parametrize(

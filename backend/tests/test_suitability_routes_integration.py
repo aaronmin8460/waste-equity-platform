@@ -196,9 +196,7 @@ def test_summary(pg_client: TestClient, seeded: dict[str, int]) -> None:
 
 def test_candidates_geojson_and_bbox(pg_client: TestClient, seeded: dict[str, int]) -> None:
     run = seeded["run"]
-    body = pg_client.get(
-        f"/api/v1/suitability/candidates?run_id={run}&bbox=19,19,22,22"
-    ).json()
+    body = pg_client.get(f"/api/v1/suitability/candidates?run_id={run}&bbox=19,19,22,22").json()
     assert body["type"] == "FeatureCollection"
     assert body["total_matched"] == 3
     assert body["features"][0]["geometry"]["type"] == "MultiPolygon"
@@ -212,9 +210,7 @@ def test_candidates_geojson_and_bbox(pg_client: TestClient, seeded: dict[str, in
 
 def test_candidates_status_and_top_filters(pg_client: TestClient, seeded: dict[str, int]) -> None:
     run = seeded["run"]
-    excluded = pg_client.get(
-        f"/api/v1/suitability/candidates?run_id={run}&status=EXCLUDED"
-    ).json()
+    excluded = pg_client.get(f"/api/v1/suitability/candidates?run_id={run}&status=EXCLUDED").json()
     assert excluded["total_matched"] == 1
     props = excluded["features"][0]["properties"]
     assert props["is_excluded"] is True
@@ -228,20 +224,18 @@ def test_candidates_status_and_top_filters(pg_client: TestClient, seeded: dict[s
 
 
 def test_candidate_detail_and_profile_switch(pg_client: TestClient, seeded: dict[str, int]) -> None:
-    body = pg_client.get(
-        f"/api/v1/suitability/candidates/{seeded['c1']}?profile=baseline"
-    ).json()
+    body = pg_client.get(f"/api/v1/suitability/candidates/{seeded['c1']}?profile=baseline").json()
     assert body["status"] == "ELIGIBLE"
     assert body["total_score"] == "80.0000"
     assert body["rank"] == 1
-    assert body["raw_components"]["equity"]["accounting_basis"] == "FACILITY_LOCATION_BASED_THROUGHPUT"
+    assert (
+        body["raw_components"]["equity"]["accounting_basis"] == "FACILITY_LOCATION_BASED_THROUGHPUT"
+    )
     assert body["raw_components"]["demand"]["accounting_basis"] == "ORIGIN_BASED_TREATMENT_OUTCOME"
     assert set(body["profile_totals"]) == set(ALL_PROFILES)
     assert body["geometry"]["type"] == "MultiPolygon"
     # profile switch re-selects the stored per-profile total
-    equal = pg_client.get(
-        f"/api/v1/suitability/candidates/{seeded['c1']}?profile=equal"
-    ).json()
+    equal = pg_client.get(f"/api/v1/suitability/candidates/{seeded['c1']}?profile=equal").json()
     assert equal["total_score"] == "75.0000"
 
 
@@ -254,7 +248,9 @@ def test_excluded_detail_has_no_score(pg_client: TestClient, seeded: dict[str, i
     assert body["exclusion_reasons"] == ["PROJECT_SCREENING_EXCLUSION:UD801"]
 
 
-def test_review_detail_has_provisional_no_rank(pg_client: TestClient, seeded: dict[str, int]) -> None:
+def test_review_detail_has_provisional_no_rank(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
     body = pg_client.get(f"/api/v1/suitability/candidates/{seeded['c2']}").json()
     assert body["status"] == "REVIEW_REQUIRED"
     assert body["provisional_score"] == "50.0000"

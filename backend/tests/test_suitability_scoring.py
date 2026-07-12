@@ -44,6 +44,7 @@ def test_analysis_signature_determinism_and_sensitivity() -> None:
     assert _analysis_signature(_inputs(year=2023), "baseline") != base
     assert _analysis_signature(_inputs(ids=[18, 77, 100]), "baseline") != base
 
+
 SIGUNGU = "28710"
 
 
@@ -51,8 +52,18 @@ def _region() -> RegionComponents:
     return RegionComponents(
         equity_scores={SIGUNGU: Decimal("100.0000")},
         demand_scores={SIGUNGU: Decimal("50.0000")},
-        equity_raw={SIGUNGU: {"located_burden_kg_per_capita": "0", "accounting_basis": "FACILITY_LOCATION_BASED_THROUGHPUT"}},
-        demand_raw={SIGUNGU: {"household_per_capita_kg_per_year": "300", "accounting_basis": "ORIGIN_BASED_TREATMENT_OUTCOME"}},
+        equity_raw={
+            SIGUNGU: {
+                "located_burden_kg_per_capita": "0",
+                "accounting_basis": "FACILITY_LOCATION_BASED_THROUGHPUT",
+            }
+        },
+        demand_raw={
+            SIGUNGU: {
+                "household_per_capita_kg_per_year": "300",
+                "accounting_basis": "ORIGIN_BASED_TREATMENT_OUTCOME",
+            }
+        },
         equity_provenance={"source_id": "waste_statistics"},
         demand_provenance={"source_id": "waste_statistics"},
     )

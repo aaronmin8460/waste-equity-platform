@@ -112,9 +112,7 @@ def upgrade() -> None:
             name="uq_suitability_candidates_run_key",
         ),
     )
-    op.create_index(
-        "ix_suitability_candidates_status", "suitability_candidates", ["status"]
-    )
+    op.create_index("ix_suitability_candidates_status", "suitability_candidates", ["status"])
     op.create_index(
         "ix_suitability_candidates_total_score", "suitability_candidates", ["total_score"]
     )
