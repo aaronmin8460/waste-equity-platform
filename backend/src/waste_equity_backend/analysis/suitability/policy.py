@@ -22,7 +22,12 @@ from typing import Any
 # --------------------------------------------------------------------------- #
 
 POLICY_VERSION = "suitability-policy-v1"
-DERIVATION_VERSION = "suitability-screening-v1"
+# v2: coverage-gap computation moved from a union of OFFICIAL_SOURCE_UNAVAILABLE
+# cells to effective coverage (an active dataset that evaluates a region/layer
+# satisfies coverage), and structural screening/inputs are restricted to active
+# dataset versions. The policy registry (codes, weights, curves, thresholds) is
+# unchanged, so POLICY_VERSION stays at v1.
+DERIVATION_VERSION = "suitability-screening-v2"
 CANDIDATE_GRID_VERSION = "capital-grid-500m-v1"
 
 # Deterministic 500 m grid in EPSG:5179 (Korea 2000 / Unified, meters), tiled

@@ -133,6 +133,10 @@ class ResolvedInputs:
 
 
 def _resolve_inputs(session: Session, reference_year: int) -> ResolvedInputs:
+    # Only explicitly active dataset versions participate: input resolution, the
+    # analysis signature, protected-feature spatial intersections, and coverage
+    # gaps all read this same active set, so a superseded release stops driving
+    # screening the moment it is deactivated (historical rows are preserved).
     versions = (
         session.execute(
             text(
@@ -140,6 +144,7 @@ def _resolve_inputs(session: Session, reference_year: int) -> ResolvedInputs:
             SELECT id, layer_family, provider_dataset_identifier,
                    reference_date::text AS reference_date, source_id
             FROM structural_dataset_versions
+            WHERE is_active
             ORDER BY layer_family, id
             """
             )
@@ -148,11 +153,13 @@ def _resolve_inputs(session: Session, reference_year: int) -> ResolvedInputs:
         .all()
     )
     if not versions:
-        raise SuitabilityBuildError("no structural dataset versions ingested; cannot screen")
+        raise SuitabilityBuildError("no active structural dataset versions; cannot screen")
     families = {v["layer_family"] for v in versions}
     for required in ("zoning", "protected", "roads"):
         if required not in families:
-            raise SuitabilityBuildError(f"structural family '{required}' not ingested")
+            raise SuitabilityBuildError(
+                f"structural family '{required}' has no active dataset version"
+            )
 
     def _one(table: str, where: str) -> dict[str, Any]:
         row = (
@@ -297,8 +304,13 @@ def _build_grid(session: Session) -> int:
     return int(session.execute(text("SELECT count(*) FROM _sc_grid")).scalar_one())
 
 
-def _enrich(session: Session) -> list[dict[str, Any]]:
-    """Per-candidate spatial facts (exclusions, review layers, zoning, road)."""
+def _enrich(session: Session, active_protected_ids: list[int]) -> list[dict[str, Any]]:
+    """Per-candidate spatial facts (exclusions, review layers, zoning, road).
+
+    Protected-feature intersections are restricted to the active dataset versions
+    resolved for this run (``active_protected_ids``), so a superseded or otherwise
+    inactive protected version never contributes a hard exclusion or a review hit.
+    """
 
     hard_protected = list(policy.PROTECTED_HARD_CODES)
     zoning_hard = list(policy.ZONING_HARD_CODES)
@@ -314,6 +326,7 @@ def _enrich(session: Session) -> list[dict[str, Any]]:
                     SELECT array_agg(DISTINCT p.official_layer_code)
                     FROM structural_protected_features p
                     WHERE p.official_layer_code = ANY(:hard_protected)
+                      AND p.dataset_version_id = ANY(:active_protected)
                       AND ST_Intersects(p.geometry, g.geom)
                       AND ST_Area(ST_Intersection(p.geometry, g.geom)) > 0
                 ) AS hard_protected_hits,
@@ -325,11 +338,15 @@ def _enrich(session: Session) -> list[dict[str, Any]]:
                 ) AS zoning_hard_hit,
                 EXISTS (
                     SELECT 1 FROM structural_protected_features p
-                    WHERE p.official_layer_code = 'UO101' AND ST_Intersects(p.geometry, g.geom)
+                    WHERE p.official_layer_code = 'UO101'
+                      AND p.dataset_version_id = ANY(:active_protected)
+                      AND ST_Intersects(p.geometry, g.geom)
                 ) AS uo101_hit,
                 EXISTS (
                     SELECT 1 FROM structural_protected_features p
-                    WHERE p.official_layer_code = 'UO301' AND ST_Intersects(p.geometry, g.geom)
+                    WHERE p.official_layer_code = 'UO301'
+                      AND p.dataset_version_id = ANY(:active_protected)
+                      AND ST_Intersects(p.geometry, g.geom)
                 ) AS uo301_hit,
                 (
                     SELECT z.official_zoning_code FROM structural_features z
@@ -353,7 +370,11 @@ def _enrich(session: Session) -> list[dict[str, Any]]:
             ORDER BY g.gid
             """
             ),
-            {"hard_protected": hard_protected, "zoning_hard": zoning_hard},
+            {
+                "hard_protected": hard_protected,
+                "zoning_hard": zoning_hard,
+                "active_protected": active_protected_ids,
+            },
         )
         .mappings()
         .all()
@@ -361,37 +382,78 @@ def _enrich(session: Session) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def _coverage_gaps(session: Session) -> dict[str, set[str]]:
-    """Map SIDO name -> set of hard-exclusion codes that are OFFICIAL_SOURCE_UNAVAILABLE."""
+# Region dir_name (seoul/incheon/gyeonggi) -> official SIDO region name.
+_DIR_TO_SIDO_NAME = {"seoul": "서울특별시", "incheon": "인천광역시", "gyeonggi": "경기도"}
 
+# Coverage-matrix statuses that count as "this region/layer was actually evaluated
+# against a valid official source" (effective coverage). A cell with any of these
+# from an active dataset is covered, even if another active dataset recorded it as
+# OFFICIAL_SOURCE_UNAVAILABLE.
+_COVERAGE_EVALUATED_STATUSES = frozenset(
+    {"COMPLETE_WITH_FEATURES", "COMPLETE_ZERO_FEATURES", "NATIONWIDE_SOURCE_EVALUATED"}
+)
+_COVERAGE_UNAVAILABLE_STATUS = "OFFICIAL_SOURCE_UNAVAILABLE"
+
+
+def _effective_coverage_gaps(coverage_matrices: list[Any]) -> dict[str, set[str]]:
+    """Effective-coverage gap rule over active protected coverage matrices.
+
+    Each matrix is ``{region_dir: {layer_code: {"status": ..., ...}}}``. A
+    ``(SIDO, code)`` cell is a coverage gap only when some active dataset marks it
+    ``OFFICIAL_SOURCE_UNAVAILABLE`` **and** no active dataset evaluates it with a
+    valid source (``COMPLETE_WITH_FEATURES`` / ``COMPLETE_ZERO_FEATURES`` /
+    ``NATIONWIDE_SOURCE_EVALUATED``). So a newly obtained, approved version that
+    evaluates a region/layer satisfies coverage there without any older
+    "unavailable" record being modified, while a region/layer that no active
+    dataset ever evaluates stays a gap. Only coverage-sensitive hard codes count.
+    """
+
+    evaluated: set[tuple[str, str]] = set()
+    unavailable: set[tuple[str, str]] = set()
+    for matrix in coverage_matrices:
+        if not isinstance(matrix, dict):
+            continue
+        for dir_name, layers in matrix.items():
+            sido = _DIR_TO_SIDO_NAME.get(dir_name)
+            if sido is None or not isinstance(layers, dict):
+                continue
+            for code, info in layers.items():
+                if code not in policy.COVERAGE_SENSITIVE_HARD_CODES or not isinstance(info, dict):
+                    continue
+                status = info.get("status")
+                if status in _COVERAGE_EVALUATED_STATUSES:
+                    evaluated.add((sido, code))
+                elif status == _COVERAGE_UNAVAILABLE_STATUS:
+                    unavailable.add((sido, code))
+    gaps: dict[str, set[str]] = {}
+    for sido, code in unavailable:
+        if (sido, code) not in evaluated:
+            gaps.setdefault(sido, set()).add(code)
+    return gaps
+
+
+def _coverage_gaps(session: Session, active_protected_ids: list[int]) -> dict[str, set[str]]:
+    """Map SIDO name -> hard-exclusion codes that are an effective coverage gap.
+
+    Reads only the active protected dataset versions resolved for this run, so a
+    deactivated version neither creates nor clears a gap.
+    """
+
+    if not active_protected_ids:
+        return {}
     rows = (
         session.execute(
             text(
                 "SELECT coverage_matrix FROM structural_dataset_versions "
-                "WHERE layer_family = 'protected' AND coverage_matrix IS NOT NULL"
-            )
+                "WHERE layer_family = 'protected' AND is_active "
+                "AND coverage_matrix IS NOT NULL AND id = ANY(:ids)"
+            ),
+            {"ids": active_protected_ids},
         )
         .scalars()
         .all()
     )
-    # region dir_name (seoul/incheon/gyeonggi) -> official SIDO region name
-    dir_to_name = {"seoul": "서울특별시", "incheon": "인천광역시", "gyeonggi": "경기도"}
-    gaps: dict[str, set[str]] = {}
-    for matrix in rows:
-        if not isinstance(matrix, dict):
-            continue
-        for dir_name, layers in matrix.items():
-            sido = dir_to_name.get(dir_name)
-            if sido is None or not isinstance(layers, dict):
-                continue
-            for code, info in layers.items():
-                if (
-                    code in policy.COVERAGE_SENSITIVE_HARD_CODES
-                    and isinstance(info, dict)
-                    and info.get("status") == "OFFICIAL_SOURCE_UNAVAILABLE"
-                ):
-                    gaps.setdefault(sido, set()).add(code)
-    return gaps
+    return _effective_coverage_gaps(list(rows))
 
 
 # --------------------------------------------------------------------------- #
@@ -957,13 +1019,20 @@ def run_suitability_build(
         grid_count = _build_grid(session)
         emit("GENERATING_GRID", f"{grid_count} candidate cells retained")
 
+        # Active protected dataset versions drive both the protected-feature
+        # intersections and the effective-coverage gaps, using the same set that
+        # _resolve_inputs recorded in the analysis signature.
+        active_protected_ids = [
+            int(v["id"]) for v in inputs.structural_versions if v["layer_family"] == "protected"
+        ]
+
         emit("APPLYING_HARD_EXCLUSIONS", "spatial enrichment (exclusions, review, zoning, road)")
-        facts = _enrich(session)
+        facts = _enrich(session, active_protected_ids)
         emit("CALCULATING_ROAD_DISTANCE", f"{len(facts)} candidates enriched")
 
         emit("JOINING_EQUITY_CONTEXT", "per-SIGUNGU burden + demand")
         region = _region_components(session, reference_year)
-        coverage_gaps = _coverage_gaps(session)
+        coverage_gaps = _coverage_gaps(session, active_protected_ids)
 
         emit("CALCULATING_SCORES", f"scoring {len(facts)} candidates")
         scored, exclusion_counts, review_counts = _score_candidates(
