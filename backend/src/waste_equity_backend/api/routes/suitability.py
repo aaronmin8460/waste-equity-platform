@@ -206,6 +206,10 @@ def summary(
     ).mappings():
         sido_distribution.setdefault(r["sido"], {})[r["status"]] = r["c"]
 
+    # Distinct grid cells can carry legitimately tied scores (e.g. rural SIGUNGU with
+    # uniform zoning/road/equity). The centroid lets the UI give each tied cell a
+    # concrete location distinction and move the map to it, without deduplicating or
+    # altering any score.
     top = [
         {
             "rank": r["rank"],
@@ -217,11 +221,18 @@ def summary(
             "road_score": (str(r["road_score"]) if r["road_score"] is not None else None),
             "equity_score": (str(r["equity_score"]) if r["equity_score"] is not None else None),
             "demand_score": (str(r["demand_score"]) if r["demand_score"] is not None else None),
+            "centroid_lon": (
+                round(r["centroid_lon"], 6) if r["centroid_lon"] is not None else None
+            ),
+            "centroid_lat": (
+                round(r["centroid_lat"], 6) if r["centroid_lat"] is not None else None
+            ),
         }
         for r in session.execute(
             text(
                 "SELECT id, candidate_key, sigungu_region_name, zoning_score, road_score, "
                 "equity_score, demand_score, "
+                "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
                 "(profile_ranks->>:profile)::int AS rank, profile_totals->>:profile AS total "
                 "FROM suitability_candidates "
                 "WHERE analysis_run_id = :id AND status = 'ELIGIBLE' "
