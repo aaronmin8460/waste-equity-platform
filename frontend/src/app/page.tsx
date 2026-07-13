@@ -54,6 +54,7 @@ import {
   type MetricKey,
 } from "../lib/metrics";
 import type { RegionDisplayValue, StatusVisibility } from "../components/MapView";
+import { classifyEquityRaw, topCandidateCellLabel } from "../lib/suitability";
 
 const MapView = dynamic(() => import("../components/MapView"), { ssr: false });
 
@@ -462,6 +463,7 @@ export default function Home() {
           candidates={candidates}
           candidateBreaks={candidateBreaks}
           statusVisibility={statusVisibility}
+          selectedCandidate={selected}
           onViewportChange={onViewportChange}
           onCandidateClick={onCandidateClick}
         />
@@ -628,6 +630,12 @@ function SuitabilityPanel({
                     (Z {String(c.zoning_score)} R {String(c.road_score)} E {String(c.equity_score)} D{" "}
                     {String(c.demand_score)})
                   </span>
+                  <span
+                    className="mt-0.5 block font-mono text-[11px] text-slate-500"
+                    data-testid="top-candidate-cell"
+                  >
+                    {topCandidateCellLabel(c)}
+                  </span>
                 </button>
               </li>
             ))}
@@ -710,6 +718,7 @@ function CandidateDetailPanel({
 }) {
   const eq = detail.raw_components?.equity as Record<string, unknown> | undefined;
   const dem = detail.raw_components?.demand as Record<string, unknown> | undefined;
+  const equityKind = classifyEquityRaw(eq);
   return (
     <section
       className="rounded border border-sky-300 bg-sky-50 p-3 text-xs text-slate-700"
@@ -779,17 +788,48 @@ function CandidateDetailPanel({
             진입 보장 아님)
           </p>
           {eq && (
-            <p className="mt-1">
-              형평성 원자료: {String(eq.located_burden_kg_per_capita)} {String(eq.unit)} ·{" "}
-              {String(eq.accounting_basis)} · {String(eq.source_id)} ({String(eq.reference_period)})
-            </p>
+            <div className="mt-1" data-testid="candidate-equity-raw">
+              <p>
+                형평성 원자료(소재 시설 부담): <strong>{String(eq.located_burden_kg_per_capita)}</strong>{" "}
+                {String(eq.unit)} · {String(eq.accounting_basis)} · {String(eq.source_id)} (
+                {String(eq.reference_period)})
+              </p>
+              <p className="text-slate-500" data-testid="equity-score-direction">
+                점수 방향(역방향): 시설 부담이 낮을수록 형평성 점수가 높습니다 (inverse — lower
+                located-facility burden → higher equity score). 형평성 점수{" "}
+                <strong>{detail.equity_score ?? "-"}</strong>.
+              </p>
+              {equityKind === "PARTIAL" && (
+                <p className="text-amber-700" data-testid="equity-partial">
+                  일부 시설 처리량 결측 {String(eq.missing_throughput_count)}건 — 부담이 과소집계이며
+                  추정하지 않습니다 (partial; missing throughput is never estimated).
+                </p>
+              )}
+              {equityKind === "OFFICIAL_ZERO" && (
+                <p className="text-slate-500" data-testid="equity-zero-note">
+                  소재 시설 {String(eq.facility_count_located)}개 · 결측 0건. 값 0은 공식 측정값 0이며
+                  결측이 아닙니다 (official measured zero, not missing data).
+                </p>
+              )}
+              {equityKind === "MEASURED_VALUE" && (
+                <p className="text-slate-500" data-testid="equity-measured-note">
+                  소재 시설 {String(eq.facility_count_located)}개 · 결측 0건 (측정값).
+                </p>
+              )}
+            </div>
           )}
           {dem && (
-            <p className="mt-1">
-              수요 원자료: {String(dem.household_per_capita_kg_per_year)} {String(dem.unit)} ·{" "}
-              {String(dem.accounting_basis)} · {String(dem.source_id)} (
-              {String(dem.reference_period)})
-            </p>
+            <div className="mt-1" data-testid="candidate-demand-raw">
+              <p>
+                수요 원자료: {String(dem.household_per_capita_kg_per_year)} {String(dem.unit)} ·{" "}
+                {String(dem.accounting_basis)} · {String(dem.source_id)} (
+                {String(dem.reference_period)})
+              </p>
+              <p className="text-slate-500" data-testid="demand-score-direction">
+                점수 방향(정방향): 1인당 발생량이 높을수록 수요 점수가 높습니다 (higher per-capita
+                generation → higher demand score). 수요 점수 <strong>{detail.demand_score ?? "-"}</strong>.
+              </p>
+            </div>
           )}
           <div className="mt-2" data-testid="candidate-sensitivity">
             <p className="font-medium">프로파일별 민감도 (sensitivity):</p>

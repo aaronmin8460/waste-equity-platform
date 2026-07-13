@@ -288,3 +288,76 @@ def test_unknown_candidate_404(pg_client: TestClient, seeded: dict[str, int]) ->
     response = pg_client.get("/api/v1/suitability/candidates/999999999")
     assert response.status_code == 404
     assert response.json()["detail"]["error"] == "CANDIDATE_NOT_FOUND"
+
+
+def test_top_candidates_distinguish_tied_cells(pg_session: Session, pg_client: TestClient) -> None:
+    """Distinct grid cells with legitimately tied scores are each served with a
+    distinct id, candidate_key, and centroid, so the UI can tell them apart without
+    deduplicating them or altering any score (regression: top candidates looked
+    identical). Mirrors run 47's rural 강화군 ties (all 69.25 / Z55 R100 E100 D0)."""
+    run = SuitabilityAnalysisRun(
+        derivation_version="suitability-screening-v2",
+        policy_version="suitability-policy-v1",
+        candidate_grid_version="capital-grid-500m-v1",
+        reference_year=1999,
+        boundary_vintage="1999",
+        weight_profile="baseline",
+        analysis_signature="tied-cells-sig",
+        status="SUCCEEDED",
+        candidate_count_total=2,
+        candidate_count_eligible=2,
+        candidate_count_review=0,
+        candidate_count_excluded=0,
+        input_dataset_version_ids=[1],
+        input_provenance={},
+        policy_snapshot={},
+        weight_profiles={},
+        started_at=NOW,
+        completed_at=NOW,
+        created_at=NOW,
+    )
+    pg_session.add(run)
+    pg_session.flush()
+    tied_totals = dict.fromkeys(ALL_PROFILES, "69.2500")
+    tied_scores: dict[str, Any] = {
+        "total_score": Decimal("69.2500"),
+        "zoning_score": Decimal("55.0000"),
+        "road_score": Decimal("100.0000"),
+        "equity_score": Decimal("100.0000"),
+        "demand_score": Decimal("0.0000"),
+        "profile_totals": tied_totals,
+    }
+    a = _candidate(
+        run.id,
+        "capital-grid-500m-v1:10_20",
+        20.0,
+        status="ELIGIBLE",
+        rank=1,
+        profile_ranks=dict.fromkeys(ALL_PROFILES, 1),
+        **tied_scores,
+    )
+    b = _candidate(
+        run.id,
+        "capital-grid-500m-v1:11_21",
+        20.5,
+        status="ELIGIBLE",
+        rank=2,
+        profile_ranks=dict.fromkeys(ALL_PROFILES, 2),
+        **tied_scores,
+    )
+    pg_session.add_all([a, b])
+    pg_session.flush()
+
+    top = pg_client.get(f"/api/v1/suitability/summary?run_id={run.id}").json()["top_candidates"]
+    assert len(top) == 2
+    # Scores are legitimately tied...
+    assert top[0]["total_score"] == top[1]["total_score"] == "69.2500"
+    assert top[0]["equity_score"] == top[1]["equity_score"] == "100.0000"
+    # ...but every cell is served with a distinct identity and location.
+    assert top[0]["candidate_id"] != top[1]["candidate_id"]
+    assert top[0]["candidate_key"] != top[1]["candidate_key"]
+    coords = [(entry["centroid_lon"], entry["centroid_lat"]) for entry in top]
+    assert coords[0] != coords[1]
+    for entry in top:
+        assert entry["centroid_lon"] is not None
+        assert entry["centroid_lat"] is not None

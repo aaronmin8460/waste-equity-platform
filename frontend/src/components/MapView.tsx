@@ -16,6 +16,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type {
+  CandidateDetail,
   FacilityItem,
   RegionBoundaryCollection,
   SuitabilityCandidateCollection,
@@ -28,6 +29,14 @@ import {
   NO_DATA_COLOR,
   formatQuantity,
 } from "../lib/metrics";
+import { geometryBounds, isDegenerateBounds } from "../lib/suitability";
+
+// OpenStreetMap standard raster tiles are only published to zoom 19; requesting
+// z20+ returns HTTP 400 (verified against tile.openstreetmap.org). Cap the raster
+// source (so MapLibre overzooms z19 tiles instead of requesting unpublished ones)
+// and the interactive map so the zoom control stops at the supported maximum and
+// the basemap never goes blank. See docs / OSM tile usage policy.
+const OSM_MAX_ZOOM = 19;
 
 const BASE_STYLE: maplibregl.StyleSpecification = {
   version: 8,
@@ -36,6 +45,7 @@ const BASE_STYLE: maplibregl.StyleSpecification = {
       type: "raster",
       tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
       tileSize: 256,
+      maxzoom: OSM_MAX_ZOOM,
       attribution: "© OpenStreetMap contributors",
     },
   },
@@ -50,6 +60,8 @@ const SMA_BOUNDS: [[number, number], [number, number]] = [
 
 const EXCLUDED_COLOR = "#9aa2ad";
 const REVIEW_COLOR = "#e8a33d";
+const SELECTED_FILL_COLOR = "#2563eb";
+const SELECTED_OUTLINE_COLOR = "#1d4ed8";
 
 export interface RegionDisplayValue {
   /** Numeric value used only for the color scale. */
@@ -72,6 +84,8 @@ interface MapViewProps {
   candidates: SuitabilityCandidateCollection | null;
   candidateBreaks: number[];
   statusVisibility: StatusVisibility;
+  /** Currently-selected candidate (list or map). Drives highlight + map movement. */
+  selectedCandidate: CandidateDetail | null;
   onViewportChange: (bbox: string) => void;
   onCandidateClick: (candidateId: number) => void;
 }
@@ -134,6 +148,7 @@ export default function MapView({
   candidates,
   candidateBreaks,
   statusVisibility,
+  selectedCandidate,
   onViewportChange,
   onCandidateClick,
 }: MapViewProps) {
@@ -149,6 +164,13 @@ export default function MapView({
 
   function emitViewport(map: maplibregl.Map) {
     const b = map.getBounds();
+    // Reflect map state onto the container as read-only data attributes so tests
+    // can assert zoom capping and selection-driven movement. No behavioral effect.
+    if (containerRef.current) {
+      const c = map.getCenter();
+      containerRef.current.dataset.center = `${c.lng.toFixed(5)},${c.lat.toFixed(5)}`;
+      containerRef.current.dataset.zoom = map.getZoom().toFixed(2);
+    }
     onViewportChangeRef.current(
       `${b.getWest().toFixed(5)},${b.getSouth().toFixed(5)},${b.getEast().toFixed(5)},${b.getNorth().toFixed(5)}`,
     );
@@ -162,6 +184,8 @@ export default function MapView({
       bounds: SMA_BOUNDS,
       fitBoundsOptions: { padding: 16 },
       attributionControl: { compact: false },
+      // Zoom control stops at the OSM basemap's supported maximum (no z20+ requests).
+      maxZoom: OSM_MAX_ZOOM,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.on("load", () => {
@@ -412,6 +436,64 @@ export default function MapView({
     candidateBreaks,
     statusVisibility,
   ]);
+
+  // --- Selected-candidate highlight + map movement (list or map selection) ---
+  // Uses the full selected geometry so an off-viewport candidate is both
+  // highlighted and brought into view. Keyed on the candidate id so it only moves
+  // on an actual selection change, not on every render.
+  const selectedId = selectedCandidate?.candidate_id ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+
+    if (!map.getSource("selected-candidate")) {
+      map.addSource("selected-candidate", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "selected-candidate-fill",
+        type: "fill",
+        source: "selected-candidate",
+        paint: { "fill-color": SELECTED_FILL_COLOR, "fill-opacity": 0.3 },
+      });
+      map.addLayer({
+        id: "selected-candidate-outline",
+        type: "line",
+        source: "selected-candidate",
+        paint: { "line-color": SELECTED_OUTLINE_COLOR, "line-width": 3 },
+      });
+    }
+
+    const source = map.getSource("selected-candidate") as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    if (!selectedCandidate) {
+      source.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+
+    source.setData({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: selectedCandidate.geometry,
+          properties: { candidate_id: selectedCandidate.candidate_id },
+        },
+      ],
+    });
+
+    const bounds = geometryBounds(selectedCandidate.geometry);
+    if (!bounds) return;
+    if (isDegenerateBounds(bounds)) {
+      // Point geometry: centroid fallback.
+      map.flyTo({ center: bounds[0], zoom: Math.min(15, OSM_MAX_ZOOM), duration: 700 });
+    } else {
+      map.fitBounds(bounds, { padding: 96, maxZoom: 16, duration: 700 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
 
   return <div ref={containerRef} className="h-full w-full" data-testid="map-container" />;
 }
