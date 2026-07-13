@@ -72,6 +72,21 @@ export interface RegionDisplayValue {
 
 export type StatusVisibility = Record<SuitabilityStatus, boolean>;
 
+// Precise availability reasons the reporting endpoints attach to a region with no
+// value for a stream, so the popup never shows a bare "no data".
+const REASON_LABELS: Record<string, string> = {
+  SOURCE_NOT_REPORTED: "출처에서 해당 지역·항목을 보고하지 않음 (source did not report)",
+  COARSER_REPORTING_GEOGRAPHY: "상위 보고 단위로 보고됨 (reported at a coarser geography)",
+  SOURCE_ROW_REJECTED: "출처 행이 검증에서 제외됨 (source row rejected)",
+  UNMATCHED_REGION_LABEL: "지역 라벨 미매칭 (unmatched region label)",
+  AMBIGUOUS_REGION_LABEL: "지역 라벨 모호 (ambiguous region label)",
+};
+
+function reasonLabel(reason: string | null | undefined): string {
+  if (!reason) return "";
+  return REASON_LABELS[reason] ?? reason;
+}
+
 interface MapViewProps {
   boundaries: RegionBoundaryCollection;
   regionValues: Map<string, RegionDisplayValue>;
@@ -213,6 +228,7 @@ export default function MapView({
         type: "FeatureCollection",
         features: boundaries.features.map((feature) => {
           const value = regionValues.get(feature.properties.region_code);
+          const reason = feature.properties.unavailable_reason;
           return {
             type: "Feature" as const,
             geometry: feature.geometry,
@@ -223,7 +239,9 @@ export default function MapView({
               metric_label: metricLabel,
               metric_display: value
                 ? `${value.display} ${metricUnit}`
-                : "데이터 없음 (no served value)",
+                : reason
+                  ? `데이터 없음 — ${reasonLabel(reason)}`
+                  : "데이터 없음 (no served value)",
             },
           };
         }),
@@ -304,12 +322,28 @@ export default function MapView({
           const feature = event.features?.[0];
           if (!feature) return;
           const props = feature.properties as Record<string, string>;
+          let reportingLines = "";
+          if (props.geometry_kind === "DERIVED") {
+            let children = "";
+            try {
+              children = (JSON.parse(props.child_region_names ?? "[]") as string[]).join("·");
+            } catch {
+              children = "";
+            }
+            reportingLines =
+              `<br/><small>통계 보고 단위: 시 (city) · 수치 출처: RCIS</small>` +
+              (children
+                ? `<br/><small>경계 표시: SGIS ${children} 경계의 파생 합집합</small>`
+                : "") +
+              `<br/><small>구별 공식 폐기물 값은 제공되지 않습니다.</small>`;
+          }
           new maplibregl.Popup()
             .setLngLat(event.lngLat)
             .setHTML(
               `<strong>${props.region_name}</strong><br/>${props.metric_label}<br/>` +
                 `${props.metric_display}<br/>` +
-                `<small>경계 출처: ${props.source_id} (${props.boundary_reference_period}) · 지표 출처는 좌측 패널 참조</small>`,
+                `<small>경계 출처: ${props.source_id} (${props.boundary_reference_period}) · 지표 출처는 좌측 패널 참조</small>` +
+                reportingLines,
             )
             .addTo(map);
         });

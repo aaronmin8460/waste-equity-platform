@@ -27,6 +27,17 @@ export interface RegionBoundaryProperties {
   parent_region_code: string | null;
   source_id: string;
   boundary_reference_period: string;
+  // Present only on RCIS waste reporting-geography features (adapted client-side
+  // from the reporting boundaries for the waste and per-capita metrics). Native
+  // SGIS boundaries omit them.
+  reporting_geography_type?: string;
+  geometry_kind?: string;
+  derived_geometry_method?: string | null;
+  child_region_names?: string[] | null;
+  source_reporting_level?: string;
+  // Precise availability reason for a reporting region with no value for the
+  // selected stream (e.g. SOURCE_NOT_REPORTED), replacing a bare NO_DATA.
+  unavailable_reason?: string | null;
 }
 
 export interface RegionBoundaryFeature {
@@ -195,6 +206,123 @@ export interface FacilityBurdenEnvelope {
   facilities_without_region: number;
 }
 
+// --------------------------------------------------------------------------- //
+// RCIS waste reporting geography — the source-compatible geometry the waste and
+// per-capita metrics render on (native SGIS regions + seven derived Gyeonggi
+// cities). A city-level value never carries a child district name or code.
+// --------------------------------------------------------------------------- //
+
+export interface ReportingBoundaryProperties {
+  reporting_region_code: string;
+  reporting_region_name: string;
+  reporting_geography_type: string; // NATIVE_SGIS | DERIVED_CITY_UNION
+  geometry_kind: string; // NATIVE | DERIVED
+  derived_geometry_method: string | null;
+  source_reporting_level: string;
+  native_region_code: string | null;
+  child_region_codes: string[] | null;
+  child_region_names: string[] | null;
+  source_id: string;
+  boundary_reference_period: string;
+}
+
+export interface ReportingBoundaryFeature {
+  type: "Feature";
+  geometry: GeoJSON.Geometry;
+  properties: ReportingBoundaryProperties;
+}
+
+export interface ReportingBoundaryCollection {
+  type: "FeatureCollection";
+  reference_year: number;
+  count: number;
+  features: ReportingBoundaryFeature[];
+}
+
+export interface ReportingWasteStatisticsItem {
+  reporting_region_code: string;
+  reporting_region_name: string;
+  reporting_geography_type: string;
+  geometry_kind: string;
+  source_reporting_level: string;
+  waste_stream: string;
+  waste_category_name: string;
+  generation_quantity: string;
+  recycling_quantity: string;
+  incineration_quantity: string;
+  landfill_quantity: string;
+  other_treatment_quantity: string;
+  total_treatment_quantity: string;
+  total_treatment_is_derived: boolean;
+  quantity_unit: string;
+  accounting_basis: string;
+  source_id: string;
+  source_pid: string;
+  official_dataset_name: string;
+  reference_year: number;
+  reference_period: string;
+  child_region_codes: string[] | null;
+}
+
+export interface ReportingUnavailableRegion {
+  reporting_region_code: string;
+  reporting_region_name: string;
+  waste_stream: string;
+  reason: string;
+}
+
+export interface ReportingWasteStatisticsEnvelope {
+  reference_year: number;
+  count: number;
+  items: ReportingWasteStatisticsItem[];
+  unavailable_regions: ReportingUnavailableRegion[];
+}
+
+export interface ReportingPerCapitaItem {
+  reporting_region_code: string;
+  reporting_region_name: string;
+  reporting_geography_type: string;
+  source_reporting_level: string;
+  waste_stream: string;
+  per_capita_kg_per_year: string;
+  per_capita_unit: string;
+  generation_quantity: string;
+  quantity_unit: string;
+  accounting_basis: string;
+  numerator_reporting_level: string;
+  waste_source_id: string;
+  waste_source_pid: string;
+  waste_official_dataset_name: string;
+  waste_reference_period: string;
+  population: number;
+  population_definition: string;
+  population_source_id: string;
+  population_reference_period: string;
+  population_is_derived: boolean;
+  population_derivation: string | null;
+  child_region_codes: string[] | null;
+  reference_year: number;
+}
+
+export interface ReportingExcludedRegion {
+  reporting_region_code: string;
+  reporting_region_name: string;
+  waste_stream: string;
+  reason: string;
+}
+
+export interface ReportingPerCapitaEnvelope {
+  indicator: string;
+  derivation_version: string;
+  derivation_formula: string;
+  unit: string;
+  assumptions: string[];
+  reference_year: number;
+  count: number;
+  items: ReportingPerCapitaItem[];
+  excluded_regions: ReportingExcludedRegion[];
+}
+
 export interface DataSourceItem {
   source_id: string;
   source_name: string;
@@ -275,6 +403,18 @@ export function fetchWastePerCapita(): Promise<EquityEnvelope> {
 
 export function fetchFacilityBurden(): Promise<FacilityBurdenEnvelope> {
   return fetchJson<FacilityBurdenEnvelope>("/api/v1/equity/facility-burden");
+}
+
+export function fetchReportingBoundaries(): Promise<ReportingBoundaryCollection> {
+  return fetchJson<ReportingBoundaryCollection>("/api/v1/waste-reporting/boundaries");
+}
+
+export function fetchReportingStatistics(): Promise<ReportingWasteStatisticsEnvelope> {
+  return fetchJson<ReportingWasteStatisticsEnvelope>("/api/v1/waste-reporting/statistics");
+}
+
+export function fetchReportingPerCapita(): Promise<ReportingPerCapitaEnvelope> {
+  return fetchJson<ReportingPerCapitaEnvelope>("/api/v1/waste-reporting/per-capita");
 }
 
 export function fetchDataSources(): Promise<DataSourceItem[]> {
