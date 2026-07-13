@@ -21,6 +21,7 @@ from .probes import (
 from .rcis_facility_contract import PID_SPECS as FACILITY_PID_SPECS
 from .rcis_facility_contract import TARGET_PIDS as FACILITY_TARGET_PIDS
 from .rcis_facility_ingestion import run_rcis_facility_ingestion
+from .rcis_reporting_geography import run_reporting_geography
 from .rcis_waste_contract import PID_SPECS, TARGET_PIDS
 from .rcis_waste_ingestion import DEFAULT_REQUEST_DELAY_SECONDS, run_rcis_waste_ingestion
 from .result import ProbeResult
@@ -44,6 +45,7 @@ PROBES: dict[str, ProbeFunc] = {
 DISCOVERY_SOURCE = "waste-statistics-discovery"
 SGIS_INGEST = "sgis-ingest"
 RCIS_WASTE_INGEST = "rcis-waste-ingest"
+RCIS_REPORTING_GEOGRAPHY = "rcis-reporting-geography"
 RCIS_FACILITY_INGEST = "rcis-facility-ingest"
 VWORLD_GEOCODE = "vworld-geocode"
 VWORLD_STRUCTURAL_AUDIT = "vworld-structural-audit"
@@ -63,6 +65,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 DISCOVERY_SOURCE,
                 SGIS_INGEST,
                 RCIS_WASTE_INGEST,
+                RCIS_REPORTING_GEOGRAPHY,
                 RCIS_FACILITY_INGEST,
                 VWORLD_GEOCODE,
                 VWORLD_STRUCTURAL_AUDIT,
@@ -237,6 +240,21 @@ def run_rcis_waste(settings: ProbeSettings, args: argparse.Namespace) -> int:
     return 0
 
 
+def run_reporting_geography_cli(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    if not args.year:
+        raise IngestionError("rcis-reporting-geography requires --year YYYY")
+    if not args.dry_run and not args.write:
+        raise IngestionError("rcis-reporting-geography requires either --dry-run or --write")
+    report = run_reporting_geography(
+        settings,
+        year=int(args.year),
+        scope=args.scope,
+        write=bool(args.write),
+    )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    return 0
+
+
 def run_rcis_facility(settings: ProbeSettings, args: argparse.Namespace) -> int:
     if not args.year:
         raise IngestionError("rcis-facility-ingest requires --year YYYY")
@@ -376,6 +394,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.source == RCIS_WASTE_INGEST:
             return run_rcis_waste(settings, args)
+        if args.source == RCIS_REPORTING_GEOGRAPHY:
+            return run_reporting_geography_cli(settings, args)
         if args.source == RCIS_FACILITY_INGEST:
             return run_rcis_facility(settings, args)
         if args.source == VWORLD_GEOCODE:

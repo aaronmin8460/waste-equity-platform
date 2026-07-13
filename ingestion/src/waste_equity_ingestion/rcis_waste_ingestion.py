@@ -44,7 +44,9 @@ from .errors import (
 from .http import JsonResponse, get_json_response
 from .probes.waste_statistics import OPERATION_PATH, build_request_params
 from .rcis_region_crosswalk import (
+    AMBIGUOUS,
     CAPITAL_REGION_SIDO_NAMES,
+    COARSER_REPORTING_GEOGRAPHY,
     EXACT_MATCH,
     OUT_OF_SCOPE,
     RegionCrosswalk,
@@ -118,11 +120,17 @@ class RcisWasteReport:
     raw_responses_inserted: int = 0
     raw_responses_reused: int = 0
     ingestion_run_id: int | None = None
+    # City-level RCIS records served through the reporting geography (not the
+    # native table). These are handled, not discarded.
+    city_reporting_matches: int = 0
+    city_reporting_rows_inserted: int = 0
+    city_reporting_rows_updated: int = 0
+    reporting_regions_not_built: list[str] = field(default_factory=list)
     pid_reports: list[PidReport] = field(default_factory=list)
     exact_match_regions: list[str] = field(default_factory=list)
     unmatched_rcis_labels: list[str] = field(default_factory=list)
     ambiguous_rcis_labels: list[str] = field(default_factory=list)
-    requires_aggregation_labels: list[str] = field(default_factory=list)
+    city_reporting_labels: list[str] = field(default_factory=list)
     missing_sgis_regions: list[str] = field(default_factory=list)
     reconciliation_mismatch_count: int = 0
     seoul_coverage: dict[str, int] = field(default_factory=dict)
@@ -146,6 +154,10 @@ class RcisWasteReport:
             "raw_responses_inserted": self.raw_responses_inserted,
             "raw_responses_reused": self.raw_responses_reused,
             "ingestion_run_id": self.ingestion_run_id,
+            "city_reporting_matches": self.city_reporting_matches,
+            "city_reporting_rows_inserted": self.city_reporting_rows_inserted,
+            "city_reporting_rows_updated": self.city_reporting_rows_updated,
+            "reporting_regions_not_built": self.reporting_regions_not_built,
             "pid_reports": [
                 {
                     "pid": report.pid,
@@ -165,7 +177,7 @@ class RcisWasteReport:
             "exact_match_region_count": len(self.exact_match_regions),
             "unmatched_rcis_labels": self.unmatched_rcis_labels,
             "ambiguous_rcis_labels": self.ambiguous_rcis_labels,
-            "requires_aggregation_labels": self.requires_aggregation_labels,
+            "city_reporting_labels": self.city_reporting_labels,
             "missing_sgis_regions": self.missing_sgis_regions,
             "reconciliation_mismatch_count": self.reconciliation_mismatch_count,
             "seoul_coverage": self.seoul_coverage,
@@ -329,8 +341,12 @@ class _MappingOutcome:
     exact_regions: dict[str, str]  # region_code -> region_name
     unmatched_labels: set[str]
     ambiguous_labels: set[str]
-    requires_aggregation_labels: set[str]
-    # In-scope (capital-region) records excluded from normalized writes.
+    # City-level RCIS records (coarser reporting geography); served via the
+    # reporting geography, not the native table.
+    city_reporting_labels: set[str]
+    city_records_by_pid: dict[str, list[WasteRecord]]
+    # In-scope (capital-region) records that are genuinely rejected from any
+    # write (unmatched / ambiguous labels only).
     rejected_by_pid: dict[str, int]
     # Nationwide structural parse rejects (blank/negative/duplicate); diagnostic.
     parse_rejected_by_pid: dict[str, int]
@@ -345,6 +361,7 @@ def _map_bundle(
     pids: tuple[str, ...],
 ) -> _MappingOutcome:
     mapped_by_pid: dict[str, list[MappedRecord]] = {}
+    city_records_by_pid: dict[str, list[WasteRecord]] = {}
     in_scope_by_pid: dict[str, int] = {}
     rejected_by_pid: dict[str, int] = {}
     parse_rejected_by_pid: dict[str, int] = {}
@@ -352,14 +369,17 @@ def _map_bundle(
     exact_regions: dict[str, str] = {}
     unmatched_labels: set[str] = set()
     ambiguous_labels: set[str] = set()
-    requires_aggregation_labels: set[str] = set()
+    city_reporting_labels: set[str] = set()
 
     for pid in pids:
         parsed = bundle.parse_results[pid]
         mapped: list[MappedRecord] = []
+        city_records: list[WasteRecord] = []
         in_scope = 0
         # rows_rejected is scoped to the capital region so it is comparable to
         # rows_received; nationwide structural parse rejects are tracked apart.
+        # City records are NOT rejected — they are served via the reporting
+        # geography — so only unmatched/ambiguous labels increment `rejected`.
         rejected = 0
         parse_rejected_by_pid[pid] = len(parsed.rejected_rows)
         reconciliation_by_pid[pid] = len(parsed.reconciliation_mismatches)
@@ -380,16 +400,17 @@ def _map_bundle(
                         valid_from=region.valid_from,
                     )
                 )
-            elif resolution.status == "REQUIRES_AGGREGATION":
-                requires_aggregation_labels.add(label)
-                rejected += 1
-            elif resolution.status == "AMBIGUOUS":
+            elif resolution.status == COARSER_REPORTING_GEOGRAPHY:
+                city_reporting_labels.add(label)
+                city_records.append(record)
+            elif resolution.status == AMBIGUOUS:
                 ambiguous_labels.add(label)
                 rejected += 1
             else:  # UNMATCHED
                 unmatched_labels.add(label)
                 rejected += 1
         mapped_by_pid[pid] = mapped
+        city_records_by_pid[pid] = city_records
         in_scope_by_pid[pid] = in_scope
         rejected_by_pid[pid] = rejected
 
@@ -399,7 +420,8 @@ def _map_bundle(
         exact_regions=exact_regions,
         unmatched_labels=unmatched_labels,
         ambiguous_labels=ambiguous_labels,
-        requires_aggregation_labels=requires_aggregation_labels,
+        city_reporting_labels=city_reporting_labels,
+        city_records_by_pid=city_records_by_pid,
         rejected_by_pid=rejected_by_pid,
         parse_rejected_by_pid=parse_rejected_by_pid,
         reconciliation_by_pid=reconciliation_by_pid,
@@ -451,6 +473,39 @@ def _write_bundle(
                 reference_period=str(year),
             )
 
+    # City-level RCIS records (coarser reporting geography) are written to the
+    # separate reporting-geography table when their reporting region has been
+    # built. This is additive and never touches the native table; if the
+    # reporting regions are not present yet, the city records are reported as
+    # pending (visible), never silently discarded.
+    from .rcis_reporting_geography import resolve_reporting_region, upsert_reporting_waste_row
+
+    city_inserted = 0
+    city_updated = 0
+    reporting_not_built: list[str] = []
+    for pid in bundle.parse_results:
+        raw_id = raw_ids_by_pid[pid]
+        for record in mapping.city_records_by_pid.get(pid, []):
+            region = resolve_reporting_region(
+                session, record.rcis_sido_name, record.rcis_sigungu_name, year
+            )
+            if region is None:
+                reporting_not_built.append(
+                    f"{pid}: {record.rcis_sido_name} {record.rcis_sigungu_name}"
+                )
+                continue
+            created, changed = upsert_reporting_waste_row(
+                session,
+                reporting_region_id=region.id,
+                record=record,
+                year=year,
+                raw_response_id=raw_id,
+                run_id=run.run_id,
+                now=now,
+            )
+            city_inserted += int(created)
+            city_updated += int(changed and not created)
+
     _update_freshness(session, year=year, now=now)
 
     rows_received = sum(mapping.in_scope_by_pid.values())
@@ -478,6 +533,9 @@ def _write_bundle(
     report.raw_responses_reused = raw_reused
     report.ingestion_run_id = run.run_id
     report.normalized_row_total = normalized_count
+    report.city_reporting_rows_inserted = city_inserted
+    report.city_reporting_rows_updated = city_updated
+    report.reporting_regions_not_built = sorted(set(reporting_not_built))
     report.message = "RCIS capital-region waste generation/treatment ingestion succeeded."
     return report
 
@@ -758,7 +816,8 @@ def _build_report(
         ),
         unmatched_rcis_labels=sorted(mapping.unmatched_labels),
         ambiguous_rcis_labels=sorted(mapping.ambiguous_labels),
-        requires_aggregation_labels=sorted(mapping.requires_aggregation_labels),
+        city_reporting_labels=sorted(mapping.city_reporting_labels),
+        city_reporting_matches=sum(len(v) for v in mapping.city_records_by_pid.values()),
         missing_sgis_regions=missing,
         reconciliation_mismatch_count=total_reconciliation,
     )

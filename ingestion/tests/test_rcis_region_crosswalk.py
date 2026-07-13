@@ -10,9 +10,9 @@ import datetime
 
 from waste_equity_ingestion.rcis_region_crosswalk import (
     AMBIGUOUS,
+    COARSER_REPORTING_GEOGRAPHY,
     EXACT_MATCH,
     OUT_OF_SCOPE,
-    REQUIRES_AGGREGATION,
     UNMATCHED,
     RegionCrosswalk,
     SgisRegion,
@@ -98,10 +98,12 @@ def test_gyeonggi_single_city_exact_match() -> None:
     assert resolution.region.region_code == "KR-SGIS-31110"
 
 
-def test_gyeonggi_city_with_districts_requires_aggregation() -> None:
-    # RCIS reports 수원시 at city level; SGIS splits it into 구 districts.
+def test_gyeonggi_city_with_districts_is_coarser_reporting_geography() -> None:
+    # RCIS reports 수원시 at city level; SGIS splits it into 구 districts. The
+    # record is a coarser reporting geography, served via the reporting geometry;
+    # its value is never split across the districts.
     resolution = _crosswalk().resolve("경기", "수원시")
-    assert resolution.status == REQUIRES_AGGREGATION
+    assert resolution.status == COARSER_REPORTING_GEOGRAPHY
     assert resolution.region is None
 
 
