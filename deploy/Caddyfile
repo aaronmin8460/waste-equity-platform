@@ -1,0 +1,58 @@
+# Caddy reverse proxy for the single public origin (production).
+#
+# Serves the frontend and backend through ONE HTTPS origin
+# (https://{$PUBLIC_DOMAIN}) with automatic Let's Encrypt certificates and an
+# automatic HTTP->HTTPS redirect. The database is never proxied or exposed.
+#
+#   /api/*  and  /health   -> backend:8000  (internal only)
+#   everything else        -> frontend:3000 (internal only)
+#
+# The interactive API docs (/docs, /redoc, /openapi.json) are intentionally NOT
+# routed here (kept off the public origin) and are also disabled in the backend
+# when APP_ENV=production. A Content-Security-Policy is intentionally omitted:
+# the map uses MapLibre GL (blob workers) with OpenStreetMap raster tiles, and a
+# strict CSP would break it; add one with explicit allowances (self,
+# tile.openstreetmap.org, blob:) if/when tightened.
+
+{
+	# Operators should set an ACME email via the CADDY_ACME_EMAIL env var
+	# (docker-compose passes it through) for certificate expiry notices.
+	email {$CADDY_ACME_EMAIL:admin@example.com}
+}
+
+{$PUBLIC_DOMAIN} {
+	encode zstd gzip
+
+	# Reasonable request-body ceiling; the API is read-only GET.
+	request_body {
+		max_size 2MB
+	}
+
+	# Security headers appropriate for this app (no CSP — see header note above).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Do not advertise the server software.
+		-Server
+	}
+
+	# Backend: the versioned API and the health probe only.
+	@backend path /api/* /health
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else is the Next.js frontend.
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	# JSON access log to stdout (captured by the Docker json-file driver with
+	# size-based rotation configured in docker-compose.prod.yml).
+	log {
+		output stdout
+		format json
+	}
+}

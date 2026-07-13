@@ -9,6 +9,10 @@ from .routes import datasets, equity, health, metadata, suitability
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # In production the interactive API docs and OpenAPI schema are disabled
+    # (defense in depth: the reverse proxy also does not route /docs, /redoc, or
+    # /openapi.json to the public origin). They remain available in development.
+    is_production = settings.app_env == "production"
     app = FastAPI(
         title="Waste Equity Platform API",
         version="0.1.0",
@@ -17,6 +21,9 @@ def create_app() -> FastAPI:
             "across Seoul, Incheon, and Gyeonggi-do. Every metric endpoint "
             "must expose source and reference-period metadata."
         ),
+        docs_url=None if is_production else "/docs",
+        redoc_url=None if is_production else "/redoc",
+        openapi_url=None if is_production else "/openapi.json",
     )
     app.add_middleware(
         CORSMiddleware,
