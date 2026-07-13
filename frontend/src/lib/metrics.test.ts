@@ -88,6 +88,24 @@ describe("facility-burden metric definitions (Phase 5.2)", () => {
   });
 });
 
+describe("metric geography (RCIS reporting geography)", () => {
+  it("renders waste generation and per-capita on the RCIS reporting geometry", () => {
+    for (const metric of METRICS) {
+      if (metric.dataset === "waste-statistics" || metric.dataset === "waste-per-capita") {
+        expect(metric.geography).toBe("reporting");
+      }
+    }
+  });
+
+  it("keeps population and facility burden on native SGIS geometry", () => {
+    for (const metric of METRICS) {
+      if (metric.dataset === "population" || metric.dataset === "facility-burden") {
+        expect(metric.geography).toBe("native");
+      }
+    }
+  });
+});
+
 describe("per-capita metric definitions (Phase 5.1)", () => {
   const perCapita = METRICS.filter((metric) => metric.dataset === "waste-per-capita");
 
