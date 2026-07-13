@@ -82,6 +82,21 @@ LSMD download publishes no shapefile for those cells — see the Git-ignored
 `data/raw/vworld/protected/source_manifest.json`), **not** `SOURCE_MISSING` and
 **not** a verified zero-occurrence.
 
+> **Correction / supplement (2026-07-13): Gyeonggi UM901 obtained.** The record
+> above is preserved unchanged as the state at the 202606 protected ingestion.
+> The validated official VWorld/국토교통부 LSMD `LSMD_CONT_UM901_41_202606`
+> shapefile (습지보호지역, EPSG:5186, 3 valid polygons across 고양/파주/김포 =
+> 한강하구 습지보호지역; SHA-256 `636a3370…a1f6`) was subsequently obtained,
+> proving a Gyeonggi UM901 release 202606 shapefile does exist. It is ingested as
+> an isolated new `structural_dataset_versions` row from the Git-ignored
+> `data/raw/vworld/protected_um901_supplement/` root (dataset key
+> `lsmd_um901_wetland_202606`, provider 국토교통부), so the 20,892-feature main
+> version is never re-scanned or re-versioned and its immutable coverage matrix is
+> untouched. Effective coverage (`derivation_version` `suitability-screening-v2`)
+> then clears the Gyeonggi UM901 gap while **Seoul UM901 and Seoul UF151 remain
+> `OFFICIAL_SOURCE_UNAVAILABLE`** — no Seoul source was obtained and neither is
+> marked as zero-occurrence or complete.
+
 ### Roads (`structural_line_features`) — **2,971,494 features**
 
 Two dataset versions: 연속수치지형도 도로중심선 N3A0020000 (국토지리정보원, ref

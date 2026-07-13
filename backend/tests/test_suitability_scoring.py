@@ -7,6 +7,7 @@ components, coverage gaps, tie-breaking, and per-profile totals.
 
 from __future__ import annotations
 
+import copy
 from decimal import Decimal
 from typing import Any
 
@@ -15,6 +16,7 @@ from waste_equity_backend.analysis.suitability.engine import (
     RegionComponents,
     ResolvedInputs,
     _analysis_signature,
+    _effective_coverage_gaps,
     _score_candidates,
 )
 
@@ -43,6 +45,9 @@ def test_analysis_signature_determinism_and_sensitivity() -> None:
     # a different reference year / input -> a distinct signature
     assert _analysis_signature(_inputs(year=2023), "baseline") != base
     assert _analysis_signature(_inputs(ids=[18, 77, 100]), "baseline") != base
+    # activating an additional dataset version changes the selected input set,
+    # so the signature (and therefore the run) is distinct.
+    assert _analysis_signature(_inputs(ids=[18, 77, 100, 62, 63, 121]), "baseline") != base
 
 
 SIGUNGU = "28710"
@@ -230,3 +235,81 @@ def test_all_profiles_totals_present_for_eligible() -> None:
     assert set(scored[0]["profile_totals"]) == set(policy.WEIGHT_PROFILES)
     for v in scored[0]["profile_totals"].values():
         assert Decimal("0") <= Decimal(v) <= Decimal("100")
+
+
+# --------------------------------------------------------------------------- #
+# Effective-coverage gap rule (_effective_coverage_gaps)
+# --------------------------------------------------------------------------- #
+
+_UNAVAILABLE = "OFFICIAL_SOURCE_UNAVAILABLE"
+_WITH_FEATURES = "COMPLETE_WITH_FEATURES"
+_ZERO_FEATURES = "COMPLETE_ZERO_FEATURES"
+_MISSING = "SOURCE_MISSING"
+
+
+def _matrix(cells: dict[str, dict[str, str]]) -> dict[str, Any]:
+    """Build a stored-shape coverage matrix: {region_dir: {code: {status}}}."""
+    return {
+        region_dir: {
+            code: {"status": status, "feature_count": 0} for code, status in layers.items()
+        }
+        for region_dir, layers in cells.items()
+    }
+
+
+def test_effective_coverage_old_unavailable_plus_alternate_clears_gap() -> None:
+    # The immutable old release records Gyeonggi UM901 unavailable; an active
+    # approved alternate evaluates it -> the Gyeonggi gap is cleared, Seoul stays.
+    old = _matrix({"gyeonggi": {"UM901": _UNAVAILABLE}, "seoul": {"UM901": _UNAVAILABLE}})
+    alternate = _matrix(
+        {
+            "gyeonggi": {"UM901": _WITH_FEATURES},
+            "seoul": {"UM901": _MISSING},
+            "incheon": {"UM901": _MISSING},
+        }
+    )
+    gaps = _effective_coverage_gaps([old, alternate])
+    assert "UM901" not in gaps.get("경기도", set())
+    assert gaps.get("서울특별시") == {"UM901"}
+
+
+def test_effective_coverage_old_unavailable_without_alternate_stays_gap() -> None:
+    old = _matrix({"gyeonggi": {"UM901": _UNAVAILABLE}, "seoul": {"UM901": _UNAVAILABLE}})
+    gaps = _effective_coverage_gaps([old])
+    assert gaps["경기도"] == {"UM901"}
+    assert gaps["서울특별시"] == {"UM901"}
+
+
+def test_effective_coverage_seoul_um901_and_uf151_remain_gaps() -> None:
+    old = _matrix(
+        {
+            "gyeonggi": {"UM901": _UNAVAILABLE, "UF151": _WITH_FEATURES},
+            "seoul": {"UM901": _UNAVAILABLE, "UF151": _UNAVAILABLE},
+        }
+    )
+    alternate = _matrix({"gyeonggi": {"UM901": _WITH_FEATURES}})
+    gaps = _effective_coverage_gaps([old, alternate])
+    assert gaps.get("서울특별시") == {"UM901", "UF151"}
+    # Both Gyeonggi cells are now covered -> Gyeonggi has no gaps.
+    assert "경기도" not in gaps
+
+
+def test_effective_coverage_zero_features_counts_as_covered() -> None:
+    # An evaluated-but-empty official source is coverage, not a gap.
+    unavailable = _matrix({"seoul": {"UM901": _UNAVAILABLE}})
+    evaluated_empty = _matrix({"seoul": {"UM901": _ZERO_FEATURES}})
+    assert "서울특별시" not in _effective_coverage_gaps([unavailable, evaluated_empty])
+
+
+def test_effective_coverage_ignores_non_sensitive_codes() -> None:
+    # A code that is not a coverage-sensitive hard code never produces a gap.
+    assert "ZZZ999" not in policy.COVERAGE_SENSITIVE_HARD_CODES
+    matrix = _matrix({"seoul": {"ZZZ999": _UNAVAILABLE}})
+    assert _effective_coverage_gaps([matrix]) == {}
+
+
+def test_effective_coverage_does_not_mutate_input() -> None:
+    old = _matrix({"gyeonggi": {"UM901": _UNAVAILABLE}})
+    snapshot = copy.deepcopy(old)
+    _effective_coverage_gaps([old])
+    assert old == snapshot  # historical coverage matrices are read-only

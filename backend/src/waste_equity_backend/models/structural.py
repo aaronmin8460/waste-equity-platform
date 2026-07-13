@@ -17,6 +17,7 @@ from geoalchemy2 import Geometry
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    true,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
@@ -95,6 +97,15 @@ class StructuralDatasetVersion(Base):
     # validation warnings/failures. Sanitized (no local absolute paths).
     coverage_matrix: Mapped[Any] = mapped_column(JsonVariant, default=dict)
     retrieval_metadata: Mapped[Any | None] = mapped_column(JsonVariant)
+    # Explicit active-selection flag. Only active versions participate in
+    # suitability input resolution, protected-feature spatial intersections,
+    # coverage-gap computation, and the analysis-signature inputs. Historical
+    # rows are never deactivated by ingestion; a version is superseded only by an
+    # explicit operator decision. Defaults to true so existing releases keep
+    # participating unchanged.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=true(), default=True
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
 
 
