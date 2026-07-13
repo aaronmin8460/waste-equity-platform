@@ -160,20 +160,28 @@ A non-excluded candidate is `REVIEW_REQUIRED` when **any** of the following hold
 | `UNMAPPED_ZONING` | zoning code not in the registry |
 | `EDUCATION_PROTECTION_UO101` | cell intersects `UO101` (absolute vs relative not documented — cannot confirm absolute; never auto-excluded) |
 | `HERITAGE_PROTECTION_UO301` | cell intersects `UO301` 국가유산 지정/보호구역 (heritage / historical-environment; policy-sensitive, not a default hard exclusion) |
-| `COVERAGE_GAP_<LAYER>` | a hard-exclusion layer is `OFFICIAL_SOURCE_UNAVAILABLE` for the candidate's SIDO, so the candidate cannot be confirmed clear of that constraint |
+| `COVERAGE_GAP_<LAYER>` | a hard-exclusion layer has **no effective coverage** for the candidate's SIDO — some active dataset records it `OFFICIAL_SOURCE_UNAVAILABLE` and no active dataset evaluates it — so the candidate cannot be confirmed clear of that constraint |
 | `AMBIGUOUS_OR_MISSING_SIGUNGU` | centroid does not resolve to exactly one SIGUNGU |
 | `MISSING_EQUITY_COMPONENT` | the candidate's SIGUNGU has no usable facility-burden value |
 | `MISSING_DEMAND_COMPONENT` | the candidate's SIGUNGU has no usable per-capita demand value |
 
-The `COVERAGE_GAP` rule is the honest handling of `OFFICIAL_SOURCE_UNAVAILABLE`:
-the wetland (`UM901`) and forest (`UF151`) hard-exclusion layers are
-`OFFICIAL_SOURCE_UNAVAILABLE` for parts of the capital region (recorded in
-`structural_dataset_versions.coverage_matrix`: Seoul `UM901`+`UF151`, Gyeonggi
-`UM901`). Where a hard-exclusion layer is unavailable, absence of an intersection
-is **not** evidence of absence of the constraint, so the candidate is
-`REVIEW_REQUIRED` (coverage gap), never `ELIGIBLE` on a false clear. The engine
-reads the unavailable `(SIDO, layer)` set from the live coverage matrix, so the
-review set follows the ingested coverage exactly.
+The `COVERAGE_GAP` rule is the honest handling of `OFFICIAL_SOURCE_UNAVAILABLE`,
+computed as **effective coverage** across the run's *active* protected dataset
+versions (`derivation_version` `suitability-screening-v2`): a `(SIDO, layer)`
+cell is a gap only when some active dataset records it
+`OFFICIAL_SOURCE_UNAVAILABLE` **and** no active dataset evaluates it with a valid
+source (`COMPLETE_WITH_FEATURES` / `COMPLETE_ZERO_FEATURES` /
+`NATIONWIDE_SOURCE_EVALUATED`). So a newly obtained, approved official version can
+satisfy coverage for a region/layer that an older, immutable version recorded as
+unavailable — without that older record ever being modified — while a region/layer
+that no active dataset evaluates stays a gap. Where a hard-exclusion layer has no
+effective coverage, absence of an intersection is **not** evidence of absence of
+the constraint, so the candidate is `REVIEW_REQUIRED` (coverage gap), never
+`ELIGIBLE` on a false clear. Only active dataset versions contribute both the
+protected-feature intersections and the coverage matrices read here, so the review
+set follows the selected coverage exactly. As of release 202606 + the Gyeonggi
+UM901 supplement, the remaining gaps are **Seoul `UM901`** and **Seoul `UF151`**
+(no official source obtained); **Gyeonggi `UM901`** now has effective coverage.
 
 ## 7. Soft-screening, penalties, and informational display
 
@@ -334,7 +342,11 @@ weights, thresholds, or exclusions **must** bump the relevant version:
 - `candidate_grid_version` — grid size / origin / retention / clipping change.
 - `policy_version` — classification, exclusions, review rules, penalties, weights,
   profiles, or the distance curve change.
-- `derivation_version` — the scoring/normalization computation changes.
+- `derivation_version` — the scoring/normalization/coverage computation changes.
+  Bumped to `suitability-screening-v2`: coverage gaps became effective coverage
+  and structural screening/inputs are restricted to active dataset versions. The
+  policy registry (codes, weights, curves, thresholds) did not change, so
+  `policy_version` stays `suitability-policy-v1`.
 
 The analysis run records all three plus an `analysis_signature` (a sha-256 over
 policy version, grid version, reference year, boundary vintage, input structural
@@ -350,9 +362,11 @@ overwritten.
   developability / legal-eligibility claim.
 - Zoning is top-level 용도지역 only; no residential/industrial subclass → no
   industrial high-compatibility score and urban land is review, not eligible.
-- Wetland (`UM901`) and forest (`UF151`) coverage is `OFFICIAL_SOURCE_UNAVAILABLE`
-  in parts of Seoul/Gyeonggi → those candidates are `REVIEW_REQUIRED` (coverage
-  gap), which concentrates the `ELIGIBLE` set where coverage is complete.
+- Wetland (`UM901`) and forest (`UF151`) coverage has no effective coverage for
+  **Seoul `UM901`/`UF151`** → those candidates are `REVIEW_REQUIRED` (coverage
+  gap), which concentrates the `ELIGIBLE` set where coverage is complete. Gyeonggi
+  `UM901` is now covered by the approved LSMD supplement (a coverage gap no
+  longer); Gyeonggi `UF151` was already covered.
 - Road proximity is an access proxy only; no truck-accessibility claim.
 - Waste statistics cover 57–59 of 79 SIGUNGU per stream (2024); demand-missing
   SIGUNGU are review, never interpolated.
