@@ -462,6 +462,7 @@ export default function Home() {
           candidates={candidates}
           candidateBreaks={candidateBreaks}
           statusVisibility={statusVisibility}
+          selectedCandidate={selected}
           onViewportChange={onViewportChange}
           onCandidateClick={onCandidateClick}
         />
