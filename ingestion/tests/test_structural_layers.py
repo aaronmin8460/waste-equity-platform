@@ -338,6 +338,54 @@ def test_geometry_family_guard_rejects_point_for_line_layer(tmp_path: Path) -> N
         assert any("geometry family POINT" in s["reason"] for s in skipped)
 
 
+def test_um901_geometry_guard_rejects_point_wetland_for_polygon_layer(tmp_path: Path) -> None:
+    # A non-equivalent "wetland" source that is POINT geometry must never be
+    # ingested as the UM901 (습지보호지역) polygon designation layer, even if its
+    # filename matches the UM901 alias.
+    root = tmp_path / "protected"
+    _write_manifest(
+        root,
+        {
+            "family": "protected",
+            "datasets": [
+                {
+                    "dataset_key": "lsmd_um901_wetland_202606",
+                    "provider": "국토교통부",
+                    "official_dataset_name": "습지보호지역도",
+                    "provider_dataset_identifier": "습지보호지역 (LSMD_CONT_UM901, 202606)",
+                    "coverage_type": "regional",
+                    "reference_date": "2026-06-01",
+                    "source_crs": "EPSG:4326",
+                    "layers": [
+                        {
+                            "layer_code": "UM901",
+                            "layer_identifier": "LT_C_UM901",
+                            "category": "WETLAND_PROTECTION",
+                            "official_layer_name": "습지보호지역",
+                            "geometry_family": "POLYGON",
+                            "filename_aliases": ["UM901"],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    _write_shapefile(
+        root / "gyeonggi",
+        "LSMD_CONT_UM901_41_202606",
+        epsg=4326,
+        shape_type=shapefile.POINT,
+        features=[([(126.5, 37.7)], ("x",))],
+        fields=[("MNUM", "C", 20)],
+    )
+    with TemporaryDirectory() as td:
+        sources, _present, skipped = _discover_sources(
+            "protected", load_manifest(root, family="protected"), root, Path(td)
+        )
+        assert sources == []
+        assert any("geometry family POINT" in s["reason"] for s in skipped)
+
+
 # --------------------------------------------------------------------------- #
 # Nationwide clipping via process_source (synthetic boundaries, no DB)
 # --------------------------------------------------------------------------- #

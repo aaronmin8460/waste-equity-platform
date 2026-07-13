@@ -175,6 +175,70 @@ def test_longer_alias_wins() -> None:
     assert layer.longest_alias_len("N3L_A0020000_28") == len("N3LA0020000")
 
 
+# The isolated Gyeonggi UM901 (습지보호지역) supplement release: same VWorld/
+# 국토교통부 LSMD provider as the main protected release, ingested on its own so
+# the main version is never re-scanned/re-versioned.
+_UM901_SUPPLEMENT = {
+    "family": "protected",
+    "datasets": [
+        {
+            "dataset_key": "lsmd_um901_wetland_202606",
+            "provider": "국토교통부",
+            "official_dataset_name": "습지보호지역도 (LSMD 계열, 국가공간정보포털/VWorld)",
+            "provider_dataset_identifier": (
+                "습지보호지역 (LSMD_CONT_UM901, VWorld dtmk 30380, release 202606)"
+            ),
+            "coverage_type": "regional",
+            "reference_date": "2026-06-01",
+            "source_crs": "EPSG:5186",
+            "official_source_url": "https://www.vworld.kr/dtmk/dtmk_ntads_s001.do",
+            "layers": [
+                {
+                    "layer_code": "UM901",
+                    "layer_identifier": "LT_C_UM901",
+                    "category": "WETLAND_PROTECTION",
+                    "official_layer_name": "습지보호지역",
+                    "geometry_family": "POLYGON",
+                    "filename_aliases": ["UM901"],
+                    "provider_feature_id_fields": ["MNUM"],
+                }
+            ],
+        }
+    ],
+    "official_source_unavailable": [],
+}
+
+
+def test_um901_supplement_preserves_provider_provenance() -> None:
+    manifest = parse_manifest(_UM901_SUPPLEMENT, family="protected")
+    assert len(manifest.datasets) == 1
+    dataset = manifest.datasets[0]
+    # Provenance is the actual VWorld/국토교통부 LSMD provider, never relabeled.
+    assert dataset.provider == "국토교통부"
+    assert "LSMD_CONT_UM901" in dataset.provider_dataset_identifier
+    assert dataset.source_crs == "EPSG:5186"
+    assert dataset.reference_date == datetime.date(2026, 6, 1)
+    layer = dataset.layers[0]
+    assert layer.layer_code == "UM901"
+    assert layer.category == "WETLAND_PROTECTION"
+    assert layer.official_layer_name == "습지보호지역"
+
+
+def test_um901_manifest_matches_only_um901_files_not_general_wetland() -> None:
+    manifest = parse_manifest(_UM901_SUPPLEMENT, family="protected")
+    # The validated official UM901 bulk file resolves to the wetland-protection layer.
+    match = manifest.match("LSMD_CONT_UM901_41_202606")
+    assert match is not None
+    _, layer = match
+    assert layer.layer_code == "UM901"
+    # Non-equivalent "wetland" datasets (general distribution / inventory / a
+    # different code) share the Korean word 습지 but not the UM901 code, so they do
+    # not match and are never ingested as the UM901 designation layer.
+    assert manifest.match("NWI_WETLAND_INVENTORY") is None
+    assert manifest.match("WETLAND_DISTRIBUTION_2026") is None
+    assert manifest.match("UM221_야생생물보호구역") is None
+
+
 def test_bad_geometry_family_rejected() -> None:
     bad = {
         "family": "roads",
