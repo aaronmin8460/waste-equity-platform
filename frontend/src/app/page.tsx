@@ -19,6 +19,9 @@ import {
   fetchFacilities,
   fetchFacilityBurden,
   fetchPopulation,
+  fetchReportingBoundaries,
+  fetchReportingPerCapita,
+  fetchReportingStatistics,
   fetchSuitabilityCandidateDetail,
   fetchSuitabilityCandidates,
   fetchSuitabilityLatestRun,
@@ -34,6 +37,9 @@ import {
   type FacilityItem,
   type PopulationItem,
   type RegionBoundaryCollection,
+  type ReportingBoundaryCollection,
+  type ReportingPerCapitaEnvelope,
+  type ReportingWasteStatisticsEnvelope,
   type SuitabilityCandidateCollection,
   type SuitabilityPolicy,
   type SuitabilityProfile,
@@ -78,6 +84,10 @@ interface LoadedData {
   facilities: DatasetEnvelope<FacilityItem>;
   perCapita: EquityEnvelope;
   facilityBurden: FacilityBurdenEnvelope;
+  // RCIS waste reporting geometry + values for the waste and per-capita metrics.
+  reportingBoundaries: ReportingBoundaryCollection;
+  reportingStats: ReportingWasteStatisticsEnvelope;
+  reportingPerCapita: ReportingPerCapitaEnvelope;
   sources: DataSourceItem[];
 }
 
@@ -117,11 +127,38 @@ export default function Home() {
       fetchFacilities(),
       fetchWastePerCapita(),
       fetchFacilityBurden(),
+      fetchReportingBoundaries(),
+      fetchReportingStatistics(),
+      fetchReportingPerCapita(),
       fetchDataSources(),
     ])
-      .then(([boundaries, population, waste, facilities, perCapita, facilityBurden, sources]) => {
-        setData({ boundaries, population, waste, facilities, perCapita, facilityBurden, sources });
-      })
+      .then(
+        ([
+          boundaries,
+          population,
+          waste,
+          facilities,
+          perCapita,
+          facilityBurden,
+          reportingBoundaries,
+          reportingStats,
+          reportingPerCapita,
+          sources,
+        ]) => {
+          setData({
+            boundaries,
+            population,
+            waste,
+            facilities,
+            perCapita,
+            facilityBurden,
+            reportingBoundaries,
+            reportingStats,
+            reportingPerCapita,
+            sources,
+          });
+        },
+      )
       .catch((cause: unknown) => {
         setError(
           cause instanceof ApiError
@@ -210,6 +247,30 @@ export default function Home() {
   const { regionValues, unit } = useMemo(() => {
     const values = new Map<string, RegionDisplayValue>();
     if (!data) return { regionValues: values, unit: "" };
+    // Waste generation and per-capita render on the RCIS reporting geometry:
+    // values are keyed by reporting_region_code (the seven cities appear once).
+    if (metric.geography === "reporting") {
+      if (metric.dataset === "waste-per-capita") {
+        for (const item of data.reportingPerCapita.items) {
+          if (item.waste_stream !== metric.wasteStream) continue;
+          values.set(item.reporting_region_code, {
+            numeric: Number(item.per_capita_kg_per_year),
+            display: formatQuantity(item.per_capita_kg_per_year),
+          });
+        }
+        return { regionValues: values, unit: data.reportingPerCapita.unit };
+      }
+      let reportingUnit = "";
+      for (const item of data.reportingStats.items) {
+        if (item.waste_stream !== metric.wasteStream) continue;
+        values.set(item.reporting_region_code, {
+          numeric: Number(item.generation_quantity),
+          display: formatQuantity(item.generation_quantity),
+        });
+        reportingUnit = item.quantity_unit;
+      }
+      return { regionValues: values, unit: reportingUnit };
+    }
     if (metric.dataset === "population") {
       for (const item of data.population.items) {
         values.set(item.region_code, {
@@ -255,6 +316,53 @@ export default function Home() {
     () => computeBreaks([...regionValues.values()].map((value) => value.numeric)),
     [regionValues],
   );
+
+  // The geometry the active metric renders on. Native metrics keep SGIS
+  // boundaries; reporting metrics (waste generation, per-capita) render the RCIS
+  // reporting geometry, where the seven Gyeonggi cities appear once each and
+  // their child districts are not drawn as separate value polygons. The reporting
+  // features are adapted into the shared boundary shape (join key = reporting
+  // region code) and carry the reporting metadata for the popup.
+  const activeBoundaries = useMemo<RegionBoundaryCollection>(() => {
+    const empty: RegionBoundaryCollection = {
+      type: "FeatureCollection",
+      reference_year: 0,
+      count: 0,
+      features: [],
+    };
+    if (!data) return empty;
+    if (metric.geography !== "reporting") return data.boundaries;
+    const reasons = new Map<string, string>();
+    for (const u of data.reportingStats.unavailable_regions) {
+      if (metric.wasteStream === undefined || u.waste_stream === metric.wasteStream) {
+        reasons.set(u.reporting_region_code, u.reason);
+      }
+    }
+    const features = data.reportingBoundaries.features.map((f) => ({
+      type: "Feature" as const,
+      geometry: f.geometry,
+      properties: {
+        region_code: f.properties.reporting_region_code,
+        region_name: f.properties.reporting_region_name,
+        region_level: f.properties.source_reporting_level,
+        parent_region_code: null,
+        source_id: f.properties.source_id,
+        boundary_reference_period: f.properties.boundary_reference_period,
+        reporting_geography_type: f.properties.reporting_geography_type,
+        geometry_kind: f.properties.geometry_kind,
+        derived_geometry_method: f.properties.derived_geometry_method,
+        child_region_names: f.properties.child_region_names,
+        source_reporting_level: f.properties.source_reporting_level,
+        unavailable_reason: reasons.get(f.properties.reporting_region_code) ?? null,
+      },
+    }));
+    return {
+      type: "FeatureCollection",
+      reference_year: data.reportingBoundaries.reference_year,
+      count: features.length,
+      features,
+    };
+  }, [data, metric]);
 
   const candidateBreaks = useMemo(
     () =>
@@ -397,7 +505,7 @@ export default function Home() {
             </section>
 
             {derivedInfo && <DerivedPanel info={derivedInfo} caveat={metric.caveat} />}
-            {sourceInfo && <SourcePanel info={sourceInfo} boundaries={data.boundaries} />}
+            {sourceInfo && <SourcePanel info={sourceInfo} boundaries={activeBoundaries} />}
 
             <section aria-label="시설 레이어">
               <h2 className="mb-2 text-sm font-semibold text-slate-800">
@@ -452,7 +560,7 @@ export default function Home() {
 
       <div className="min-w-0 flex-1">
         <MapView
-          boundaries={data.boundaries}
+          boundaries={activeBoundaries}
           regionValues={regionValues}
           breaks={breaks}
           metricLabel={metric.label}
@@ -920,26 +1028,38 @@ function useDerivedInfo(
         populationDefinition: item?.population_definition ?? null,
       };
     }
-    const item = data.perCapita.items.find((entry) => entry.waste_stream === metric.wasteStream);
-    const excluded = data.perCapita.excluded_regions.filter(
+    // Per-capita renders on the RCIS reporting geometry (Phase reporting-geo):
+    // the seven Gyeonggi cities use the source-native city numerator over a
+    // derived denominator (sum of SGIS child populations).
+    const perCapita = data.reportingPerCapita;
+    const item = perCapita.items.find((entry) => entry.waste_stream === metric.wasteStream);
+    const excluded = perCapita.excluded_regions.filter(
       (entry) => entry.waste_stream === metric.wasteStream,
     );
+    const derivedCityCount = perCapita.items.filter(
+      (entry) => entry.waste_stream === metric.wasteStream && entry.population_is_derived,
+    ).length;
     return {
       numeratorLabel: "발생량 출처",
-      derivationVersion: data.perCapita.derivation_version,
-      formula: data.perCapita.derivation_formula,
-      unit: data.perCapita.unit,
-      assumptions: data.perCapita.assumptions,
+      derivationVersion: perCapita.derivation_version,
+      formula: perCapita.derivation_formula,
+      unit: perCapita.unit,
+      assumptions: perCapita.assumptions,
       excludedCount: excluded.length,
       numeratorSourceName: wasteRegistry?.source_name ?? "waste_statistics",
       numeratorFrequency,
-      numeratorReferencePeriod: item?.waste_reference_period ?? String(data.perCapita.reference_year),
+      numeratorReferencePeriod: item?.waste_reference_period ?? String(perCapita.reference_year),
       officialDatasetName: item?.waste_official_dataset_name ?? null,
       accountingBasis: item?.accounting_basis ?? "ORIGIN_BASED_TREATMENT_OUTCOME",
-      coverageNote: null,
+      coverageNote:
+        derivedCityCount > 0
+          ? `경기 ${derivedCityCount}개 시(고양·부천·성남·수원·안산·안양·용인)는 RCIS 시 단위 발생량을 ` +
+            `SGIS 자치구 인구의 합(파생 분모)으로 나눈 값이며, 경계는 자치구 경계의 파생 합집합입니다. ` +
+            `구 단위 공식 폐기물 값은 제공되지 않습니다.`
+          : null,
       ...populationCommon,
       populationReferencePeriod:
-        item?.population_reference_period ?? String(data.perCapita.reference_year),
+        item?.population_reference_period ?? String(perCapita.reference_year),
       populationDefinition: item?.population_definition ?? null,
     };
   }, [data, metric]);
@@ -1022,6 +1142,8 @@ interface SourceInfo {
   accountingBasis: string | null | undefined;
   officialDatasetName: string | null | undefined;
   populationDefinition: string | null;
+  // Reporting-geometry note for the waste-generation metric (city-level cities).
+  reportingNote: string | null;
 }
 
 function useSourceInfo(
@@ -1032,7 +1154,13 @@ function useSourceInfo(
     if (!data || metric.dataset === "waste-per-capita") return null;
     const sourceId = metric.dataset === "population" ? "sgis" : "waste_statistics";
     const registry = data.sources.find((source) => source.source_id === sourceId);
-    const wasteItem = data.waste.items.find((item) => item.waste_stream === metric.wasteStream);
+    const isReportingWaste = metric.geography === "reporting" && metric.dataset === "waste-statistics";
+    const wasteItem = isReportingWaste
+      ? data.reportingStats.items.find((item) => item.waste_stream === metric.wasteStream)
+      : data.waste.items.find((item) => item.waste_stream === metric.wasteStream);
+    const wasteYear = isReportingWaste
+      ? data.reportingStats.reference_year
+      : data.waste.reference_year;
     return {
       sourceId,
       sourceName: registry?.source_name ?? sourceId,
@@ -1040,7 +1168,7 @@ function useSourceInfo(
       referencePeriod:
         metric.dataset === "population"
           ? (data.population.items[0]?.reference_period ?? String(data.population.reference_year))
-          : (wasteItem?.reference_period ?? String(data.waste.reference_year)),
+          : (wasteItem?.reference_period ?? String(wasteYear)),
       accountingBasis: metric.dataset === "waste-statistics" ? wasteItem?.accounting_basis : null,
       officialDatasetName:
         metric.dataset === "waste-statistics" ? wasteItem?.official_dataset_name : null,
@@ -1048,6 +1176,11 @@ function useSourceInfo(
         metric.dataset === "population"
           ? (data.population.items[0]?.population_definition ?? null)
           : null,
+      reportingNote: isReportingWaste
+        ? "일곱 개 경기 시(고양·부천·성남·수원·안산·안양·용인)는 RCIS가 시 단위로 보고하여 " +
+          "지도에 시 단위로 1회 표시되며, 경계는 SGIS 자치구 경계의 파생 합집합입니다. " +
+          "구별 공식 폐기물 값은 제공되지 않습니다."
+        : null,
     };
   }, [data, metric]);
 }
@@ -1110,6 +1243,11 @@ function SourcePanel({
           </dd>
         </div>
       </dl>
+      {info.reportingNote && (
+        <p className="mt-2 text-slate-600" data-testid="reporting-geography-note">
+          {info.reportingNote}
+        </p>
+      )}
     </section>
   );
 }

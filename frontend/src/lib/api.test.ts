@@ -4,6 +4,9 @@ import {
   ApiError,
   apiBaseUrl,
   fetchJson,
+  fetchReportingBoundaries,
+  fetchReportingPerCapita,
+  fetchReportingStatistics,
   fetchSuitabilityCandidateDetail,
   fetchSuitabilityCandidates,
   fetchSuitabilityPolicy,
@@ -78,6 +81,25 @@ describe("fetchJson", () => {
       status: 500,
       detail: null,
     });
+  });
+});
+
+describe("waste reporting-geography client", () => {
+  it("requests the reporting boundaries same-origin in production", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "");
+    const fetchMock = stubFetch(200, { type: "FeatureCollection", features: [] });
+    await fetchReportingBoundaries();
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/waste-reporting/boundaries");
+  });
+
+  it("requests the reporting statistics and per-capita endpoints", async () => {
+    const statsMock = stubFetch(200, { items: [], unavailable_regions: [] });
+    await fetchReportingStatistics();
+    expect(statsMock.mock.calls[0][0]).toContain("/api/v1/waste-reporting/statistics");
+
+    const perCapitaMock = stubFetch(200, { items: [], excluded_regions: [] });
+    await fetchReportingPerCapita();
+    expect(perCapitaMock.mock.calls[0][0]).toContain("/api/v1/waste-reporting/per-capita");
   });
 });
 

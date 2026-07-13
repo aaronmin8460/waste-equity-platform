@@ -10,9 +10,11 @@ and excluded from canonical writes rather than guessed.
 Known structural mismatch (Phase 0.7 / REGION_CODE_STRATEGY): SGIS represents
 seven large Gyeonggi cities at the administrative-district (구) level
 (고양·부천·성남·수원·안산·안양·용인 → 20 child regions), while RCIS reports
-these at the city level. A city-level RCIS record cannot be split across SGIS
-districts without a documented rule, so it is classified
-``REQUIRES_AGGREGATION`` and excluded.
+these at the city level. A city-level RCIS record is at a coarser reporting
+geography than SGIS, so it is classified ``COARSER_REPORTING_GEOGRAPHY`` (it has
+no single native SGIS region to attach to). The RCIS city value itself is never
+split across districts; it is served through the explicit reporting geography
+(see ``docs/RCIS_REPORTING_GEOGRAPHY_AUDIT.md``).
 """
 
 from __future__ import annotations
@@ -25,7 +27,11 @@ from dataclasses import dataclass
 # Match status values.
 EXACT_MATCH = "EXACT_MATCH"
 OUT_OF_SCOPE = "OUT_OF_SCOPE"
-REQUIRES_AGGREGATION = "REQUIRES_AGGREGATION"
+# RCIS reports the region at a coarser geography than SGIS (city vs 구 districts).
+# No aggregation of the RCIS value happens: the city total is served verbatim
+# through the reporting geography; only the display geometry and the per-capita
+# denominator are derived.
+COARSER_REPORTING_GEOGRAPHY = "COARSER_REPORTING_GEOGRAPHY"
 AMBIGUOUS = "AMBIGUOUS"
 UNMATCHED = "UNMATCHED"
 
@@ -131,13 +137,13 @@ class RegionCrosswalk:
         # City-level RCIS record for a city SGIS splits into districts.
         if sigungu_key in self._multi_district_cities.get(canonical_sido, set()):
             return MappingResolution(
-                status=REQUIRES_AGGREGATION,
+                status=COARSER_REPORTING_GEOGRAPHY,
                 rcis_sido_name=rcis_sido,
                 rcis_sigungu_name=rcis_sigungu,
                 region=None,
                 detail=(
                     f"{canonical_sido} {sigungu_key}: RCIS reports the city while SGIS represents "
-                    "it as administrative districts; a documented split rule is required"
+                    "it as administrative districts; served via the reporting geography"
                 ),
             )
 

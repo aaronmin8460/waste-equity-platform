@@ -4,6 +4,11 @@ from .base import Base
 from .facilities import WasteTreatmentFacility
 from .metadata import DatasetFreshness, DataSource, IngestionRun, RawApiResponse, RegionalPopulation
 from .regions import Region, RegionCodeMap
+from .reporting_geography import (
+    ReportingRegionWasteStatistics,
+    WasteReportingRegion,
+    WasteReportingRegionMember,
+)
 from .structural import (
     StructuralDatasetVersion,
     StructuralFeature,
@@ -23,11 +28,14 @@ __all__ = [
     "RegionCodeMap",
     "RegionalPopulation",
     "RegionalWasteStatistics",
+    "ReportingRegionWasteStatistics",
     "StructuralDatasetVersion",
     "StructuralFeature",
     "StructuralLineFeature",
     "StructuralProtectedFeature",
     "SuitabilityAnalysisRun",
     "SuitabilityCandidate",
+    "WasteReportingRegion",
+    "WasteReportingRegionMember",
     "WasteTreatmentFacility",
 ]

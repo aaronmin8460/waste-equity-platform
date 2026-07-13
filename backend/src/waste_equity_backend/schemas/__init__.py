@@ -20,6 +20,17 @@ from .equity import (
     WastePerCapitaOut,
 )
 from .metadata import DataFreshnessOut, DataSourceOut, HealthOut, IngestionRunOut
+from .reporting import (
+    ReportingBoundaryCollection,
+    ReportingBoundaryFeature,
+    ReportingBoundaryProperties,
+    ReportingExcludedRegion,
+    ReportingPerCapitaEnvelope,
+    ReportingPerCapitaOut,
+    ReportingUnavailableRegion,
+    ReportingWasteStatisticsEnvelope,
+    ReportingWasteStatisticsOut,
+)
 from .suitability import (
     CandidateDetailOut,
     CandidateFeature,
@@ -51,6 +62,15 @@ __all__ = [
     "RegionBoundaryFeature",
     "RegionBoundaryProperties",
     "RegionOut",
+    "ReportingBoundaryCollection",
+    "ReportingBoundaryFeature",
+    "ReportingBoundaryProperties",
+    "ReportingExcludedRegion",
+    "ReportingPerCapitaEnvelope",
+    "ReportingPerCapitaOut",
+    "ReportingUnavailableRegion",
+    "ReportingWasteStatisticsEnvelope",
+    "ReportingWasteStatisticsOut",
     "SuitabilityCandidateCollection",
     "SuitabilityPolicyOut",
     "SuitabilityRunListEnvelope",

@@ -208,6 +208,16 @@ use `--allow-drift` then):
 | review | 34,534 |
 | excluded | 12,260 |
 | suitability_runs | ≥ 1 |
+| reporting_regions | 7 |
+| reporting_members | 20 |
+| reporting_waste | 28 |
+| reporting_ntn007 / ntn008 / ntn018 / ntn022 | 7 each |
+| ntn018_native_omissions | 2 (인천 옹진군, 경기 연천군) |
+| dup_city_stats / city_stats_on_child / invalid_derived_geom / child_in_two_cities | 0 (integrity — exact even with `--allow-drift`) |
+
+The reporting-geography rows are additive (migration 0012); the native, waste,
+and suitability counts above are unchanged by that migration. See
+`docs/RCIS_REPORTING_GEOGRAPHY_DEPLOYMENT.md` for the reporting-geography deploy.
 
 ## Step 17 — Verify Suitability mode manually
 

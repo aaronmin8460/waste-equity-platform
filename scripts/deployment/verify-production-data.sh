@@ -79,6 +79,47 @@ else
   [[ "${ALLOW_DRIFT}" -eq 1 ]] || FAIL=1
 fi
 
+# --- RCIS waste reporting geography (migration 0012) ---------------------------
+# Additive tables. The native region/waste/suitability counts above are the same
+# as before this change; these are the new expected values, derived from the
+# verified local post-change database. NTN018 legitimately omits the two counties
+# 인천 옹진군 and 경기 연천군 for the industrial-facility stream (SOURCE_NOT_REPORTED);
+# every other check must be exact regardless of a data refresh.
+RG_METRICS=(reporting_regions reporting_members reporting_waste \
+            reporting_ntn007 reporting_ntn008 reporting_ntn018 reporting_ntn022 \
+            ntn018_native_omissions dup_city_stats city_stats_on_child \
+            invalid_derived_geom child_in_two_cities)
+RG_EXPECTED=(7 20 28 7 7 7 7 2 0 0 0 0)
+RG_QUERIES=(
+  "SELECT count(*) FROM waste_reporting_regions;"
+  "SELECT count(*) FROM waste_reporting_region_members;"
+  "SELECT count(*) FROM reporting_region_waste_statistics;"
+  "SELECT count(*) FROM reporting_region_waste_statistics WHERE source_pid='NTN007';"
+  "SELECT count(*) FROM reporting_region_waste_statistics WHERE source_pid='NTN008';"
+  "SELECT count(*) FROM reporting_region_waste_statistics WHERE source_pid='NTN018';"
+  "SELECT count(*) FROM reporting_region_waste_statistics WHERE source_pid='NTN022';"
+  "SELECT count(*) FROM regions r WHERE r.id IN (SELECT region_id FROM regional_waste_statistics WHERE source_pid='NTN007') AND r.id NOT IN (SELECT region_id FROM regional_waste_statistics WHERE source_pid='NTN018');"
+  "SELECT count(*) FROM (SELECT reporting_region_id, reference_year, source_pid, waste_category_name FROM reporting_region_waste_statistics GROUP BY 1,2,3,4 HAVING count(*)>1) d;"
+  "SELECT count(*) FROM regional_waste_statistics WHERE region_id IN (SELECT child_region_id FROM waste_reporting_region_members);"
+  "SELECT count(*) FROM waste_reporting_regions WHERE NOT ST_IsValid(geometry) OR ST_IsEmpty(geometry) OR ST_SRID(geometry)<>4326 OR GeometryType(geometry)<>'MULTIPOLYGON';"
+  "SELECT count(*) FROM (SELECT child_region_id FROM waste_reporting_region_members GROUP BY child_region_id HAVING count(*)>1) d;"
+)
+j=0
+while [[ $j -lt ${#RG_METRICS[@]} ]]; do
+  key="${RG_METRICS[$j]}"; exp="${RG_EXPECTED[$j]}"
+  act="$(q "${RG_QUERIES[$j]}")"; act="${act:-MISSING}"
+  # The integrity checks (0-valued) are exact regardless of --allow-drift; the
+  # count checks may drift on an intentional refresh.
+  strict=0
+  case "${key}" in
+    dup_city_stats|city_stats_on_child|invalid_derived_geom|child_in_two_cities) strict=1 ;;
+  esac
+  if [[ "${act}" == "${exp}" ]]; then st="OK";
+  else st="DIFF"; { [[ "${ALLOW_DRIFT}" -eq 1 && "${strict}" -eq 0 ]]; } || FAIL=1; fi
+  printf "  %-24s %-12s %-12s %s\n" "${key}" "${exp}" "${act}" "${st}"
+  j=$((j + 1))
+done
+
 if [[ "${FAIL}" -ne 0 ]]; then
   echo "✗ data verification found mismatches (use --allow-drift after an intentional refresh)." >&2
   exit 1

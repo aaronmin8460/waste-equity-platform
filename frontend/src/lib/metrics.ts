@@ -26,6 +26,11 @@ export interface MetricDefinition {
   // "waste-per-capita" and "facility-burden" metrics are BACKEND-derived
   // (Phase 5.1/5.2); the client still renders served values only.
   dataset: "population" | "waste-statistics" | "waste-per-capita" | "facility-burden";
+  // Which map geometry this metric renders on. "native" = SGIS regions
+  // (population, facility burden, native browsing). "reporting" = RCIS
+  // source-compatible geometry where the seven Gyeonggi cities RCIS reports at
+  // city level appear once each (waste generation and per-capita waste).
+  geography: "native" | "reporting";
   wasteStream?: string;
   /** Which served facility-burden measure this metric displays. */
   burdenMeasure?: "located" | "buffer";
@@ -41,41 +46,47 @@ const FACILITY_BURDEN_CAVEAT =
   "폐기물 통계와 합산하거나 비교할 수 없습니다.";
 
 export const METRICS: MetricDefinition[] = [
-  { key: "population", label: "인구 (Population)", dataset: "population" },
+  { key: "population", label: "인구 (Population)", dataset: "population", geography: "native" },
   {
     key: "HOUSEHOLD",
     label: "생활계 폐기물 발생량 (Household waste generation)",
     dataset: "waste-statistics",
+    geography: "reporting",
     wasteStream: "HOUSEHOLD",
   },
   {
     key: "BUSINESS_NON_FACILITY",
     label: "사업장 비배출시설계 발생량 (Business non-facility)",
     dataset: "waste-statistics",
+    geography: "reporting",
     wasteStream: "BUSINESS_NON_FACILITY",
   },
   {
     key: "INDUSTRIAL_FACILITY",
     label: "사업장 배출시설계 발생량 (Industrial facility)",
     dataset: "waste-statistics",
+    geography: "reporting",
     wasteStream: "INDUSTRIAL_FACILITY",
   },
   {
     key: "CONSTRUCTION",
     label: "건설 폐기물 발생량 (Construction waste)",
     dataset: "waste-statistics",
+    geography: "reporting",
     wasteStream: "CONSTRUCTION",
   },
   {
     key: "PER_CAPITA_HOUSEHOLD",
     label: "1인당 생활계 발생량 (Household per capita) — 형평성 지표",
     dataset: "waste-per-capita",
+    geography: "reporting",
     wasteStream: "HOUSEHOLD",
   },
   {
     key: "PER_CAPITA_BUSINESS_NON_FACILITY",
     label: "1인당 사업장 비배출시설계 (Business non-facility per capita)",
     dataset: "waste-per-capita",
+    geography: "reporting",
     wasteStream: "BUSINESS_NON_FACILITY",
     caveat: NON_RESIDENTIAL_CAVEAT,
   },
@@ -83,6 +94,7 @@ export const METRICS: MetricDefinition[] = [
     key: "PER_CAPITA_INDUSTRIAL_FACILITY",
     label: "1인당 사업장 배출시설계 (Industrial facility per capita)",
     dataset: "waste-per-capita",
+    geography: "reporting",
     wasteStream: "INDUSTRIAL_FACILITY",
     caveat: NON_RESIDENTIAL_CAVEAT,
   },
@@ -90,6 +102,7 @@ export const METRICS: MetricDefinition[] = [
     key: "PER_CAPITA_CONSTRUCTION",
     label: "1인당 건설 폐기물 (Construction per capita)",
     dataset: "waste-per-capita",
+    geography: "reporting",
     wasteStream: "CONSTRUCTION",
     caveat: NON_RESIDENTIAL_CAVEAT,
   },
@@ -97,6 +110,7 @@ export const METRICS: MetricDefinition[] = [
     key: "FACILITY_BURDEN_LOCATED",
     label: "1인당 소재 시설 처리량 (Facility throughput per capita, located) — 부담 지표",
     dataset: "facility-burden",
+    geography: "native",
     burdenMeasure: "located",
     caveat: FACILITY_BURDEN_CAVEAT,
   },
@@ -104,6 +118,7 @@ export const METRICS: MetricDefinition[] = [
     key: "FACILITY_BURDEN_5KM",
     label: "1인당 인근 5km 시설 처리량 (Facility throughput per capita, within 5 km)",
     dataset: "facility-burden",
+    geography: "native",
     burdenMeasure: "buffer",
     caveat: FACILITY_BURDEN_CAVEAT,
   },

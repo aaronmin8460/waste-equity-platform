@@ -44,12 +44,18 @@ test("map loads with official data, metadata, and no government API calls", asyn
   // Facility layer metadata reports served vs. unmappable facilities.
   await expect(page.getByTestId("facility-metadata")).toContainText("좌표 보유 시설");
 
-  // Switching to a waste metric shows the RCIS accounting basis.
+  // Switching to a waste metric shows the RCIS accounting basis, and the
+  // waste-generation metric renders on the RCIS reporting geometry: the seven
+  // Gyeonggi cities are shown once at city level with a derived-union boundary.
   await page.getByRole("radio").nth(1).check();
   await expect(page.getByTestId("metric-metadata")).toContainText(
     "ORIGIN_BASED_TREATMENT_OUTCOME",
     { timeout: 15_000 },
   );
+  const reportingNote = page.getByTestId("reporting-geography-note");
+  await expect(reportingNote).toBeVisible();
+  await expect(reportingNote).toContainText("시 단위");
+  await expect(reportingNote).toContainText("파생 합집합");
 
   // Switching to the derived per-capita metric (Phase 5.1) shows the
   // derived-indicator panel with dual-source provenance and unit.
@@ -61,6 +67,9 @@ test("map loads with official data, metadata, and no government API calls", asyn
   await expect(derived).toContainText("kg/인/년");
   await expect(derived).toContainText("ORIGIN_BASED_TREATMENT_OUTCOME");
   await expect(derived).toContainText("인구 출처");
+  // The seven city reporting regions use a derived denominator (sum of SGIS
+  // child-district populations); the coverage note states it.
+  await expect(derived).toContainText("파생 분모");
   await expect(page.getByTestId("legend")).toContainText("kg/인/년");
 
   // Switching to the facility-burden metric (Phase 5.2) shows the

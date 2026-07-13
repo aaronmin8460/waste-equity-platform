@@ -46,9 +46,9 @@ from .rcis_facility_contract import (
 )
 from .rcis_region_crosswalk import (
     AMBIGUOUS,
+    COARSER_REPORTING_GEOGRAPHY,
     EXACT_MATCH,
     OUT_OF_SCOPE,
-    REQUIRES_AGGREGATION,
     UNMATCHED,
     RegionCrosswalk,
 )
@@ -65,10 +65,13 @@ from .rcis_waste_ingestion import (
 )
 from .samples import sanitize
 
-# RCIS sigungu resolution -> stored facility region_mapping_status.
+# RCIS sigungu resolution -> stored facility region_mapping_status. A facility in
+# a coarser-reporting-geography city (RCIS reports the city, SGIS has 구 districts)
+# still needs geocoding to pin it to a native district, so it maps to
+# REQUIRES_GEOCODE exactly as before.
 _STATUS_MAP = {
     EXACT_MATCH: "EXACT_MATCH",
-    REQUIRES_AGGREGATION: "REQUIRES_GEOCODE",
+    COARSER_REPORTING_GEOGRAPHY: "REQUIRES_GEOCODE",
     UNMATCHED: "UNMATCHED",
     AMBIGUOUS: "AMBIGUOUS",
 }
