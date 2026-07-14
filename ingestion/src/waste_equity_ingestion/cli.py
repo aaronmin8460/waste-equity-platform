@@ -9,6 +9,7 @@ from collections.abc import Callable
 
 from .config import ProbeSettings
 from .errors import IngestionError, MissingConfigurationError, MissingCredentialsError, ProbeError
+from .landfill_inbound import run_landfill_inbound
 from .probes import (
     airkorea,
     kma,
@@ -46,6 +47,7 @@ DISCOVERY_SOURCE = "waste-statistics-discovery"
 SGIS_INGEST = "sgis-ingest"
 RCIS_WASTE_INGEST = "rcis-waste-ingest"
 RCIS_REPORTING_GEOGRAPHY = "rcis-reporting-geography"
+LANDFILL_INBOUND_INGEST = "landfill-inbound"
 RCIS_FACILITY_INGEST = "rcis-facility-ingest"
 VWORLD_GEOCODE = "vworld-geocode"
 VWORLD_STRUCTURAL_AUDIT = "vworld-structural-audit"
@@ -66,6 +68,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 SGIS_INGEST,
                 RCIS_WASTE_INGEST,
                 RCIS_REPORTING_GEOGRAPHY,
+                LANDFILL_INBOUND_INGEST,
                 RCIS_FACILITY_INGEST,
                 VWORLD_GEOCODE,
                 VWORLD_STRUCTURAL_AUDIT,
@@ -172,6 +175,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     mode.add_argument(
         "--write", action="store_true", help="Write validated live data to DATABASE_URL."
     )
+    mode.add_argument(
+        "--apply",
+        action="store_true",
+        help="Alias for --write (landfill-inbound): write validated live data to DATABASE_URL.",
+    )
     return parser.parse_args(argv)
 
 
@@ -251,6 +259,15 @@ def run_reporting_geography_cli(settings: ProbeSettings, args: argparse.Namespac
         scope=args.scope,
         write=bool(args.write),
     )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    return 0
+
+
+def run_landfill_inbound_cli(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    write = bool(args.write or args.apply)
+    if not args.dry_run and not write:
+        raise IngestionError("landfill-inbound requires either --dry-run or --apply/--write")
+    report = run_landfill_inbound(settings, scope=args.scope, write=write)
     print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
     return 0
 
@@ -396,6 +413,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_rcis_waste(settings, args)
         if args.source == RCIS_REPORTING_GEOGRAPHY:
             return run_reporting_geography_cli(settings, args)
+        if args.source == LANDFILL_INBOUND_INGEST:
+            return run_landfill_inbound_cli(settings, args)
         if args.source == RCIS_FACILITY_INGEST:
             return run_rcis_facility(settings, args)
         if args.source == VWORLD_GEOCODE:

@@ -613,3 +613,213 @@ export function fetchSuitabilityCandidateDetail(
     `/api/v1/suitability/candidates/${candidateId}?profile=${profile}`,
   );
 }
+
+// --------------------------------------------------------------------------- //
+// Capital-region Sudokwon Landfill inbound flow (V2 Phase 1) — the only
+// source-declared origin→destination waste flow. Strictly metropolitan: origins
+// are Seoul/Incheon/Gyeonggi (SGIS 11/28/41) and the single destination is the
+// Sudokwon Landfill. Municipal/district flow is never returned or drawn.
+// --------------------------------------------------------------------------- //
+
+export type LandfillOrigin = "11" | "28" | "41";
+
+export interface LandfillPoint {
+  lon: number;
+  lat: number;
+}
+
+export interface LandfillSourceRef {
+  dataset_id: string;
+  official_dataset_name: string;
+  snapshot_uuid: string | null;
+  snapshot_date: string | null;
+}
+
+export interface LandfillEvidence {
+  quantity_status: string;
+  fee_status: string;
+  derived_status: string;
+  notes: string[];
+}
+
+export interface LandfillPeriod {
+  year: number;
+  month: string | null;
+  is_complete_year: boolean;
+  available_through_month: string | null;
+  latest_available_month: string | null;
+  available_years: number[];
+}
+
+export interface LandfillOriginShare {
+  origin_region_code: string;
+  origin_sgis_code: string;
+  origin_name: string;
+  origin_name_en: string;
+  quantity_kg: string;
+  quantity_tons: string;
+  inbound_fee_krw: string;
+  quantity_share: string | null;
+  effective_fee_per_ton: string | null;
+}
+
+export interface LandfillWasteShare {
+  waste_name: string;
+  quantity_kg: string;
+  quantity_tons: string;
+  inbound_fee_krw: string;
+  quantity_share: string | null;
+  effective_fee_per_ton: string | null;
+}
+
+export interface LandfillSummary {
+  period: LandfillPeriod;
+  origin_filter: string | null;
+  waste_filter: string | null;
+  accounting_basis: string;
+  destination_code: string;
+  destination_name: string;
+  total_quantity_kg: string;
+  total_quantity_tons: string;
+  total_inbound_fee_krw: string;
+  effective_fee_per_ton: string | null;
+  largest_origin_share: LandfillOriginShare | null;
+  largest_waste_share: LandfillWasteShare | null;
+  origin_shares: LandfillOriginShare[];
+  top_waste_types: LandfillWasteShare[];
+  row_count: number;
+  evidence: LandfillEvidence;
+  sources: LandfillSourceRef[];
+  derivation_version: string;
+  caveats: string[];
+}
+
+export interface LandfillTrendPoint {
+  reference_month: string;
+  reference_year: number;
+  quantity_kg: string;
+  quantity_tons: string;
+  inbound_fee_krw: string;
+  effective_fee_per_ton: string | null;
+}
+
+export interface LandfillTrends {
+  start_month: string;
+  end_month: string;
+  origin_filter: string | null;
+  waste_filter: string | null;
+  accounting_basis: string;
+  points: LandfillTrendPoint[];
+  evidence: LandfillEvidence;
+  sources: LandfillSourceRef[];
+  derivation_version: string;
+  caveats: string[];
+}
+
+export interface LandfillComposition {
+  period: LandfillPeriod;
+  origin_filter: string | null;
+  accounting_basis: string;
+  total_quantity_kg: string;
+  total_quantity_tons: string;
+  total_inbound_fee_krw: string;
+  waste_types: LandfillWasteShare[];
+  evidence: LandfillEvidence;
+  sources: LandfillSourceRef[];
+  derivation_version: string;
+  caveats: string[];
+}
+
+export interface LandfillFlow {
+  origin_region_code: string;
+  origin_sgis_code: string;
+  origin_name: string;
+  origin_name_en: string;
+  origin_point: LandfillPoint;
+  destination_code: string;
+  destination_name: string;
+  destination_name_en: string;
+  destination_point: LandfillPoint;
+  quantity_kg: string;
+  quantity_tons: string;
+  inbound_fee_krw: string;
+  quantity_share: string | null;
+  effective_fee_per_ton: string | null;
+  evidence_status: string;
+}
+
+export interface LandfillDestinationNode {
+  code: string;
+  name: string;
+  name_en: string;
+  point: LandfillPoint;
+  coordinate_provenance: string;
+}
+
+export interface LandfillFlows {
+  period: LandfillPeriod;
+  waste_filter: string | null;
+  origin_level: string;
+  origin_level_label: string;
+  total_quantity_kg: string;
+  total_quantity_tons: string;
+  total_inbound_fee_krw: string;
+  accounting_basis: string;
+  flows: LandfillFlow[];
+  destination: LandfillDestinationNode;
+  evidence: LandfillEvidence;
+  sources: LandfillSourceRef[];
+  derivation_version: string;
+  caveats: string[];
+}
+
+export interface LandfillQuery {
+  year?: number | null;
+  month?: number | null;
+  origin?: LandfillOrigin | null;
+  wasteName?: string | null;
+}
+
+function landfillParams(query: LandfillQuery): URLSearchParams {
+  const params = new URLSearchParams();
+  if (query.year != null) params.set("year", String(query.year));
+  if (query.month != null) params.set("month", String(query.month));
+  if (query.origin != null) params.set("origin", query.origin);
+  if (query.wasteName != null && query.wasteName !== "") params.set("waste_name", query.wasteName);
+  return params;
+}
+
+export function fetchLandfillSummary(query: LandfillQuery = {}): Promise<LandfillSummary> {
+  return fetchJson<LandfillSummary>(`/api/v1/landfill/summary?${landfillParams(query).toString()}`);
+}
+
+export function fetchLandfillComposition(query: LandfillQuery = {}): Promise<LandfillComposition> {
+  const params = new URLSearchParams();
+  if (query.year != null) params.set("year", String(query.year));
+  if (query.origin != null) params.set("origin", query.origin);
+  return fetchJson<LandfillComposition>(`/api/v1/landfill/composition?${params.toString()}`);
+}
+
+export function fetchLandfillFlows(query: LandfillQuery = {}): Promise<LandfillFlows> {
+  const params = new URLSearchParams();
+  if (query.year != null) params.set("year", String(query.year));
+  if (query.month != null) params.set("month", String(query.month));
+  if (query.wasteName != null && query.wasteName !== "") params.set("waste_name", query.wasteName);
+  return fetchJson<LandfillFlows>(`/api/v1/landfill/flows?${params.toString()}`);
+}
+
+export interface LandfillTrendsQuery {
+  startMonth?: string | null;
+  endMonth?: string | null;
+  origin?: LandfillOrigin | null;
+  wasteName?: string | null;
+}
+
+export function fetchLandfillTrends(query: LandfillTrendsQuery = {}): Promise<LandfillTrends> {
+  const params = new URLSearchParams();
+  if (query.startMonth) params.set("start_month", query.startMonth);
+  if (query.endMonth) params.set("end_month", query.endMonth);
+  if (query.origin != null) params.set("origin", query.origin);
+  if (query.wasteName != null && query.wasteName !== "") params.set("waste_name", query.wasteName);
+  return fetchJson<LandfillTrends>(`/api/v1/landfill/trends?${params.toString()}`);
+}

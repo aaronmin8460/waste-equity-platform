@@ -44,6 +44,9 @@ class ProbeSettings:
             sample_dir=sample_dir,
         )
 
+    def odcloud_key(self) -> str | None:
+        return self.data_go_kr_service_key
+
     def airkorea_key(self) -> str | None:
         return self.airkorea_service_key or self.data_go_kr_service_key
 
