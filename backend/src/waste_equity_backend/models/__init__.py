@@ -2,6 +2,7 @@
 
 from .base import Base
 from .facilities import WasteTreatmentFacility
+from .landfill_inbound import LandfillInboundMonthly
 from .metadata import DatasetFreshness, DataSource, IngestionRun, RawApiResponse, RegionalPopulation
 from .regions import Region, RegionCodeMap
 from .reporting_geography import (
@@ -23,6 +24,7 @@ __all__ = [
     "DataSource",
     "DatasetFreshness",
     "IngestionRun",
+    "LandfillInboundMonthly",
     "RawApiResponse",
     "Region",
     "RegionCodeMap",
