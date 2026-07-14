@@ -23,7 +23,7 @@ import type {
   SuitabilityStatus,
 } from "../lib/api";
 import {
-  CHOROPLETH_PALETTE,
+  CANDIDATE_SCORE_PALETTE_5,
   FACILITY_CATEGORY_COLORS,
   FACILITY_CATEGORY_LABELS,
   NO_DATA_COLOR,
@@ -91,6 +91,8 @@ interface MapViewProps {
   boundaries: RegionBoundaryCollection;
   regionValues: Map<string, RegionDisplayValue>;
   breaks: number[];
+  /** Active choropleth palette for the region fill (sized to the effective classes). */
+  palette: readonly string[];
   metricLabel: string;
   metricUnit: string;
   facilities: FacilityItem[];
@@ -106,26 +108,31 @@ interface MapViewProps {
 }
 
 // A MapLibre "step" needs at least one stop; with no breaks (e.g. before data
-// loads) fall back to a single constant color so the layer is always valid.
-function scoreStep(breaks: number[]): unknown {
-  if (breaks.length === 0) return CHOROPLETH_PALETTE[CHOROPLETH_PALETTE.length - 1];
-  const step: unknown[] = ["step", ["get", "metric_value"], CHOROPLETH_PALETTE[0]];
+// loads) fall back to a single constant color so the layer is always valid. The
+// palette is passed in so the map uses the exact colors the legend shows.
+function scoreStep(breaks: number[], palette: readonly string[]): unknown {
+  if (breaks.length === 0) return palette[palette.length - 1];
+  const step: unknown[] = ["step", ["get", "metric_value"], palette[0]];
   breaks.forEach((threshold, index) => {
-    step.push(threshold, CHOROPLETH_PALETTE[Math.min(index + 1, CHOROPLETH_PALETTE.length - 1)]);
+    step.push(threshold, palette[Math.min(index + 1, palette.length - 1)]);
   });
   return step;
 }
 
-function fillColorExpression(breaks: number[]): maplibregl.ExpressionSpecification {
+function fillColorExpression(
+  breaks: number[],
+  palette: readonly string[],
+): maplibregl.ExpressionSpecification {
   return [
     "case",
     ["==", ["get", "has_value"], true],
-    scoreStep(breaks),
+    scoreStep(breaks, palette),
     NO_DATA_COLOR,
   ] as unknown as maplibregl.ExpressionSpecification;
 }
 
-// Candidate fill: eligible -> score step; review -> distinct amber; excluded -> muted.
+// Candidate fill: eligible -> score step; review -> distinct amber; excluded ->
+// muted. Candidates always use their own 5-class palette (never the region one).
 function candidateColorExpression(breaks: number[]): maplibregl.ExpressionSpecification {
   return [
     "case",
@@ -133,7 +140,7 @@ function candidateColorExpression(breaks: number[]): maplibregl.ExpressionSpecif
     EXCLUDED_COLOR,
     ["==", ["get", "status"], "REVIEW_REQUIRED"],
     REVIEW_COLOR,
-    scoreStep(breaks),
+    scoreStep(breaks, CANDIDATE_SCORE_PALETTE_5),
   ] as unknown as maplibregl.ExpressionSpecification;
 }
 
@@ -155,6 +162,7 @@ export default function MapView({
   boundaries,
   regionValues,
   breaks,
+  palette,
   metricLabel,
   metricUnit,
   facilities,
@@ -310,7 +318,7 @@ export default function MapView({
           id: "regions-fill",
           type: "fill",
           source: "regions",
-          paint: { "fill-color": fillColorExpression(breaks), "fill-opacity": 0.72 },
+          paint: { "fill-color": fillColorExpression(breaks, palette), "fill-opacity": 0.72 },
         });
         map.addLayer({
           id: "regions-outline",
@@ -348,7 +356,7 @@ export default function MapView({
             .addTo(map);
         });
       }
-      map.setPaintProperty("regions-fill", "fill-color", fillColorExpression(breaks));
+      map.setPaintProperty("regions-fill", "fill-color", fillColorExpression(breaks, palette));
 
       // --- Candidate grid (suitability) ---
       const candidatesSource = map.getSource("candidates") as maplibregl.GeoJSONSource | undefined;
@@ -461,6 +469,7 @@ export default function MapView({
     boundaries,
     regionValues,
     breaks,
+    palette,
     metricLabel,
     metricUnit,
     facilities,

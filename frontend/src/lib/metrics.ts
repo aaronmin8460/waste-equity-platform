@@ -124,17 +124,85 @@ export const METRICS: MetricDefinition[] = [
   },
 ];
 
-/** Colorblind-safe sequential palette (light to dark). */
-export const CHOROPLETH_PALETTE = ["#f1eef6", "#bdc9e1", "#74a9cf", "#2b8cbe", "#045a8d"];
+// --------------------------------------------------------------------------- //
+// Choropleth scale configuration (metric-aware classification + palette)
+// --------------------------------------------------------------------------- //
+
+/**
+ * How a metric's values are split into color classes.
+ *  - "quantile": equal-count breaks; good for roughly-uniform equity metrics.
+ *  - "log-equal-interval": equal intervals in log1p space; needed for the
+ *    strongly right-skewed facility-burden metrics, where plain quantiles
+ *    collapse very different upper-tail magnitudes into one class.
+ */
+export type ChoroplethScaleMethod = "quantile" | "log-equal-interval";
+
+/** Explicit, per-metric classification policy — never inferred from a palette. */
+export interface ChoroplethScaleConfig {
+  method: ChoroplethScaleMethod;
+  /** Requested number of color classes (palette must have at least this many). */
+  classes: number;
+  palette: readonly string[];
+}
+
+// Colorblind-safe sequential blue palettes (light -> dark), no duplicate stops.
+// DEFAULT_EQUITY_PALETTE_7 / FACILITY_BURDEN_PALETTE_9 are ColorBrewer "Blues".
+
+/** 7-step ColorBrewer Blues — standard equity metrics (population, waste, per-capita). */
+export const DEFAULT_EQUITY_PALETTE_7 = [
+  "#eff3ff",
+  "#c6dbef",
+  "#9ecae1",
+  "#6baed6",
+  "#4292c6",
+  "#2171b5",
+  "#084594",
+] as const;
+
+/** 9-step ColorBrewer Blues — facility-burden metrics (wide, skewed magnitudes). */
+export const FACILITY_BURDEN_PALETTE_9 = [
+  "#f7fbff",
+  "#deebf7",
+  "#c6dbef",
+  "#9ecae1",
+  "#6baed6",
+  "#4292c6",
+  "#2171b5",
+  "#08519c",
+  "#08306b",
+] as const;
+
+/**
+ * 5-step ColorBrewer PuBu — suitability candidate scores ONLY. Kept identical to
+ * the historical candidate palette so suitability rendering is unchanged; the
+ * region choropleth must never inherit this palette.
+ */
+export const CANDIDATE_SCORE_PALETTE_5 = [
+  "#f1eef6",
+  "#bdc9e1",
+  "#74a9cf",
+  "#2b8cbe",
+  "#045a8d",
+] as const;
 
 export const NO_DATA_COLOR = "#d9d9d9";
 
+/** Resolve the explicit classification policy for a metric. */
+export function scaleConfigForMetric(metric: MetricDefinition): ChoroplethScaleConfig {
+  if (metric.dataset === "facility-burden") {
+    // FACILITY_BURDEN_LOCATED / FACILITY_BURDEN_5KM: right-skewed magnitudes.
+    return { method: "log-equal-interval", classes: 9, palette: FACILITY_BURDEN_PALETTE_9 };
+  }
+  // population, waste-statistics, waste-per-capita.
+  return { method: "quantile", classes: 7, palette: DEFAULT_EQUITY_PALETTE_7 };
+}
+
 /**
- * Quantile breaks splitting the observed values into as many classes as the
- * palette has colors. Returns the interior thresholds (length = classes - 1),
- * deduplicated for degenerate distributions.
+ * Quantile breaks splitting the observed values into `classes` equal-count
+ * classes. Returns the interior thresholds (length = classes - 1), deduplicated
+ * and kept strictly increasing for degenerate distributions.
  */
-export function computeBreaks(values: number[], classes: number = CHOROPLETH_PALETTE.length): number[] {
+export function computeBreaks(values: number[], classes: number): number[] {
   if (values.length === 0 || classes < 2) return [];
   const sorted = [...values].sort((a, b) => a - b);
   const thresholds: number[] = [];
@@ -148,13 +216,91 @@ export function computeBreaks(values: number[], classes: number = CHOROPLETH_PAL
   return thresholds;
 }
 
-/** Color for a value given interior thresholds (values >= threshold move up a class). */
-export function colorFor(value: number, breaks: number[], palette: string[] = CHOROPLETH_PALETTE): string {
+/**
+ * Equal-interval breaks computed in log1p space, for strongly right-skewed,
+ * non-negative distributions (facility burden). Thresholds are
+ * `expm1(log1p(max) * step / classes)` for step 1..classes-1.
+ *
+ * Robustness contract:
+ *  - only finite, non-negative values are classified (NaN/Infinity/negatives
+ *    are ignored rather than producing invalid MapLibre expressions);
+ *  - zero is a valid value (0 kg/capita is a real measurement, not no-data);
+ *  - no valid values, or max <= 0, yields no breaks;
+ *  - thresholds are strictly increasing and finite (deduplicated only when a
+ *    degenerate distribution or floating point would otherwise repeat one).
+ */
+export function computeLogEqualIntervalBreaks(values: number[], classes: number): number[] {
+  if (classes < 2) return [];
+  const finite = values.filter((value) => Number.isFinite(value) && value >= 0);
+  if (finite.length === 0) return [];
+  const max = Math.max(...finite);
+  if (!(max > 0)) return [];
+  const logMax = Math.log1p(max);
+  const thresholds: number[] = [];
+  for (let step = 1; step < classes; step += 1) {
+    const threshold = Math.expm1((logMax * step) / classes);
+    if (
+      Number.isFinite(threshold) &&
+      (thresholds.length === 0 || threshold > thresholds[thresholds.length - 1])
+    ) {
+      thresholds.push(threshold);
+    }
+  }
+  return thresholds;
+}
+
+/**
+ * The single resolved scale that drives BOTH the map fill expression and the
+ * legend. `palette` is sized to the effective number of classes so map colors,
+ * legend swatches, and legend labels can never disagree.
+ */
+export interface ActiveScale {
+  method: ChoroplethScaleMethod;
+  /** Class count requested by the metric's policy. */
+  requestedClasses: number;
+  /** Class count actually rendered (breaks.length + 1 after dedup). */
+  effectiveClasses: number;
+  breaks: number[];
+  palette: readonly string[];
+}
+
+/** Resolve the one active scale (breaks + palette) for the observed values. */
+export function resolveActiveScale(values: number[], config: ChoroplethScaleConfig): ActiveScale {
+  const breaks =
+    config.method === "log-equal-interval"
+      ? computeLogEqualIntervalBreaks(values, config.classes)
+      : computeBreaks(values, config.classes);
+  const effectiveClasses = breaks.length + 1;
+  return {
+    method: config.method,
+    requestedClasses: config.classes,
+    effectiveClasses,
+    // One color per rendered class; degenerate distributions use the lighter end.
+    palette: config.palette.slice(0, effectiveClasses),
+    breaks,
+  };
+}
+
+/** Class index for a value given interior thresholds (>= threshold moves up a class). */
+export function classIndexFor(value: number, breaks: number[]): number {
   let index = 0;
   for (const threshold of breaks) {
     if (value >= threshold) index += 1;
   }
-  return palette[Math.min(index, palette.length - 1)];
+  return index;
+}
+
+/** Color for a value given interior thresholds and the active palette. */
+export function colorFor(value: number, breaks: number[], palette: readonly string[]): string {
+  return palette[Math.min(classIndexFor(value, breaks), palette.length - 1)];
+}
+
+/** Short human note describing the active classification method for the legend. */
+export function scaleMethodNote(scale: ActiveScale): string {
+  if (scale.method === "log-equal-interval") {
+    return `로그 간격 ${scale.requestedClasses}단계 (${scale.requestedClasses}-class logarithmic intervals)`;
+  }
+  return `분위수 ${scale.requestedClasses}단계 (${scale.requestedClasses}-class quantiles)`;
 }
 
 /**
