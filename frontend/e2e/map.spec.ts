@@ -86,6 +86,52 @@ test("map loads with official data, metadata, and no government API calls", asyn
   expect(disallowedRequests).toEqual([]);
 });
 
+test("facility-burden choropleth uses a 9-class logarithmic scale (high-range separation)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator(".maplibregl-canvas")).toBeVisible({ timeout: 30_000 });
+
+  // Select the located facility-burden metric (강남/인천 서구 collapse under the
+  // old global 5-class quantile scale; the log scale must separate them).
+  await page.getByRole("radio", { name: /1인당 소재 시설 처리량/ }).check();
+  await expect(page.getByTestId("derived-metric-metadata")).toContainText(
+    "FACILITY_LOCATION_BASED_THROUGHPUT",
+    { timeout: 15_000 },
+  );
+
+  // The scale-method note states the logarithmic 9-class policy.
+  const scaleNote = page.getByTestId("choropleth-scale-method");
+  await expect(scaleNote).toBeVisible();
+  await expect(scaleNote).toContainText("로그 간격 9단계");
+  await expect(scaleNote).toContainText("9-class logarithmic intervals");
+
+  // The legend renders nine choropleth color rows (plus the separate no-data row).
+  const rows = page.getByTestId("choropleth-legend-row");
+  await expect(rows).toHaveCount(9);
+
+  // Labels are finite (never NaN/Infinity) and monotonically increasing. Each row
+  // is "< upper" | "lower – upper" | "≥ lower"; the leading numeric of each row's
+  // lower bound must strictly increase down the legend.
+  const labels = await rows.allInnerTexts();
+  expect(labels.join(" ")).not.toMatch(/NaN|Infinity/);
+  const lowerBounds = labels.map((label) => {
+    const cleaned = label.replace(/[<≥]/g, " ").split("–")[0].replace(/,/g, "").trim();
+    return Number(cleaned.split(/\s+/)[0] || "0");
+  });
+  for (let i = 1; i < lowerBounds.length; i += 1) {
+    expect(lowerBounds[i]).toBeGreaterThanOrEqual(lowerBounds[i - 1]);
+  }
+
+  // The top class is open-ended (the darkest shade), so the highest-burden region
+  // (인천 서구, 2,824) sits above the boundary that leaves 강남구 (520) below it.
+  expect(labels[0]).toContain("<");
+  expect(labels[labels.length - 1]).toContain("≥");
+
+  // The no-data class remains explicit and gray (unchanged behavior).
+  await expect(page.getByTestId("legend")).toContainText("데이터 없음");
+});
+
 test("suitability mode screens candidates with provenance and no government API calls", async ({
   page,
 }) => {

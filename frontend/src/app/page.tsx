@@ -49,7 +49,7 @@ import {
   type WasteStatisticsItem,
 } from "../lib/api";
 import {
-  CHOROPLETH_PALETTE,
+  CANDIDATE_SCORE_PALETTE_5,
   METRICS,
   NO_DATA_COLOR,
   computeBreaks,
@@ -57,6 +57,9 @@ import {
   formatLegendValue,
   formatQuantity,
   frequencyLabel,
+  resolveActiveScale,
+  scaleConfigForMetric,
+  scaleMethodNote,
   type MetricKey,
 } from "../lib/metrics";
 import type { RegionDisplayValue, StatusVisibility } from "../components/MapView";
@@ -312,9 +315,15 @@ export default function Home() {
     return { regionValues: values, unit: quantityUnit };
   }, [data, metric]);
 
-  const breaks = useMemo(
-    () => computeBreaks([...regionValues.values()].map((value) => value.numeric)),
-    [regionValues],
+  // One resolved scale (metric-aware method + palette + breaks) drives BOTH the
+  // MapLibre region fill and the legend below, so they can never disagree.
+  const activeScale = useMemo(
+    () =>
+      resolveActiveScale(
+        [...regionValues.values()].map((value) => value.numeric),
+        scaleConfigForMetric(metric),
+      ),
+    [regionValues, metric],
   );
 
   // The geometry the active metric renders on. Native metrics keep SGIS
@@ -364,12 +373,14 @@ export default function Home() {
     };
   }, [data, metric]);
 
+  // Suitability candidate scores keep their own unchanged 5-class quantile scale.
   const candidateBreaks = useMemo(
     () =>
       computeBreaks(
         (candidates?.features ?? [])
           .filter((f) => !f.properties.is_excluded)
           .map((f) => Number(f.properties.total_score ?? f.properties.provisional_score ?? 0)),
+        CANDIDATE_SCORE_PALETTE_5.length,
       ),
     [candidates],
   );
@@ -410,9 +421,11 @@ export default function Home() {
     );
   }
 
-  const legendRows = CHOROPLETH_PALETTE.slice(0, breaks.length + 1).map((color, index) => {
-    const lower = index === 0 ? null : breaks[index - 1];
-    const upper = index < breaks.length ? breaks[index] : null;
+  // Legend rows read the exact active palette + breaks the map fill uses, so the
+  // swatch count (effective classes) and colors always match the polygons.
+  const legendRows = activeScale.palette.map((color, index) => {
+    const lower = index === 0 ? null : activeScale.breaks[index - 1];
+    const upper = index < activeScale.breaks.length ? activeScale.breaks[index] : null;
     const label =
       lower === null
         ? `< ${upper === null ? "…" : formatLegendValue(upper)}`
@@ -484,9 +497,19 @@ export default function Home() {
               <h2 className="mb-2 text-sm font-semibold text-slate-800">
                 범례 (Legend){unit ? ` — ${unit}` : ""}
               </h2>
-              <ul className="flex flex-col gap-1">
+              <p
+                className="mb-2 text-[11px] text-slate-500"
+                data-testid="choropleth-scale-method"
+              >
+                {scaleMethodNote(activeScale)}
+              </p>
+              <ul className="flex flex-col gap-1" data-testid="choropleth-legend">
                 {legendRows.map((row) => (
-                  <li key={row.color} className="flex items-center gap-2 text-xs text-slate-600">
+                  <li
+                    key={row.color}
+                    className="flex items-center gap-2 text-xs text-slate-600"
+                    data-testid="choropleth-legend-row"
+                  >
                     <span
                       className="inline-block h-4 w-6 rounded-sm border border-slate-300"
                       style={{ backgroundColor: row.color }}
@@ -562,7 +585,8 @@ export default function Home() {
         <MapView
           boundaries={activeBoundaries}
           regionValues={regionValues}
-          breaks={breaks}
+          breaks={activeScale.breaks}
+          palette={activeScale.palette}
           metricLabel={metric.label}
           metricUnit={unit}
           facilities={data.facilities.items}
@@ -704,7 +728,7 @@ function SuitabilityPanel({
                 style={{
                   backgroundColor:
                     st === "ELIGIBLE"
-                      ? CHOROPLETH_PALETTE[3]
+                      ? CANDIDATE_SCORE_PALETTE_5[3]
                       : st === "REVIEW_REQUIRED"
                         ? "#e8a33d"
                         : "#9aa2ad",
