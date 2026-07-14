@@ -18,6 +18,10 @@ import {
   fetchDataSources,
   fetchFacilities,
   fetchFacilityBurden,
+  fetchLandfillComposition,
+  fetchLandfillFlows,
+  fetchLandfillSummary,
+  fetchLandfillTrends,
   fetchPopulation,
   fetchReportingBoundaries,
   fetchReportingPerCapita,
@@ -35,6 +39,11 @@ import {
   type EquityEnvelope,
   type FacilityBurdenEnvelope,
   type FacilityItem,
+  type LandfillComposition,
+  type LandfillFlows,
+  type LandfillOrigin,
+  type LandfillSummary,
+  type LandfillTrends,
   type PopulationItem,
   type RegionBoundaryCollection,
   type ReportingBoundaryCollection,
@@ -49,6 +58,12 @@ import {
   type WasteStatisticsItem,
 } from "../lib/api";
 import {
+  formatEffectiveFee,
+  formatKrwEok,
+  formatShare,
+  formatTons,
+} from "../lib/flow";
+import {
   CANDIDATE_SCORE_PALETTE_5,
   METRICS,
   NO_DATA_COLOR,
@@ -62,7 +77,7 @@ import {
   scaleMethodNote,
   type MetricKey,
 } from "../lib/metrics";
-import type { RegionDisplayValue, StatusVisibility } from "../components/MapView";
+import type { MapMode, RegionDisplayValue, StatusVisibility } from "../components/MapView";
 import { classifyEquityRaw, topCandidateCellLabel } from "../lib/suitability";
 
 const MapView = dynamic(() => import("../components/MapView"), { ssr: false });
@@ -106,8 +121,21 @@ export default function Home() {
   const [metricKey, setMetricKey] = useState<MetricKey>("population");
   const [showFacilities, setShowFacilities] = useState(true);
 
-  const [mode, setMode] = useState<"equity" | "suitability">("equity");
+  const [mode, setMode] = useState<MapMode>("equity");
   const [profile, setProfile] = useState<SuitabilityProfile>("baseline");
+
+  // Capital-region landfill flow (metropolitan → Sudokwon Landfill) state.
+  const [flowYear, setFlowYear] = useState<number | null>(null); // null = latest complete year
+  const [flowMonth, setFlowMonth] = useState<number | null>(null); // null = annual
+  const [flowOrigin, setFlowOrigin] = useState<LandfillOrigin | null>(null);
+  const [flowWaste, setFlowWaste] = useState<string | null>(null);
+  const [flowData, setFlowData] = useState<{
+    summary: LandfillSummary;
+    flows: LandfillFlows;
+    trends: LandfillTrends;
+    composition: LandfillComposition;
+  } | null>(null);
+  const [flowError, setFlowError] = useState<string | null>(null);
   const [suit, setSuit] = useState<SuitabilityMeta | null>(null);
   const [suitError, setSuitError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<SuitabilityCandidateCollection | null>(null);
@@ -228,6 +256,52 @@ export default function Home() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [mode, bbox, profile, suit]);
+
+  // Landfill flow data: (re)fetch summary + flows + trends + composition when
+  // entering flow mode or when a filter changes. flows/composition never take
+  // an origin filter (the map always resolves to metropolitan origins); the
+  // origin filter is applied to the summary and, client-side, to the map lines.
+  useEffect(() => {
+    if (mode !== "flow") return;
+    let cancelled = false;
+    const summaryQuery = {
+      year: flowYear,
+      month: flowMonth,
+      origin: flowOrigin,
+      wasteName: flowWaste,
+    };
+    const trendsQuery =
+      flowYear != null
+        ? {
+            startMonth: `${flowYear}-01`,
+            endMonth: `${flowYear}-12`,
+            origin: flowOrigin,
+            wasteName: flowWaste,
+          }
+        : { origin: flowOrigin, wasteName: flowWaste };
+    Promise.all([
+      fetchLandfillSummary(summaryQuery),
+      fetchLandfillFlows({ year: flowYear, month: flowMonth, wasteName: flowWaste }),
+      fetchLandfillTrends(trendsQuery),
+      fetchLandfillComposition({ year: flowYear, origin: flowOrigin }),
+    ])
+      .then(([summary, flows, trends, composition]) => {
+        if (cancelled) return;
+        setFlowData({ summary, flows, trends, composition });
+        setFlowError(null);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setFlowError(
+          cause instanceof ApiError
+            ? cause.message
+            : "수도권매립지 데이터를 불러올 수 없습니다 (landfill data unavailable).",
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, flowYear, flowMonth, flowOrigin, flowWaste]);
 
   const retry = useCallback(() => {
     setError(null);
@@ -389,6 +463,19 @@ export default function Home() {
   const sourceInfo = useSourceInfo(data, metric);
   const facilitySummary = useFacilitySummary(data);
 
+  // Flows for the map: filtered client-side to the selected origin so the map
+  // and the KPI cards agree. Never adds a municipal line (only the ≤3 source
+  // metropolitan origins can appear).
+  const mapFlows = useMemo<LandfillFlows | null>(() => {
+    if (mode !== "flow" || !flowData) return null;
+    const flows = flowData.flows;
+    if (flowOrigin == null) return flows;
+    return {
+      ...flows,
+      flows: flows.flows.filter((flow) => flow.origin_sgis_code === flowOrigin),
+    };
+  }, [mode, flowData, flowOrigin]);
+
   if (error !== null) {
     return (
       <main className="flex h-screen items-center justify-center bg-slate-100 p-8">
@@ -447,7 +534,7 @@ export default function Home() {
 
         <section aria-label="모드 선택">
           <h2 className="mb-2 text-sm font-semibold text-slate-800">모드 (Mode)</h2>
-          <div className="flex gap-1" role="radiogroup" data-testid="mode-switch">
+          <div className="flex flex-wrap gap-1" role="radiogroup" data-testid="mode-switch">
             <button
               type="button"
               aria-pressed={mode === "equity"}
@@ -464,6 +551,15 @@ export default function Home() {
               data-testid="mode-suitability"
             >
               적합성 (Suitability)
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === "flow"}
+              onClick={() => setMode("flow")}
+              className={`rounded px-3 py-1 text-sm ${mode === "flow" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"}`}
+              data-testid="mode-flow"
+            >
+              수도권매립지 이동
             </button>
           </div>
         </section>
@@ -579,6 +675,21 @@ export default function Home() {
             onSelect={onCandidateClick}
           />
         )}
+
+        {mode === "flow" && (
+          <FlowPanel
+            flowData={flowData}
+            flowError={flowError}
+            year={flowYear}
+            setYear={setFlowYear}
+            month={flowMonth}
+            setMonth={setFlowMonth}
+            origin={flowOrigin}
+            setOrigin={setFlowOrigin}
+            waste={flowWaste}
+            setWaste={setFlowWaste}
+          />
+        )}
       </aside>
 
       <div className="min-w-0 flex-1">
@@ -592,6 +703,7 @@ export default function Home() {
           facilities={data.facilities.items}
           showFacilities={showFacilities}
           mode={mode}
+          flows={mapFlows}
           candidates={candidates}
           candidateBreaks={candidateBreaks}
           statusVisibility={statusVisibility}
@@ -1300,4 +1412,493 @@ function useFacilitySummary(data: LoadedData | null): FacilitySummary | null {
       frequency: registry ? frequencyLabel(registry.publication_frequency) : "UNKNOWN",
     };
   }, [data]);
+}
+
+// --------------------------------------------------------------------------- //
+// Capital-region Sudokwon Landfill flow panel (서울·인천·경기 → 수도권매립지)
+// --------------------------------------------------------------------------- //
+
+const FLOW_ORIGIN_OPTIONS: { code: LandfillOrigin; label: string }[] = [
+  { code: "11", label: "서울시 (Seoul)" },
+  { code: "28", label: "인천시 (Incheon)" },
+  { code: "41", label: "경기도 (Gyeonggi)" },
+];
+
+function FlowPanel({
+  flowData,
+  flowError,
+  year,
+  setYear,
+  month,
+  setMonth,
+  origin,
+  setOrigin,
+  waste,
+  setWaste,
+}: {
+  flowData: {
+    summary: LandfillSummary;
+    flows: LandfillFlows;
+    trends: LandfillTrends;
+    composition: LandfillComposition;
+  } | null;
+  flowError: string | null;
+  year: number | null;
+  setYear: (y: number | null) => void;
+  month: number | null;
+  setMonth: (m: number | null) => void;
+  origin: LandfillOrigin | null;
+  setOrigin: (o: LandfillOrigin | null) => void;
+  waste: string | null;
+  setWaste: (w: string | null) => void;
+}) {
+  const period = flowData?.summary.period ?? null;
+  const availableYears = period?.available_years ?? [];
+  const maxMonth =
+    period == null
+      ? 12
+      : period.is_complete_year || period.available_through_month == null
+        ? 12
+        : Number(period.available_through_month.slice(5, 7));
+  const wasteOptions = flowData?.composition.waste_types.map((w) => w.waste_name) ?? [];
+
+  return (
+    <section
+      aria-label="수도권매립지 이동"
+      className="flex flex-col gap-4"
+      data-testid="flow-panel"
+    >
+      <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+        <h2 className="mb-1 text-sm font-semibold text-slate-800">
+          수도권매립지 이동 (Metropolitan → Sudokwon Landfill)
+        </h2>
+        <p className="font-medium text-amber-800" data-testid="flow-caveat">
+          수도권매립지관리공사가 서울시·경기도·인천시 단위로 보고한 반입 자료입니다. 시·군·구별
+          반입량을 의미하지 않습니다.
+        </p>
+        <p className="mt-1 text-slate-600">
+          출발지는 광역지자체(시·도) 단위이며, 목적지는 수도권매립지 한 곳입니다.
+        </p>
+      </div>
+
+      <FlowFilters
+        availableYears={availableYears}
+        year={year}
+        setYear={setYear}
+        month={month}
+        setMonth={setMonth}
+        maxMonth={maxMonth}
+        origin={origin}
+        setOrigin={setOrigin}
+        waste={waste}
+        setWaste={setWaste}
+        wasteOptions={wasteOptions}
+      />
+
+      {flowError && (
+        <section
+          className="rounded border border-red-300 bg-red-50 p-3 text-sm text-slate-700"
+          data-testid="flow-error"
+        >
+          {flowError}
+        </section>
+      )}
+
+      {flowData == null && flowError == null && (
+        <p className="text-sm text-slate-600" data-testid="flow-loading">
+          공식 반입 데이터를 불러오는 중… (Loading official inbound data…)
+        </p>
+      )}
+
+      {flowData && <FlowBody flowData={flowData} origin={origin} />}
+    </section>
+  );
+}
+
+function FlowFilters({
+  availableYears,
+  year,
+  setYear,
+  month,
+  setMonth,
+  maxMonth,
+  origin,
+  setOrigin,
+  waste,
+  setWaste,
+  wasteOptions,
+}: {
+  availableYears: number[];
+  year: number | null;
+  setYear: (y: number | null) => void;
+  month: number | null;
+  setMonth: (m: number | null) => void;
+  maxMonth: number;
+  origin: LandfillOrigin | null;
+  setOrigin: (o: LandfillOrigin | null) => void;
+  waste: string | null;
+  setWaste: (w: string | null) => void;
+  wasteOptions: string[];
+}) {
+  const selectClass =
+    "w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700";
+  return (
+    <section aria-label="필터" data-testid="flow-filters" className="flex flex-col gap-2">
+      <h2 className="text-sm font-semibold text-slate-800">필터 (Filters)</h2>
+      <label className="text-xs text-slate-600">
+        연도 (Year)
+        <select
+          className={selectClass}
+          data-testid="flow-year-select"
+          value={year ?? ""}
+          onChange={(event) => {
+            setYear(event.target.value === "" ? null : Number(event.target.value));
+            setMonth(null);
+          }}
+        >
+          <option value="">최신 완결연도 (latest complete)</option>
+          {[...availableYears].reverse().map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="text-xs text-slate-600">
+        월/연간 (Month / annual)
+        <select
+          className={selectClass}
+          data-testid="flow-month-select"
+          value={month ?? ""}
+          onChange={(event) => setMonth(event.target.value === "" ? null : Number(event.target.value))}
+        >
+          <option value="">연간 (annual)</option>
+          {Array.from({ length: maxMonth }, (_, index) => index + 1).map((m) => (
+            <option key={m} value={m}>
+              {m}월
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="text-xs text-slate-600">
+        출발 광역 (Origin)
+        <select
+          className={selectClass}
+          data-testid="flow-origin-select"
+          value={origin ?? ""}
+          onChange={(event) =>
+            setOrigin(event.target.value === "" ? null : (event.target.value as LandfillOrigin))
+          }
+        >
+          <option value="">전체 (all)</option>
+          {FLOW_ORIGIN_OPTIONS.map((option) => (
+            <option key={option.code} value={option.code}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="text-xs text-slate-600">
+        폐기물 종류 (Waste type)
+        <select
+          className={selectClass}
+          data-testid="flow-waste-select"
+          value={waste ?? ""}
+          onChange={(event) => setWaste(event.target.value === "" ? null : event.target.value)}
+        >
+          <option value="">전체 (all)</option>
+          {wasteOptions.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </label>
+    </section>
+  );
+}
+
+function FlowBody({
+  flowData,
+  origin,
+}: {
+  flowData: {
+    summary: LandfillSummary;
+    flows: LandfillFlows;
+    trends: LandfillTrends;
+    composition: LandfillComposition;
+  };
+  origin: LandfillOrigin | null;
+}) {
+  const { summary, flows, trends, composition } = flowData;
+  // The /flows endpoint always returns every metropolitan origin; when an origin
+  // filter is active, narrow the list so it agrees with the KPIs and the map.
+  const shownFlows =
+    origin == null ? flows.flows : flows.flows.filter((flow) => flow.origin_sgis_code === origin);
+  const period = summary.period;
+  const periodLabel = `${period.year}년${period.month ? ` ${Number(period.month.slice(5, 7))}월` : " 연간"}`;
+  const originMax = Math.max(1, ...summary.origin_shares.map((o) => Number(o.quantity_tons)));
+  const wasteRows = composition.waste_types.slice(0, 8);
+  const wasteMax = Math.max(1, ...wasteRows.map((w) => Number(w.quantity_tons)));
+
+  return (
+    <>
+      <p className="text-xs text-slate-500">
+        기준 기간: <span className="font-medium text-slate-700">{periodLabel}</span>
+        {!period.is_complete_year && (
+          <span data-testid="flow-partial-year" className="ml-1 text-amber-700">
+            · 부분 연도 ({period.available_through_month ?? "?"}까지)
+          </span>
+        )}
+      </p>
+
+      <section aria-label="핵심 지표" data-testid="flow-kpis" className="grid grid-cols-2 gap-2">
+        <FlowKpi
+          testId="flow-kpi-quantity"
+          label="총 반입량 (inbound)"
+          value={formatTons(summary.total_quantity_kg)}
+        />
+        <FlowKpi
+          testId="flow-kpi-fee"
+          label="공식 반입수수료 (fee)"
+          value={formatKrwEok(summary.total_inbound_fee_krw)}
+        />
+        <FlowKpi
+          testId="flow-kpi-effective-fee"
+          label="톤당 실효 수수료 (derived)"
+          value={formatEffectiveFee(summary.effective_fee_per_ton)}
+        />
+        <FlowKpi
+          testId="flow-kpi-largest-origin"
+          label="최대 출발지 비중"
+          value={
+            summary.largest_origin_share
+              ? `${summary.largest_origin_share.origin_name} ${formatShare(summary.largest_origin_share.quantity_share)}`
+              : "—"
+          }
+        />
+        <FlowKpi
+          testId="flow-kpi-largest-waste"
+          label="최대 폐기물 비중"
+          value={
+            summary.largest_waste_share
+              ? `${summary.largest_waste_share.waste_name} ${formatShare(summary.largest_waste_share.quantity_share)}`
+              : "—"
+          }
+        />
+      </section>
+
+      <section aria-label="이동 흐름" data-testid="flow-list" className="flex flex-col gap-1">
+        <h2 className="text-sm font-semibold text-slate-800">이동 (Flows)</h2>
+        {shownFlows.length === 0 ? (
+          <p className="text-xs text-slate-500">해당 기간의 반입 자료가 없습니다.</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {shownFlows.map((flow) => (
+              <li
+                key={flow.origin_region_code}
+                className="rounded bg-slate-50 px-2 py-1 text-xs text-slate-700"
+              >
+                <span className="font-medium">{flow.origin_name}</span> ▶ 수도권매립지 ·{" "}
+                {formatTons(flow.quantity_kg)} ({formatShare(flow.quantity_share)}) ·{" "}
+                {formatKrwEok(flow.inbound_fee_krw)}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-[11px] text-slate-400">
+          직선은 개략적 이동 방향이며 실제 운송 경로가 아닙니다.
+        </p>
+      </section>
+
+      <FlowMiniBars
+        title="월별 반입량 (monthly inbound)"
+        testId="flow-trend-quantity"
+        points={trends.points}
+        pick={(point) => Number(point.quantity_tons)}
+        format={(value) => `${Math.round(value).toLocaleString("en-US")} t`}
+        color="#0d9488"
+      />
+      <FlowMiniBars
+        title="월별 반입수수료 (monthly fee)"
+        testId="flow-trend-fee"
+        points={trends.points}
+        pick={(point) => Number(point.inbound_fee_krw) / 100_000_000}
+        format={(value) => `${value.toFixed(1)}억원`}
+        color="#2563eb"
+      />
+
+      <FlowBarList
+        title="출발지 비교 (origin comparison)"
+        testId="flow-origin-comparison"
+        rows={summary.origin_shares.map((share) => ({
+          key: share.origin_region_code,
+          label: share.origin_name,
+          ratio: Number(share.quantity_tons) / originMax,
+          display: `${formatTons(share.quantity_kg)} · ${formatShare(share.quantity_share)}`,
+        }))}
+      />
+      <FlowBarList
+        title="폐기물 구성 (waste composition)"
+        testId="flow-waste-composition"
+        rows={wasteRows.map((share) => ({
+          key: share.waste_name,
+          label: share.waste_name,
+          ratio: Number(share.quantity_tons) / wasteMax,
+          display: `${formatTons(share.quantity_kg)} · ${formatShare(share.quantity_share)}`,
+        }))}
+      />
+
+      <FlowEvidence summary={summary} destinationProvenance={flows.destination.coordinate_provenance} />
+    </>
+  );
+}
+
+function FlowKpi({ testId, label, value }: { testId: string; label: string; value: string }) {
+  return (
+    <div className="rounded border border-slate-200 bg-slate-50 p-2" data-testid={testId}>
+      <p className="text-[11px] text-slate-500">{label}</p>
+      <p className="text-sm font-semibold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function FlowBarList({
+  title,
+  testId,
+  rows,
+}: {
+  title: string;
+  testId: string;
+  rows: { key: string; label: string; ratio: number; display: string }[];
+}) {
+  return (
+    <section aria-label={title} data-testid={testId}>
+      <h2 className="mb-2 text-sm font-semibold text-slate-800">{title}</h2>
+      <ul className="flex flex-col gap-1.5">
+        {rows.map((row) => (
+          <li key={row.key}>
+            <div className="flex justify-between text-xs text-slate-600">
+              <span className="truncate">{row.label}</span>
+              <span className="ml-2 shrink-0 text-slate-500">{row.display}</span>
+            </div>
+            <div className="mt-0.5 h-2 rounded bg-slate-100">
+              <div
+                className="h-2 rounded bg-teal-500"
+                style={{ width: `${Math.max(2, Math.min(100, row.ratio * 100))}%` }}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function FlowMiniBars({
+  title,
+  testId,
+  points,
+  pick,
+  format,
+  color,
+}: {
+  title: string;
+  testId: string;
+  points: LandfillTrends["points"];
+  pick: (point: LandfillTrends["points"][number]) => number;
+  format: (value: number) => string;
+  color: string;
+}) {
+  const width = 240;
+  const height = 56;
+  const count = points.length || 1;
+  const barWidth = width / count;
+  const max = Math.max(1, ...points.map(pick));
+  return (
+    <section aria-label={title} data-testid={testId}>
+      <h2 className="mb-1 text-sm font-semibold text-slate-800">{title}</h2>
+      {points.length === 0 ? (
+        <p className="text-xs text-slate-500">해당 기간 데이터 없음</p>
+      ) : (
+        <>
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="w-full"
+            role="img"
+            aria-label={title}
+            preserveAspectRatio="none"
+          >
+            {points.map((point, index) => {
+              const value = pick(point);
+              const barHeight = (value / max) * (height - 2);
+              return (
+                <rect
+                  key={point.reference_month}
+                  x={index * barWidth + 0.5}
+                  y={height - barHeight}
+                  width={Math.max(1, barWidth - 1)}
+                  height={barHeight}
+                  fill={color}
+                >
+                  <title>{`${point.reference_month}: ${format(value)}`}</title>
+                </rect>
+              );
+            })}
+          </svg>
+          <p className="text-[11px] text-slate-400">
+            최대 {format(max)} · {points.length}개월
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function FlowEvidence({
+  summary,
+  destinationProvenance,
+}: {
+  summary: LandfillSummary;
+  destinationProvenance: string;
+}) {
+  return (
+    <section
+      aria-label="근거 및 주의"
+      className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"
+      data-testid="flow-evidence"
+    >
+      <h2 className="mb-1 text-sm font-semibold text-slate-800">근거 (Evidence)</h2>
+      <p className="font-medium text-slate-700">공식 보고값 (OFFICIAL_REPORTED_VALUE)</p>
+      <ul className="list-disc pl-4">
+        <li>반입량 (inbound quantity)</li>
+        <li>반입수수료 (inbound fee)</li>
+      </ul>
+      <p className="mt-1 font-medium text-slate-700">공식자료 기반 계산 (OFFICIAL_INPUTS_DERIVED_VALUE)</p>
+      <ul className="list-disc pl-4">
+        <li>월·연 집계 (monthly/annual totals)</li>
+        <li>비중 (shares)</li>
+        <li>톤당 실효 수수료 (effective fee per tonne)</li>
+      </ul>
+      <dl className="mt-2 space-y-1">
+        {summary.sources.map((source) => (
+          <div key={source.dataset_id}>
+            <dt className="inline font-medium">출처 {source.dataset_id}: </dt>
+            <dd className="inline">
+              {source.official_dataset_name} · 스냅샷{" "}
+              <span data-testid="reference-period">{source.snapshot_date ?? "—"}</span>
+            </dd>
+          </div>
+        ))}
+        <div>
+          <dt className="inline font-medium">집계 기준: </dt>
+          <dd className="inline">{summary.accounting_basis}</dd>
+        </div>
+      </dl>
+      <p className="mt-2 font-medium text-amber-800" data-testid="flow-fee-caveat">
+        반입수수료는 공식 보고된 금액이며 순수 운송비 또는 전체 폐기물 관리비가 아닙니다.
+      </p>
+      <p className="mt-1 text-[11px] text-slate-500">{destinationProvenance}</p>
+    </section>
+  );
 }
