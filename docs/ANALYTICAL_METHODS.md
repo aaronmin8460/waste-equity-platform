@@ -102,15 +102,41 @@ this registry in the same change.
   work is set-based PostGIS (`ST_SquareGrid`, GiST nearest-road KNN, bounding-box
   viewport queries); a full build is ~6 minutes.
 
+### LANDFILL_EFFECTIVE_FEE_PER_TONNE (`landfill-effective-fee-v1`) — V2 Phase 1
+
+- Endpoints: `GET /api/v1/landfill/*` (summary, trends, composition, flows).
+- Formula: `inbound_fee_krw ÷ (quantity_kg ÷ 1000)`, served in `KRW/톤`, exact
+  `Decimal` (`ROUND_HALF_EVEN`, 2 dp). Returns `null` when quantity is zero.
+- Inputs are two **official reported values** on one 1:1-joined row of
+  `landfill_inbound_monthly`: inbound quantity (`OFFICIAL_REPORTED_VALUE`,
+  odcloud `15064381`, kg) and inbound fee (`OFFICIAL_REPORTED_VALUE`, odcloud
+  `15064394`, KRW). The ratio, plus monthly/annual totals and origin/waste
+  shares, are `OFFICIAL_INPUTS_DERIVED_VALUE`.
+- Accounting basis: `VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW` — a
+  verified metropolitan-origin → single-destination inbound flow (the only
+  source-declared origin→destination flow the platform ingests). It is **never**
+  merged with the two bases below.
+- Availability: the default reporting period is the latest complete year (12
+  present months), derived from stored data, never hardcoded; a partial year is
+  labelled `is_complete_year=false` with `available_through_month`.
+- Caveats (served): origin is metropolitan-only (서울시/인천시/경기도), never
+  disaggregated to a city/district; `반입수수료` is a reported inbound fee, not
+  transport-only cost or total waste-management cost. Full method:
+  `docs/CAPITAL_REGION_LANDFILL_FLOW_IMPLEMENTATION.md`.
+
 ## Accounting Bases Are Never Merged
 
 `ORIGIN_BASED_TREATMENT_OUTCOME` (how a region's own generated waste was
-treated) and `FACILITY_LOCATION_BASED_THROUGHPUT` (what facilities located in
-a region processed) answer different questions. They live on separate
-endpoints, are labeled per item, and must never be summed, differenced, or
-ratioed against each other. Waste origin-to-destination movement is not
-inferred from them; it may only ever come from a source that explicitly
-provides it (none is ingested).
+treated), `FACILITY_LOCATION_BASED_THROUGHPUT` (what facilities located in
+a region processed), and `VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW`
+(official metropolitan → Sudokwon Landfill inbound flow) answer different
+questions. They live on separate endpoints, are labeled per item, and must never
+be summed, differenced, or ratioed against each other. In particular, landfill
+inbound values are never combined with RCIS municipal generation to claim a
+municipal dependency ratio. Waste origin-to-destination movement is inferred from
+none of them; it only ever comes from a source that explicitly provides it — the
+capital-region landfill inbound datasets (`15064381`/`15064394`) are the sole such
+source ingested, and they are metropolitan-only.
 
 ## Spatial Methods
 
