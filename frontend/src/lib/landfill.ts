@@ -1,16 +1,14 @@
 /**
- * Pure helpers for the capital-region Sudokwon Landfill flow view.
+ * Pure helpers for the capital-region Sudokwon Landfill dashboard.
  *
- * Builds schematic straight-line GeoJSON (metropolitan origin → single
- * destination) and formats official values. These are the only three
- * origins the source declares (Seoul/Incheon/Gyeonggi); no municipal or
- * district line is ever produced here. No network or MapLibre access.
+ * Formats the official reported values and the two derived indicators, and maps
+ * the backend's per-capita unavailability vocabulary to user-facing Korean.
+ *
+ * No GeoJSON and no MapLibre access: the 수도권매립지 mode is a data dashboard,
+ * not a map. The source reports metropolitan (시·도) totals only, so there is no
+ * municipal origin-to-destination route to draw, and the previous schematic
+ * straight-line flow has been removed rather than implying one exists.
  */
-
-import type { LandfillDestinationNode, LandfillFlow } from "./api";
-
-export const MIN_LINE_WIDTH = 3;
-export const MAX_LINE_WIDTH = 18;
 
 export function kgToTons(kg: string | number): number {
   const value = typeof kg === "string" ? Number(kg) : kg;
@@ -39,83 +37,41 @@ export function formatEffectiveFee(fee: string | null): string {
   return `${Math.round(Number(fee)).toLocaleString("en-US")} 원/t`;
 }
 
-/** Line width scaled linearly by official inbound quantity (never below MIN). */
-export function lineWidthForQuantity(quantityKg: number, maxKg: number): number {
-  if (maxKg <= 0) return MIN_LINE_WIDTH;
-  const ratio = Math.max(0, Math.min(1, quantityKg / maxKg));
-  return MIN_LINE_WIDTH + ratio * (MAX_LINE_WIDTH - MIN_LINE_WIDTH);
+/**
+ * Format the derived inbound fee per resident (KRW/인).
+ *
+ * Never renders an unavailable value as `0원`: a missing denominator is not a
+ * zero fee. Callers must show the served `unavailable_reason` instead — the em
+ * dash here is only a defensive fallback.
+ */
+export function formatKrwPerPerson(fee: string | null): string {
+  if (fee == null) return "—";
+  const value = Number(fee);
+  // A sub-1원 monthly value would otherwise collapse to "0원/인"; keep two
+  // decimals below 1 so a real small value is never displayed as zero.
+  const digits = value !== 0 && Math.abs(value) < 1 ? 2 : 0;
+  return `${value.toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}원/인`;
 }
 
-export interface FlowLineProperties {
-  origin_region_code: string;
-  origin_sgis_code: string;
-  origin_name: string;
-  quantity_kg: number;
-  quantity_tons: number;
-  inbound_fee_krw: number;
-  quantity_share: number | null;
-  width: number;
-}
+/**
+ * User-facing Korean for a served per-capita unavailability reason.
+ *
+ * The vocabulary is defined by the backend derivation; an unrecognised code
+ * degrades to an honest "계산 불가" that still surfaces the raw code, rather
+ * than being hidden or shown as a number.
+ */
+const PER_CAPITA_REASON_LABELS: Record<string, string> = {
+  NO_MATCHING_POPULATION_YEAR: "동일 연도 인구 데이터 없음",
+  NO_METROPOLITAN_POPULATION: "해당 광역지자체 인구 데이터 없음",
+  ZERO_POPULATION: "인구 데이터 확인 필요 (인구 0)",
+  AMBIGUOUS_POPULATION_DEFINITION: "인구 정의가 모호하여 계산 불가",
+  INCOMPLETE_POPULATION_COVERAGE: "일부 출발지의 동일 연도 인구 없음 — 합계 계산 불가",
+};
 
-/** Schematic origin→destination LineString features, width by official quantity. */
-export function buildFlowFeatures(
-  flows: LandfillFlow[],
-): GeoJSON.FeatureCollection<GeoJSON.LineString, FlowLineProperties> {
-  const maxKg = flows.reduce((max, flow) => Math.max(max, Number(flow.quantity_kg)), 0);
-  return {
-    type: "FeatureCollection",
-    features: flows.map((flow) => {
-      const quantityKg = Number(flow.quantity_kg);
-      return {
-        type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates: [
-            [flow.origin_point.lon, flow.origin_point.lat],
-            [flow.destination_point.lon, flow.destination_point.lat],
-          ],
-        },
-        properties: {
-          origin_region_code: flow.origin_region_code,
-          origin_sgis_code: flow.origin_sgis_code,
-          origin_name: flow.origin_name,
-          quantity_kg: quantityKg,
-          quantity_tons: kgToTons(quantityKg),
-          inbound_fee_krw: Number(flow.inbound_fee_krw),
-          quantity_share: flow.quantity_share == null ? null : Number(flow.quantity_share),
-          width: lineWidthForQuantity(quantityKg, maxKg),
-        },
-      };
-    }),
-  };
-}
-
-export interface FlowNodeProperties {
-  kind: "origin" | "destination";
-  code: string;
-  name: string;
-  quantity_kg: number | null;
-}
-
-/** Point features for the three metropolitan origin nodes + the destination. */
-export function buildNodeFeatures(
-  flows: LandfillFlow[],
-  destination: LandfillDestinationNode,
-): GeoJSON.FeatureCollection<GeoJSON.Point, FlowNodeProperties> {
-  const originFeatures: GeoJSON.Feature<GeoJSON.Point, FlowNodeProperties>[] = flows.map((flow) => ({
-    type: "Feature",
-    geometry: { type: "Point", coordinates: [flow.origin_point.lon, flow.origin_point.lat] },
-    properties: {
-      kind: "origin",
-      code: flow.origin_region_code,
-      name: flow.origin_name,
-      quantity_kg: Number(flow.quantity_kg),
-    },
-  }));
-  const destinationFeature: GeoJSON.Feature<GeoJSON.Point, FlowNodeProperties> = {
-    type: "Feature",
-    geometry: { type: "Point", coordinates: [destination.point.lon, destination.point.lat] },
-    properties: { kind: "destination", code: destination.code, name: destination.name, quantity_kg: null },
-  };
-  return { type: "FeatureCollection", features: [...originFeatures, destinationFeature] };
+export function perCapitaUnavailableLabel(reason: string | null): string {
+  if (reason == null) return "계산 불가";
+  return PER_CAPITA_REASON_LABELS[reason] ?? `계산 불가 (${reason})`;
 }

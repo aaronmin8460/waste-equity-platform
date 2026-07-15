@@ -623,11 +623,6 @@ export function fetchSuitabilityCandidateDetail(
 
 export type LandfillOrigin = "11" | "28" | "41";
 
-export interface LandfillPoint {
-  lon: number;
-  lat: number;
-}
-
 export interface LandfillSourceRef {
   dataset_id: string;
   official_dataset_name: string;
@@ -651,6 +646,36 @@ export interface LandfillPeriod {
   available_years: number[];
 }
 
+/**
+ * Derived inbound fee per resident (LANDFILL_INBOUND_FEE_PER_CAPITA).
+ *
+ * `fee_per_capita_krw` and `unavailable_reason` are mutually exclusive: a value
+ * is served only when an official population of the SAME reference year as the
+ * fee exists. Null is never rendered as 0원 — show the reason instead. The value
+ * is an analytical conversion, never an amount a resident actually paid.
+ */
+export interface LandfillFeePerCapita {
+  indicator: string;
+  fee_per_capita_krw: string | null;
+  unit: string;
+  derivation_version: string;
+  derivation_formula: string;
+  evidence_status: string;
+  inbound_fee_krw: string;
+  fee_reference_year: number;
+  fee_reference_period: string;
+  population: number | null;
+  population_reference_year: number | null;
+  population_reference_period: string | null;
+  population_definition: string | null;
+  population_source_id: string | null;
+  population_region_level: string | null;
+  population_unit: string | null;
+  included_origin_region_codes: string[];
+  unavailable_reason: string | null;
+  caveat: string;
+}
+
 export interface LandfillOriginShare {
   origin_region_code: string;
   origin_sgis_code: string;
@@ -661,6 +686,7 @@ export interface LandfillOriginShare {
   inbound_fee_krw: string;
   quantity_share: string | null;
   effective_fee_per_ton: string | null;
+  fee_per_capita: LandfillFeePerCapita;
 }
 
 export interface LandfillWasteShare {
@@ -683,6 +709,8 @@ export interface LandfillSummary {
   total_quantity_tons: string;
   total_inbound_fee_krw: string;
   effective_fee_per_ton: string | null;
+  /** Σ fee ÷ Σ same-year population over the origins in scope; never a mean. */
+  fee_per_capita: LandfillFeePerCapita;
   largest_origin_share: LandfillOriginShare | null;
   largest_waste_share: LandfillWasteShare | null;
   origin_shares: LandfillOriginShare[];
@@ -730,49 +758,6 @@ export interface LandfillComposition {
   caveats: string[];
 }
 
-export interface LandfillFlow {
-  origin_region_code: string;
-  origin_sgis_code: string;
-  origin_name: string;
-  origin_name_en: string;
-  origin_point: LandfillPoint;
-  destination_code: string;
-  destination_name: string;
-  destination_name_en: string;
-  destination_point: LandfillPoint;
-  quantity_kg: string;
-  quantity_tons: string;
-  inbound_fee_krw: string;
-  quantity_share: string | null;
-  effective_fee_per_ton: string | null;
-  evidence_status: string;
-}
-
-export interface LandfillDestinationNode {
-  code: string;
-  name: string;
-  name_en: string;
-  point: LandfillPoint;
-  coordinate_provenance: string;
-}
-
-export interface LandfillFlows {
-  period: LandfillPeriod;
-  waste_filter: string | null;
-  origin_level: string;
-  origin_level_label: string;
-  total_quantity_kg: string;
-  total_quantity_tons: string;
-  total_inbound_fee_krw: string;
-  accounting_basis: string;
-  flows: LandfillFlow[];
-  destination: LandfillDestinationNode;
-  evidence: LandfillEvidence;
-  sources: LandfillSourceRef[];
-  derivation_version: string;
-  caveats: string[];
-}
-
 export interface LandfillQuery {
   year?: number | null;
   month?: number | null;
@@ -800,13 +785,11 @@ export function fetchLandfillComposition(query: LandfillQuery = {}): Promise<Lan
   return fetchJson<LandfillComposition>(`/api/v1/landfill/composition?${params.toString()}`);
 }
 
-export function fetchLandfillFlows(query: LandfillQuery = {}): Promise<LandfillFlows> {
-  const params = new URLSearchParams();
-  if (query.year != null) params.set("year", String(query.year));
-  if (query.month != null) params.set("month", String(query.month));
-  if (query.wasteName != null && query.wasteName !== "") params.set("waste_name", query.wasteName);
-  return fetchJson<LandfillFlows>(`/api/v1/landfill/flows?${params.toString()}`);
-}
+// NOTE: `GET /api/v1/landfill/flows` is still served (read-only) but has no
+// client here. It returns schematic representative coordinates that existed only
+// to draw the straight-line flow map, which V2 Phase 2 removed — the source
+// declares no municipal origin and no route. Do not reintroduce a client for it
+// to draw a map; see docs/CAPITAL_REGION_LANDFILL_FLOW_IMPLEMENTATION.md §7.
 
 export interface LandfillTrendsQuery {
   startMonth?: string | null;
