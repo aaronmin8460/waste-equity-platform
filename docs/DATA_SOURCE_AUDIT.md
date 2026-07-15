@@ -16,6 +16,7 @@ This audit uses only official primary documentation from the required source fam
 | SGIS population and administrative boundary APIs | Feasible | LIVE_VERIFIED | Seoul district-level population probe returned 25 records; other regions and boundary endpoint still need live probes. |
 | AirKorea real-time air-quality and station APIs | Feasible | CREDENTIAL_MISSING | Real-time observations are contextual and must not be used as permanent siting evidence. |
 | Korea Meteorological Administration short-term forecast API | Feasible | CREDENTIAL_MISSING | Candidate sites must be converted to KMA forecast grid coordinates, and one request covers one grid/time query. |
+| MOIS resident-registration population (행정동별 주민등록 인구 및 세대현황) | Feasible | LIVE_VERIFIED (2026-07-15): 2008-01 → 2026-06, 222/222 months, all three capital-region 시도, 0 rejected | No documented OpenAPI for this dataset (the two data.go.kr APIs MOIS links are 도로명별 and 인구이동, not this series), so acquisition uses the official site's own CSV endpoint behind a validating adapter; the total-population definition changed at 2010-10 and 2015-01, so the series is not comparable end-to-end; unpublished months return zeros rather than an error; no 공공누리 badge is published for the download. |
 | VWorld spatial-data services | Feasible with licensing review | LIVE_VERIFIED | Cadastral, geocoder, and (Phase 2.5A) 16 structural layers live-verified; storage-consent/NC-ND licensing conflict and bulk-download reproducibility remain (see `VWORLD_STRUCTURAL_LAYER_AUDIT.md`). |
 
 ## Official References
@@ -251,6 +252,48 @@ licensing conflicts, and the CONDITIONAL_GO recommendation are in
 in `docs/SUITABILITY_DATA_REQUIREMENTS.md`. Remaining issues: per-dataset
 storage/derivative licensing resolution, reproducible bulk-download workflow,
 full-coverage completeness validation, and ownership-field completeness.
+
+## MOIS Resident-Registration Population
+
+- **Publisher / statistic:** 행정안전부 (Ministry of the Interior and Safety),
+  주민등록 인구통계.
+- **Dataset:** 행정동별 주민등록 인구 및 세대현황 — page title verified live at
+  https://jumin.mois.go.kr/statMonth.do (2026-07-15).
+- **Acquisition:** no documented OpenAPI exists for this dataset. The two
+  data.go.kr OpenAPIs linked from the MOIS site are different datasets
+  (`15108092` 도로명별 주민등록 인구 및 세대현황; `15108093` 지역별 인구이동 현황),
+  neither carrying the 행정동별 monthly series back to 2008. Acquisition therefore
+  uses the official site's own CSV download —
+  `POST /downloadCsv.do?searchYearMonth=month&xlsStats=1` — discovered by reading
+  the official page's own `#formXlsDown` form, never by scraping a rendered table
+  or a mirror. Because the endpoint is official but **undocumented**, it is
+  isolated behind a validating adapter
+  (`ingestion/src/waste_equity_ingestion/mois_population_contract.py`) that
+  re-checks the header, codes, and names of every response.
+- **Format:** CSV, **cp949**, wide (one six-column block per month); the
+  `행정구역` field embeds the 10-digit code (`"서울특별시  (1100000000)"`).
+- **Definition:** `전체 = 거주자 + 거주불명자 + 재외국민`, 외국인 제외 — verified
+  arithmetically against the source (서울 2026-06: 9,224,532 + 32,865 + 32,416 =
+  9,289,813 = the 전체 value). Month-end values.
+- **Coverage (live-verified 2026-07-15):** 2008-01 → **2026-06**, **222/222**
+  months complete for 서울특별시/인천광역시/경기도, 0 rejected, SHA-256
+  `6f5dd47c…fa2e`.
+- **Risks / limitations:**
+  - **Definition changes**: 거주불명자 included from **2010-10** (the 전체 total
+    jumps +142,359 for 서울 across that one boundary) and 재외국민 from
+    **2015-01** (0 → 750). Both boundaries were confirmed against the source. The
+    series is **not comparable end-to-end**; the caveat is stored per row and
+    served.
+  - **Zero-filled unpublished months**: a request for a month MOIS has not
+    published returns HTTP 200 with a CSV of zeros, not an error. Non-positive
+    values are rejected so a zero can never be stored as a population.
+  - **Code systems**: MOIS codes (11/28/41) match the landfill origin codes but
+    **not** the canonical SGIS region codes (11/23/31) for Incheon and Gyeonggi;
+    the crosswalks are reviewed and name-validated, never numeric-matched.
+  - **Licensing**: the download pages publish no 공공누리 badge; the footer states
+    `ⓒ Ministry of the Interior and Safety`. Redistribution terms are not
+    asserted — confirm with 주민과 (044-205-3158) before republishing raw data.
+    Raw files are Git-ignored and never committed.
 
 ## Overall Build Feasibility
 

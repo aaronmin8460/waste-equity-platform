@@ -49,10 +49,12 @@ const ORIGIN_OPTIONS: { code: LandfillOrigin; label: string }[] = [
 // resident actually paid or was taxed.
 const PER_CAPITA_LABEL = "주민 1인당 환산 반입수수료";
 const PER_CAPITA_DESCRIPTION =
-  "선택 기간의 공식 반입수수료를 동일 연도의 해당 지역 인구로 나눈 분석용 환산값입니다. " +
+  "선택 기간의 공식 반입수수료를 동일 기간 기준의 해당 지역 인구로 나눈 분석용 환산값입니다. " +
   "개인의 실제 납부액이 아닙니다.";
 const LIMITATION_NOTICE =
   "광역지자체 단위 자료이며 시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다.";
+// Fallback label only; the served population_source_id is authoritative.
+const MOIS_SOURCE_ID = "mois_resident_population";
 const FEE_CAVEAT =
   "반입수수료는 공식 보고된 금액이며 순수 운송비 또는 전체 폐기물 관리비가 아닙니다.";
 
@@ -415,8 +417,15 @@ function PerCapitaKpi({ perCapita }: { perCapita: LandfillFeePerCapita }) {
       {available && (
         <p className="mt-1 text-[11px] text-slate-500" data-testid="landfill-per-capita-periods">
           수수료 기준 {perCapita.fee_reference_period} · 인구 기준{" "}
-          {perCapita.population_reference_period} ·{" "}
-          {(perCapita.population ?? 0).toLocaleString("en-US")}명
+          <span data-testid="landfill-population-month">
+            {perCapita.population_reference_month ?? perCapita.population_reference_period}
+          </span>{" "}
+          (월말) · {(perCapita.population ?? 0).toLocaleString("en-US")}명
+        </p>
+      )}
+      {!available && perCapita.required_population_month && (
+        <p className="mt-1 text-[11px] text-slate-500" data-testid="landfill-required-month">
+          필요한 인구 기준월: {perCapita.required_population_month}
         </p>
       )}
     </div>
@@ -610,7 +619,7 @@ function Evidence({ summary }: { summary: LandfillSummary }) {
           <ul className="list-disc pl-4">
             <li>반입량 (inbound quantity)</li>
             <li>반입수수료 (inbound fee)</li>
-            <li>인구 (population · SGIS)</li>
+            <li>주민등록 인구 (행정안전부 · 월말 기준)</li>
           </ul>
           <p className="mt-1 font-medium text-slate-700">
             공식자료 기반 계산 (OFFICIAL_INPUTS_DERIVED_VALUE)
@@ -623,7 +632,11 @@ function Evidence({ summary }: { summary: LandfillSummary }) {
             </li>
           </ul>
         </div>
-        <dl className="space-y-1">
+        {/* break-words: the served identifiers (e.g. the definition version
+            MOIS_TOTAL_WITH_UNREGISTERED_RESIDENT_AND_OVERSEAS_NATIONALS) are long
+            unbreakable ASCII tokens that would otherwise force the page to scroll
+            sideways on a phone. */}
+        <dl className="space-y-1 break-words">
           {summary.sources.map((source) => (
             <div key={source.dataset_id}>
               <dt className="inline font-medium">출처 {source.dataset_id}: </dt>
@@ -642,15 +655,38 @@ function Evidence({ summary }: { summary: LandfillSummary }) {
           <div>
             <dt className="inline font-medium">인구 출처: </dt>
             <dd className="inline" data-testid="landfill-population-source">
-              {perCapita.population_source_id ?? "—"} · 기준 기간{" "}
+              행정안전부 주민등록 인구통계 (행정동별 주민등록 인구 및 세대현황) ·{" "}
+              {perCapita.population_source_id ?? MOIS_SOURCE_ID} · 기준 기간{" "}
               <span data-testid="landfill-population-period">
-                {perCapita.population_reference_period ?? "해당 연도 자료 없음"}
+                {perCapita.population_reference_period ?? "해당 기간 자료 없음"}
               </span>
+              {perCapita.population_temporal_granularity && (
+                <> · {perCapita.population_temporal_granularity === "MONTHLY" ? "월간" : "연간"}</>
+              )}
+            </dd>
+          </div>
+          {perCapita.population_source_administrative_code && (
+            <div>
+              <dt className="inline font-medium">인구 행정구역 코드: </dt>
+              <dd className="inline" data-testid="landfill-population-admin-code">
+                {perCapita.population_source_administrative_code}
+              </dd>
+            </div>
+          )}
+          <div>
+            <dt className="inline font-medium">인구 정의: </dt>
+            <dd className="inline">
+              {perCapita.population_definition ?? "—"}
+              {perCapita.population_definition_version && (
+                <> · {perCapita.population_definition_version}</>
+              )}
             </dd>
           </div>
           <div>
-            <dt className="inline font-medium">인구 정의: </dt>
-            <dd className="inline">{perCapita.population_definition ?? "—"}</dd>
+            <dt className="inline font-medium">산출 버전: </dt>
+            <dd className="inline" data-testid="landfill-derivation-version">
+              {perCapita.derivation_version}
+            </dd>
           </div>
           <div>
             <dt className="inline font-medium">산출식: </dt>
@@ -662,6 +698,24 @@ function Evidence({ summary }: { summary: LandfillSummary }) {
           </div>
         </dl>
       </div>
+
+      {/* The MOIS total-population definition changed twice inside the 2008–2026
+          window, so a long-run comparison is not like-for-like. Disclosed with
+          the data rather than only in the docs. */}
+      <p
+        className="mt-3 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-slate-700"
+        data-testid="landfill-comparability-note"
+      >
+        <strong className="text-amber-900">인구 정의 변경 안내:</strong> 주민등록 총인구의 정의는
+        2010-10(거주불명자 포함)과 2015-01(재외국민 포함)에 변경되었습니다. 서로 다른 시기의 값을
+        비교할 때는 정의 차이를 고려해야 하며, 완전히 동일한 기준의 시계열이 아닙니다. (외국인은
+        모든 시기에서 제외됩니다.)
+        {perCapita.population_comparability_note && (
+          <span className="mt-1 block text-slate-600">
+            {perCapita.population_comparability_note}
+          </span>
+        )}
+      </p>
       <p className="mt-3 font-medium text-amber-800" data-testid="landfill-fee-caveat">
         {FEE_CAVEAT}
       </p>

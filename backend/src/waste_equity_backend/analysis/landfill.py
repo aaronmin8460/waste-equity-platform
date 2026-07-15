@@ -93,59 +93,77 @@ def latest_complete_year(months: Iterable[str]) -> int | None:
 
 
 # --------------------------------------------------------------------------- #
-# Inbound fee per resident (landfill-fee-per-capita-v1) — V2 Phase 2
+# Inbound fee per resident (landfill-fee-per-capita-v2) — MOIS monthly alignment
 # --------------------------------------------------------------------------- #
+#
+# v2 supersedes v1 in both denominator source and temporal alignment:
+#
+#   v1: official fee ÷ SGIS *annual* total population of the same reference YEAR.
+#   v2: official fee ÷ MOIS *monthly* resident-registration population for the
+#       exact denominator MONTH the selected period requires.
+#
+# The SGIS annual series is never used as a landfill denominator or fallback
+# under v2 — it remains the denominator for the Equity indicators, untouched.
 
 # Bump when the formula, denominator rule, unit handling, or precision changes.
-PER_CAPITA_DERIVATION_VERSION = "landfill-fee-per-capita-v1"
+PER_CAPITA_DERIVATION_VERSION = "landfill-fee-per-capita-v2"
 PER_CAPITA_INDICATOR = "LANDFILL_INBOUND_FEE_PER_CAPITA"
 # KRW per person. Rendered Korean-first to match EFFECTIVE_FEE_UNIT ("KRW/톤").
 PER_CAPITA_FEE_UNIT = "KRW/인"
 PER_CAPITA_DERIVATION_FORMULA = (
-    "inbound_fee_krw(선택 조건) ÷ population[persons](동일 기준연도 · 동일 광역지자체)"
+    "inbound_fee_krw(선택 기간) ÷ population[persons]"
+    "(동일 기간 기준 월말 주민등록 인구 · 동일 광역지자체)"
 )
 
-# The only population definition this derivation accepts as a denominator. A row
-# carrying any other definition is not silently used.
-EXPECTED_POPULATION_DEFINITION = "SGIS_TOTAL_POPULATION"
-# The only region level this derivation accepts: the landfill source is
-# metropolitan-only, so the denominator must be a 광역지자체 (SIDO) population.
+# The only population series v2 accepts as a denominator. A row from any other
+# source, definition, or temporal grain is never silently substituted.
+EXPECTED_POPULATION_SOURCE_ID = "mois_resident_population"
+EXPECTED_POPULATION_DEFINITION = "MOIS_RESIDENT_REGISTRATION_TOTAL"
+EXPECTED_POPULATION_GRANULARITY = "MONTHLY"
+# The landfill source is metropolitan-only, so the denominator must be a
+# 광역지자체 (SIDO) population.
 EXPECTED_POPULATION_REGION_LEVEL = "SIDO"
 
 # Unavailability vocabulary. ZERO_POPULATION and AMBIGUOUS_POPULATION_DEFINITION
-# are reused verbatim from the existing per-capita/facility-burden exclusion
-# vocabulary (see api/routes/equity.py); the three others are specific to the
-# same-reference-year rule this derivation enforces.
-REASON_NO_MATCHING_POPULATION_YEAR = "NO_MATCHING_POPULATION_YEAR"
+# are reused verbatim from the existing equity exclusion vocabulary (see
+# api/routes/equity.py). v2 reports a missing exact month as
+# NO_MATCHING_POPULATION_PERIOD — never as a missing *year*, which would
+# misdescribe a monthly denominator.
+REASON_NO_MATCHING_POPULATION_PERIOD = "NO_MATCHING_POPULATION_PERIOD"
 REASON_NO_METROPOLITAN_POPULATION = "NO_METROPOLITAN_POPULATION"
 REASON_ZERO_POPULATION = "ZERO_POPULATION"
 REASON_AMBIGUOUS_POPULATION_DEFINITION = "AMBIGUOUS_POPULATION_DEFINITION"
 REASON_INCOMPLETE_POPULATION_COVERAGE = "INCOMPLETE_POPULATION_COVERAGE"
 
 PER_CAPITA_CAVEAT = (
-    "선택 기간의 공식 반입수수료를 동일 연도의 해당 지역 인구로 나눈 분석용 환산값입니다. "
+    "선택 기간의 공식 반입수수료를 동일 기간 기준의 해당 지역 인구로 나눈 분석용 환산값입니다. "
     "개인의 실제 납부액이 아닙니다."
 )
 
 
 @dataclass(frozen=True)
 class MetropolitanPopulation:
-    """One candidate population denominator for a metropolitan landfill origin.
+    """One candidate monthly population denominator for a landfill origin.
 
     ``origin_region_code`` is the landfill fact table's origin code; the
-    canonical SGIS region it was resolved through is carried alongside so the
-    served provenance names the actual denominator row, not the origin label.
+    canonical SGIS region it was resolved through is carried alongside so served
+    provenance names the actual denominator row, not the origin label.
     """
 
     origin_region_code: str
     canonical_region_code: str
     region_name: str
     region_level: str
+    reference_month: str  # YYYY-MM (month-end)
     reference_year: int
     reference_period: str
     population: int
     population_definition: str
+    population_definition_version: str | None
+    population_comparability_note: str | None
+    temporal_granularity: str
     source_id: str
+    source_administrative_code: str | None
     unit: str
 
 
@@ -154,20 +172,52 @@ class PerCapitaFee:
     """A served per-capita fee, or an explicit reason it could not be derived.
 
     ``fee_per_capita_krw`` and ``reason`` are mutually exclusive: exactly one is
-    ever set. A value is never zero-filled, estimated, or carried over from a
-    different reference year.
+    ever set. A value is never zero-filled, estimated, or borrowed from another
+    period.
     """
 
     fee_per_capita_krw: Decimal | None
     reason: str | None
     population: int | None
+    population_reference_month: str | None
     population_reference_year: int | None
     population_reference_period: str | None
     population_definition: str | None
+    population_definition_version: str | None
+    population_comparability_note: str | None
+    population_temporal_granularity: str | None
     population_source_id: str | None
+    population_source_administrative_code: str | None
     population_region_level: str | None
     population_unit: str | None
+    required_population_month: str | None
     included_origin_region_codes: tuple[str, ...]
+
+
+def required_population_month(
+    *,
+    reference_year: int,
+    selected_month: str | None,
+    is_complete_year: bool,
+    available_through_month: str | None,
+) -> str | None:
+    """The one month whose population may serve as this period's denominator.
+
+    * A selected month uses **that exact month** — never a neighbour, December,
+      the latest month, or another year.
+    * A complete landfill year uses that year's **December** month-end.
+    * An incomplete landfill year uses the **final month actually included in the
+      fee numerator**, so the denominator never post-dates the fee. (MOIS may
+      publish a later month than the landfill fee data covers; borrowing it would
+      divide a partial-year fee by a population from outside that period.)
+
+    Returns ``None`` when a partial year has no available month at all.
+    """
+    if selected_month is not None:
+        return selected_month
+    if is_complete_year:
+        return f"{reference_year:04d}-12"
+    return available_through_month
 
 
 def fee_per_capita(inbound_fee_krw: Decimal, population: int) -> Decimal | None:
@@ -187,35 +237,36 @@ def resolve_population(
     candidates: Sequence[MetropolitanPopulation],
     *,
     origin_region_code: str,
-    fee_reference_year: int,
+    required_month: str | None,
 ) -> tuple[MetropolitanPopulation | None, str | None]:
     """Pick the one valid denominator for an origin, or say why there is none.
 
-    ``candidates`` may hold rows for any origin and any reference year; the
-    same-year rule is enforced here, so a nearest/latest/previous year is never
-    substituted. Returns ``(row, None)`` or ``(None, reason)``.
+    ``candidates`` may hold rows for any origin and any month; the exact-month
+    rule is enforced here, so an adjacent/latest/December-of-another-year value
+    is never substituted. Returns ``(row, None)`` or ``(None, reason)``.
     """
+    if required_month is None:
+        return None, REASON_NO_MATCHING_POPULATION_PERIOD
     for_origin = [c for c in candidates if c.origin_region_code == origin_region_code]
     if not for_origin:
         return None, REASON_NO_METROPOLITAN_POPULATION
-    # Same reference year only. A different year is never a fallback.
-    same_year = [c for c in for_origin if c.reference_year == fee_reference_year]
-    if not same_year:
-        return None, REASON_NO_MATCHING_POPULATION_YEAR
-    # A denominator that is not an accepted metropolitan total population is not
-    # silently used; neither is one of several competing definitions.
+    exact = [c for c in for_origin if c.reference_month == required_month]
+    if not exact:
+        # The origin has population, but not for the month this period requires.
+        return None, REASON_NO_MATCHING_POPULATION_PERIOD
     accepted = [
         c
-        for c in same_year
+        for c in exact
         if c.population_definition == EXPECTED_POPULATION_DEFINITION
+        and c.source_id == EXPECTED_POPULATION_SOURCE_ID
+        and c.temporal_granularity == EXPECTED_POPULATION_GRANULARITY
         and c.region_level == EXPECTED_POPULATION_REGION_LEVEL
     ]
     if not accepted:
         return None, REASON_AMBIGUOUS_POPULATION_DEFINITION
     # Regions are versioned by boundary vintage, so one metropolitan region can
-    # legitimately yield several *identical* population rows for a year. Identical
-    # denominators are not ambiguous; competing ones are, and refusing beats
-    # silently picking one.
+    # legitimately yield several *identical* denominators. Identical values are
+    # not ambiguous; competing ones are, and refusing beats picking one.
     distinct = {
         (c.population, c.population_definition, c.source_id, c.reference_period) for c in accepted
     }
@@ -227,17 +278,53 @@ def resolve_population(
     return resolved, None
 
 
-def _unavailable(reason: str, origins: Sequence[str]) -> PerCapitaFee:
+def _unavailable(
+    reason: str, origins: Sequence[str], required_month: str | None = None
+) -> PerCapitaFee:
     return PerCapitaFee(
         fee_per_capita_krw=None,
         reason=reason,
         population=None,
+        population_reference_month=None,
         population_reference_year=None,
         population_reference_period=None,
         population_definition=None,
+        population_definition_version=None,
+        population_comparability_note=None,
+        population_temporal_granularity=None,
         population_source_id=None,
+        population_source_administrative_code=None,
         population_region_level=None,
         population_unit=None,
+        required_population_month=required_month,
+        included_origin_region_codes=tuple(origins),
+    )
+
+
+def _from_resolved(
+    value: Decimal,
+    resolved: MetropolitanPopulation,
+    *,
+    population: int,
+    origins: Sequence[str],
+    required_month: str,
+) -> PerCapitaFee:
+    return PerCapitaFee(
+        fee_per_capita_krw=value,
+        reason=None,
+        population=population,
+        population_reference_month=resolved.reference_month,
+        population_reference_year=resolved.reference_year,
+        population_reference_period=resolved.reference_period,
+        population_definition=resolved.population_definition,
+        population_definition_version=resolved.population_definition_version,
+        population_comparability_note=resolved.population_comparability_note,
+        population_temporal_granularity=resolved.temporal_granularity,
+        population_source_id=resolved.source_id,
+        population_source_administrative_code=resolved.source_administrative_code,
+        population_region_level=resolved.region_level,
+        population_unit=resolved.unit,
+        required_population_month=required_month,
         included_origin_region_codes=tuple(origins),
     )
 
@@ -247,31 +334,25 @@ def origin_fee_per_capita(
     candidates: Sequence[MetropolitanPopulation],
     *,
     origin_region_code: str,
-    fee_reference_year: int,
+    required_month: str | None,
 ) -> PerCapitaFee:
     """Per-capita fee for a single metropolitan origin (one row of the table)."""
     resolved, reason = resolve_population(
-        candidates,
-        origin_region_code=origin_region_code,
-        fee_reference_year=fee_reference_year,
+        candidates, origin_region_code=origin_region_code, required_month=required_month
     )
     if resolved is None:
         assert reason is not None
-        return _unavailable(reason, [origin_region_code])
+        return _unavailable(reason, [origin_region_code], required_month)
     value = fee_per_capita(inbound_fee_krw, resolved.population)
     if value is None:  # Defensive: resolve_population already rejects <= 0.
-        return _unavailable(REASON_ZERO_POPULATION, [origin_region_code])
-    return PerCapitaFee(
-        fee_per_capita_krw=value,
-        reason=None,
+        return _unavailable(REASON_ZERO_POPULATION, [origin_region_code], required_month)
+    assert required_month is not None
+    return _from_resolved(
+        value,
+        resolved,
         population=resolved.population,
-        population_reference_year=resolved.reference_year,
-        population_reference_period=resolved.reference_period,
-        population_definition=resolved.population_definition,
-        population_source_id=resolved.source_id,
-        population_region_level=resolved.region_level,
-        population_unit=resolved.unit,
-        included_origin_region_codes=(origin_region_code,),
+        origins=(origin_region_code,),
+        required_month=required_month,
     )
 
 
@@ -280,26 +361,26 @@ def aggregate_fee_per_capita(
     candidates: Sequence[MetropolitanPopulation],
     *,
     origin_region_codes: Sequence[str],
-    fee_reference_year: int,
+    required_month: str | None,
 ) -> PerCapitaFee:
-    """Per-capita fee across several origins: Σ fee ÷ Σ same-year population.
+    """Per-capita fee across several origins: Σ fee ÷ Σ same-period population.
 
     The per-origin values are **never averaged** — a mean would silently reweight
     the metropolitan regions as if they were equal in size. Coverage must be
-    complete: if any included origin lacks a valid same-year population the
-    aggregate is ``None`` with ``INCOMPLETE_POPULATION_COVERAGE`` rather than a
-    partially-covered number. When *every* origin fails for the same reason the
-    aggregate reports that reason instead, which is both more precise and more
-    useful than calling total absence "incomplete coverage".
+    complete: if any included origin lacks a valid denominator for the required
+    month the aggregate is ``None`` with ``INCOMPLETE_POPULATION_COVERAGE``
+    rather than a partially-covered number. When *every* origin fails for the
+    same reason the aggregate reports that reason instead, which is both more
+    precise and more useful than calling total absence "incomplete coverage".
     """
     origins = sorted(set(origin_region_codes))
     if not origins:
-        return _unavailable(REASON_NO_METROPOLITAN_POPULATION, origins)
+        return _unavailable(REASON_NO_METROPOLITAN_POPULATION, origins, required_month)
     resolved: list[MetropolitanPopulation] = []
     failures: list[str] = []
     for code in origins:
         row, reason = resolve_population(
-            candidates, origin_region_code=code, fee_reference_year=fee_reference_year
+            candidates, origin_region_code=code, required_month=required_month
         )
         if row is None:
             assert reason is not None
@@ -307,31 +388,24 @@ def aggregate_fee_per_capita(
             continue
         resolved.append(row)
     if failures:
-        # One uncovered origin makes the whole aggregate unpublishable; the
-        # specific per-origin reason stays visible on that origin's own row.
         shared = set(failures)
         if not resolved and len(shared) == 1:
-            return _unavailable(failures[0], origins)
-        return _unavailable(REASON_INCOMPLETE_POPULATION_COVERAGE, origins)
-    # Summing across origins requires one shared denominator definition.
-    if len({(r.population_definition, r.source_id, r.reference_year) for r in resolved}) > 1:
-        return _unavailable(REASON_AMBIGUOUS_POPULATION_DEFINITION, origins)
+            return _unavailable(failures[0], origins, required_month)
+        return _unavailable(REASON_INCOMPLETE_POPULATION_COVERAGE, origins, required_month)
+    # Summing across origins requires one shared denominator definition/period.
+    if len({(r.population_definition, r.source_id, r.reference_month) for r in resolved}) > 1:
+        return _unavailable(REASON_AMBIGUOUS_POPULATION_DEFINITION, origins, required_month)
     total_population = sum(r.population for r in resolved)
     value = fee_per_capita(inbound_fee_krw, total_population)
     if value is None:
-        return _unavailable(REASON_ZERO_POPULATION, origins)
-    first = resolved[0]
-    return PerCapitaFee(
-        fee_per_capita_krw=value,
-        reason=None,
+        return _unavailable(REASON_ZERO_POPULATION, origins, required_month)
+    assert required_month is not None
+    return _from_resolved(
+        value,
+        resolved[0],
         population=total_population,
-        population_reference_year=first.reference_year,
-        population_reference_period=first.reference_period,
-        population_definition=first.population_definition,
-        population_source_id=first.source_id,
-        population_region_level=first.region_level,
-        population_unit=first.unit,
-        included_origin_region_codes=tuple(origins),
+        origins=origins,
+        required_month=required_month,
     )
 
 
@@ -342,7 +416,9 @@ __all__ = [
     "EVIDENCE_OFFICIAL_DERIVED",
     "EVIDENCE_OFFICIAL_REPORTED",
     "EXPECTED_POPULATION_DEFINITION",
+    "EXPECTED_POPULATION_GRANULARITY",
     "EXPECTED_POPULATION_REGION_LEVEL",
+    "EXPECTED_POPULATION_SOURCE_ID",
     "PER_CAPITA_CAVEAT",
     "PER_CAPITA_DERIVATION_FORMULA",
     "PER_CAPITA_DERIVATION_VERSION",
@@ -350,7 +426,7 @@ __all__ = [
     "PER_CAPITA_INDICATOR",
     "REASON_AMBIGUOUS_POPULATION_DEFINITION",
     "REASON_INCOMPLETE_POPULATION_COVERAGE",
-    "REASON_NO_MATCHING_POPULATION_YEAR",
+    "REASON_NO_MATCHING_POPULATION_PERIOD",
     "REASON_NO_METROPOLITAN_POPULATION",
     "REASON_ZERO_POPULATION",
     "MetropolitanPopulation",
@@ -363,6 +439,7 @@ __all__ = [
     "latest_available_month",
     "latest_complete_year",
     "origin_fee_per_capita",
+    "required_population_month",
     "resolve_population",
     "share",
     "to_tons",

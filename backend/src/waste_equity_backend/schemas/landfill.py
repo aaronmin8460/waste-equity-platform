@@ -46,33 +46,48 @@ class LandfillPeriod(BaseModel):
 class LandfillFeePerCapita(BaseModel):
     """Derived inbound fee per resident, with both inputs' provenance.
 
-    ``fee_per_capita_krw`` and ``unavailable_reason`` are mutually exclusive:
-    a value is served only when a valid population of the **same reference
-    year** as the fee exists. It is never zero-filled or estimated, and never an
-    actual amount any resident paid.
+    ``fee_per_capita_krw`` and ``unavailable_reason`` are mutually exclusive: a
+    value is served only when the official MOIS monthly population exists for
+    **exactly** the month the selected period requires
+    (``required_population_month``). It is never zero-filled, estimated, or
+    borrowed from another period, and never an amount any resident actually paid.
     """
 
     indicator: str  # LANDFILL_INBOUND_FEE_PER_CAPITA
     fee_per_capita_krw: Decimal | None
     unit: str  # KRW/인
-    derivation_version: str
+    derivation_version: str  # landfill-fee-per-capita-v2
     derivation_formula: str
     evidence_status: str  # OFFICIAL_INPUTS_DERIVED_VALUE
     # Numerator (official reported inbound fee) and its reference period.
     inbound_fee_krw: Decimal
     fee_reference_year: int
     fee_reference_period: str  # YYYY (annual) or YYYY-MM (single month)
+    fee_period_complete: bool  # a complete landfill year vs. a partial one
+    # The single month whose population may serve as this period's denominator:
+    # the selected month, December of a complete year, or the final month
+    # actually included in a partial year's fee.
+    required_population_month: str | None
     # Denominator (official population) — null whenever unavailable_reason is set.
     population: int | None
+    population_reference_month: str | None
     population_reference_year: int | None
     population_reference_period: str | None
+    population_temporal_granularity: str | None
     population_definition: str | None
+    population_definition_version: str | None
+    population_comparability_note: str | None
     population_source_id: str | None
+    population_source_dataset_id: str | None
+    population_source_administrative_code: str | None
     population_region_level: str | None
     population_unit: str | None
     # Landfill origin codes whose fee is in the numerator (three for 전체).
     included_origin_region_codes: list[str]
     unavailable_reason: str | None
+    interpretation_caveat: str
+    # Retained so an existing consumer of the v1 field keeps working; identical
+    # to interpretation_caveat.
     caveat: str
 
 

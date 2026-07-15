@@ -20,27 +20,41 @@ import type {
 
 afterEach(cleanup);
 
+const CAVEAT =
+  "선택 기간의 공식 반입수수료를 동일 기간 기준의 해당 지역 인구로 나눈 분석용 환산값입니다. " +
+  "개인의 실제 납부액이 아닙니다.";
+
 function perCapita(overrides: Partial<LandfillFeePerCapita> = {}): LandfillFeePerCapita {
   return {
     indicator: "LANDFILL_INBOUND_FEE_PER_CAPITA",
     fee_per_capita_krw: "4461.21",
     unit: "KRW/인",
-    derivation_version: "landfill-fee-per-capita-v1",
+    derivation_version: "landfill-fee-per-capita-v2",
     derivation_formula: "inbound_fee_krw ÷ population",
     evidence_status: "OFFICIAL_INPUTS_DERIVED_VALUE",
     inbound_fee_krw: "41647362920.00",
     fee_reference_year: 2024,
     fee_reference_period: "2024",
-    population: 9335444,
+    fee_period_complete: true,
+    // A complete year's denominator is that year's December month-end.
+    required_population_month: "2024-12",
+    population: 9331828,
+    population_reference_month: "2024-12",
     population_reference_year: 2024,
-    population_reference_period: "2024",
-    population_definition: "SGIS_TOTAL_POPULATION",
-    population_source_id: "sgis",
+    population_reference_period: "2024-12",
+    population_temporal_granularity: "MONTHLY",
+    population_definition: "MOIS_RESIDENT_REGISTRATION_TOTAL",
+    population_definition_version: "MOIS_TOTAL_WITH_UNREGISTERED_RESIDENT_AND_OVERSEAS_NATIONALS",
+    population_comparability_note: "2015-01 이후: 거주불명자와 재외국민이 포함된 주민등록 총인구입니다.",
+    population_source_id: "mois_resident_population",
+    population_source_dataset_id: "mois_resident_population",
+    population_source_administrative_code: "1100000000",
     population_region_level: "SIDO",
     population_unit: "persons",
     included_origin_region_codes: ["KR-SGIS-11"],
     unavailable_reason: null,
-    caveat: "개인의 실제 납부액이 아닙니다.",
+    interpretation_caveat: CAVEAT,
+    caveat: CAVEAT,
     ...overrides,
   };
 }
@@ -86,8 +100,8 @@ function summary(overrides: Partial<LandfillSummary> = {}): LandfillSummary {
     total_inbound_fee_krw: "108176043070.00",
     effective_fee_per_ton: "100952.00",
     fee_per_capita: perCapita({
-      fee_per_capita_krw: "4111.91",
-      population: 26307956,
+      fee_per_capita_krw: "4153.03",
+      population: 26047159,
       inbound_fee_krw: "108176043070.00",
       included_origin_region_codes: ["KR-SGIS-11", "KR-SGIS-28", "KR-SGIS-41"],
     }),
@@ -296,24 +310,119 @@ describe("LandfillDashboard", () => {
   it("formats a valid per-capita fee and shows both reference periods", () => {
     renderDashboard();
     const kpi = screen.getByTestId("landfill-kpi-per-capita");
-    expect(kpi.textContent).toContain("4,112원/인");
+    expect(kpi.textContent).toContain("4,153원/인");
     const periods = screen.getByTestId("landfill-per-capita-periods").textContent ?? "";
     expect(periods).toContain("수수료 기준 2024");
-    expect(periods).toContain("인구 기준 2024");
+    // A complete annual selection is denominated by that year's December month-end.
+    expect(periods).toContain("인구 기준 2024-12");
+    expect(periods).toContain("월말");
+    expect(screen.getByTestId("landfill-population-month").textContent).toBe("2024-12");
     // The evidence panel names the population source and both periods too.
-    expect(screen.getByTestId("landfill-population-period").textContent).toBe("2024");
+    expect(screen.getByTestId("landfill-population-period").textContent).toBe("2024-12");
     expect(screen.getByTestId("landfill-fee-period").textContent).toBe("2024");
+  });
+
+  it("shows the MOIS source, granularity, admin code and v2 derivation version", () => {
+    renderDashboard();
+    const source = screen.getByTestId("landfill-population-source").textContent ?? "";
+    expect(source).toContain("행정안전부 주민등록 인구통계");
+    expect(source).toContain("행정동별 주민등록 인구 및 세대현황");
+    expect(source).toContain("mois_resident_population");
+    expect(source).toContain("월간");
+    expect(screen.getByTestId("landfill-population-admin-code").textContent).toBe("1100000000");
+    expect(screen.getByTestId("landfill-derivation-version").textContent).toBe(
+      "landfill-fee-per-capita-v2",
+    );
+    // No SGIS label may appear as the landfill denominator under v2.
+    expect(source).not.toContain("SGIS");
+  });
+
+  it("discloses that the population definition changed during the series", () => {
+    renderDashboard();
+    const note = screen.getByTestId("landfill-comparability-note").textContent ?? "";
+    expect(note).toContain("2010-10");
+    expect(note).toContain("거주불명자");
+    expect(note).toContain("2015-01");
+    expect(note).toContain("재외국민");
+    expect(note).toContain("외국인");
+  });
+
+  it("uses each year's December denominator for 2008 and 2025 annual selections", () => {
+    for (const year of [2008, 2025] as const) {
+      cleanup();
+      renderDashboard({
+        data: data({
+          period: { ...summary().period, year },
+          fee_per_capita: perCapita({
+            fee_reference_year: year,
+            fee_reference_period: String(year),
+            required_population_month: `${year}-12`,
+            population_reference_month: `${year}-12`,
+            population_reference_period: `${year}-12`,
+            population_reference_year: year,
+          }),
+        }),
+      });
+      expect(screen.getByTestId("landfill-population-month").textContent).toBe(`${year}-12`);
+    }
+  });
+
+  it("uses the final landfill month as the denominator for a partial year", () => {
+    // Landfill fees run through 2026-05 while MOIS has published 2026-06; the
+    // denominator must be 2026-05 — the last month actually in the numerator.
+    renderDashboard({
+      data: data({
+        period: {
+          ...summary().period,
+          year: 2026,
+          is_complete_year: false,
+          available_through_month: "2026-05",
+        },
+        fee_per_capita: perCapita({
+          fee_reference_year: 2026,
+          fee_reference_period: "2026",
+          fee_period_complete: false,
+          required_population_month: "2026-05",
+          population_reference_month: "2026-05",
+          population_reference_period: "2026-05",
+          population_reference_year: 2026,
+        }),
+      }),
+    });
+    expect(screen.getByTestId("landfill-population-month").textContent).toBe("2026-05");
+    expect(screen.getByTestId("landfill-population-month").textContent).not.toBe("2026-06");
+  });
+
+  it("uses the exact selected month as the denominator for a monthly selection", () => {
+    renderDashboard({
+      data: data({
+        period: { ...summary().period, year: 2024, month: "2024-07" },
+        fee_per_capita: perCapita({
+          fee_reference_year: 2024,
+          fee_reference_period: "2024-07",
+          required_population_month: "2024-07",
+          population_reference_month: "2024-07",
+          population_reference_period: "2024-07",
+        }),
+      }),
+    });
+    expect(screen.getByTestId("landfill-population-month").textContent).toBe("2024-07");
+    expect(screen.getByTestId("landfill-per-capita-periods").textContent).toContain(
+      "수수료 기준 2024-07",
+    );
   });
 
   it("renders an unavailable per-capita fee as its served reason, never 0원", () => {
     const unavailable = perCapita({
       fee_per_capita_krw: null,
       population: null,
+      population_reference_month: null,
       population_reference_year: null,
       population_reference_period: null,
       population_definition: null,
       population_source_id: null,
-      unavailable_reason: "NO_MATCHING_POPULATION_YEAR",
+      unavailable_reason: "NO_MATCHING_POPULATION_PERIOD",
+      required_population_month: "2025-12",
     });
     renderDashboard({
       data: data({
@@ -325,14 +434,16 @@ describe("LandfillDashboard", () => {
       }),
     });
     const kpi = screen.getByTestId("landfill-kpi-per-capita");
-    expect(kpi.textContent).toContain("동일 연도 인구 데이터 없음");
+    expect(kpi.textContent).toContain("동일 기간 인구 데이터 없음");
     expect(kpi.textContent).not.toContain("0원");
     expect(screen.getByTestId("landfill-per-capita-unavailable")).toBeDefined();
     // The table cell shows the reason too, not a zero.
     const row = screen.getAllByTestId("landfill-region-row")[0];
     expect(within(row).getByTestId("landfill-row-unavailable").textContent).toBe(
-      "동일 연도 인구 데이터 없음",
+      "동일 기간 인구 데이터 없음",
     );
+    // The month the period required is still disclosed, so the gap is specific.
+    expect(screen.getByTestId("landfill-required-month").textContent).toContain("2025-12");
     expect(row.textContent).not.toContain("0원/인");
   });
 

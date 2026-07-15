@@ -77,12 +77,29 @@ def test_migration_creates_schema_and_seeds() -> None:
             ).scalar()
             assert geometry_type == "MULTIPOLYGON"
 
-            population_unique = connection.execute(
+            # Migration 0014 replaced the table-wide annual unique constraint
+            # with two granularity-scoped partial unique indexes: the annual
+            # guarantee is unchanged in strength, while a monthly series (twelve
+            # rows sharing a reference_year) is now representable.
+            population_unique = set(
+                connection.execute(
+                    text(
+                        "SELECT indexname FROM pg_indexes "
+                        "WHERE tablename = 'regional_population' AND indexname IN "
+                        "('uq_regional_population_annual', 'uq_regional_population_monthly')"
+                    )
+                ).scalars()
+            )
+            assert population_unique == {
+                "uq_regional_population_annual",
+                "uq_regional_population_monthly",
+            }
+            legacy_unique = connection.execute(
                 text(
                     "SELECT 1 FROM pg_constraint WHERE conname = 'uq_regional_population_region_id'"
                 )
             ).scalar()
-            assert population_unique == 1
+            assert legacy_unique is None
     finally:
         engine.dispose()
 

@@ -10,6 +10,8 @@ from collections.abc import Callable
 from .config import ProbeSettings
 from .errors import IngestionError, MissingConfigurationError, MissingCredentialsError, ProbeError
 from .landfill_inbound import run_landfill_inbound
+from .mois_population_contract import EARLIEST_SUPPORTED_MONTH
+from .mois_population_ingestion import run_mois_population_ingestion
 from .probes import (
     airkorea,
     kma,
@@ -48,6 +50,7 @@ SGIS_INGEST = "sgis-ingest"
 RCIS_WASTE_INGEST = "rcis-waste-ingest"
 RCIS_REPORTING_GEOGRAPHY = "rcis-reporting-geography"
 LANDFILL_INBOUND_INGEST = "landfill-inbound"
+MOIS_POPULATION_INGEST = "mois-population-ingest"
 RCIS_FACILITY_INGEST = "rcis-facility-ingest"
 VWORLD_GEOCODE = "vworld-geocode"
 VWORLD_STRUCTURAL_AUDIT = "vworld-structural-audit"
@@ -69,6 +72,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 RCIS_WASTE_INGEST,
                 RCIS_REPORTING_GEOGRAPHY,
                 LANDFILL_INBOUND_INGEST,
+                MOIS_POPULATION_INGEST,
                 RCIS_FACILITY_INGEST,
                 VWORLD_GEOCODE,
                 VWORLD_STRUCTURAL_AUDIT,
@@ -166,6 +170,27 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help=(
             "suitability-build: active weight profile "
             "(baseline, equal, equity_focused, access_focused; default baseline)."
+        ),
+    )
+    parser.add_argument(
+        "--start-month",
+        help=(
+            "First YYYY-MM to ingest (mois-population-ingest). "
+            f"Must not precede {EARLIEST_SUPPORTED_MONTH}."
+        ),
+    )
+    parser.add_argument(
+        "--end-month",
+        help=(
+            "Last YYYY-MM to ingest (mois-population-ingest). Defaults to the latest "
+            "month the official MOIS page reports as published."
+        ),
+    )
+    parser.add_argument(
+        "--source-file",
+        help=(
+            "Path to an officially downloaded MOIS CSV, used instead of the live "
+            "download (mois-population-ingest). The file is never committed."
         ),
     )
     mode = parser.add_mutually_exclusive_group()
@@ -270,6 +295,24 @@ def run_landfill_inbound_cli(settings: ProbeSettings, args: argparse.Namespace) 
     report = run_landfill_inbound(settings, scope=args.scope, write=write)
     print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
     return 0
+
+
+def run_mois_population_cli(settings: ProbeSettings, args: argparse.Namespace) -> int:
+    write = bool(args.write or args.apply)
+    if not args.dry_run and not write:
+        raise IngestionError("mois-population-ingest requires either --dry-run or --write/--apply")
+    report = run_mois_population_ingestion(
+        settings,
+        scope=args.scope,
+        start_month=args.start_month or EARLIEST_SUPPORTED_MONTH,
+        end_month=args.end_month,
+        write=write,
+        source_file=args.source_file,
+    )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    # A dry run that could not validate the requested coverage is a failure the
+    # operator must see in the exit code, not only in the JSON.
+    return 0 if report.status in {"SUCCESS", "DRY_RUN_OK"} else 5
 
 
 def run_rcis_facility(settings: ProbeSettings, args: argparse.Namespace) -> int:
@@ -415,6 +458,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_reporting_geography_cli(settings, args)
         if args.source == LANDFILL_INBOUND_INGEST:
             return run_landfill_inbound_cli(settings, args)
+        if args.source == MOIS_POPULATION_INGEST:
+            return run_mois_population_cli(settings, args)
         if args.source == RCIS_FACILITY_INGEST:
             return run_rcis_facility(settings, args)
         if args.source == VWORLD_GEOCODE:
