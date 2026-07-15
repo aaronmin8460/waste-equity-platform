@@ -59,16 +59,17 @@ export function formatKrwPerPerson(fee: string | null): string {
 /**
  * User-facing Korean for a served per-capita unavailability reason.
  *
- * The vocabulary is defined by the backend derivation; an unrecognised code
- * degrades to an honest "계산 불가" that still surfaces the raw code, rather
- * than being hidden or shown as a number.
+ * The vocabulary is defined by the backend derivation (landfill-fee-per-capita-v2);
+ * an unrecognised code degrades to an honest "계산 불가" that still surfaces the
+ * raw code, rather than being hidden or shown as a number.
  */
 const PER_CAPITA_REASON_LABELS: Record<string, string> = {
-  NO_MATCHING_POPULATION_YEAR: "동일 연도 인구 데이터 없음",
+  // v2 is month-aligned: a missing denominator is a missing *period*, not a year.
+  NO_MATCHING_POPULATION_PERIOD: "동일 기간 인구 데이터 없음",
   NO_METROPOLITAN_POPULATION: "해당 광역지자체 인구 데이터 없음",
   ZERO_POPULATION: "인구 데이터 확인 필요 (인구 0)",
-  AMBIGUOUS_POPULATION_DEFINITION: "인구 정의가 모호하여 계산 불가",
-  INCOMPLETE_POPULATION_COVERAGE: "일부 출발지의 동일 연도 인구 없음 — 합계 계산 불가",
+  AMBIGUOUS_POPULATION_DEFINITION: "인구 데이터 확인 필요 (정의 모호)",
+  INCOMPLETE_POPULATION_COVERAGE: "일부 지역의 동일 기간 인구가 없어 합계를 계산할 수 없습니다",
 };
 
 export function perCapitaUnavailableLabel(reason: string | null): string {

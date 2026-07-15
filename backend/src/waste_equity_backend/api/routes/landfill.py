@@ -108,6 +108,9 @@ DESTINATION_COORDINATE_PROVENANCE = (
 
 QUANTITY_DATASET_ID = "15064381"
 FEE_DATASET_ID = "15064394"
+# The official MOIS population series backing the per-capita denominator
+# (행정동별 주민등록 인구 및 세대현황). Registered in data_sources by its ingestion.
+POPULATION_DATASET_ID = "mois_resident_population"
 
 # True of every landfill response. The per-capita interpretation caveat is
 # deliberately NOT here: it belongs to one indicator, and /trends, /flows, and
@@ -132,8 +135,11 @@ def _evidence() -> LandfillEvidence:
         notes=[
             "반입량·반입수수료는 공식 보고값입니다.",
             "월·연 집계, 비중, 톤당 실효 수수료는 공식자료 기반 계산값입니다.",
-            "주민 1인당 환산 반입수수료는 공식 반입수수료를 동일 기준연도의 공식 인구로 나눈 "
-            "공식자료 기반 계산값이며, 개인의 실제 납부액이 아닙니다.",
+            "주민 1인당 환산 반입수수료는 공식 반입수수료를 동일 기간 기준의 공식 "
+            "주민등록 인구(행정안전부)로 나눈 공식자료 기반 계산값이며, 개인의 실제 "
+            "납부액이 아닙니다.",
+            "주민등록 인구는 월말 기준이며, 총인구 정의가 2010-10(거주불명자 포함)과 "
+            "2015-01(재외국민 포함)에 변경되어 장기 시계열 비교에 주의가 필요합니다.",
         ],
     )
 
@@ -256,34 +262,50 @@ def _sources(session: Session, rows: list[LandfillInboundMonthly]) -> list[Landf
 
 
 def _population_candidates(session: Session) -> list[landfill_analysis.MetropolitanPopulation]:
-    """Every metropolitan population row for the three landfill origins, any year.
+    """Every MOIS monthly denominator for the three landfill origins.
 
     One batched query — never one per origin. Only scalar columns are selected,
     so the regions table's MULTIPOLYGON boundary is never fetched for a
-    population lookup. All reference years are returned; the same-year rule is
-    applied by the pure derivation, which also needs to see that *other* years
-    exist in order to distinguish NO_MATCHING_POPULATION_YEAR from
-    NO_METROPOLITAN_POPULATION.
+    population lookup. The whole series is small and bounded (three 시도 ×
+    ~222 months), so it is fetched once and the exact-month rule is applied by
+    the pure derivation — which also needs to see that *other* months exist to
+    tell NO_MATCHING_POPULATION_PERIOD (this origin has population, just not for
+    this month) apart from NO_METROPOLITAN_POPULATION (none at all).
+
+    Scoped to the MOIS monthly series in SQL: the annual SGIS rows can never be
+    reached from here, so a landfill value cannot silently fall back to them.
+    SGIS remains the Equity denominator, untouched.
     """
     origin_by_canonical = {
         meta.canonical_region_code: origin for origin, meta in _ORIGIN_META.items()
     }
-    rows = session.execute(
+    query = (
         select(
             Region.region_code,
             Region.region_name,
             Region.region_level,
+            RegionalPopulation.reference_month,
             RegionalPopulation.reference_year,
             RegionalPopulation.reference_period,
             RegionalPopulation.population,
             RegionalPopulation.population_definition,
+            RegionalPopulation.population_definition_version,
+            RegionalPopulation.population_comparability_note,
+            RegionalPopulation.population_temporal_granularity,
             RegionalPopulation.source_id,
+            RegionalPopulation.source_administrative_code,
             RegionalPopulation.unit,
         )
         .join(RegionalPopulation, RegionalPopulation.region_id == Region.id)
         .where(Region.region_code.in_(origin_by_canonical.keys()))
         .where(Region.region_level == landfill_analysis.EXPECTED_POPULATION_REGION_LEVEL)
-    ).all()
+        .where(RegionalPopulation.source_id == landfill_analysis.EXPECTED_POPULATION_SOURCE_ID)
+        .where(
+            RegionalPopulation.population_temporal_granularity
+            == landfill_analysis.EXPECTED_POPULATION_GRANULARITY
+        )
+    )
+    rows = session.execute(query).all()
     candidates: list[landfill_analysis.MetropolitanPopulation] = []
     for row in rows:
         origin = origin_by_canonical[row.region_code]
@@ -293,17 +315,24 @@ def _population_candidates(session: Session) -> list[landfill_analysis.Metropoli
             # carries an explicit unavailable reason rather than a denominator
             # that may belong to a different region.
             continue
+        if row.reference_month is None:
+            continue  # defensive: MONTHLY rows always carry a month (checked in DB)
         candidates.append(
             landfill_analysis.MetropolitanPopulation(
                 origin_region_code=origin,
                 canonical_region_code=row.region_code,
                 region_name=row.region_name,
                 region_level=row.region_level,
+                reference_month=row.reference_month,
                 reference_year=row.reference_year,
                 reference_period=row.reference_period,
                 population=row.population,
                 population_definition=row.population_definition,
+                population_definition_version=row.population_definition_version,
+                population_comparability_note=row.population_comparability_note,
+                temporal_granularity=row.population_temporal_granularity,
                 source_id=row.source_id,
+                source_administrative_code=row.source_administrative_code,
                 unit=row.unit,
             )
         )
@@ -316,6 +345,7 @@ def _fee_per_capita_out(
     inbound_fee_krw: Decimal,
     fee_reference_year: int,
     fee_reference_period: str,
+    fee_period_complete: bool,
 ) -> LandfillFeePerCapita:
     return LandfillFeePerCapita(
         indicator=landfill_analysis.PER_CAPITA_INDICATOR,
@@ -327,15 +357,26 @@ def _fee_per_capita_out(
         inbound_fee_krw=inbound_fee_krw,
         fee_reference_year=fee_reference_year,
         fee_reference_period=fee_reference_period,
+        fee_period_complete=fee_period_complete,
+        required_population_month=result.required_population_month,
         population=result.population,
+        population_reference_month=result.population_reference_month,
         population_reference_year=result.population_reference_year,
         population_reference_period=result.population_reference_period,
+        population_temporal_granularity=result.population_temporal_granularity,
         population_definition=result.population_definition,
+        population_definition_version=result.population_definition_version,
+        population_comparability_note=result.population_comparability_note,
         population_source_id=result.population_source_id,
+        population_source_dataset_id=(
+            POPULATION_DATASET_ID if result.population_source_id is not None else None
+        ),
+        population_source_administrative_code=result.population_source_administrative_code,
         population_region_level=result.population_region_level,
         population_unit=result.population_unit,
         included_origin_region_codes=list(result.included_origin_region_codes),
         unavailable_reason=result.reason,
+        interpretation_caveat=landfill_analysis.PER_CAPITA_CAVEAT,
         caveat=landfill_analysis.PER_CAPITA_CAVEAT,
     )
 
@@ -349,13 +390,15 @@ def _origin_share(
     populations: list[landfill_analysis.MetropolitanPopulation],
     fee_reference_year: int,
     fee_reference_period: str,
+    fee_period_complete: bool,
+    required_month: str | None,
 ) -> LandfillOriginShare:
     meta = _ORIGIN_META[code]
     per_capita = landfill_analysis.origin_fee_per_capita(
         fee,
         populations,
         origin_region_code=code,
-        fee_reference_year=fee_reference_year,
+        required_month=required_month,
     )
     return LandfillOriginShare(
         origin_region_code=code,
@@ -372,6 +415,7 @@ def _origin_share(
             inbound_fee_krw=fee,
             fee_reference_year=fee_reference_year,
             fee_reference_period=fee_reference_period,
+            fee_period_complete=fee_period_complete,
         ),
     )
 
@@ -425,6 +469,19 @@ def landfill_summary(
     # aggregate KPI read from it.
     populations = _population_candidates(session)
     fee_reference_period = month_str if month_str is not None else f"{resolved_year:04d}"
+    # A single month is always a "complete" numerator for its own period; a year
+    # is complete only when all twelve landfill months are present.
+    fee_period_complete = True if month_str is not None else period.is_complete_year
+    # The one month whose population may serve as this period's denominator:
+    # the selected month, December of a complete year, or — for a partial year —
+    # the final month actually included in the fee, so the denominator never
+    # post-dates the numerator even when MOIS has published a later month.
+    required_month = landfill_analysis.required_population_month(
+        reference_year=resolved_year,
+        selected_month=month_str,
+        is_complete_year=period.is_complete_year,
+        available_through_month=period.available_through_month,
+    )
     grouped_origins = sorted(
         _group(rows, "origin_region_code").items(), key=lambda kv: kv[1][0], reverse=True
     )
@@ -437,16 +494,19 @@ def landfill_summary(
             populations=populations,
             fee_reference_year=resolved_year,
             fee_reference_period=fee_reference_period,
+            fee_period_complete=fee_period_complete,
+            required_month=required_month,
         )
         for code, (kg, fee) in grouped_origins
     ]
-    # Aggregate over exactly the origins in scope: Σ fee ÷ Σ same-year population
-    # (never the mean of the per-origin values, and never partially covered).
+    # Aggregate over exactly the origins in scope: Σ fee ÷ Σ same-period
+    # population (never the mean of the per-origin values, never partially
+    # covered).
     aggregate_per_capita = landfill_analysis.aggregate_fee_per_capita(
         total_fee,
         populations,
         origin_region_codes=[code for code, _ in grouped_origins],
-        fee_reference_year=resolved_year,
+        required_month=required_month,
     )
     waste_shares = [
         _waste_share(name, kg, fee, total_kg)
@@ -470,6 +530,7 @@ def landfill_summary(
             inbound_fee_krw=total_fee,
             fee_reference_year=resolved_year,
             fee_reference_period=fee_reference_period,
+            fee_period_complete=fee_period_complete,
         ),
         largest_origin_share=origin_shares[0] if origin_shares else None,
         largest_waste_share=waste_shares[0] if waste_shares else None,

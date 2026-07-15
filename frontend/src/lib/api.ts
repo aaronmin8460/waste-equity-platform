@@ -647,12 +647,14 @@ export interface LandfillPeriod {
 }
 
 /**
- * Derived inbound fee per resident (LANDFILL_INBOUND_FEE_PER_CAPITA).
+ * Derived inbound fee per resident (LANDFILL_INBOUND_FEE_PER_CAPITA, v2).
  *
  * `fee_per_capita_krw` and `unavailable_reason` are mutually exclusive: a value
- * is served only when an official population of the SAME reference year as the
- * fee exists. Null is never rendered as 0원 — show the reason instead. The value
- * is an analytical conversion, never an amount a resident actually paid.
+ * is served only when the official MOIS monthly population exists for exactly
+ * `required_population_month` (the selected month, December of a complete year,
+ * or the final month included in a partial year's fee). Null is never rendered
+ * as 0원 — show the reason instead. The value is an analytical conversion, never
+ * an amount a resident actually paid.
  */
 export interface LandfillFeePerCapita {
   indicator: string;
@@ -664,15 +666,25 @@ export interface LandfillFeePerCapita {
   inbound_fee_krw: string;
   fee_reference_year: number;
   fee_reference_period: string;
+  fee_period_complete: boolean;
+  required_population_month: string | null;
   population: number | null;
+  population_reference_month: string | null;
   population_reference_year: number | null;
   population_reference_period: string | null;
+  population_temporal_granularity: string | null;
   population_definition: string | null;
+  population_definition_version: string | null;
+  population_comparability_note: string | null;
   population_source_id: string | null;
+  population_source_dataset_id: string | null;
+  population_source_administrative_code: string | null;
   population_region_level: string | null;
   population_unit: string | null;
   included_origin_region_codes: string[];
   unavailable_reason: string | null;
+  interpretation_caveat: string;
+  /** Retained v1 field; identical to `interpretation_caveat`. */
   caveat: string;
 }
 
