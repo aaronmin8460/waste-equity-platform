@@ -2,7 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts"],
+    // .test.ts = pure logic (node); .test.tsx = component rendering (jsdom, set
+    // per-file via a `@vitest-environment jsdom` docblock).
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     environment: "node",
   },
 });
