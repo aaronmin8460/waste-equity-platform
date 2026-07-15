@@ -2,7 +2,9 @@
 
 /**
  * MapLibre GL map: SIGUNGU equity choropleth + facility points (Equity mode) and
- * the 500 m suitability candidate grid (Suitability mode).
+ * the 500 m suitability candidate grid (Suitability mode). These are the only
+ * two modes that render a map; the 수도권매립지 mode is a dashboard and does not
+ * mount this component at all.
  *
  * Regions/candidates with no served value render in the explicit no-data color;
  * facilities without backend-served coordinates are never drawn. Candidate cells
@@ -18,12 +20,10 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type {
   CandidateDetail,
   FacilityItem,
-  LandfillFlows,
   RegionBoundaryCollection,
   SuitabilityCandidateCollection,
   SuitabilityStatus,
 } from "../lib/api";
-import { buildFlowFeatures, buildNodeFeatures } from "../lib/flow";
 import {
   CANDIDATE_SCORE_PALETTE_5,
   FACILITY_CATEGORY_COLORS,
@@ -33,7 +33,12 @@ import {
 } from "../lib/metrics";
 import { geometryBounds, isDegenerateBounds } from "../lib/suitability";
 
-export type MapMode = "equity" | "suitability" | "flow";
+/**
+ * The modes that actually render a map. The 수도권매립지 dashboard mode is not
+ * one of them: its source declares metropolitan totals only, with no municipal
+ * origin and no route, so there is nothing map-shaped to draw honestly.
+ */
+export type MapMode = "equity" | "suitability";
 
 // OpenStreetMap standard raster tiles are only published to zoom 19; requesting
 // z20+ returns HTTP 400 (verified against tile.openstreetmap.org). Cap the raster
@@ -66,15 +71,6 @@ const EXCLUDED_COLOR = "#9aa2ad";
 const REVIEW_COLOR = "#e8a33d";
 const SELECTED_FILL_COLOR = "#2563eb";
 const SELECTED_OUTLINE_COLOR = "#1d4ed8";
-
-// Landfill flow: a gradient along each straight line (light at the metropolitan
-// origin → saturated at the destination) shows direction toward the landfill
-// without needing text glyphs (which would require an external font request).
-const FLOW_ORIGIN_COLOR = "#93c5fd";
-const FLOW_DEST_COLOR = "#1d4ed8";
-const FLOW_ORIGIN_NODE_COLOR = "#2563eb";
-const FLOW_DEST_NODE_COLOR = "#dc2626";
-const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 export interface RegionDisplayValue {
   /** Numeric value used only for the color scale. */
@@ -111,7 +107,6 @@ interface MapViewProps {
   facilities: FacilityItem[];
   showFacilities: boolean;
   mode: MapMode;
-  flows: LandfillFlows | null;
   candidates: SuitabilityCandidateCollection | null;
   candidateBreaks: number[];
   statusVisibility: StatusVisibility;
@@ -182,7 +177,6 @@ export default function MapView({
   facilities,
   showFacilities,
   mode,
-  flows,
   candidates,
   candidateBreaks,
   statusVisibility,
@@ -459,104 +453,9 @@ export default function MapView({
         });
       }
 
-      // --- Landfill flow (metropolitan origin → single destination) ---
-      const flowLineData = flows ? buildFlowFeatures(flows.flows) : EMPTY_FC;
-      const flowNodeData = flows ? buildNodeFeatures(flows.flows, flows.destination) : EMPTY_FC;
-      const flowSource = map.getSource("flow-lines") as maplibregl.GeoJSONSource | undefined;
-      if (flowSource) {
-        flowSource.setData(flowLineData);
-      } else {
-        map.addSource("flow-lines", { type: "geojson", data: flowLineData, lineMetrics: true });
-        map.addLayer({
-          id: "flow-lines",
-          type: "line",
-          source: "flow-lines",
-          layout: { "line-cap": "round" },
-          paint: {
-            "line-width": ["get", "width"] as unknown as maplibregl.DataDrivenPropertyValueSpecification<number>,
-            "line-opacity": 0.85,
-            "line-gradient": [
-              "interpolate",
-              ["linear"],
-              ["line-progress"],
-              0,
-              FLOW_ORIGIN_COLOR,
-              1,
-              FLOW_DEST_COLOR,
-            ] as unknown as maplibregl.ExpressionSpecification,
-          },
-        });
-        map.on("click", "flow-lines", (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const props = feature.properties as Record<string, string>;
-          const shareRaw = props.quantity_share;
-          const share =
-            shareRaw && shareRaw !== "null"
-              ? `${(Number(shareRaw) * 100).toFixed(1)}%`
-              : "—";
-          const tons = Math.round(Number(props.quantity_tons)).toLocaleString("en-US");
-          const eok = (Number(props.inbound_fee_krw) / 100_000_000).toFixed(1);
-          new maplibregl.Popup()
-            .setLngLat(event.lngLat)
-            .setHTML(
-              `<strong>${props.origin_name} ▶ 수도권매립지</strong><br/>` +
-                `반입량: ${tons} t (${share})<br/>` +
-                `반입수수료: ${eok}억원<br/>` +
-                `<small>공식 보고값 · 광역 단위 (시·군·구 아님)</small>`,
-            )
-            .addTo(map);
-        });
-        map.on("mouseenter", "flow-lines", () => {
-          map.getCanvas().style.cursor = "pointer";
-        });
-        map.on("mouseleave", "flow-lines", () => {
-          map.getCanvas().style.cursor = "";
-        });
-      }
-      const flowNodeSource = map.getSource("flow-nodes") as maplibregl.GeoJSONSource | undefined;
-      if (flowNodeSource) {
-        flowNodeSource.setData(flowNodeData);
-      } else {
-        map.addSource("flow-nodes", { type: "geojson", data: flowNodeData });
-        map.addLayer({
-          id: "flow-nodes",
-          type: "circle",
-          source: "flow-nodes",
-          paint: {
-            "circle-radius": ["case", ["==", ["get", "kind"], "destination"], 9, 6],
-            "circle-color": [
-              "case",
-              ["==", ["get", "kind"], "destination"],
-              FLOW_DEST_NODE_COLOR,
-              FLOW_ORIGIN_NODE_COLOR,
-            ],
-            "circle-stroke-color": "#ffffff",
-            "circle-stroke-width": 1.5,
-          },
-        });
-        map.on("click", "flow-nodes", (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const props = feature.properties as Record<string, string>;
-          const isDestination = props.kind === "destination";
-          new maplibregl.Popup()
-            .setLngLat(event.lngLat)
-            .setHTML(
-              `<strong>${props.name}</strong><br/>` +
-                (isDestination
-                  ? "목적지 시설 (destination)"
-                  : "출발 광역지자체 (metropolitan origin)") +
-                "<br/><small>개략(직선) 흐름 표시 — 정밀 위치가 아님</small>",
-            )
-            .addTo(map);
-        });
-      }
-
       // --- Mode + visibility toggles (never conditionally skip addLayer) ---
       const equity = mode === "equity";
       const suitability = mode === "suitability";
-      const flow = mode === "flow";
       map.setLayoutProperty("regions-fill", "visibility", equity ? "visible" : "none");
       map.setLayoutProperty("regions-outline", "visibility", equity ? "visible" : "none");
       map.setLayoutProperty("candidates-fill", "visibility", suitability ? "visible" : "none");
@@ -568,10 +467,8 @@ export default function MapView({
       map.setLayoutProperty(
         "facilities-points",
         "visibility",
-        showFacilities && !flow ? "visible" : "none",
+        showFacilities ? "visible" : "none",
       );
-      map.setLayoutProperty("flow-lines", "visibility", flow ? "visible" : "none");
-      map.setLayoutProperty("flow-nodes", "visibility", flow ? "visible" : "none");
     };
 
     if (loadedRef.current) {
@@ -592,7 +489,6 @@ export default function MapView({
     facilities,
     showFacilities,
     mode,
-    flows,
     candidates,
     candidateBreaks,
     statusVisibility,

@@ -124,6 +124,80 @@ this registry in the same change.
   transport-only cost or total waste-management cost. Full method:
   `docs/CAPITAL_REGION_LANDFILL_FLOW_IMPLEMENTATION.md`.
 
+### LANDFILL_INBOUND_FEE_PER_CAPITA (`landfill-fee-per-capita-v1`) — V2 Phase 2
+
+- Endpoint: `GET /api/v1/landfill/summary` — served as the nested
+  `fee_per_capita` object on the response envelope (the all-origin aggregate) and
+  on every `origin_shares[]` row (the per-metropolitan value).
+- Korean metric name: **주민 1인당 환산 반입수수료** (an analytical conversion —
+  never a resident's actual payment, bill, or tax burden).
+- Formula: `inbound_fee_krw(선택 조건) ÷ population[persons]`, served in
+  `KRW/인` (KRW per person), exact `Decimal` (`ROUND_HALF_EVEN`, 2 dp) — the
+  same precision as the fee itself. The denominator is converted with
+  `Decimal(int)`, so no binary float touches a served value.
+- Numerator: the official reported `반입수수료` for **exactly** the selected
+  filters (year or month × origin × waste type) — `OFFICIAL_REPORTED_VALUE`,
+  odcloud `15064394`. A waste-type filter narrows the numerator to that type.
+- Denominator: SGIS total resident population (`regional_population`,
+  `population_definition = SGIS_TOTAL_POPULATION`, `unit = persons`) of the
+  matching metropolitan `SIDO` region — `OFFICIAL_REPORTED_VALUE`, source
+  `sgis`. The ratio is `OFFICIAL_INPUTS_DERIVED_VALUE`.
+- **Same-reference-year rule (mandatory).** A value is derived *only* when the
+  population's `reference_year` equals the fee's reference year. The nearest,
+  latest, previous, or any other year is **never** substituted — 2024 fee + 2024
+  population is allowed; 2025 or 2026 fee against a 2024-only population is
+  refused with `NO_MATCHING_POPULATION_YEAR`. Because SGIS population is
+  currently ingested for 2024 only while landfill data runs to 2026-05, the
+  default reporting period (the latest complete landfill year) legitimately
+  serves **no** per-capita value — that is the rule working, not a defect.
+- **Monthly denominator.** For a single-month selection the numerator is that
+  month's fee and the denominator is the official **annual** resident population
+  of the same calendar year (`선택 월 반입수수료 ÷ 해당 연도 인구`). No monthly
+  population exists and none is interpolated; the served
+  `fee_reference_period` (`YYYY-MM`) and `population_reference_period` (`YYYY`)
+  make the mismatch explicit rather than implied.
+- **All-origin aggregation.** `Σ fee(서울+인천+경기) ÷ Σ same-year
+  population(서울+인천+경기)` — a population-weighted ratio. The three per-origin
+  values are **never averaged** (a mean would reweight the regions as if equal in
+  size; live 2024: aggregate 4,111.91 vs. mean-of-three 4,375.95). Coverage must
+  be complete: if any included origin lacks a valid same-year population the
+  aggregate is `null` with `INCOMPLETE_POPULATION_COVERAGE`, never a partially
+  covered number. When *every* origin fails identically, the shared reason is
+  reported instead (more precise than "incomplete").
+- Unavailability vocabulary (served as `unavailable_reason`; value is `null`,
+  never `0`): `NO_MATCHING_POPULATION_YEAR` (population exists, but not for the
+  fee's year), `NO_METROPOLITAN_POPULATION` (no accepted SIDO population row for
+  that origin), `ZERO_POPULATION` and `AMBIGUOUS_POPULATION_DEFINITION` (reused
+  verbatim from the `per-capita-v1` / `facility-burden-v1` exclusion vocabulary;
+  competing accepted denominators, or a definition other than
+  `SGIS_TOTAL_POPULATION`, are refused rather than silently resolved — identical
+  duplicate rows from different boundary vintages are *not* ambiguous), and
+  `INCOMPLETE_POPULATION_COVERAGE` (aggregate only).
+- **Origin → canonical region crosswalk (reviewed).**
+  `landfill_inbound_monthly.origin_region_code` pins `KR-SGIS-11/28/41` — the
+  *standard administrative* sido codes (11 서울 / 28 인천 / 41 경기) carrying a
+  `KR-SGIS-` prefix. The canonical `regions` rows ingested from SGIS use *SGIS's
+  own* sido codes: `KR-SGIS-11` 서울특별시, `KR-SGIS-23` 인천광역시,
+  `KR-SGIS-31` 경기도. **Only Seoul coincides.** The two systems are therefore
+  bridged by an explicit reviewed map (11→11, 28→23, 41→31) whose every entry is
+  verified against the canonical region's official `region_name` before the
+  population is used; an unexpected name refuses the denominator
+  (`NO_METROPOLITAN_POPULATION`) rather than attaching a different region's
+  population. Joining the two code systems directly would resolve only Seoul and
+  silently report Incheon and Gyeonggi as having no population.
+- Provenance served for both inputs: fee amount + `fee_reference_year` /
+  `fee_reference_period`; and `population`, `population_reference_year`,
+  `population_reference_period`, `population_definition`, `population_source_id`,
+  `population_region_level`, `population_unit`, plus
+  `included_origin_region_codes`, `unit`, `derivation_version`,
+  `derivation_formula`, `evidence_status`, and the interpretation `caveat`.
+- Caveat (served with every value): 선택 기간의 공식 반입수수료를 동일 연도의 해당
+  지역 인구로 나눈 분석용 환산값입니다. 개인의 실제 납부액이 아닙니다.
+- Accounting basis: `VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW` for the
+  numerator. The landfill fee is never combined with RCIS municipal generation,
+  and this indicator is never compared against `per-capita-v1` (different bases,
+  different units).
+
 ## Accounting Bases Are Never Merged
 
 `ORIGIN_BASED_TREATMENT_OUTCOME` (how a region's own generated waste was
