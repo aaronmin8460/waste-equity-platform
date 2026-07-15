@@ -52,14 +52,22 @@ describe("formatKrwPerPerson", () => {
 });
 
 describe("perCapitaUnavailableLabel", () => {
-  it("explains the same-reference-year rule", () => {
-    expect(perCapitaUnavailableLabel("NO_MATCHING_POPULATION_YEAR")).toBe(
-      "동일 연도 인구 데이터 없음",
+  it("describes a missing exact period, not a missing year (v2 is month-aligned)", () => {
+    expect(perCapitaUnavailableLabel("NO_MATCHING_POPULATION_PERIOD")).toBe(
+      "동일 기간 인구 데이터 없음",
+    );
+    expect(perCapitaUnavailableLabel("NO_MATCHING_POPULATION_PERIOD")).not.toContain("연도");
+  });
+
+  it("explains an incomplete all-origin aggregate", () => {
+    expect(perCapitaUnavailableLabel("INCOMPLETE_POPULATION_COVERAGE")).toBe(
+      "일부 지역의 동일 기간 인구가 없어 합계를 계산할 수 없습니다",
     );
   });
 
   it("maps every reason the backend can serve", () => {
     for (const reason of [
+      "NO_MATCHING_POPULATION_PERIOD",
       "NO_METROPOLITAN_POPULATION",
       "ZERO_POPULATION",
       "AMBIGUOUS_POPULATION_DEFINITION",

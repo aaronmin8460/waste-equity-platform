@@ -37,6 +37,12 @@ CANONICAL = {
     "KR-SGIS-28": ("KR-SGIS-23", "인천광역시"),
     "KR-SGIS-41": ("KR-SGIS-31", "경기도"),
 }
+# landfill origin code -> official MOIS 행정구역 code
+MOIS_CODE = {
+    "KR-SGIS-11": "1100000000",
+    "KR-SGIS-28": "2800000000",
+    "KR-SGIS-41": "4100000000",
+}
 
 
 def _row(month: str, origin: str, waste: str, qty: str, fee: str) -> LandfillInboundMonthly:
@@ -73,56 +79,76 @@ def _seed_population(
     session: Session,
     origin: str,
     *,
-    year: int,
+    month: str,
     population: int,
-    definition: str = "SGIS_TOTAL_POPULATION",
+    definition: str = "MOIS_RESIDENT_REGISTRATION_TOTAL",
+    source_id: str = "mois_resident_population",
+    granularity: str = "MONTHLY",
     region_level: str = "SIDO",
     region_name: str | None = None,
-) -> None:
-    """Seed a canonical SIDO region and its population row for a landfill origin.
+    region_id: int | None = None,
+) -> int:
+    """Seed one MOIS monthly population row for a landfill origin.
 
-    The region is inserted with a core insert (not the ORM) because the SQLite
-    tier's ``regions`` table intentionally has no PostGIS geometry column.
+    The canonical region is inserted with a core insert (not the ORM) because the
+    SQLite tier's ``regions`` table intentionally has no PostGIS geometry column.
+    Pass ``region_id`` to add another month to an already-seeded region.
     """
     canonical_code, canonical_name = CANONICAL[origin]
-    region_id = session.execute(
-        insert(Region).values(
-            region_code=canonical_code,
-            region_name=region_name if region_name is not None else canonical_name,
-            region_level=region_level,
-            source_id="sgis",
-            source_administrative_code=canonical_code.removeprefix("KR-SGIS-"),
-            source_geographic_level=region_level,
-            boundary_reference_period=str(year),
-            valid_from=datetime.date(year, 1, 1),
-        )
-    ).inserted_primary_key[0]
+    if region_id is None:
+        region_id = session.execute(
+            insert(Region).values(
+                region_code=canonical_code,
+                region_name=region_name if region_name is not None else canonical_name,
+                region_level=region_level,
+                source_id="sgis",
+                source_administrative_code=canonical_code.removeprefix("KR-SGIS-"),
+                source_geographic_level=region_level,
+                boundary_reference_period=month[:4],
+                valid_from=datetime.date(int(month[:4]), 1, 1),
+            )
+        ).inserted_primary_key[0]
     session.add(
         RegionalPopulation(
             region_id=region_id,
-            reference_year=year,
-            reference_period=str(year),
+            reference_year=int(month[:4]),
+            reference_month=month,
+            reference_period=month,
             population=population,
             unit="persons",
             population_definition=definition,
-            source_id="sgis",
-            source_administrative_code=canonical_code.removeprefix("KR-SGIS-"),
+            population_temporal_granularity=granularity,
+            population_definition_version="MOIS_TOTAL_WITH_UNREGISTERED_RESIDENT_AND_OVERSEAS_NATIONALS",
+            population_comparability_note="2015-01 이후: 거주불명자와 재외국민이 포함됩니다.",
+            source_id=source_id,
+            source_administrative_code=MOIS_CODE[origin],
             source_geographic_level=region_level,
             retrieved_at=NOW,
-            transformation_version="sgis-v1",
+            transformation_version="mois-resident-population-v1",
             ingestion_run_id=1,
             created_at=NOW,
             updated_at=NOW,
         )
     )
     session.commit()
+    return int(region_id)
 
 
-def _seed_all_populations(session: Session, year: int = 2024) -> None:
-    # Round synthetic denominators so the expected per-capita values are exact.
-    _seed_population(session, "KR-SGIS-11", year=year, population=10_000_000)
-    _seed_population(session, "KR-SGIS-28", year=year, population=3_000_000)
-    _seed_population(session, "KR-SGIS-41", year=year, population=14_000_000)
+def _seed_all_populations(session: Session, months: list[str] | None = None) -> dict[str, int]:
+    """Round synthetic denominators so expected per-capita values are exact."""
+    months = months or ["2024-12"]
+    sizes = {"KR-SGIS-11": 10_000_000, "KR-SGIS-28": 3_000_000, "KR-SGIS-41": 14_000_000}
+    ids: dict[str, int] = {}
+    for origin, population in sizes.items():
+        for month in months:
+            ids[origin] = _seed_population(
+                session,
+                origin,
+                month=month,
+                population=population,
+                region_id=ids.get(origin),
+            )
+    return ids
 
 
 def _seed(session: Session) -> None:
@@ -151,6 +177,25 @@ def _seed(session: Session) -> None:
     for m in range(1, 6):
         rows.append(_row(f"2025-{m:02d}", "KR-SGIS-11", "생활", "800000", "40000000"))
     session.add_all(rows)
+    session.commit()
+
+
+def _seed_year(session: Session, year: int, *, fee: str, qty: str = "1000000") -> None:
+    """A complete synthetic landfill year (all twelve months, Seoul 생활)."""
+    for source_id, name in (("15064381", "반입량"), ("15064394", "반입수수료")):
+        if session.get(DataSource, source_id) is None:
+            session.add(
+                DataSource(
+                    source_id=source_id,
+                    source_name="수도권매립지관리공사",
+                    dataset_name=name,
+                    endpoint="https://api.odcloud.kr/api",
+                    publication_frequency="MONTHLY",
+                    enabled=True,
+                    documentation_url=None,
+                )
+            )
+    session.add_all([_row(f"{year}-{m:02d}", "KR-SGIS-11", "생활", qty, fee) for m in range(1, 13)])
     session.commit()
 
 
@@ -280,54 +325,96 @@ def test_flows_waste_filter_still_only_metropolitan(client: TestClient, session:
 
 
 # --------------------------------------------------------------------------- #
-# Derived inbound fee per resident (landfill-fee-per-capita-v1)
+# Derived inbound fee per resident (landfill-fee-per-capita-v2)
 #
 # Seeded 2024 fees: Seoul 690,000,000 / Gyeonggi 180,000,000 / Incheon 45,000,000
-# (total 915,000,000). Seeded 2024 population: 10,000,000 / 14,000,000 / 3,000,000
-# (total 27,000,000).
+# (total 915,000,000). Seeded MOIS monthly population: 10,000,000 / 3,000,000 /
+# 14,000,000 (total 27,000,000).
 # --------------------------------------------------------------------------- #
 
 
-def test_per_capita_2024_fee_uses_2024_population(client: TestClient, session: Session) -> None:
+def test_per_capita_complete_year_uses_that_years_december(
+    client: TestClient, session: Session
+) -> None:
     _seed(session)
-    _seed_all_populations(session, year=2024)
+    _seed_all_populations(session, ["2024-12"])
     body = client.get("/api/v1/landfill/summary?year=2024").json()
 
     aggregate = body["fee_per_capita"]
     assert aggregate["indicator"] == "LANDFILL_INBOUND_FEE_PER_CAPITA"
-    assert aggregate["derivation_version"] == "landfill-fee-per-capita-v1"
+    assert aggregate["derivation_version"] == "landfill-fee-per-capita-v2"
     assert aggregate["evidence_status"] == "OFFICIAL_INPUTS_DERIVED_VALUE"
     assert aggregate["unit"] == "KRW/인"
     assert aggregate["unavailable_reason"] is None
+    # A complete landfill year is denominated by that year's December month-end.
+    assert aggregate["required_population_month"] == "2024-12"
+    assert aggregate["population_reference_month"] == "2024-12"
+    assert aggregate["population_reference_period"] == "2024-12"
+    assert aggregate["population_temporal_granularity"] == "MONTHLY"
+    assert aggregate["fee_reference_period"] == "2024"
+    assert aggregate["fee_period_complete"] is True
     # 915,000,000 / 27,000,000 = 33.888... -> 33.89
     assert Decimal(aggregate["fee_per_capita_krw"]) == Decimal("33.89")
     assert aggregate["population"] == 27_000_000
-    assert aggregate["population_reference_year"] == 2024
-    assert aggregate["fee_reference_year"] == 2024
-    assert aggregate["fee_reference_period"] == "2024"
-    assert aggregate["population_definition"] == "SGIS_TOTAL_POPULATION"
-    assert aggregate["population_source_id"] == "sgis"
+    assert aggregate["population_definition"] == "MOIS_RESIDENT_REGISTRATION_TOTAL"
+    assert aggregate["population_source_id"] == "mois_resident_population"
+    assert aggregate["population_source_dataset_id"] == "mois_resident_population"
     assert aggregate["population_region_level"] == "SIDO"
-    assert aggregate["population_unit"] == "persons"
-    assert "실제 납부액이 아닙니다" in aggregate["caveat"]
+    assert aggregate["population_definition_version"]
+    assert aggregate["population_comparability_note"]
+    assert "실제 납부액이 아닙니다" in aggregate["interpretation_caveat"]
+    assert aggregate["caveat"] == aggregate["interpretation_caveat"]
+
+
+def test_per_capita_2008_annual_uses_2008_december(client: TestClient, session: Session) -> None:
+    _seed_year(session, 2008, fee="30000000")
+    _seed_all_populations(session, ["2008-12"])
+    body = client.get("/api/v1/landfill/summary?year=2008").json()
+    aggregate = body["fee_per_capita"]
+    assert aggregate["required_population_month"] == "2008-12"
+    assert aggregate["population_reference_month"] == "2008-12"
+    assert aggregate["fee_per_capita_krw"] is not None
+
+
+def test_per_capita_2008_monthly_uses_that_exact_month(
+    client: TestClient, session: Session
+) -> None:
+    _seed_year(session, 2008, fee="30000000")
+    _seed_all_populations(session, ["2008-03", "2008-12"])
+    body = client.get("/api/v1/landfill/summary?year=2008&month=3").json()
+    aggregate = body["fee_per_capita"]
+    assert aggregate["required_population_month"] == "2008-03"
+    assert aggregate["population_reference_month"] == "2008-03"
+    assert aggregate["fee_reference_period"] == "2008-03"
+    # 2008-03 holds only Seoul: 30,000,000 / 10,000,000 = 3.00
+    assert Decimal(aggregate["fee_per_capita_krw"]) == Decimal("3.00")
 
 
 def test_per_capita_row_level_values_for_each_metropolitan_origin(
     client: TestClient, session: Session
 ) -> None:
     _seed(session)
-    _seed_all_populations(session, year=2024)
+    _seed_all_populations(session, ["2024-12"])
     body = client.get("/api/v1/landfill/summary?year=2024").json()
     by_origin = {o["origin_sgis_code"]: o for o in body["origin_shares"]}
     assert set(by_origin) == {"11", "28", "41"}
-    # Seoul 690,000,000 / 10,000,000 = 69.00
+    # Seoul 690,000,000 / 10,000,000 = 69.00 (MOIS 1100000000)
     assert Decimal(by_origin["11"]["fee_per_capita"]["fee_per_capita_krw"]) == Decimal("69.00")
-    # Incheon 45,000,000 / 3,000,000 = 15.00
+    assert (
+        by_origin["11"]["fee_per_capita"]["population_source_administrative_code"] == "1100000000"
+    )
+    # Incheon 45,000,000 / 3,000,000 = 15.00 (MOIS 2800000000 -> canonical KR-SGIS-23)
     assert Decimal(by_origin["28"]["fee_per_capita"]["fee_per_capita_krw"]) == Decimal("15.00")
-    # Gyeonggi 180,000,000 / 14,000,000 = 12.857... -> 12.86
+    assert (
+        by_origin["28"]["fee_per_capita"]["population_source_administrative_code"] == "2800000000"
+    )
+    # Gyeonggi 180,000,000 / 14,000,000 = 12.857... -> 12.86 (MOIS 4100000000 -> KR-SGIS-31)
     assert Decimal(by_origin["41"]["fee_per_capita"]["fee_per_capita_krw"]) == Decimal("12.86")
+    assert (
+        by_origin["41"]["fee_per_capita"]["population_source_administrative_code"] == "4100000000"
+    )
     for origin in by_origin.values():
-        assert origin["fee_per_capita"]["population_reference_year"] == 2024
+        assert origin["fee_per_capita"]["population_reference_month"] == "2024-12"
         assert origin["fee_per_capita"]["unavailable_reason"] is None
 
 
@@ -335,7 +422,7 @@ def test_per_capita_aggregate_is_total_fee_over_total_population_not_a_mean(
     client: TestClient, session: Session
 ) -> None:
     _seed(session)
-    _seed_all_populations(session, year=2024)
+    _seed_all_populations(session, ["2024-12"])
     body = client.get("/api/v1/landfill/summary?year=2024").json()
     aggregate = Decimal(body["fee_per_capita"]["fee_per_capita_krw"])
     per_origin = [Decimal(o["fee_per_capita"]["fee_per_capita_krw"]) for o in body["origin_shares"]]
@@ -345,18 +432,88 @@ def test_per_capita_aggregate_is_total_fee_over_total_population_not_a_mean(
     assert aggregate != mean
 
 
-def test_per_capita_2025_never_uses_2024_population(client: TestClient, session: Session) -> None:
+def test_per_capita_monthly_never_borrows_another_month(
+    client: TestClient, session: Session
+) -> None:
     _seed(session)
-    _seed_all_populations(session, year=2024)  # only 2024 population exists
+    # Only December exists; a February request must NOT fall back to it.
+    _seed_all_populations(session, ["2024-12"])
+    body = client.get("/api/v1/landfill/summary?year=2024&month=2").json()
+    aggregate = body["fee_per_capita"]
+    assert aggregate["required_population_month"] == "2024-02"
+    assert aggregate["fee_per_capita_krw"] is None
+    assert aggregate["population"] is None
+    assert aggregate["unavailable_reason"] == "NO_MATCHING_POPULATION_PERIOD"
+
+
+def test_per_capita_annual_never_borrows_another_year(client: TestClient, session: Session) -> None:
+    _seed(session)
+    # Only 2024-12 exists; the 2025 partial year must not borrow it.
+    _seed_all_populations(session, ["2024-12"])
     body = client.get("/api/v1/landfill/summary?year=2025").json()
     aggregate = body["fee_per_capita"]
     assert aggregate["fee_per_capita_krw"] is None
-    assert aggregate["population"] is None
+    assert aggregate["unavailable_reason"] == "NO_MATCHING_POPULATION_PERIOD"
     assert aggregate["population_reference_year"] is None
-    assert aggregate["unavailable_reason"] == "NO_MATCHING_POPULATION_YEAR"
-    for origin in body["origin_shares"]:
-        assert origin["fee_per_capita"]["fee_per_capita_krw"] is None
-        assert origin["fee_per_capita"]["unavailable_reason"] == "NO_MATCHING_POPULATION_YEAR"
+
+
+def test_per_capita_partial_year_uses_the_final_landfill_month_not_a_later_one(
+    client: TestClient, session: Session
+) -> None:
+    _seed(session)
+    # Landfill 2025 stops at 2025-05 (see _seed). MOIS has published 2025-06 and
+    # 2025-12, but the denominator must be the last month IN the fee numerator.
+    _seed_all_populations(session, ["2025-05", "2025-06", "2025-12"])
+    body = client.get("/api/v1/landfill/summary?year=2025").json()
+    aggregate = body["fee_per_capita"]
+    assert body["period"]["is_complete_year"] is False
+    assert body["period"]["available_through_month"] == "2025-05"
+    assert aggregate["fee_period_complete"] is False
+    assert aggregate["required_population_month"] == "2025-05"
+    assert aggregate["population_reference_month"] == "2025-05"
+    assert aggregate["population_reference_month"] != "2025-06"
+    assert aggregate["population_reference_month"] != "2025-12"
+    assert aggregate["fee_per_capita_krw"] is not None
+
+
+def test_per_capita_never_uses_sgis_rows(client: TestClient, session: Session) -> None:
+    _seed(session)
+    # An annual SGIS row for the same region/year must never be a landfill
+    # denominator under v2 — not even when no MOIS row exists.
+    seoul_id = _seed_population(
+        session,
+        "KR-SGIS-11",
+        month="2024-12",
+        population=10_000_000,
+        source_id="mois_resident_population",
+    )
+    session.add(
+        RegionalPopulation(
+            region_id=seoul_id,
+            reference_year=2024,
+            reference_month=None,
+            reference_period="2024",
+            population=9_999_999,
+            unit="persons",
+            population_definition="SGIS_TOTAL_POPULATION",
+            population_temporal_granularity="ANNUAL",
+            source_id="sgis",
+            source_administrative_code="11",
+            source_geographic_level="SIDO",
+            retrieved_at=NOW,
+            transformation_version="sgis-v1",
+            ingestion_run_id=1,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    session.commit()
+    body = client.get("/api/v1/landfill/summary?year=2024&origin=11").json()
+    seoul = body["origin_shares"][0]["fee_per_capita"]
+    # The MOIS denominator (10,000,000) is used, never the SGIS one (9,999,999).
+    assert seoul["population"] == 10_000_000
+    assert seoul["population_source_id"] == "mois_resident_population"
+    assert seoul["population_definition"] == "MOIS_RESIDENT_REGISTRATION_TOTAL"
 
 
 def test_per_capita_unavailable_when_no_population_at_all(
@@ -374,7 +531,7 @@ def test_per_capita_zero_population_returns_null_not_zero(
     client: TestClient, session: Session
 ) -> None:
     _seed(session)
-    _seed_population(session, "KR-SGIS-11", year=2024, population=0)
+    _seed_population(session, "KR-SGIS-11", month="2024-12", population=0)
     body = client.get("/api/v1/landfill/summary?year=2024&origin=11").json()
     seoul = body["origin_shares"][0]
     assert seoul["fee_per_capita"]["fee_per_capita_krw"] is None
@@ -383,17 +540,37 @@ def test_per_capita_zero_population_returns_null_not_zero(
     assert Decimal(seoul["inbound_fee_krw"]) == Decimal("690000000")
 
 
-def test_per_capita_ambiguous_population_definition_is_unavailable(
+def test_per_capita_ambiguous_population_is_unavailable(
     client: TestClient, session: Session
 ) -> None:
+    """Two region *vintages* sharing a canonical code disagree on the value.
+
+    The monthly partial unique index already forbids two rows for the same
+    (region_id, month, source, definition), so genuine ambiguity can only come
+    from boundary-versioned regions: two `regions` rows with the same
+    `region_code` each carrying their own 2024-12 population. Competing values
+    are refused rather than silently resolved.
+    """
     _seed(session)
-    # Two competing accepted denominators for the same region/year.
-    _seed_population(session, "KR-SGIS-11", year=2024, population=10_000_000)
-    _seed_population(session, "KR-SGIS-11", year=2024, population=9_000_000)
+    _seed_population(session, "KR-SGIS-11", month="2024-12", population=10_000_000)
+    # A second vintage of the same canonical region with a different value.
+    _seed_population(session, "KR-SGIS-11", month="2024-12", population=9_000_000)
     body = client.get("/api/v1/landfill/summary?year=2024&origin=11").json()
     seoul = body["origin_shares"][0]
     assert seoul["fee_per_capita"]["fee_per_capita_krw"] is None
     assert seoul["fee_per_capita"]["unavailable_reason"] == "AMBIGUOUS_POPULATION_DEFINITION"
+
+
+def test_per_capita_identical_duplicate_vintages_are_not_ambiguous(
+    client: TestClient, session: Session
+) -> None:
+    # Two vintages agreeing on the value are not a conflict.
+    _seed(session)
+    _seed_population(session, "KR-SGIS-11", month="2024-12", population=10_000_000)
+    _seed_population(session, "KR-SGIS-11", month="2024-12", population=10_000_000)
+    body = client.get("/api/v1/landfill/summary?year=2024&origin=11").json()
+    seoul = body["origin_shares"][0]["fee_per_capita"]
+    assert Decimal(seoul["fee_per_capita_krw"]) == Decimal("69.00")
 
 
 def test_per_capita_aggregate_incomplete_when_one_origin_lacks_population(
@@ -401,8 +578,8 @@ def test_per_capita_aggregate_incomplete_when_one_origin_lacks_population(
 ) -> None:
     _seed(session)
     # Gyeonggi deliberately missing.
-    _seed_population(session, "KR-SGIS-11", year=2024, population=10_000_000)
-    _seed_population(session, "KR-SGIS-28", year=2024, population=3_000_000)
+    _seed_population(session, "KR-SGIS-11", month="2024-12", population=10_000_000)
+    _seed_population(session, "KR-SGIS-28", month="2024-12", population=3_000_000)
     body = client.get("/api/v1/landfill/summary?year=2024").json()
     aggregate = body["fee_per_capita"]
     assert aggregate["fee_per_capita_krw"] is None
@@ -413,28 +590,11 @@ def test_per_capita_aggregate_incomplete_when_one_origin_lacks_population(
     assert by_origin["41"]["fee_per_capita"]["unavailable_reason"] == "NO_METROPOLITAN_POPULATION"
 
 
-def test_per_capita_monthly_fee_over_same_year_annual_population(
-    client: TestClient, session: Session
-) -> None:
-    _seed(session)
-    _seed_all_populations(session, year=2024)
-    body = client.get("/api/v1/landfill/summary?year=2024&month=2").json()
-    aggregate = body["fee_per_capita"]
-    assert aggregate["fee_reference_period"] == "2024-02"
-    assert aggregate["fee_reference_year"] == 2024
-    # 2024-02 holds only Seoul 생활: 50,000,000 KRW over the 2024 annual
-    # population of the single origin in scope (10,000,000) = 5.00.
-    assert Decimal(aggregate["inbound_fee_krw"]) == Decimal("50000000")
-    assert aggregate["population"] == 10_000_000
-    assert aggregate["population_reference_year"] == 2024  # annual denominator
-    assert Decimal(aggregate["fee_per_capita_krw"]) == Decimal("5.00")
-
-
 def test_per_capita_waste_filter_uses_only_that_waste_fee(
     client: TestClient, session: Session
 ) -> None:
     _seed(session)
-    _seed_all_populations(session, year=2024)
+    _seed_all_populations(session, ["2024-12"])
     body = client.get("/api/v1/landfill/summary?year=2024&waste_name=건설").json()
     aggregate = body["fee_per_capita"]
     # 건설 exists only for Seoul: 90,000,000 / 10,000,000 = 9.00
@@ -447,7 +607,7 @@ def test_per_capita_origin_filter_aggregate_matches_that_origin(
     client: TestClient, session: Session
 ) -> None:
     _seed(session)
-    _seed_all_populations(session, year=2024)
+    _seed_all_populations(session, ["2024-12"])
     body = client.get("/api/v1/landfill/summary?year=2024&origin=28").json()
     assert len(body["origin_shares"]) == 1
     assert Decimal(body["fee_per_capita"]["fee_per_capita_krw"]) == Decimal("15.00")
@@ -457,7 +617,7 @@ def test_per_capita_origin_filter_aggregate_matches_that_origin(
 def test_per_capita_ignores_non_sido_population(client: TestClient, session: Session) -> None:
     _seed(session)
     _seed_population(
-        session, "KR-SGIS-11", year=2024, population=10_000_000, region_level="SIGUNGU"
+        session, "KR-SGIS-11", month="2024-12", population=10_000_000, region_level="SIGUNGU"
     )
     body = client.get("/api/v1/landfill/summary?year=2024&origin=11").json()
     reason = body["origin_shares"][0]["fee_per_capita"]["unavailable_reason"]
@@ -472,18 +632,28 @@ def test_per_capita_refuses_denominator_when_canonical_region_name_unexpected(
     # silently attached to a different region.
     _seed(session)
     _seed_population(
-        session, "KR-SGIS-11", year=2024, population=10_000_000, region_name="다른광역시"
+        session, "KR-SGIS-11", month="2024-12", population=10_000_000, region_name="다른광역시"
     )
     body = client.get("/api/v1/landfill/summary?year=2024&origin=11").json()
     reason = body["origin_shares"][0]["fee_per_capita"]["unavailable_reason"]
     assert reason == "NO_METROPOLITAN_POPULATION"
 
 
-def test_existing_official_fields_and_caveats_survive_per_capita_addition(
+def test_per_capita_decimal_precision_and_rounding(client: TestClient, session: Session) -> None:
+    _seed(session)
+    # 690,000,000 / 7,000,000 = 98.5714... -> 98.57 (ROUND_HALF_EVEN, 2dp)
+    _seed_population(session, "KR-SGIS-11", month="2024-12", population=7_000_000)
+    body = client.get("/api/v1/landfill/summary?year=2024&origin=11").json()
+    value = body["origin_shares"][0]["fee_per_capita"]["fee_per_capita_krw"]
+    assert Decimal(value) == Decimal("98.57")
+    assert value.count(".") == 1 and len(value.split(".")[1]) == 2
+
+
+def test_existing_official_fields_and_caveats_survive_v2(
     client: TestClient, session: Session
 ) -> None:
     _seed(session)
-    _seed_all_populations(session, year=2024)
+    _seed_all_populations(session, ["2024-12"])
     body = client.get("/api/v1/landfill/summary?year=2024").json()
     # Official quantity/fee/effective-fee, provenance, and period are untouched.
     assert Decimal(body["total_quantity_kg"]) == Decimal("17500000")
@@ -495,15 +665,13 @@ def test_existing_official_fields_and_caveats_survive_per_capita_addition(
     joined = " ".join(body["caveats"])
     assert "시·군·구별 반입량을 의미하지 않습니다" in joined
     assert "순수 운송비 또는 전체 폐기물 관리비가 아닙니다" in joined
-    # The route/granularity limitation is served on every landfill response...
     assert "실제 운송 경로를 의미하지 않습니다" in joined
-    # ...while the per-capita interpretation caveat rides on the indicator it
-    # describes, not on the shared list (endpoints without the metric must not
-    # advertise it).
     assert "개인의 실제 납부액이 아닙니다" not in joined
-    assert "개인의 실제 납부액이 아닙니다" in body["fee_per_capita"]["caveat"]
+    assert "개인의 실제 납부액이 아닙니다" in body["fee_per_capita"]["interpretation_caveat"]
     notes = " ".join(body["evidence"]["notes"])
     assert "주민 1인당 환산 반입수수료" in notes
+    # The definition-change limitation is disclosed with the data.
+    assert "2010-10" in notes and "2015-01" in notes
 
 
 def test_per_capita_caveat_not_served_on_endpoints_without_the_metric(
@@ -515,5 +683,4 @@ def test_per_capita_caveat_not_served_on_endpoints_without_the_metric(
         assert "fee_per_capita" not in body
         joined = " ".join(body["caveats"])
         assert "개인의 실제 납부액이 아닙니다" not in joined
-        # The always-true landfill caveats are still present.
         assert "실제 운송 경로를 의미하지 않습니다" in joined

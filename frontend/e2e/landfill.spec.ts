@@ -17,6 +17,9 @@ const backendUrl = process.env.E2E_BACKEND_URL;
 test.skip(!backendUrl, "E2E_BACKEND_URL is not configured (live smoke only)");
 
 const ALLOWED_HOST_SUFFIXES = ["localhost", "127.0.0.1", "tile.openstreetmap.org"];
+// The population source must be reached only by the backend ingestion, never by
+// the browser. Listed explicitly so a regression names the culprit.
+const FORBIDDEN_HOSTS = ["jumin.mois.go.kr", "mois.go.kr", "data.go.kr", "odcloud.kr"];
 
 /** Attach the external-request guard. Unchanged in strictness from the map-era spec. */
 function guardExternalRequests(page: import("@playwright/test").Page): string[] {
@@ -25,6 +28,10 @@ function guardExternalRequests(page: import("@playwright/test").Page): string[] 
     const url = new URL(request.url());
     if (url.protocol === "blob:" || url.protocol === "data:") return;
     const host = url.hostname;
+    if (FORBIDDEN_HOSTS.some((banned) => host === banned || host.endsWith(`.${banned}`))) {
+      disallowedRequests.push(`GOVERNMENT_API:${request.url()}`);
+      return;
+    }
     if (!ALLOWED_HOST_SUFFIXES.some((allowed) => host === allowed || host.endsWith(`.${allowed}`))) {
       disallowedRequests.push(request.url());
     }
@@ -150,29 +157,91 @@ test("landfill dashboard: year / month / waste filters change the served values"
   }
 });
 
-test("landfill dashboard: per-capita fee uses a same-year population or says why not", async ({
+test("landfill dashboard: year options include landfill years from 2008 onward", async ({
   page,
 }) => {
   await openLandfillDashboard(page);
-  const kpi = page.getByTestId("landfill-kpi-per-capita");
+  const years = (await page.getByTestId("landfill-year-select").locator("option").allInnerTexts())
+    .map((t) => t.trim())
+    .filter((t) => /^\d{4}$/.test(t));
+  expect(years).toContain("2008");
+  expect(years).toContain("2024");
+  expect(years).toContain("2025");
+  expect(years).toContain("2026");
+});
 
-  const unavailable = page.getByTestId("landfill-per-capita-unavailable");
-  if ((await unavailable.count()) > 0) {
-    // No same-year population for the default period: the reason must be explicit
-    // and no zero may be shown in its place.
-    await expect(unavailable).toContainText(/데이터 없음|확인 필요|계산 불가/);
-    await expect(kpi).not.toContainText("0원/인");
-  } else {
-    // A served value must show both reference periods, and they must be the same
-    // calendar year (the same-year rule).
-    const periods = page.getByTestId("landfill-per-capita-periods");
-    await expect(periods).toBeVisible();
-    const text = (await periods.textContent()) ?? "";
-    const feeYear = text.match(/수수료 기준 (\d{4})/)?.[1];
-    const populationYear = text.match(/인구 기준 (\d{4})/)?.[1];
-    expect(feeYear).toBeTruthy();
-    expect(populationYear).toBe(feeYear);
+async function selectYear(page: import("@playwright/test").Page, year: string) {
+  await page.getByTestId("landfill-year-select").selectOption(year);
+  await expect(page.getByTestId("landfill-dashboard")).toContainText(`${year}년`);
+}
+
+test("landfill dashboard: complete years are denominated by that year's December", async ({
+  page,
+}) => {
+  await openLandfillDashboard(page);
+  // 2008 / 2024 / 2025 are complete landfill years -> December month-end MOIS.
+  for (const year of ["2008", "2024", "2025"]) {
+    await selectYear(page, year);
+    await expect(page.getByTestId("landfill-per-capita-periods")).toBeVisible();
+    await expect(page.getByTestId("landfill-population-month")).toHaveText(`${year}-12`);
+    await expect(page.getByTestId("landfill-kpi-per-capita")).toContainText("원/인");
+    // Never zero-filled.
+    await expect(page.getByTestId("landfill-kpi-per-capita")).not.toContainText("0원/인");
   }
+});
+
+test("landfill dashboard: the partial 2026 year uses its final landfill month", async ({
+  page,
+}) => {
+  await openLandfillDashboard(page);
+  await selectYear(page, "2026");
+  await expect(page.getByTestId("landfill-per-capita-periods")).toBeVisible();
+  const month = await page.getByTestId("landfill-population-month").textContent();
+  // The denominator month must be the last month IN the 2026 fee numerator, and
+  // must never post-date it even though MOIS publishes a later month.
+  expect(month).toMatch(/^2026-\d{2}$/);
+  const partial = page.getByTestId("landfill-partial-year");
+  if ((await partial.count()) > 0) {
+    const through = (await partial.textContent()) ?? "";
+    expect(through).toContain(month!.trim());
+  }
+});
+
+test("landfill dashboard: a monthly selection uses that exact population month", async ({
+  page,
+}) => {
+  await openLandfillDashboard(page);
+  await selectYear(page, "2024");
+  await expect(page.getByTestId("landfill-population-month")).toHaveText("2024-12");
+  await page.getByTestId("landfill-month-select").selectOption("7");
+  await expect(page.getByTestId("landfill-dashboard")).toContainText("7월");
+  // Selecting a month changes the population reference month to that exact month.
+  await expect(page.getByTestId("landfill-population-month")).toHaveText("2024-07");
+  await expect(page.getByTestId("landfill-per-capita-periods")).toContainText("수수료 기준 2024-07");
+});
+
+test("landfill dashboard: shows the MOIS source, v2 version and comparability notice", async ({
+  page,
+}) => {
+  await openLandfillDashboard(page);
+  await selectYear(page, "2024");
+  const source = page.getByTestId("landfill-population-source");
+  await expect(source).toContainText("행정안전부 주민등록 인구통계");
+  await expect(source).toContainText("mois_resident_population");
+  await expect(source).toContainText("월간");
+  // No SGIS fallback is ever used as the landfill denominator.
+  await expect(source).not.toContainText("SGIS_TOTAL_POPULATION");
+  await expect(page.getByTestId("landfill-derivation-version")).toHaveText(
+    "landfill-fee-per-capita-v2",
+  );
+  const note = page.getByTestId("landfill-comparability-note");
+  await expect(note).toContainText("2010-10");
+  await expect(note).toContainText("2015-01");
+  await expect(note).toContainText("외국인");
+  // The value never implies an actual resident payment.
+  await expect(page.getByTestId("landfill-kpi-per-capita")).toContainText(
+    "개인의 실제 납부액이 아닙니다",
+  );
 });
 
 test("landfill dashboard: usable on a mobile viewport", async ({ page }) => {
