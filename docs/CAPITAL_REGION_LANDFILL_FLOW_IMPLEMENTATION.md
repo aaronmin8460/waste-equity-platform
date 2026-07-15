@@ -171,7 +171,7 @@ composition 생활 51.7% / 하수오니(자원화) 18.3% / 음폐수 13.2% / 음
 
 ---
 
-### 5.1 Inbound fee per resident (`landfill-fee-per-capita-v1`) — V2 Phase 2
+### 5.1 Inbound fee per resident (`landfill-fee-per-capita-v2`) — V2 Phase 3
 
 Indicator `LANDFILL_INBOUND_FEE_PER_CAPITA`, Korean name **주민 1인당 환산
 반입수수료**, unit `KRW/인` (KRW per person), evidence
@@ -180,30 +180,50 @@ the `/summary` envelope (all-origin aggregate) and on each `origin_shares[]` row
 Pure derivation: `analysis/landfill.py`; the route only fetches and maps.
 
 ```
-주민 1인당 환산 반입수수료 = 선택 조건의 공식 반입수수료 ÷ 동일 연도의 해당 광역지자체 인구
+주민 1인당 환산 반입수수료 = 선택 기간의 공식 반입수수료 ÷ 필요한 기준월의 해당 광역지자체 인구
 ```
 
-Exact `Decimal`, `ROUND_HALF_EVEN`, 2 dp. Full method, vocabulary, and rationale:
-`docs/ANALYTICAL_METHODS.md` (indicator registry). Key rules:
+**v2 supersedes v1** in both denominator source and temporal alignment: v1 used
+the **SGIS annual** population of the same reference *year*; v2 uses the **MOIS
+monthly** resident-registration population for the exact required *month*. The
+version is bumped, not silently redefined; v1 is retired.
 
-- **Same reference year only.** A population year that differs from the fee year
-  is never substituted (no nearest/latest/previous fallback). Since SGIS
-  population is ingested for **2024 only** and landfill data runs to 2026-05, the
-  default period (latest complete year = 2025) legitimately serves `null` with
-  `NO_MATCHING_POPULATION_YEAR`; 2024 serves real values.
-- **Monthly**: `선택 월 반입수수료 ÷ 해당 연도 인구` — the annual resident
-  population of the same calendar year (no monthly population exists; none is
-  interpolated). Both periods are served so the difference is explicit.
-- **All origins**: `Σ fee ÷ Σ same-year population`, never the mean of the three
+Exact `Decimal`, `ROUND_HALF_EVEN`, 2 dp. Full source contract, definition-era
+evidence, ingestion, and refresh: **`docs/MOIS_POPULATION_2008_2026.md`**. Full
+method registry: `docs/ANALYTICAL_METHODS.md`. Key rules:
+
+- **Denominator source**: 행정안전부 주민등록 인구통계 / 행정동별 주민등록 인구 및
+  세대현황 (`mois_resident_population`, `MOIS_RESIDENT_REGISTRATION_TOTAL`,
+  `MONTHLY`, month-end). `전체 = 거주자 + 거주불명자 + 재외국민`, 외국인 제외.
+  **SGIS rows are excluded in SQL** and can never be a landfill fallback; SGIS
+  remains the Equity denominator, untouched.
+- **Exact required month only** (`required_population_month`, served). Never the
+  previous/next month, December, the latest month, or another year.
+  - selected month → that exact `YYYY-MM`;
+  - complete landfill year → `YYYY-12`;
+  - partial landfill year → the final month **actually included in the fee**.
+    MOIS publishes 2026-06 while landfill fees end 2026-05, so 2026 uses
+    **2026-05**: a denominator never post-dates its numerator.
+- **All origins**: `Σ fee ÷ Σ same-month population`, never the mean of the three
   per-origin values. Incomplete coverage ⇒ `null` +
   `INCOMPLETE_POPULATION_COVERAGE`.
-- **Unavailable ⇒ `null` + reason, never `0`**: `NO_MATCHING_POPULATION_YEAR`,
+- **Unavailable ⇒ `null` + reason, never `0`**: `NO_MATCHING_POPULATION_PERIOD`
+  (a missing *month*, never described as a missing year),
   `NO_METROPOLITAN_POPULATION`, `ZERO_POPULATION`,
   `AMBIGUOUS_POPULATION_DEFINITION`, `INCOMPLETE_POPULATION_COVERAGE`.
-- **Provenance for both inputs** is served: fee amount/year/period, and
-  population value/year/period/definition/source/level/unit.
+- **Comparability limit (served)**: the MOIS total definition changed at
+  **2010-10** (거주불명자) and **2015-01** (재외국민), both confirmed against the
+  source. Each row carries `population_definition_version` and
+  `population_comparability_note`; the dashboard shows the notice. 2008 and 2024
+  values are not like-for-like.
+- **Coverage limit**: landfill data starts 1999-08 but MOIS population starts
+  2008-01, so pre-2008 periods serve `null` + `NO_MATCHING_POPULATION_PERIOD`.
+- **Provenance for both inputs** is served: fee amount / year / period /
+  completeness / required month, and population value / month / year / period /
+  granularity / definition / definition version / comparability note / source /
+  dataset / administrative code / level / unit.
 - **No N+1**: one batched, column-scoped query fetches the three metropolitan
-  regions' population rows (the MULTIPOLYGON boundary is never selected).
+  regions' monthly population rows (the MULTIPOLYGON boundary is never selected).
 
 #### Origin → canonical region crosswalk (reviewed, load-bearing)
 
@@ -225,18 +245,20 @@ recode upstream refuses the denominator (`NO_METROPOLITAN_POPULATION`) instead o
 attaching another region's population. This is a **read-side** bridge: no stored
 code was changed, no migration and no re-ingestion were required.
 
-Live-verified 2024 (local PostGIS, hand-checked against the stored inputs):
+Live-verified 2024 annual under v2 (local PostGIS, hand-checked against the
+stored official inputs; denominator = **2024-12** MOIS month-end):
 
-| Origin | Official fee (KRW) | SGIS 2024 population | 주민 1인당 환산 반입수수료 |
+| Origin | Official 2024 fee (KRW) | MOIS 2024-12 population | 주민 1인당 환산 반입수수료 |
 | --- | ---: | ---: | ---: |
-| 서울시 | 41,647,362,920 | 9,335,444 | 4,461.21 |
-| 인천시 | 15,228,400,200 | 3,058,033 | 4,979.80 |
-| 경기도 | 51,300,279,950 | 13,914,479 | 3,686.83 |
-| **전체** | **108,176,043,070** | **26,307,956** | **4,111.91** |
+| 서울시 | 41,647,362,920 | 9,331,828 | 4,462.94 |
+| 인천시 | 15,228,400,200 | 3,021,010 | 5,040.83 |
+| 경기도 | 51,300,279,950 | 13,694,685 | 3,746.00 |
+| **전체** | **108,176,043,070** | **26,047,523** | **4,153.03** |
 
-The aggregate (4,111.91) is the population-weighted ratio, deliberately **not**
-the mean of the three (4,375.95). 2025 returns `null` +
-`NO_MATCHING_POPULATION_YEAR` — 2024 population is never borrowed.
+The aggregate (4,153.03) is the population-weighted ratio, deliberately **not**
+the mean of the three (4,416.59). 2026 (partial through 2026-05) uses the
+**2026-05** population, never the later 2026-06 MOIS has published. Pre-2008
+landfill years return `null` + `NO_MATCHING_POPULATION_PERIOD`.
 
 ## 6. Evidence meanings
 
