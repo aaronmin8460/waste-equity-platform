@@ -13,8 +13,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from waste_equity_backend.models import RegionalPopulation, RegionalWasteStatistics
+from waste_equity_backend.models.metadata import GRANULARITY_MONTHLY
 
 UTC = datetime.UTC
+
+MOIS_SOURCE_ID = "mois_resident_population"
 
 
 def _seed_population_row(session: Session, reference_year: int) -> None:
@@ -32,6 +35,32 @@ def _seed_population_row(session: Session, reference_year: int) -> None:
             source_geographic_level="SIGUNGU",
             retrieved_at=now,
             transformation_version="test-v1",
+            ingestion_run_id=1,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    session.commit()
+
+
+def _seed_mois_monthly_row(session: Session, month: str, region_id: int = 2) -> None:
+    """One MOIS monthly SIDO row: the series /population must never serve."""
+    now = datetime.datetime(2026, 7, 9, tzinfo=UTC)
+    session.add(
+        RegionalPopulation(
+            region_id=region_id,
+            reference_year=int(month[:4]),
+            reference_month=month,
+            reference_period=month,
+            population=9_000_000,
+            unit="persons",
+            population_definition="RESIDENT_REGISTERED_TOTAL",
+            population_temporal_granularity=GRANULARITY_MONTHLY,
+            source_id=MOIS_SOURCE_ID,
+            source_administrative_code="11",
+            source_geographic_level="SIDO",
+            retrieved_at=now,
+            transformation_version="mois-resident-population-v1",
             ingestion_run_id=1,
             created_at=now,
             updated_at=now,
@@ -94,6 +123,63 @@ def test_population_unavailable_year_lists_available_years(
     assert detail["error"] == "NO_DATA_FOR_PERIOD"
     assert detail["requested_year"] == 2000
     assert detail["available_years"] == [1999]
+
+
+def test_population_year_resolution_ignores_newer_mois_monthly_rows(
+    client: TestClient, session: Session
+) -> None:
+    """The map's default year must come from the SGIS annual series alone.
+
+    `regional_population` also holds the MOIS monthly SIDO series, which runs years
+    ahead of SGIS. Resolving the latest year across the whole table picked a MOIS
+    year and answered with SIDO rows that match no SIGUNGU boundary on the map.
+    Several months are seeded so a monthly row cannot pass as an annual one.
+    """
+    _seed_population_row(session, 2024)
+    for month in ("2026-01", "2026-02", "2026-03"):
+        _seed_mois_monthly_row(session, month)
+
+    # 2026 exists only in the MOIS monthly series, so it is not an available year here.
+    response = client.get("/api/v1/population", params={"year": 2026})
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert detail["error"] == "NO_DATA_FOR_PERIOD"
+    assert detail["requested_year"] == 2026
+    assert detail["available_years"] == [2024]
+
+
+def test_population_available_years_exclude_non_sgis_and_non_sigungu_rows(
+    client: TestClient, session: Session
+) -> None:
+    """Every scope filter is load-bearing, not just the granularity one."""
+    now = datetime.datetime(2026, 7, 9, tzinfo=UTC)
+    _seed_population_row(session, 2024)
+    # Annual rows that are still outside this endpoint's series: a SIDO row, and a
+    # SIGUNGU row from another source. Both are newer than the SGIS series.
+    for region_id, level, source_id in ((3, "SIDO", MOIS_SOURCE_ID), (4, "SIGUNGU", "other")):
+        session.add(
+            RegionalPopulation(
+                region_id=region_id,
+                reference_year=2025,
+                reference_period="2025",
+                population=1000,
+                unit="persons",
+                population_definition="RESIDENT_REGISTERED",
+                source_id=source_id,
+                source_administrative_code=str(region_id),
+                source_geographic_level=level,
+                retrieved_at=now,
+                transformation_version="test-v1",
+                ingestion_run_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    session.commit()
+
+    detail = client.get("/api/v1/population", params={"year": 2025}).json()["detail"]
+    assert detail["error"] == "NO_DATA_FOR_PERIOD"
+    assert detail["available_years"] == [2024]
 
 
 def test_waste_statistics_empty_database_returns_structured_404(client: TestClient) -> None:
