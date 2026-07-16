@@ -5,6 +5,11 @@ call government APIs and never read credentials; they serve exactly what the
 ingestion jobs stored, with required source and reference-period metadata on
 every item.
 
+Scope rule: an endpoint that serves one series must filter to that series rather
+than to its whole table. ``/population`` serves the annual SGIS SIGUNGU series
+only, because ``regional_population`` also holds the MOIS monthly SIDO series
+that the landfill per-capita endpoints read.
+
 Availability rules: a request for a reference year that is not in the database
 returns a structured 404 (never an empty 200 and never substitute data); an
 unknown ``region_code`` filter returns a structured 404; a legitimately empty
@@ -22,6 +27,7 @@ from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from ...db import get_session
 from ...models import Region, RegionalPopulation, RegionalWasteStatistics, WasteTreatmentFacility
+from ...models.metadata import GRANULARITY_ANNUAL
 from ...schemas import (
     DatasetEnvelope,
     FacilityOut,
@@ -58,16 +64,41 @@ Ownership = Literal["PUBLIC", "PRIVATE"]
 # ingestion sets valid_from to January 1 of the boundary reference year).
 _REGION_VINTAGE: ColumnElement[Any] = func.extract("year", Region.valid_from)
 
+# This endpoint's series: the annual SGIS SIGUNGU population, which is the only
+# series drawn on the SIGUNGU boundaries served by /regions/boundaries.
+_POPULATION_SOURCE_ID = "sgis"
+_POPULATION_GEOGRAPHIC_LEVEL = "SIGUNGU"
+
 
 def _not_found(error: UnavailableDataError) -> HTTPException:
     return HTTPException(status_code=404, detail=error.model_dump())
 
 
 def _available_years(
-    session: Session, year_expression: ColumnElement[Any] | InstrumentedAttribute[int]
+    session: Session,
+    year_expression: ColumnElement[Any] | InstrumentedAttribute[int],
+    *scope: ColumnElement[bool],
 ) -> list[int]:
-    rows = session.scalars(select(year_expression).distinct().order_by(year_expression)).all()
+    rows = session.scalars(
+        select(year_expression).where(*scope).distinct().order_by(year_expression)
+    ).all()
     return [int(row) for row in rows]
+
+
+def _population_scope() -> tuple[ColumnElement[bool], ...]:
+    """Restrict `regional_population` to the series this endpoint serves.
+
+    The table also holds the MOIS monthly SIDO series (the landfill per-capita
+    denominator), which runs several years ahead of SGIS. Without this scope the
+    latest available year resolves to a MOIS year and the endpoint answers with
+    SIDO rows whose codes match no SIGUNGU boundary on the map. Year resolution
+    and the row query must apply it identically or they disagree.
+    """
+    return (
+        RegionalPopulation.population_temporal_granularity == GRANULARITY_ANNUAL,
+        RegionalPopulation.source_id == _POPULATION_SOURCE_ID,
+        RegionalPopulation.source_geographic_level == _POPULATION_GEOGRAPHIC_LEVEL,
+    )
 
 
 def _resolve_reference_year(
@@ -208,15 +239,18 @@ def list_population(
     year: YearParam = None,
     region_code: str | None = None,
 ) -> DatasetEnvelope[PopulationOut]:
+    scope = _population_scope()
     resolved_year = _resolve_reference_year(
-        _available_years(session, RegionalPopulation.reference_year), year, "regional population"
+        _available_years(session, RegionalPopulation.reference_year, *scope),
+        year,
+        "regional population",
     )
     if region_code is not None:
         _require_known_region_code(session, region_code)
     query = (
         select(RegionalPopulation, Region)
         .join(Region, RegionalPopulation.region_id == Region.id)
-        .where(RegionalPopulation.reference_year == resolved_year)
+        .where(RegionalPopulation.reference_year == resolved_year, *scope)
         .order_by(Region.region_code)
     )
     if region_code is not None:
