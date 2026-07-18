@@ -614,6 +614,27 @@ export function fetchSuitabilityCandidateDetail(
   );
 }
 
+/**
+ * MapLibre vector-tile URL template for a suitability run + weight profile.
+ *
+ * The whole candidate grid is served as PostGIS Mapbox Vector Tiles, so the map
+ * no longer fetches a bbox-limited GeoJSON slice. The run id and profile are in
+ * the path, so each tile URL is immutable and cacheable forever.
+ *
+ * Same-origin by construction: in production `apiBaseUrl()` is "" and the tiles
+ * resolve against the page origin (the reverse proxy). We resolve that empty
+ * base to `window.location.origin` because MapLibre fetches tiles from a Web
+ * Worker whose base URL is a blob: URL — a bare relative path would not resolve
+ * there. No host, IP, or domain is ever hardcoded.
+ */
+export function suitabilityTileUrl(runId: number, profile: SuitabilityProfile): string {
+  const base = apiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
+  return `${base}/api/v1/suitability/tiles/${runId}/${profile}/{z}/{x}/{y}.mvt`;
+}
+
+/** Vector-tile source-layer name the map binds its candidate layers to. */
+export const SUITABILITY_TILE_SOURCE_LAYER = "candidates";
+
 // --------------------------------------------------------------------------- //
 // Capital-region Sudokwon Landfill inbound flow (V2 Phase 1) — the only
 // source-declared origin→destination waste flow. Strictly metropolitan: origins

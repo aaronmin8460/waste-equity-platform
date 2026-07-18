@@ -185,6 +185,16 @@ export const CANDIDATE_SCORE_PALETTE_5 = [
   "#045a8d",
 ] as const;
 
+/**
+ * Stable, deterministic interior thresholds for the suitability score domain
+ * (a fixed 0–100 scale), splitting it into five equal 20-point classes
+ * (0–20 · 20–40 · 40–60 · 60–80 · 80–100). These are intentionally NOT computed
+ * from whichever candidates happen to be on screen: the map now serves the whole
+ * grid as vector tiles, and per-viewport quantiles would recolor identical cells
+ * as the user panned. Sized to CANDIDATE_SCORE_PALETTE_5 (five colors).
+ */
+export const CANDIDATE_SCORE_BREAKS: readonly number[] = [20, 40, 60, 80];
+
 export const NO_DATA_COLOR = "#d9d9d9";
 
 /** Resolve the explicit classification policy for a metric. */

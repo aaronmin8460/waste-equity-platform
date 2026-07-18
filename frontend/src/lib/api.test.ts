@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  SUITABILITY_TILE_SOURCE_LAYER,
   apiBaseUrl,
   fetchJson,
   fetchReportingBoundaries,
@@ -10,6 +11,7 @@ import {
   fetchSuitabilityCandidateDetail,
   fetchSuitabilityCandidates,
   fetchSuitabilityPolicy,
+  suitabilityTileUrl,
 } from "./api";
 
 afterEach(() => {
@@ -125,6 +127,37 @@ describe("suitability client", () => {
     expect(url).toContain("top=5");
     expect(url).toContain("limit=2000");
     expect(init.signal).toBe(controller.signal);
+  });
+
+  it("builds an immutable, same-origin vector-tile URL with the run and profile", () => {
+    // Default (local dev) base is the local backend.
+    const url = suitabilityTileUrl(47, "access_focused");
+    expect(url).toBe(
+      "http://localhost:8000/api/v1/suitability/tiles/47/access_focused/{z}/{x}/{y}.mvt",
+    );
+    // Immutable path (run + profile), correct source, and the XYZ template + .mvt.
+    expect(url).toContain("/api/v1/suitability/tiles/47/access_focused/");
+    expect(url).toContain("{z}/{x}/{y}.mvt");
+    // The map URL is a tile template, never the limited GeoJSON candidate endpoint.
+    expect(url).not.toContain("/candidates");
+    expect(url).not.toContain("limit=");
+    expect(url).not.toContain("bbox=");
+  });
+
+  it("resolves the tile URL same-origin in production (empty API base)", () => {
+    // Production bakes NEXT_PUBLIC_API_BASE_URL="" and the tile fetch runs in a
+    // worker; in a non-window (node) context this yields a root-relative path,
+    // and in the browser it resolves against window.location.origin. Never an
+    // internal container host, IP, or hardcoded domain.
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "");
+    const url = suitabilityTileUrl(47, "baseline");
+    expect(url).toBe("/api/v1/suitability/tiles/47/baseline/{z}/{x}/{y}.mvt");
+    expect(url).not.toContain("localhost");
+    expect(url).not.toContain("8000");
+  });
+
+  it("exposes the vector-tile source-layer name the map binds to", () => {
+    expect(SUITABILITY_TILE_SOURCE_LAYER).toBe("candidates");
   });
 
   it("surfaces a structured 404 for a candidate detail", async () => {

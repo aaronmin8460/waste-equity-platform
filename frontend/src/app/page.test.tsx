@@ -68,10 +68,66 @@ vi.mock("../lib/api", async (importOriginal) => {
       .fn()
       .mockResolvedValue({ ...emptyEnvelope, unit: "kg/인/년", excluded_regions: [] }),
     fetchDataSources: vi.fn().mockResolvedValue([]),
-    fetchSuitabilityPolicy: vi.fn().mockRejectedValue(new Error("not needed")),
-    fetchSuitabilityLatestRun: vi.fn().mockRejectedValue(new Error("not needed")),
-    fetchSuitabilitySummary: vi.fn().mockRejectedValue(new Error("not needed")),
-    fetchSuitabilityCandidates: vi.fn().mockRejectedValue(new Error("not needed")),
+    fetchSuitabilityPolicy: vi.fn().mockResolvedValue({
+      policy_version: "suitability-policy-v1",
+      derivation_version: "suitability-screening-v1",
+      candidate_grid_version: "capital-grid-500m-v1",
+      statuses: ["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"],
+      weight_profiles: {
+        baseline: { zoning: "0.4", road: "0.3", equity: "0.2", demand: "0.1" },
+        equal: { zoning: "0.25", road: "0.25", equity: "0.25", demand: "0.25" },
+        equity_focused: { zoning: "0.2", road: "0.2", equity: "0.4", demand: "0.2" },
+        access_focused: { zoning: "0.2", road: "0.4", equity: "0.2", demand: "0.2" },
+      },
+      weight_rationale: {},
+      hard_exclusion_codes: {},
+      review_codes: {},
+      zoning_registry: {},
+      road_distance_curve: [],
+      grid: {},
+      disclaimer: "Analytical screening only — not a legal determination.",
+    }),
+    fetchSuitabilityLatestRun: vi.fn().mockResolvedValue({
+      id: 47,
+      derivation_version: "suitability-screening-v1",
+      policy_version: "suitability-policy-v1",
+      candidate_grid_version: "capital-grid-500m-v1",
+      reference_year: 2024,
+      boundary_vintage: "2024",
+      weight_profile: "baseline",
+      analysis_signature: "sig",
+      status: "SUCCEEDED",
+      candidate_count_total: 47893,
+      candidate_count_eligible: 1099,
+      candidate_count_review: 34534,
+      candidate_count_excluded: 12260,
+      input_dataset_version_ids: [],
+      input_provenance: {},
+      started_at: "2024-01-01T00:00:00Z",
+      completed_at: "2024-01-01T00:00:00Z",
+      created_at: "2024-01-01T00:00:00Z",
+    }),
+    fetchSuitabilitySummary: vi.fn().mockResolvedValue({
+      run_id: 47,
+      reference_year: 2024,
+      policy_version: "suitability-policy-v1",
+      derivation_version: "suitability-screening-v1",
+      candidate_grid_version: "capital-grid-500m-v1",
+      weight_profile: "baseline",
+      candidate_count_total: 47893,
+      candidate_count_eligible: 1099,
+      candidate_count_review: 34534,
+      candidate_count_excluded: 12260,
+      exclusion_reason_counts: {},
+      review_reason_counts: {},
+      sido_distribution: {},
+      top_candidates: [],
+      coverage_notes: [],
+      assumptions: [],
+      disclaimer: "Analytical screening only — not a legal determination.",
+    }),
+    // Must NOT be called for map rendering anymore (the map uses vector tiles).
+    fetchSuitabilityCandidates: vi.fn().mockRejectedValue(new Error("should not be called")),
     fetchLandfillSummary: vi.fn().mockResolvedValue({
       period,
       origin_filter: null,
@@ -143,6 +199,7 @@ vi.mock("../lib/api", async (importOriginal) => {
 });
 
 import Home from "./page";
+import { fetchSuitabilityCandidates } from "./../lib/api";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -188,5 +245,37 @@ describe("dashboard mode routing", () => {
     fireEvent.click(screen.getByTestId("mode-equity"));
     await waitFor(() => expect(screen.getByTestId("map-container")).toBeDefined());
     expect(screen.queryByTestId("landfill-dashboard")).toBeNull();
+  });
+});
+
+describe("suitability map uses vector tiles, not a limited GeoJSON slice", () => {
+  it("shows accurate vector-tile wording and drops the '2,000 / total viewport-limit' copy", async () => {
+    await renderHome();
+    fireEvent.click(screen.getByTestId("mode-suitability"));
+
+    // The analysis summary loads (policy + latest run + summary), so the panel
+    // renders its real content rather than the loading/error state.
+    await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
+
+    // New, accurate wording: the whole grid is available, only needed tiles ship.
+    const note = await screen.findByTestId("candidate-vector-note");
+    expect(note.textContent).toContain("벡터 타일");
+    expect(note.textContent).toContain("전체 데이터");
+
+    // The old misleading "지도 영역 내 2,000 / …개 표시 (뷰포트 제한)" copy is gone.
+    expect(screen.queryByTestId("candidate-viewport-count")).toBeNull();
+    expect(document.body.textContent).not.toContain("뷰포트 제한");
+
+    // The complete latest-run totals (from the summary) are shown.
+    expect(screen.getByTestId("candidate-counts").textContent).toContain("47,893");
+  });
+
+  it("never calls the limited candidate GeoJSON endpoint for map rendering", async () => {
+    await renderHome();
+    fireEvent.click(screen.getByTestId("mode-suitability"));
+    await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
+    // The map renders from /tiles/{run}/{profile}/{z}/{x}/{y}.mvt; the old
+    // bbox+limit=2000 candidate fetch is never invoked.
+    expect(vi.mocked(fetchSuitabilityCandidates)).not.toHaveBeenCalled();
   });
 });
