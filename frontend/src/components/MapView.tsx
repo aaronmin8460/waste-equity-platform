@@ -7,10 +7,12 @@
  * mount this component at all.
  *
  * Regions/candidates with no served value render in the explicit no-data color;
- * facilities without backend-served coordinates are never drawn. Candidate cells
- * are fetched from the backend by viewport bbox with a controlled limit (never the
- * whole capital-region grid at once). The basemap is OpenStreetMap raster tiles
- * (public, non-government) with attribution. The map talks only to the backend.
+ * facilities without backend-served coordinates are never drawn. The suitability
+ * candidate grid is served in full as PostGIS Mapbox Vector Tiles (MVT): the map
+ * requests only the tiles its current viewport/zoom needs, so every candidate
+ * cell of the selected run is reachable without ever loading a bbox-limited slice
+ * of the ~48k grid. The basemap is OpenStreetMap raster tiles (public,
+ * non-government) with attribution. The map talks only to the backend.
  */
 
 import { useEffect, useRef } from "react";
@@ -21,9 +23,9 @@ import type {
   CandidateDetail,
   FacilityItem,
   RegionBoundaryCollection,
-  SuitabilityCandidateCollection,
   SuitabilityStatus,
 } from "../lib/api";
+import { SUITABILITY_TILE_SOURCE_LAYER } from "../lib/api";
 import {
   CANDIDATE_SCORE_PALETTE_5,
   FACILITY_CATEGORY_COLORS,
@@ -46,6 +48,14 @@ export type MapMode = "equity" | "suitability";
 // and the interactive map so the zoom control stops at the supported maximum and
 // the basemap never goes blank. See docs / OSM tile usage policy.
 const OSM_MAX_ZOOM = 19;
+
+// The candidate vector source stops generating tiles at this zoom; MapLibre
+// overzooms it for higher interactive zooms. Bounding it keeps a zoomed-in
+// viewport from requesting a swarm of sub-cell tiles while still cutting the
+// dataset into viewport-sized pieces (a z14 tile ≈ 2–3 km, tens of 500 m cells).
+const CANDIDATE_TILE_MAX_ZOOM = 14;
+
+const CANDIDATE_LAYER_IDS = ["candidates-fill", "candidates-review-outline"];
 
 const BASE_STYLE: maplibregl.StyleSpecification = {
   version: 8,
@@ -107,19 +117,24 @@ interface MapViewProps {
   facilities: FacilityItem[];
   showFacilities: boolean;
   mode: MapMode;
-  candidates: SuitabilityCandidateCollection | null;
-  candidateBreaks: number[];
+  /**
+   * MVT tile-URL template ("…/{z}/{x}/{y}.mvt") for the active run + profile, or
+   * null when there is no suitability run to render (e.g. equity mode). Changing
+   * it (profile switch) re-points the vector source at the new immutable tiles.
+   */
+  candidateTileUrl: string | null;
+  /** Stable interior score thresholds for the candidate palette (never per-viewport). */
+  candidateBreaks: readonly number[];
   statusVisibility: StatusVisibility;
   /** Currently-selected candidate (list or map). Drives highlight + map movement. */
   selectedCandidate: CandidateDetail | null;
-  onViewportChange: (bbox: string) => void;
   onCandidateClick: (candidateId: number) => void;
 }
 
 // A MapLibre "step" needs at least one stop; with no breaks (e.g. before data
 // loads) fall back to a single constant color so the layer is always valid. The
 // palette is passed in so the map uses the exact colors the legend shows.
-function scoreStep(breaks: number[], palette: readonly string[]): unknown {
+function scoreStep(breaks: readonly number[], palette: readonly string[]): unknown {
   if (breaks.length === 0) return palette[palette.length - 1];
   const step: unknown[] = ["step", ["get", "metric_value"], palette[0]];
   breaks.forEach((threshold, index) => {
@@ -140,16 +155,30 @@ function fillColorExpression(
   ] as unknown as maplibregl.ExpressionSpecification;
 }
 
-// Candidate fill: eligible -> score step; review -> distinct amber; excluded ->
-// muted. Candidates always use their own 5-class palette (never the region one).
-function candidateColorExpression(breaks: number[]): maplibregl.ExpressionSpecification {
+// Candidate score step over the tile's `score` attribute (the eligible final
+// score). Eligible cells always carry a numeric score; coalesce to 0 defensively
+// so the step input is never null (which MapLibre would reject).
+function candidateScoreStep(breaks: readonly number[]): unknown {
+  const palette = CANDIDATE_SCORE_PALETTE_5;
+  if (breaks.length === 0) return palette[palette.length - 1];
+  const step: unknown[] = ["step", ["coalesce", ["get", "score"], 0], palette[0]];
+  breaks.forEach((threshold, index) => {
+    step.push(threshold, palette[Math.min(index + 1, palette.length - 1)]);
+  });
+  return step;
+}
+
+// Candidate fill: eligible -> score step (stable 0–100 classes); review ->
+// distinct amber; excluded -> muted. Candidates always use their own 5-class
+// palette (never the region one).
+function candidateColorExpression(breaks: readonly number[]): maplibregl.ExpressionSpecification {
   return [
     "case",
     ["==", ["get", "status"], "EXCLUDED"],
     EXCLUDED_COLOR,
     ["==", ["get", "status"], "REVIEW_REQUIRED"],
     REVIEW_COLOR,
-    scoreStep(breaks, CANDIDATE_SCORE_PALETTE_5),
+    candidateScoreStep(breaks),
   ] as unknown as maplibregl.ExpressionSpecification;
 }
 
@@ -167,6 +196,15 @@ function statusFilter(visibility: StatusVisibility): maplibregl.FilterSpecificat
   return ["in", ["get", "status"], ["literal", visible]] as unknown as maplibregl.FilterSpecification;
 }
 
+// Popup score line built from the light tile attributes (full provenance is
+// fetched separately into the detail panel). Excluded cells carry no score/rank.
+function candidateScoreDisplay(props: Record<string, unknown>): string {
+  if (props.status === "EXCLUDED") return "제외 (excluded)";
+  if (props.score != null) return `${props.score} (rank ${props.rank ?? "-"})`;
+  if (props.provisional_score != null) return `${props.provisional_score} (provisional)`;
+  return "-";
+}
+
 export default function MapView({
   boundaries,
   regionValues,
@@ -177,35 +215,31 @@ export default function MapView({
   facilities,
   showFacilities,
   mode,
-  candidates,
+  candidateTileUrl,
   candidateBreaks,
   statusVisibility,
   selectedCandidate,
-  onViewportChange,
   onCandidateClick,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const loadedRef = useRef(false);
-  const onViewportChangeRef = useRef(onViewportChange);
   const onCandidateClickRef = useRef(onCandidateClick);
+  // Tile URL currently applied to the vector source. A vector source's tiles are
+  // immutable once added, so a profile change requires removing and re-adding the
+  // source rather than a GeoJSON-style setData swap.
+  const appliedTileUrlRef = useRef<string | null>(null);
   useEffect(() => {
-    onViewportChangeRef.current = onViewportChange;
     onCandidateClickRef.current = onCandidateClick;
   });
 
-  function emitViewport(map: maplibregl.Map) {
-    const b = map.getBounds();
-    // Reflect map state onto the container as read-only data attributes so tests
-    // can assert zoom capping and selection-driven movement. No behavioral effect.
-    if (containerRef.current) {
-      const c = map.getCenter();
-      containerRef.current.dataset.center = `${c.lng.toFixed(5)},${c.lat.toFixed(5)}`;
-      containerRef.current.dataset.zoom = map.getZoom().toFixed(2);
-    }
-    onViewportChangeRef.current(
-      `${b.getWest().toFixed(5)},${b.getSouth().toFixed(5)},${b.getEast().toFixed(5)},${b.getNorth().toFixed(5)}`,
-    );
+  // Reflect map state onto the container as read-only data attributes so tests
+  // can assert zoom capping and selection-driven movement. No behavioral effect.
+  function recordViewport(map: maplibregl.Map) {
+    if (!containerRef.current) return;
+    const c = map.getCenter();
+    containerRef.current.dataset.center = `${c.lng.toFixed(5)},${c.lat.toFixed(5)}`;
+    containerRef.current.dataset.zoom = map.getZoom().toFixed(2);
   }
 
   useEffect(() => {
@@ -220,17 +254,42 @@ export default function MapView({
       maxZoom: OSM_MAX_ZOOM,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+    // Candidate click/hover are bound exactly once (not on every source re-add),
+    // keyed by the stable layer id, so a profile switch never double-binds them.
+    map.on("click", "candidates-fill", (event) => {
+      const feature = event.features?.[0];
+      if (!feature) return;
+      const props = feature.properties as Record<string, unknown>;
+      new maplibregl.Popup()
+        .setLngLat(event.lngLat)
+        .setHTML(
+          `<strong>후보지 ${props.candidate_key}</strong><br/>` +
+            `상태(status): ${props.status}<br/>적합성 점수: ${candidateScoreDisplay(props)}<br/>` +
+            `시군구: ${props.sigungu_region_name ?? ""}<br/>` +
+            `<small>분석 스크리닝 결과 — 법적 판정이 아님. 상세 근거는 좌측 패널 참조</small>`,
+        )
+        .addTo(map);
+      const id = Number(props.candidate_id);
+      if (!Number.isNaN(id)) onCandidateClickRef.current(id);
+    });
+    map.on("mouseenter", "candidates-fill", () => {
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", "candidates-fill", () => {
+      map.getCanvas().style.cursor = "";
+    });
+
     map.on("load", () => {
       loadedRef.current = true;
-      // Emit the viewport before refreshing layers so the candidate bbox fetch
-      // starts even if a layer build hiccups.
-      emitViewport(map);
+      recordViewport(map);
       map.fire("wep:refresh");
     });
-    map.on("moveend", () => emitViewport(map));
+    map.on("moveend", () => recordViewport(map));
     mapRef.current = map;
     return () => {
       loadedRef.current = false;
+      appliedTileUrlRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -288,34 +347,6 @@ export default function MapView({
             },
           })),
       };
-      const candidatesData: GeoJSON.FeatureCollection = {
-        type: "FeatureCollection",
-        features: (candidates?.features ?? []).map((cell) => ({
-          type: "Feature" as const,
-          geometry: cell.geometry,
-          properties: {
-            candidate_id: cell.properties.candidate_id,
-            candidate_key: cell.properties.candidate_key,
-            status: cell.properties.status,
-            has_value: !cell.properties.is_excluded,
-            metric_value:
-              cell.properties.total_score !== null
-                ? Number(cell.properties.total_score)
-                : cell.properties.provisional_score !== null
-                  ? Number(cell.properties.provisional_score)
-                  : 0,
-            score_display: cell.properties.is_excluded
-              ? "제외 (excluded)"
-              : cell.properties.total_score !== null
-                ? `${cell.properties.total_score} (rank ${cell.properties.rank ?? "-"})`
-                : `${cell.properties.provisional_score ?? "-"} (provisional)`,
-            sigungu: cell.properties.sigungu_region_name ?? "",
-            reasons: cell.properties.is_excluded
-              ? cell.properties.exclusion_reasons.join(", ")
-              : cell.properties.review_reasons.join(", "),
-          },
-        })),
-      };
 
       // --- Regions (equity choropleth) ---
       const regionsSource = map.getSource("regions") as maplibregl.GeoJSONSource | undefined;
@@ -367,16 +398,22 @@ export default function MapView({
       }
       map.setPaintProperty("regions-fill", "fill-color", fillColorExpression(breaks, palette));
 
-      // --- Candidate grid (suitability) ---
-      const candidatesSource = map.getSource("candidates") as maplibregl.GeoJSONSource | undefined;
-      if (candidatesSource) {
-        candidatesSource.setData(candidatesData);
-      } else {
-        map.addSource("candidates", { type: "geojson", data: candidatesData });
+      // --- Candidate grid (suitability) as PostGIS vector tiles ---
+      // The whole grid is available as MVT; the viewport pulls only the tiles it
+      // needs. On a profile switch the tile URL changes, so remove and re-add the
+      // vector source (its tiles are immutable once added). Never a bbox slice.
+      const addCandidateSource = (url: string) => {
+        map.addSource("candidates", {
+          type: "vector",
+          tiles: [url],
+          minzoom: 0,
+          maxzoom: CANDIDATE_TILE_MAX_ZOOM,
+        });
         map.addLayer({
           id: "candidates-fill",
           type: "fill",
           source: "candidates",
+          "source-layer": SUITABILITY_TILE_SOURCE_LAYER,
           paint: {
             "fill-color": candidateColorExpression(candidateBreaks),
             "fill-opacity": CANDIDATE_OPACITY,
@@ -386,39 +423,34 @@ export default function MapView({
           id: "candidates-review-outline",
           type: "line",
           source: "candidates",
+          "source-layer": SUITABILITY_TILE_SOURCE_LAYER,
           filter: ["==", ["get", "status"], "REVIEW_REQUIRED"],
           paint: { "line-color": "#b45309", "line-width": 0.9, "line-dasharray": [2, 1.5] },
         });
-        map.on("click", "candidates-fill", (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const props = feature.properties as Record<string, string>;
-          new maplibregl.Popup()
-            .setLngLat(event.lngLat)
-            .setHTML(
-              `<strong>후보지 ${props.candidate_key}</strong><br/>` +
-                `상태(status): ${props.status}<br/>적합성 점수: ${props.score_display}<br/>` +
-                `시군구: ${props.sigungu}<br/>` +
-                `${props.reasons ? `사유: ${props.reasons}<br/>` : ""}` +
-                `<small>분석 스크리닝 결과 — 법적 판정이 아님. 상세 근거는 좌측 패널 참조</small>`,
-            )
-            .addTo(map);
-          const id = Number(props.candidate_id);
-          if (!Number.isNaN(id)) onCandidateClickRef.current(id);
-        });
-        map.on("mouseenter", "candidates-fill", () => {
-          map.getCanvas().style.cursor = "pointer";
-        });
-        map.on("mouseleave", "candidates-fill", () => {
-          map.getCanvas().style.cursor = "";
-        });
+      };
+      const removeCandidateSource = () => {
+        for (const id of CANDIDATE_LAYER_IDS) {
+          if (map.getLayer(id)) map.removeLayer(id);
+        }
+        if (map.getSource("candidates")) map.removeSource("candidates");
+      };
+
+      if (candidateTileUrl) {
+        if (!map.getSource("candidates")) {
+          addCandidateSource(candidateTileUrl);
+          appliedTileUrlRef.current = candidateTileUrl;
+        } else if (appliedTileUrlRef.current !== candidateTileUrl) {
+          removeCandidateSource();
+          addCandidateSource(candidateTileUrl);
+          appliedTileUrlRef.current = candidateTileUrl;
+        }
+        map.setPaintProperty(
+          "candidates-fill",
+          "fill-color",
+          candidateColorExpression(candidateBreaks),
+        );
+        map.setFilter("candidates-fill", statusFilter(statusVisibility));
       }
-      map.setPaintProperty(
-        "candidates-fill",
-        "fill-color",
-        candidateColorExpression(candidateBreaks),
-      );
-      map.setFilter("candidates-fill", statusFilter(statusVisibility));
 
       // --- Facilities ---
       const facilitiesSource = map.getSource("facilities") as maplibregl.GeoJSONSource | undefined;
@@ -453,17 +485,22 @@ export default function MapView({
         });
       }
 
-      // --- Mode + visibility toggles (never conditionally skip addLayer) ---
+      // --- Mode + visibility toggles (guarded: candidate layers exist only once
+      // a run's tile URL has been applied) ---
       const equity = mode === "equity";
       const suitability = mode === "suitability";
       map.setLayoutProperty("regions-fill", "visibility", equity ? "visible" : "none");
       map.setLayoutProperty("regions-outline", "visibility", equity ? "visible" : "none");
-      map.setLayoutProperty("candidates-fill", "visibility", suitability ? "visible" : "none");
-      map.setLayoutProperty(
-        "candidates-review-outline",
-        "visibility",
-        suitability ? "visible" : "none",
-      );
+      if (map.getLayer("candidates-fill")) {
+        map.setLayoutProperty("candidates-fill", "visibility", suitability ? "visible" : "none");
+      }
+      if (map.getLayer("candidates-review-outline")) {
+        map.setLayoutProperty(
+          "candidates-review-outline",
+          "visibility",
+          suitability ? "visible" : "none",
+        );
+      }
       map.setLayoutProperty(
         "facilities-points",
         "visibility",
@@ -489,15 +526,15 @@ export default function MapView({
     facilities,
     showFacilities,
     mode,
-    candidates,
+    candidateTileUrl,
     candidateBreaks,
     statusVisibility,
   ]);
 
   // --- Selected-candidate highlight + map movement (list or map selection) ---
-  // Uses the full selected geometry so an off-viewport candidate is both
-  // highlighted and brought into view. Keyed on the candidate id so it only moves
-  // on an actual selection change, not on every render.
+  // Uses the full selected geometry (from the candidate detail endpoint) so an
+  // off-viewport candidate is both highlighted and brought into view. Keyed on the
+  // candidate id so it only moves on an actual selection change, not every render.
   const selectedId = selectedCandidate?.candidate_id ?? null;
   useEffect(() => {
     const map = mapRef.current;

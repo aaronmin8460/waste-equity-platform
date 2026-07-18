@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import math
 import os
 from collections.abc import Iterator
 from decimal import Decimal
@@ -17,7 +18,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from geoalchemy2 import WKTElement
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from waste_equity_backend.api.app import create_app
@@ -288,6 +289,143 @@ def test_unknown_candidate_404(pg_client: TestClient, seeded: dict[str, int]) ->
     response = pg_client.get("/api/v1/suitability/candidates/999999999")
     assert response.status_code == 404
     assert response.json()["detail"]["error"] == "CANDIDATE_NOT_FOUND"
+
+
+# --- Vector-tile (MVT) endpoint ----------------------------------------------
+
+MVT_CONTENT_TYPE = "application/vnd.mapbox-vector-tile"
+IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
+
+
+def _deg2tile(lon: float, lat: float, z: int) -> tuple[int, int]:
+    """Web-Mercator (XYZ) tile index containing (lon, lat) at zoom z."""
+    n = 2**z
+    x = int((lon + 180.0) / 360.0 * n)
+    y = int((1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0 * n)
+    return x, y
+
+
+# The seeded candidates sit around lon 20.0–20.7, lat 20.0–20.1 (remote ocean);
+# a broad z3 tile envelops the whole cluster (all three statuses).
+_CLUSTER_LON, _CLUSTER_LAT = 20.35, 20.05
+
+
+def test_tile_returns_nonempty_mvt_with_cache_headers(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    z = 3
+    x, y = _deg2tile(_CLUSTER_LON, _CLUSTER_LAT, z)
+    resp = pg_client.get(f"/api/v1/suitability/tiles/{seeded['run']}/baseline/{z}/{x}/{y}.mvt")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == MVT_CONTENT_TYPE
+    # Immutable, long-lived cache (Phase 4): the URL pins an immutable run+profile.
+    assert resp.headers["cache-control"] == IMMUTABLE_CACHE
+    assert resp.headers["etag"]
+    assert len(resp.content) > 0
+
+
+def test_tile_outside_project_area_is_valid_empty_200(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """A tile that overlaps no candidate is a valid *empty* tile (200, 0 bytes),
+    never a 5xx."""
+    z = 3
+    x, y = _deg2tile(-120.0, 10.0, z)  # nowhere near the seeded cluster
+    resp = pg_client.get(f"/api/v1/suitability/tiles/{seeded['run']}/baseline/{z}/{x}/{y}.mvt")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == MVT_CONTENT_TYPE
+    assert resp.content == b""
+
+
+def test_tile_conditional_request_returns_304(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    z = 3
+    x, y = _deg2tile(_CLUSTER_LON, _CLUSTER_LAT, z)
+    url = f"/api/v1/suitability/tiles/{seeded['run']}/baseline/{z}/{x}/{y}.mvt"
+    first = pg_client.get(url)
+    etag = first.headers["etag"]
+    second = pg_client.get(url, headers={"If-None-Match": etag})
+    assert second.status_code == 304
+    assert second.headers["cache-control"] == IMMUTABLE_CACHE
+
+
+def test_tile_all_four_profiles_return_200(pg_client: TestClient, seeded: dict[str, int]) -> None:
+    z = 3
+    x, y = _deg2tile(_CLUSTER_LON, _CLUSTER_LAT, z)
+    for profile in ALL_PROFILES:
+        resp = pg_client.get(f"/api/v1/suitability/tiles/{seeded['run']}/{profile}/{z}/{x}/{y}.mvt")
+        assert resp.status_code == 200, profile
+        assert len(resp.content) > 0, profile
+
+
+def test_tile_projection_keeps_all_statuses_and_scoring(
+    pg_session: Session, seeded: dict[str, int]
+) -> None:
+    """The tile SQL mirrors the read API's scoring and applies NO row limit, so a
+    broad tile projects every matching cell (eligible+review+excluded): score
+    only for ELIGIBLE, provisional only for REVIEW, rank from the selected
+    profile. This is the guarantee the old 2,000-row GeoJSON map could not make."""
+    z = 3
+    x, y = _deg2tile(_CLUSTER_LON, _CLUSTER_LAT, z)
+    rows = (
+        pg_session.execute(
+            text(
+                """
+                SELECT c.id, c.status,
+                       (c.profile_ranks ->> :profile)::int AS rank,
+                       CASE WHEN c.status = 'ELIGIBLE'
+                            THEN (c.profile_totals ->> :profile)::double precision END AS score,
+                       CASE WHEN c.status = 'REVIEW_REQUIRED'
+                            THEN (c.profile_totals ->> :profile)::double precision
+                            END AS provisional_score
+                FROM suitability_candidates c
+                WHERE c.analysis_run_id = :run
+                  AND c.geometry && ST_Transform(ST_TileEnvelope(:z, :x, :y), 4326)
+                ORDER BY c.id
+                """
+            ),
+            {"profile": "baseline", "run": seeded["run"], "z": z, "x": x, "y": y},
+        )
+        .mappings()
+        .all()
+    )
+    by_status = {r["status"]: r for r in rows}
+    assert set(by_status) == {"ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"}
+    assert by_status["ELIGIBLE"]["score"] == 80.0
+    assert by_status["ELIGIBLE"]["provisional_score"] is None
+    assert by_status["ELIGIBLE"]["rank"] == 1
+    assert by_status["REVIEW_REQUIRED"]["score"] is None
+    assert by_status["REVIEW_REQUIRED"]["provisional_score"] == 50.0
+    assert by_status["EXCLUDED"]["score"] is None
+    assert by_status["EXCLUDED"]["provisional_score"] is None
+    assert by_status["EXCLUDED"]["rank"] is None
+
+
+def test_tile_decodes_to_expected_features(pg_client: TestClient, seeded: dict[str, int]) -> None:
+    """When an MVT decoder is available, assert the tile's real feature payload:
+    source-layer ``candidates`` with the light attribute set and correct
+    per-status scoring (null attributes are omitted by the encoder)."""
+    mvt = pytest.importorskip("mapbox_vector_tile")
+    z = 3
+    x, y = _deg2tile(_CLUSTER_LON, _CLUSTER_LAT, z)
+    resp = pg_client.get(f"/api/v1/suitability/tiles/{seeded['run']}/baseline/{z}/{x}/{y}.mvt")
+    assert resp.status_code == 200
+    decoded = mvt.decode(resp.content)
+    assert "candidates" in decoded
+    feats = decoded["candidates"]["features"]
+    by_status = {f["properties"]["status"]: f["properties"] for f in feats}
+    assert set(by_status) == {"ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"}
+    assert by_status["ELIGIBLE"]["score"] == 80.0
+    assert by_status["ELIGIBLE"]["rank"] == 1
+    assert "provisional_score" not in by_status["ELIGIBLE"]  # null omitted
+    assert by_status["REVIEW_REQUIRED"]["provisional_score"] == 50.0
+    assert "score" not in by_status["REVIEW_REQUIRED"]
+    assert "score" not in by_status["EXCLUDED"]
+    assert "provisional_score" not in by_status["EXCLUDED"]
+    # Heavy provenance fields never travel in a tile (kept on the detail endpoint).
+    assert "raw_components" not in by_status["ELIGIBLE"]
+    assert "exclusion_reasons" not in by_status["EXCLUDED"]
 
 
 def test_top_candidates_distinguish_tied_cells(pg_session: Session, pg_client: TestClient) -> None:

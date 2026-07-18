@@ -100,3 +100,50 @@ def test_bad_bbox_is_422(client: TestClient, session: Session) -> None:
     assert response.json()["detail"]["error"] == "INVALID_BBOX"
     response = client.get("/api/v1/suitability/candidates?bbox=10,10,1,1")
     assert response.status_code == 422
+
+
+# --- Vector-tile (MVT) endpoint: validation + 404 paths ----------------------
+# These reach the route and its parameter/run validation but never execute the
+# PostGIS tile SQL, so they run on the SQLite unit tier. Tile *bytes* (200 + a
+# non-empty/empty PBF, cache headers) require PostGIS and live in
+# ``test_suitability_routes_integration.py``.
+
+
+def test_tile_route_matches_and_validates_profile(client: TestClient, session: Session) -> None:
+    """A well-formed tile URL with a bad profile returns 422 (route matched,
+    profile rejected) — not 404, which would mean the ``.mvt`` route never
+    matched at all."""
+    run = _seed_run(session)
+    assert client.get(f"/api/v1/suitability/tiles/{run.id}/bogus/9/436/201.mvt").status_code == 422
+
+
+def test_tile_unknown_run_404(client: TestClient) -> None:
+    response = client.get("/api/v1/suitability/tiles/987654/baseline/9/436/201.mvt")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error"] == "RUN_NOT_FOUND"
+
+
+def test_tile_bad_zoom_is_422(client: TestClient, session: Session) -> None:
+    run = _seed_run(session)
+    # z above the supported maximum (22) and a negative z both fail validation.
+    assert client.get(f"/api/v1/suitability/tiles/{run.id}/baseline/23/0/0.mvt").status_code == 422
+    assert client.get(f"/api/v1/suitability/tiles/{run.id}/baseline/-1/0/0.mvt").status_code == 422
+
+
+def test_tile_out_of_range_xy_is_422(client: TestClient, session: Session) -> None:
+    run = _seed_run(session)
+    # At zoom 1 there are only 2 tiles per axis (indices 0..1); x=2 is invalid.
+    response = client.get(f"/api/v1/suitability/tiles/{run.id}/baseline/1/2/0.mvt")
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "INVALID_TILE_COORDINATE"
+    assert client.get(f"/api/v1/suitability/tiles/{run.id}/baseline/1/0/2.mvt").status_code == 422
+
+
+def test_tile_non_integer_coordinate_is_422(client: TestClient, session: Session) -> None:
+    """SQL-injection-style path segments never reach SQL: the int-typed path
+    params reject them at the validation boundary."""
+    run = _seed_run(session)
+    non_int = client.get(f"/api/v1/suitability/tiles/{run.id}/baseline/9/436/abc.mvt")
+    assert non_int.status_code == 422
+    bad = client.get(f"/api/v1/suitability/tiles/{run.id}/baseline/9/4%3B36/201.mvt")
+    assert bad.status_code == 422

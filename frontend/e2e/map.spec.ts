@@ -136,12 +136,22 @@ test("suitability mode screens candidates with provenance and no government API 
   page,
 }) => {
   const disallowedRequests: string[] = [];
+  const mvtTileRequests: string[] = [];
+  const limitedGeoJsonRequests: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (url.protocol === "blob:" || url.protocol === "data:") return;
     const host = url.hostname;
     if (!ALLOWED_HOST_SUFFIXES.some((allowed) => host === allowed || host.endsWith(`.${allowed}`))) {
       disallowedRequests.push(request.url());
+    }
+    // The suitability grid is served as PostGIS vector tiles; the map must never
+    // fall back to the limited GeoJSON candidate endpoint for rendering.
+    if (/\/api\/v1\/suitability\/tiles\/\d+\/[a-z_]+\/\d+\/\d+\/\d+\.mvt/.test(url.pathname)) {
+      mvtTileRequests.push(request.url());
+    }
+    if (url.pathname.endsWith("/api/v1/suitability/candidates") && url.search.includes("limit=")) {
+      limitedGeoJsonRequests.push(request.url());
     }
   });
 
@@ -160,10 +170,17 @@ test("suitability mode screens candidates with provenance and no government API 
   // The analytical-screening disclaimer is prominent (never a legal claim).
   await expect(page.getByTestId("suitability-disclaimer")).toContainText("legal");
 
-  // Candidate cells load into the viewport (controlled, bbox-limited).
-  await expect(page.getByTestId("candidate-viewport-count")).toContainText("표시", {
-    timeout: 20_000,
-  });
+  // The complete grid is served via vector tiles: accurate wording replaces the
+  // old "지도 영역 내 2,000 / 47,893개 표시 (뷰포트 제한)" viewport-limit copy.
+  const vectorNote = page.getByTestId("candidate-vector-note");
+  await expect(vectorNote).toContainText("벡터 타일", { timeout: 20_000 });
+  await expect(vectorNote).toContainText("전체 데이터");
+  await expect(page.getByTestId("candidate-viewport-count")).toHaveCount(0);
+  await expect(page.locator("body")).not.toContainText("뷰포트 제한");
+
+  // At least one .mvt tile is requested, and the limited GeoJSON map fetch never is.
+  await expect.poll(() => mvtTileRequests.length, { timeout: 20_000 }).toBeGreaterThan(0);
+  expect(limitedGeoJsonRequests).toEqual([]);
 
   // Exclusion + review reasons are shown (never fabricated).
   await expect(page.getByText("제외 사유 (Exclusion reasons)")).toBeVisible();

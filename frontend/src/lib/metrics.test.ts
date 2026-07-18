@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CANDIDATE_SCORE_BREAKS,
   CANDIDATE_SCORE_PALETTE_5,
   DEFAULT_EQUITY_PALETTE_7,
   FACILITY_BURDEN_PALETTE_9,
@@ -405,5 +406,24 @@ describe("frequencyLabel", () => {
 
   it("passes through unknown values instead of mislabeling them", () => {
     expect(frequencyLabel("WEEKLY")).toBe("WEEKLY");
+  });
+});
+
+describe("CANDIDATE_SCORE_BREAKS", () => {
+  it("splits the 0–100 suitability domain into fixed 20-point classes", () => {
+    // Stable, deterministic breaks — NOT per-viewport quantiles. Five classes
+    // (0–20 · 20–40 · 40–60 · 60–80 · 80–100), sized to the 5-color palette.
+    expect(CANDIDATE_SCORE_BREAKS).toEqual([20, 40, 60, 80]);
+    expect(CANDIDATE_SCORE_BREAKS.length + 1).toBe(CANDIDATE_SCORE_PALETTE_5.length);
+  });
+
+  it("maps representative scores to the expected class index", () => {
+    const breaks = [...CANDIDATE_SCORE_BREAKS];
+    expect(classIndexFor(0, breaks)).toBe(0);
+    expect(classIndexFor(19.9, breaks)).toBe(0);
+    expect(classIndexFor(20, breaks)).toBe(1);
+    expect(classIndexFor(59, breaks)).toBe(2);
+    expect(classIndexFor(80, breaks)).toBe(4);
+    expect(classIndexFor(100, breaks)).toBe(4);
   });
 });

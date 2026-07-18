@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,59 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 Profile = Literal["baseline", "equal", "equity_focused", "access_focused"]
 Status = Literal["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"]
+
+# --- Vector-tile (MVT) constants ---------------------------------------------
+# The map serves the *complete* suitability grid as Mapbox Vector Tiles generated
+# by PostGIS, so the viewport transfers only the tiles it needs instead of a
+# limited GeoJSON slice (which previously capped the map at 2,000 of ~48k cells).
+MVT_CONTENT_TYPE = "application/vnd.mapbox-vector-tile"
+# Web-Mercator tile pyramid: z 0..22 is the standard safe range (2^22 tiles/side).
+MVT_MIN_ZOOM = 0
+MVT_MAX_ZOOM = 22
+# Vector-tile source-layer name the frontend binds its candidate layers to.
+TILE_SOURCE_LAYER = "candidates"
+# The URL embeds an immutable analysis run + weight profile, so a served tile
+# never changes; cache it aggressively (one year, immutable).
+TILE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+# Parameterized MVT query. The tile envelope is built in EPSG:3857
+# (``ST_TileEnvelope``) and transformed to EPSG:4326 for the candidate filter, so
+# the ``geometry && <bounds>`` predicate hits the existing 4326 GiST index and
+# only the *matched* geometries are transformed to 3857 for ``ST_AsMVTGeom``
+# (filter-before-transform). Scoring mirrors the read API exactly: a final
+# ``score`` is emitted only for ELIGIBLE cells, a ``provisional_score`` only for
+# REVIEW_REQUIRED cells, and ``rank`` is the selected profile's stored rank.
+# Every user-controlled value (run, profile, z, x, y) is a bound parameter.
+_TILE_SQL = f"""
+WITH tile AS (
+    SELECT
+        ST_AsMVTGeom(
+            ST_Transform(c.geometry, 3857),
+            ST_TileEnvelope(:z, :x, :y),
+            4096, 64, true
+        ) AS geom,
+        c.id AS candidate_id,
+        c.candidate_key AS candidate_key,
+        c.status AS status,
+        (c.profile_ranks ->> :profile)::int AS rank,
+        CASE WHEN c.status = 'ELIGIBLE'
+             THEN (c.profile_totals ->> :profile)::double precision END AS score,
+        CASE WHEN c.status = 'REVIEW_REQUIRED'
+             THEN (c.profile_totals ->> :profile)::double precision END AS provisional_score,
+        c.zoning_score::double precision AS zoning_score,
+        c.road_score::double precision AS road_score,
+        c.equity_score::double precision AS equity_score,
+        c.demand_score::double precision AS demand_score,
+        c.sigungu_region_code AS sigungu_region_code,
+        c.sigungu_region_name AS sigungu_region_name
+    FROM suitability_candidates c
+    WHERE c.analysis_run_id = :run_id
+      AND c.geometry && ST_Transform(ST_TileEnvelope(:z, :x, :y), 4326)
+)
+SELECT ST_AsMVT(tile.*, '{TILE_SOURCE_LAYER}', 4096, 'geom')
+FROM tile
+WHERE tile.geom IS NOT NULL
+"""
 
 ASSUMPTIONS = [
     "Regional 500 m screening grid (EPSG:5179 origin); not parcel-level.",
@@ -458,6 +511,56 @@ def list_candidates(
         assumptions=ASSUMPTIONS,
         disclaimer=SCREENING_DISCLAIMER,
     )
+
+
+@router.get("/tiles/{run_id}/{profile}/{z}/{x}/{y}.mvt")
+def candidate_tile(
+    session: SessionDep,
+    request: Request,
+    run_id: int,
+    profile: Profile,
+    z: int = Path(..., ge=MVT_MIN_ZOOM, le=MVT_MAX_ZOOM),
+    x: int = Path(..., ge=0),
+    y: int = Path(..., ge=0),
+) -> Response:
+    """Serve one Web-Mercator vector tile of the run's suitability candidates.
+
+    Every candidate cell of the selected run is available through this endpoint;
+    the client requests only the tiles its viewport needs. The URL embeds an
+    immutable run + profile, so each tile is cacheable forever. The tile carries
+    only the lightweight attributes the map renders/inspects with — full
+    provenance stays on ``GET /candidates/{candidate_id}``.
+    """
+    # Validate x/y against the tile pyramid for this z before any DB work: at
+    # zoom z there are 2^z tiles per axis, indices 0..2^z-1.
+    max_index = (1 << z) - 1
+    if x > max_index or y > max_index:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "INVALID_TILE_COORDINATE",
+                "detail": f"x and y must be in [0, {max_index}] at zoom {z}",
+            },
+        )
+    # Unknown / non-succeeded run -> structured 404 (same semantics as the read API).
+    resolved = _resolve_run_id(session, run_id)
+
+    # Content-independent, immutable ETag: the (run, profile, z, x, y) tuple fully
+    # determines the tile bytes because a run is never mutated in place, so we can
+    # honor a conditional request without regenerating the tile.
+    etag = f'"suit-{resolved}-{profile}-{z}-{x}-{y}"'
+    cache_headers = {"Cache-Control": TILE_CACHE_CONTROL, "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_headers)
+
+    raw = session.execute(
+        text(_TILE_SQL),
+        {"run_id": resolved, "profile": profile, "z": z, "x": x, "y": y},
+    ).scalar()
+    # ST_AsMVT over zero matched rows returns NULL: a tile outside the project
+    # area is a valid *empty* tile (0 bytes), never a server error.
+    body = bytes(raw) if raw is not None else b""
+    return Response(content=body, media_type=MVT_CONTENT_TYPE, headers=cache_headers)
 
 
 @router.get("/candidates/{candidate_id}", response_model=CandidateDetailOut)

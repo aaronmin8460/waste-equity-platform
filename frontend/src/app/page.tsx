@@ -14,7 +14,7 @@
  * unreachable or reports no data, the UI shows an explicit state, never fake data.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 
 import {
@@ -31,12 +31,12 @@ import {
   fetchReportingPerCapita,
   fetchReportingStatistics,
   fetchSuitabilityCandidateDetail,
-  fetchSuitabilityCandidates,
   fetchSuitabilityLatestRun,
   fetchSuitabilityPolicy,
   fetchSuitabilitySummary,
   fetchWastePerCapita,
   fetchWasteStatistics,
+  suitabilityTileUrl,
   type CandidateDetail,
   type DataSourceItem,
   type DatasetEnvelope,
@@ -49,7 +49,6 @@ import {
   type ReportingBoundaryCollection,
   type ReportingPerCapitaEnvelope,
   type ReportingWasteStatisticsEnvelope,
-  type SuitabilityCandidateCollection,
   type SuitabilityPolicy,
   type SuitabilityProfile,
   type SuitabilityRun,
@@ -58,10 +57,10 @@ import {
   type WasteStatisticsItem,
 } from "../lib/api";
 import {
+  CANDIDATE_SCORE_BREAKS,
   CANDIDATE_SCORE_PALETTE_5,
   METRICS,
   NO_DATA_COLOR,
-  computeBreaks,
   formatCount,
   formatLegendValue,
   formatQuantity,
@@ -136,17 +135,12 @@ export default function Home() {
   const [flowError, setFlowError] = useState<string | null>(null);
   const [suit, setSuit] = useState<SuitabilityMeta | null>(null);
   const [suitError, setSuitError] = useState<string | null>(null);
-  const [candidates, setCandidates] = useState<SuitabilityCandidateCollection | null>(null);
   const [selected, setSelected] = useState<CandidateDetail | null>(null);
-  const [bbox, setBbox] = useState<string | null>(null);
   const [statusVisibility, setStatusVisibility] = useState<StatusVisibility>({
     ELIGIBLE: true,
     REVIEW_REQUIRED: true,
     EXCLUDED: false,
   });
-
-  const abortRef = useRef<AbortController | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(() => {
     Promise.all([
@@ -224,9 +218,7 @@ export default function Home() {
   // Refresh the summary when the profile changes. Deliberately depends only on
   // profile/mode — NOT suit. Updating suit here must never re-trigger this
   // effect: doing so created an infinite summary-refetch loop (each run built a
-  // new suit object, which re-ran the effect), which also churned suit's
-  // identity fast enough to keep resetting the candidate-fetch debounce below so
-  // candidates intermittently never loaded. The functional update is a no-op
+  // new suit object, which re-ran the effect). The functional update is a no-op
   // until the initial meta load has populated suit.
   useEffect(() => {
     if (mode !== "suitability") return;
@@ -235,25 +227,11 @@ export default function Home() {
       .catch(() => undefined);
   }, [profile, mode]);
 
-  // Candidate fetch: bbox + profile, debounced, cancelable, controlled limit.
-  useEffect(() => {
-    if (mode !== "suitability" || bbox === null || suit === null) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      fetchSuitabilityCandidates({ profile, bbox, limit: 2000 }, controller.signal)
-        .then((coll) => setCandidates(coll))
-        .catch((cause: unknown) => {
-          if (cause instanceof DOMException && cause.name === "AbortError") return;
-          if (cause instanceof ApiError && cause.status === 404) setCandidates(null);
-        });
-    }, 300);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [mode, bbox, profile, suit]);
+  // No candidate fetch here anymore: the map serves the complete suitability grid
+  // as PostGIS vector tiles (see suitabilityTileUrl / MapView's vector source), so
+  // the viewport pulls only the tiles it needs. There is no bbox-driven GeoJSON
+  // fetch, no 300 ms debounce, no AbortController, and no limit — every candidate
+  // cell of the run is reachable without a partial-map row cap.
 
   // Landfill dashboard data: (re)fetch summary + trends + composition when
   // entering the mode or when any of the four filters changes.
@@ -316,7 +294,6 @@ export default function Home() {
     load();
   }, [load]);
 
-  const onViewportChange = useCallback((next: string) => setBbox(next), []);
   const onCandidateClick = useCallback(
     (id: number) => {
       fetchSuitabilityCandidateDetail(id, profile)
@@ -324,6 +301,14 @@ export default function Home() {
         .catch(() => undefined);
     },
     [profile],
+  );
+
+  // Immutable vector-tile URL for the active run + profile. Switching the profile
+  // re-points the map's vector source at the new tiles; there is no run to render
+  // outside suitability mode.
+  const candidateTileUrl = useMemo(
+    () => (mode === "suitability" && suit ? suitabilityTileUrl(suit.run.id, profile) : null),
+    [mode, suit, profile],
   );
 
   const metric = METRICS.find((candidate) => candidate.key === metricKey) ?? METRICS[0];
@@ -453,18 +438,6 @@ export default function Home() {
       features,
     };
   }, [data, metric]);
-
-  // Suitability candidate scores keep their own unchanged 5-class quantile scale.
-  const candidateBreaks = useMemo(
-    () =>
-      computeBreaks(
-        (candidates?.features ?? [])
-          .filter((f) => !f.properties.is_excluded)
-          .map((f) => Number(f.properties.total_score ?? f.properties.provisional_score ?? 0)),
-        CANDIDATE_SCORE_PALETTE_5.length,
-      ),
-    [candidates],
-  );
 
   const derivedInfo = useDerivedInfo(data, metric);
   const sourceInfo = useSourceInfo(data, metric);
@@ -658,7 +631,6 @@ export default function Home() {
             setProfile={setProfile}
             statusVisibility={statusVisibility}
             setStatusVisibility={setStatusVisibility}
-            candidates={candidates}
             selected={selected}
             clearSelected={() => setSelected(null)}
             onSelect={onCandidateClick}
@@ -678,11 +650,10 @@ export default function Home() {
           facilities={data.facilities.items}
           showFacilities={showFacilities}
           mode={mode}
-          candidates={candidates}
-          candidateBreaks={candidateBreaks}
+          candidateTileUrl={candidateTileUrl}
+          candidateBreaks={CANDIDATE_SCORE_BREAKS}
           statusVisibility={statusVisibility}
           selectedCandidate={selected}
-          onViewportChange={onViewportChange}
           onCandidateClick={onCandidateClick}
         />
       </div>
@@ -742,7 +713,6 @@ function SuitabilityPanel({
   setProfile,
   statusVisibility,
   setStatusVisibility,
-  candidates,
   selected,
   clearSelected,
   onSelect,
@@ -753,7 +723,6 @@ function SuitabilityPanel({
   setProfile: (p: SuitabilityProfile) => void;
   statusVisibility: StatusVisibility;
   setStatusVisibility: (v: StatusVisibility) => void;
-  candidates: SuitabilityCandidateCollection | null;
   selected: CandidateDetail | null;
   clearSelected: () => void;
   onSelect: (id: number) => void;
@@ -900,12 +869,18 @@ function SuitabilityPanel({
             ))}
           </ol>
         )}
-        {candidates && (
-          <p className="mt-1 text-xs text-slate-500" data-testid="candidate-viewport-count">
-            지도 영역 내 {formatCount(candidates.count)} / {formatCount(candidates.total_matched)}개
-            표시 (뷰포트 제한).
+        <div className="mt-1 text-xs text-slate-500" data-testid="candidate-vector-note">
+          <p>
+            전체 후보 셀({formatCount(s.candidate_count_total)}개)은 현재 지도 영역에 필요한 벡터
+            타일(MVT)로 표시됩니다 — 뷰포트 표시 개수 제한 없이 전체 데이터가 제공되며, 화면에 필요한
+            타일만 전송됩니다. (전체 데이터 사용 가능; 뷰포트에 필요한 타일만 전송)
           </p>
-        )}
+          <p className="mt-0.5">
+            적합 {formatCount(s.candidate_count_eligible)} · 검토{" "}
+            {formatCount(s.candidate_count_review)} · 제외 {formatCount(s.candidate_count_excluded)} —
+            상태 필터는 불러온 벡터 타일에 적용됩니다. 분석용 스크리닝이며 법적 입지 결정이 아닙니다.
+          </p>
+        </div>
       </section>
 
       <ReasonSummary title="제외 사유 (Exclusion reasons)" counts={s.exclusion_reason_counts} />
