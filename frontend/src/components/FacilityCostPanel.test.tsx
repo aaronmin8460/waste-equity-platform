@@ -288,6 +288,51 @@ describe("results", () => {
     expect(cell).not.toContain("0원");
   });
 
+  it("shows the official waste and population sources, not just periods", async () => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("fc-waste-source")).toBeDefined());
+    const waste = screen.getByTestId("fc-waste-source").textContent ?? "";
+    expect(waste).toContain("RCIS 생활계");
+    expect(waste).toContain("waste_statistics");
+    expect(waste).toContain("2022");
+    const pop = screen.getByTestId("fc-population-source").textContent ?? "";
+    expect(pop).toContain("sgis");
+    expect(pop).toContain("SGIS_TOTAL_POPULATION");
+  });
+
+  it("hides a stale result when a scenario input changes", async () => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-results")).toBeDefined());
+    // Change a control → the result no longer matches the live inputs, so it hides.
+    fireEvent.change(screen.getByTestId("facility-cost-processing-share"), {
+      target: { value: "50" },
+    });
+    await waitFor(() => expect(screen.queryByTestId("facility-cost-results")).toBeNull());
+    expect(screen.getByTestId("facility-cost-stale")).toBeDefined();
+  });
+
+  it("hides a late response whose inputs changed while it was pending", async () => {
+    let resolveFirst: (v: FacilityCostCalculate) => void = () => undefined;
+    // Only the first calculate is queued; the controls stay editable while pending.
+    h.calc.mockImplementationOnce(
+      () => new Promise<FacilityCostCalculate>((res) => (resolveFirst = res)),
+    );
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate")); // pending
+    // Add another service region while the request is in flight.
+    selectRegion("KR-SGIS-11140");
+    // The pending request resolves, but its inputs are now stale → it must not show.
+    resolveFirst(calcFixture());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByTestId("facility-cost-results")).toBeNull();
+    expect(screen.getByTestId("facility-cost-stale")).toBeDefined();
+  });
+
   it("shows an error state (no stale values) when the calculation fails", async () => {
     h.calc.mockRejectedValue(new Error("boom"));
     await renderPanel();

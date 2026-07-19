@@ -12,7 +12,7 @@
  * backend-served decimal string, formatted without changing its value.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -103,6 +103,20 @@ export default function FacilityCostPanel({ regions, selectedCandidate }: Facili
   const [result, setResult] = useState<FacilityCostCalculate | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [calculating, setCalculating] = useState(false);
+  // The input signature the current result/error was computed for. The result is
+  // shown ONLY while it still matches the live inputs (scenario + selected
+  // candidate), so a stale result never sits beside changed controls.
+  const [outputSig, setOutputSig] = useState<string | null>(null);
+  // Monotonic request id: a superseded in-flight response is discarded, so a late
+  // response from an old scenario can never overwrite a newer one.
+  const requestSeq = useRef(0);
+
+  const currentSig = useMemo(
+    () => JSON.stringify({ scenario, candidateId: selectedCandidate?.candidate_id ?? null }),
+    [scenario, selectedCandidate],
+  );
+  const resultCurrent = result !== null && outputSig === currentSig;
+  const errorCurrent = calcError !== null && outputSig === currentSig;
 
   // Load the scenario options once; seed the form defaults from them.
   useEffect(() => {
@@ -142,6 +156,11 @@ export default function FacilityCostPanel({ regions, selectedCandidate }: Facili
 
   const calculate = useCallback(() => {
     if (!scenario || scenario.regionCodes.length === 0) return;
+    const myId = (requestSeq.current += 1);
+    const mySig = JSON.stringify({
+      scenario,
+      candidateId: selectedCandidate?.candidate_id ?? null,
+    });
     setCalculating(true);
     setCalcError(null);
     fetchFacilityCostCalculate({
@@ -156,17 +175,20 @@ export default function FacilityCostPanel({ regions, selectedCandidate }: Facili
       candidateId: selectedCandidate?.candidate_id ?? null,
     })
       .then((res) => {
+        if (myId !== requestSeq.current) return; // superseded → discard
         setResult(res);
+        setOutputSig(mySig);
         setCalcError(null);
       })
       .catch((cause: unknown) => {
-        // Drop any previous result so a stale scenario's numbers never linger.
+        if (myId !== requestSeq.current) return; // superseded → discard
         setResult(null);
-        setCalcError(
-          cause instanceof ApiError ? cause.message : "비용을 계산할 수 없습니다.",
-        );
+        setOutputSig(mySig);
+        setCalcError(cause instanceof ApiError ? cause.message : "비용을 계산할 수 없습니다.");
       })
-      .finally(() => setCalculating(false));
+      .finally(() => {
+        if (myId === requestSeq.current) setCalculating(false);
+      });
   }, [scenario, selectedCandidate]);
 
   if (optionsError) {
@@ -199,7 +221,10 @@ export default function FacilityCostPanel({ regions, selectedCandidate }: Facili
         onCalculate={calculate}
         calculating={calculating}
       />
-      {calcError && (
+      {/* Results/errors are shown ONLY while they still match the live inputs. A
+          control change (or a new map candidate) changes currentSig, so an
+          out-of-date output disappears until the user recalculates. */}
+      {errorCurrent && (
         <section
           className="rounded border border-red-300 bg-red-50 p-3 text-sm text-slate-800"
           role="alert"
@@ -211,7 +236,12 @@ export default function FacilityCostPanel({ regions, selectedCandidate }: Facili
           </p>
         </section>
       )}
-      {result && <Results result={result} selectedCandidate={selectedCandidate} />}
+      {result && !resultCurrent && !calculating && (
+        <p className="text-xs text-amber-700" role="status" data-testid="facility-cost-stale">
+          입력이 변경되었습니다. 다시 계산하세요. (Inputs changed — recalculate.)
+        </p>
+      )}
+      {resultCurrent && result && <Results result={result} selectedCandidate={selectedCandidate} />}
       <CitizenConditions />
     </div>
   );
@@ -604,13 +634,24 @@ function Methodology({ result }: { result: FacilityCostCalculate }) {
             {p.derivation_version} · {p.cost_version}
           </dd>
         </div>
-        <div>
-          <dt className="inline font-medium">폐기물·인구 기준: </dt>
+        {/* Source + reference period for every official input behind the derived
+            metrics (AGENTS.md), not just the periods. */}
+        <div data-testid="fc-waste-source">
+          <dt className="inline font-medium">발생량 출처: </dt>
           <dd className="inline">
-            발생량 {result.official_input.waste_reference_period}
-            {result.official_input.population_reference_period
-              ? ` · 인구 ${result.official_input.population_reference_period}`
-              : " · 인구 기준 미확정"}
+            {result.official_input.waste_official_dataset_name} (
+            {result.official_input.waste_source_id}) · 집계 {result.official_input.accounting_basis}{" "}
+            · 기준 {result.official_input.waste_reference_period}
+          </dd>
+        </div>
+        <div data-testid="fc-population-source">
+          <dt className="inline font-medium">인구 출처: </dt>
+          <dd className="inline">
+            {result.official_input.population_source_id
+              ? `${result.official_input.population_source_id} · 정의 ${
+                  result.official_input.population_definition ?? "—"
+                } · 기준 ${result.official_input.population_reference_period ?? "—"}`
+              : "동일 기간 공식 인구 미확정 (1인당 지방비 계산 불가)"}
           </dd>
         </div>
       </dl>
