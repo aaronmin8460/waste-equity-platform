@@ -77,6 +77,7 @@ import type {
   RegionSelection,
   StatusVisibility,
 } from "../components/MapView";
+import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
 import { classifyEquityRaw, topCandidateCellLabel } from "../lib/suitability";
@@ -465,6 +466,74 @@ export default function Home() {
   const sourceInfo = useSourceInfo(data, metric);
   const facilitySummary = useFacilitySummary(data);
 
+  // Keyboard-accessible region selection path (the map click is pointer-only).
+  // Every region on the active geometry, sorted by name, offered in a <select>.
+  const regionOptions = useMemo(
+    () =>
+      activeBoundaries.features
+        .map((feature) => ({
+          code: feature.properties.region_code,
+          name: feature.properties.region_name,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    [activeBoundaries],
+  );
+
+  // Build the accessible selection for a region code, using the SAME display
+  // formatter the map popup/feature uses so the two paths never diverge. A region
+  // with no served value carries its availability text, never a fabricated 0.
+  const buildRegionSelection = useCallback(
+    (code: string): RegionSelection | null => {
+      const feature = activeBoundaries.features.find((f) => f.properties.region_code === code);
+      if (!feature) return null;
+      const value = regionValues.get(code);
+      return {
+        regionCode: code,
+        regionName: feature.properties.region_name,
+        metricLabel: metric.label,
+        metricDisplay: formatRegionMetricDisplay(
+          value?.display,
+          unit,
+          feature.properties.unavailable_reason,
+        ),
+        hasValue: value !== undefined,
+        geometryKind: feature.properties.geometry_kind ?? null,
+        childRegionNames: feature.properties.child_region_names ?? [],
+        sourceId: feature.properties.source_id,
+        boundaryReferencePeriod: feature.properties.boundary_reference_period,
+      };
+    },
+    [activeBoundaries, regionValues, metric, unit],
+  );
+
+  // Metric SOURCE + reference period(s) to show alongside a selected region value
+  // (repo AGENTS.md: every displayed analytical metric must carry its source and
+  // reference period). Derived metrics list BOTH inputs. Distinct from the boundary
+  // provenance the summary already shows.
+  const metricProvenance = useMemo<{ label: string; value: string }[]>(() => {
+    if (derivedInfo) {
+      return [
+        {
+          label: derivedInfo.numeratorLabel,
+          value: `${derivedInfo.numeratorSourceName} · 기준 ${derivedInfo.numeratorReferencePeriod}`,
+        },
+        {
+          label: "인구 출처",
+          value: `${derivedInfo.populationSourceName} · 기준 ${derivedInfo.populationReferencePeriod}`,
+        },
+      ];
+    }
+    if (sourceInfo) {
+      return [
+        {
+          label: "지표 출처",
+          value: `${sourceInfo.sourceName} (${sourceInfo.sourceId}) · 기준 ${sourceInfo.referencePeriod}`,
+        },
+      ];
+    }
+    return [];
+  }, [derivedInfo, sourceInfo]);
+
   if (error !== null) {
     return (
       <main
@@ -622,7 +691,15 @@ export default function Home() {
               </div>
             </section>
 
-            <RegionSummary selected={selectedRegion} clear={() => setSelectedRegion(null)} />
+            <RegionSummary
+              selected={selectedRegion}
+              clear={() => setSelectedRegion(null)}
+              regionOptions={regionOptions}
+              onSelectRegion={(code) =>
+                setSelectedRegion(code === null ? null : buildRegionSelection(code))
+              }
+              metricProvenance={metricProvenance}
+            />
 
             <CollapsibleSection label="지도 범례 (Legend)">
               <section aria-label="범례" data-testid="legend">
@@ -858,19 +935,28 @@ function CollapsibleSection({
 // --------------------------------------------------------------------------- //
 // Selected-region summary — the accessible DOM alternative to a map region click.
 //
-// The MapLibre canvas cannot be reached by keyboard or a screen reader, so a
-// region click is mirrored here as text. It never fabricates a value: a region
-// with no served value shows its availability text (from the choropleth feature),
-// not a zero. Kept OUT of a collapsed <details> so its role="status" region can
-// announce the selection (a closed disclosure would hide it from the a11y tree).
+// The MapLibre canvas cannot be reached by keyboard or a screen reader, so this
+// offers a keyboard-operable region <select> that populates the same summary the
+// map click does. It never fabricates a value: a region with no served value shows
+// its availability text (never a zero), and the displayed analytical value carries
+// its metric source and reference period (repo AGENTS.md) in addition to the
+// boundary provenance. Kept OUT of a collapsed <details> so its role="status"
+// region can announce the selection (a closed disclosure would hide it from the
+// a11y tree).
 // --------------------------------------------------------------------------- //
 
 function RegionSummary({
   selected,
   clear,
+  regionOptions,
+  onSelectRegion,
+  metricProvenance,
 }: {
   selected: RegionSelection | null;
   clear: () => void;
+  regionOptions: { code: string; name: string }[];
+  onSelectRegion: (code: string | null) => void;
+  metricProvenance: { label: string; value: string }[];
 }) {
   return (
     <section
@@ -891,16 +977,35 @@ function RegionSummary({
           </button>
         )}
       </div>
+      {/* Keyboard/screen-reader selection path: a native <select> of every region
+          on the active geometry. Selecting one populates the same summary as a map
+          click, so pointer input is not required. */}
+      <label className="mt-1 block font-medium text-slate-600">
+        지역 선택 (Choose a region)
+        <select
+          className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800"
+          data-testid="region-select"
+          value={selected?.regionCode ?? ""}
+          onChange={(event) => onSelectRegion(event.target.value === "" ? null : event.target.value)}
+        >
+          <option value="">지역을 선택하세요…</option>
+          {regionOptions.map((option) => (
+            <option key={option.code} value={option.code}>
+              {option.name}
+            </option>
+          ))}
+        </select>
+      </label>
       {/* The live region wraps only the populated state, so a chosen region is
           announced, while clearing it (e.g. on a metric change) does not read out
           the empty prompt. */}
       {selected === null ? (
-        <p className="mt-1 text-slate-500" data-testid="selected-region-empty">
-          지도에서 지역을 클릭하면 이름과 지표 값이 여기에 표시됩니다. (Select a region on the map to
-          read its name and metric value here.)
+        <p className="mt-2 text-slate-500" data-testid="selected-region-empty">
+          지도에서 지역을 클릭하거나 위 목록에서 지역을 선택하면 이름과 지표 값이 여기에 표시됩니다.
+          (Click a region on the map, or pick one above, to read its name and metric value here.)
         </p>
       ) : (
-        <div role="status" className="mt-1">
+        <div role="status" className="mt-2">
           <dl className="space-y-0.5">
             <div>
               <dt className="inline font-medium">지역: </dt>
@@ -922,6 +1027,15 @@ function RegionSummary({
                 {selected.metricDisplay}
               </dd>
             </div>
+            {/* Metric source + reference period(s) for the displayed value — for
+                derived metrics both inputs (AGENTS.md). Distinct from the boundary
+                provenance below. */}
+            {metricProvenance.map((entry) => (
+              <div key={entry.label} data-testid="selected-region-metric-source">
+                <dt className="inline font-medium">{entry.label}: </dt>
+                <dd className="inline">{entry.value}</dd>
+              </div>
+            ))}
             <div>
               <dt className="inline font-medium">경계 출처: </dt>
               <dd className="inline">

@@ -33,6 +33,7 @@ import {
   NO_DATA_COLOR,
   formatQuantity,
 } from "../lib/metrics";
+import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import { geometryBounds, isDegenerateBounds } from "../lib/suitability";
 
 /**
@@ -110,21 +111,6 @@ export interface RegionSelection {
 }
 
 export type StatusVisibility = Record<SuitabilityStatus, boolean>;
-
-// Precise availability reasons the reporting endpoints attach to a region with no
-// value for a stream, so the popup never shows a bare "no data".
-const REASON_LABELS: Record<string, string> = {
-  SOURCE_NOT_REPORTED: "출처에서 해당 지역·항목을 보고하지 않음 (source did not report)",
-  COARSER_REPORTING_GEOGRAPHY: "상위 보고 단위로 보고됨 (reported at a coarser geography)",
-  SOURCE_ROW_REJECTED: "출처 행이 검증에서 제외됨 (source row rejected)",
-  UNMATCHED_REGION_LABEL: "지역 라벨 미매칭 (unmatched region label)",
-  AMBIGUOUS_REGION_LABEL: "지역 라벨 모호 (ambiguous region label)",
-};
-
-function reasonLabel(reason: string | null | undefined): string {
-  if (!reason) return "";
-  return REASON_LABELS[reason] ?? reason;
-}
 
 interface MapViewProps {
   boundaries: RegionBoundaryCollection;
@@ -375,11 +361,7 @@ export default function MapView({
               has_value: value !== undefined,
               metric_value: value?.numeric ?? 0,
               metric_label: metricLabel,
-              metric_display: value
-                ? `${value.display} ${metricUnit}`
-                : reason
-                  ? `데이터 없음 — ${reasonLabel(reason)}`
-                  : "데이터 없음 (no served value)",
+              metric_display: formatRegionMetricDisplay(value?.display, metricUnit, reason),
             },
           };
         }),

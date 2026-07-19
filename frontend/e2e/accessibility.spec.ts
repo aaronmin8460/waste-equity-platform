@@ -70,6 +70,10 @@ for (const vp of VIEWPORTS) {
       await expect(map).toHaveAttribute("aria-describedby", "map-accessible-description");
       // The description exists and points users at the accessible DOM alternatives.
       await expect(page.locator("#map-accessible-description")).toContainText("선택한 지역");
+      // Keyboard region-selection path exists and is labelled (the map click is
+      // pointer-only), so region info is reachable without the canvas.
+      await expect(page.getByTestId("region-select")).toBeVisible();
+      await expect(page.getByRole("combobox", { name: /지역 선택/ })).toBeVisible();
     });
 
     test("groups the metric radios into labelled fieldsets and announces the selection", async ({

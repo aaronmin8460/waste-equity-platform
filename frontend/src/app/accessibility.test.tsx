@@ -87,6 +87,55 @@ vi.mock("../lib/api", async (importOriginal) => {
   const baseSummary = await base.fetchSuitabilitySummary("baseline");
   return {
     ...base,
+    // One SGIS region + its population, so the accessible region <select> has an
+    // option to exercise (the map-mode envelopes in homeApiMock are otherwise empty).
+    fetchBoundaries: vi.fn().mockResolvedValue({
+      type: "FeatureCollection",
+      reference_year: 2024,
+      count: 1,
+      features: [
+        {
+          type: "Feature",
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [126.97, 37.57],
+                [126.99, 37.57],
+                [126.99, 37.59],
+                [126.97, 37.59],
+                [126.97, 37.57],
+              ],
+            ],
+          },
+          properties: {
+            region_code: "KR-SGIS-11110",
+            region_name: "종로구",
+            region_level: "SIGUNGU",
+            parent_region_code: "KR-SGIS-11",
+            source_id: "sgis",
+            boundary_reference_period: "2024",
+          },
+        },
+      ],
+    }),
+    fetchPopulation: vi.fn().mockResolvedValue({
+      reference_year: 2024,
+      count: 1,
+      items: [
+        {
+          region_code: "KR-SGIS-11110",
+          region_name: "종로구",
+          region_level: "SIGUNGU",
+          population: 142000,
+          unit: "persons",
+          population_definition: "SGIS 총인구",
+          source_id: "sgis",
+          reference_year: 2024,
+          reference_period: "2024",
+        },
+      ],
+    }),
     fetchSuitabilitySummary: vi
       .fn()
       .mockResolvedValue({ ...baseSummary, top_candidates: [fixtures.TOP_CANDIDATE] }),
@@ -156,6 +205,42 @@ describe("accessible selected-region alternative", () => {
     await renderLoaded();
     const summary = screen.getByTestId("selected-region-summary");
     expect(within(summary).getByRole("heading", { name: /선택한 지역/ })).toBeDefined();
+    expect(screen.getByTestId("selected-region-empty")).toBeDefined();
+  });
+
+  it("lets a keyboard user pick a region and shows its value with metric provenance", async () => {
+    await renderLoaded();
+    // A labelled, keyboard-operable <select> — no pointer/canvas interaction needed.
+    const select = screen.getByTestId("region-select") as HTMLSelectElement;
+    expect(select.tagName).toBe("SELECT");
+    expect(screen.getByRole("combobox", { name: /지역 선택/ })).toBeDefined();
+
+    fireEvent.change(select, { target: { value: "KR-SGIS-11110" } });
+
+    // The summary now names the region and shows its served value with unit —
+    // never a fabricated 0.
+    expect(screen.getByTestId("selected-region-name").textContent).toBe("종로구");
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("142,000 persons");
+    // The displayed analytical value carries its metric source + reference period
+    // (repo AGENTS.md), distinct from the boundary provenance.
+    const sources = screen
+      .getAllByTestId("selected-region-metric-source")
+      .map((el) => el.textContent)
+      .join(" ");
+    expect(sources).toContain("지표 출처");
+    expect(sources).toContain("sgis");
+    expect(sources).toContain("2024");
+  });
+
+  it("clears the selected region when the metric changes", async () => {
+    await renderLoaded();
+    fireEvent.change(screen.getByTestId("region-select"), {
+      target: { value: "KR-SGIS-11110" },
+    });
+    expect(screen.getByTestId("selected-region-name")).toBeDefined();
+    // Switching metric drops the stale selection (its value belonged to the old metric).
+    fireEvent.click(screen.getByRole("radio", { name: /생활계 폐기물 발생량/ }));
+    await waitFor(() => expect(screen.queryByTestId("selected-region-name")).toBeNull());
     expect(screen.getByTestId("selected-region-empty")).toBeDefined();
   });
 });
