@@ -99,3 +99,24 @@ Phase 1 (responsive/mobile layout) is **merged into `main`** (PR #27); a Phase 1
 follow-up corrects two post-merge review findings (the `vh`/`dvh` fallback ordering
 and the test's non-official landfill fixture). It is **not deployed** to any
 environment, and Phase 2 (accessibility) has **not** been started.
+
+## Suitability sub-views: 적합성 점수 · 가중치 실험실 · 비용 렌즈
+
+Suitability mode has three sub-views (one shared MapView; never a second map):
+
+- **적합성 점수** — the stored-profile candidate screening (baseline / equal /
+  equity_focused / access_focused / critic).
+- **가중치 실험실 (weight scenario lab)** — a temporary *user-assumption-based*
+  experiment (사용자 가정 기반 시나리오). The user edits the four Z/R/E/D weights (0–100 %
+  sliders + numeric inputs, total must equal exactly 100 %; an explicit 100 %
+  normalization action is provided). A slider edit never calls the API; the explicit
+  **시나리오 적용** issues exactly one preview request (AbortController + sequence guard
+  prevent duplicate/stale-race responses). The map then shows the custom scenario
+  tiles, with the top candidates, comparison-profile rank deltas (shown in text),
+  stored stability (labelled as the *stored run's*, not the scenario's), and weighted
+  contributions. A draft edit after apply marks the result **stale** until re-applied.
+  Weights are canonical 8-dp decimal strings; scenario UI state is persisted in
+  **sessionStorage only** (versioned key, run-scoped, revalidated on restore). No
+  official run/profile is created and nothing is persisted server-side. See
+  `docs/SUITABILITY_USER_WEIGHT_SCENARIOS.md`.
+- **비용 렌즈** — the full-width, map-free facility-cost dashboard (unchanged).

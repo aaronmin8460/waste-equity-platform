@@ -426,3 +426,18 @@ baseline --write`) over the real capital-region PostGIS database:
   the leading candidates are **not** robust to weight choice; all top-50 fall in
   Incheon under every profile. This is reported as-is; rank similarity is not
   taken as robustness.
+
+---
+
+## Cross-reference: user-weight scenario lab (Phase 6)
+
+A read-only **user-weight scenario** feature lets citizens temporarily recombine the
+four component scores (zoning/road/equity/demand) of a fixed succeeded run under their
+own weights. It introduces **no new stored derivation** — it does not alter status
+resolution, exclusions, review rules, component formulas, the distance curve, any
+threshold, or the stored profiles — so it carries its **own** method version
+`user-weight-scenario-v1` and does **not** bump `suitability-policy-v2`,
+`suitability-screening-v3`, `critic-weights-v1`, `suitability-stability-v1`, or
+`capital-grid-500m-v1`. A user scenario is never added to `SUPPORTED_PROFILES`,
+`STATIC_WEIGHT_PROFILES`, or `DATA_DERIVED_PROFILES`. See
+`docs/SUITABILITY_USER_WEIGHT_SCENARIOS.md`.

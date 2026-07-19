@@ -411,3 +411,14 @@ context + provenance.
 - A full **dark theme** is intentionally out of scope. The app is pinned to a
   consistent light palette (`color-scheme: light`); the previous `prefers-color-scheme:
   dark` `<body>` override (which framed the light app in black) was removed.
+
+## 가중치 실험실 (weight scenario lab) sub-view
+
+The scenario lab lives in the suitability sidebar beside the shared MapView (it is
+NOT a full-width early-return like the cost lens — it keeps the map). At `< md` the
+editor stacks above the map; sliders and numeric inputs fit the viewport; preset
+buttons wrap; top-candidate rows and the floating scenario legend stay readable and
+compact; there is no page-level horizontal overflow (verified in
+`e2e/scenario.spec.ts` at 390×844 and by the shared responsive spec). At `md+` the
+lab sidebar and map sit side by side with the sidebar scrolling internally. Cost view
+remains full-width and map-free; landfill is unchanged.

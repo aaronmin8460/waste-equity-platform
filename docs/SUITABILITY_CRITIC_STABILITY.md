@@ -440,3 +440,20 @@ curl -s "<api>/api/v1/suitability/summary?profile=critic" | jq '.candidate_count
 
 Do **not** run these against OCI, production, a persistent shared development
 database, or any database whose safety cannot be proven.
+
+---
+
+## Not to be confused with: user-weight scenarios (Phase 6)
+
+The **가중치 실험실 (user-weight scenario lab)** lets a user temporarily re-weight the
+four component scores of a fixed run on read. It is **completely separate** from
+CRITIC and from stored stability:
+
+- It is **not** included in CRITIC derivation and never overwrites the CRITIC vector.
+- It is **not** part of stored stability classification. `stable_count` /
+  `stability_class` / `stability_membership` shown in a scenario are the **stored
+  run's** values, labelled as such — changing custom weights does **not** recalculate
+  stability, `stable_count`, `stability_class`, or the top-10% definition.
+- It creates no official run/profile and is never persisted.
+
+See `docs/SUITABILITY_USER_WEIGHT_SCENARIOS.md`.

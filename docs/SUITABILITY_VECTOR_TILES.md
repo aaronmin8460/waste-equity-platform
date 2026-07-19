@@ -193,3 +193,22 @@ changed. `/policies`, `/runs`, `/runs/latest`, and `/summary` are untouched.
 - **Rollback:** `./scripts/deployment/rollback-app.sh` (app image/commit only). The
   Postgres volume is never touched; never `docker compose down -v`. Reverting the app
   restores the previous GeoJSON map behavior with no data change.
+
+---
+
+## Related: user-weight scenario tiles (Phase 6)
+
+A separate, temporary custom-tile endpoint serves **user-weight scenarios** (사용자
+가정 기반 시나리오):
+
+```
+GET /api/v1/suitability/scenarios/tiles/{run_id}/{z}/{x}/{y}.mvt?wz&wr&we&wd&scenario_hash
+```
+
+It recomputes the ELIGIBLE `score` / REVIEW `provisional_score` from the fixed run's
+frozen component scores under the query weights, on read. It reuses the **same
+source-layer name (`candidates`) and property names** as the stored tiles (so the map
+just swaps the tile URL), never ranks globally inside a tile, validates the
+`scenario_hash`, and uses a **bounded** `Cache-Control: public, max-age=86400,
+immutable` (a temporary experiment, not a stored immutable official profile). No tile
+is ever persisted. Full detail: `docs/SUITABILITY_USER_WEIGHT_SCENARIOS.md`.
