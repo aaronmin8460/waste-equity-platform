@@ -140,3 +140,95 @@ class FacilityOut(BaseModel):
     official_dataset_name: str
     reference_year: int
     reference_period: str
+
+
+class CategoryBreakdownRow(BaseModel):
+    """Facility-category counts split by whether a map location exists.
+
+    ``without_map_location`` counts facilities with NULL geometry; it is a
+    "no usable map location" tally, never a zero-quantity claim.
+    """
+
+    category: str
+    total: int
+    with_map_location: int
+    without_map_location: int
+
+
+class OwnershipBreakdownRow(BaseModel):
+    ownership: str
+    total: int
+
+
+class RegionMappingBreakdownRow(BaseModel):
+    region_mapping_status: str
+    total: int
+
+
+class SourceBreakdownRow(BaseModel):
+    source_id: str
+    official_dataset_name: str
+    total: int
+
+
+class UnmappedFacilityRow(BaseModel):
+    """One waste-treatment facility that has no usable map location.
+
+    A NULL geometry means the official address could not be geocoded, not that
+    the facility does not exist. ``missing_location_reason`` carries only the
+    operator-recorded ``geocode_note`` annotation and only when it is non-empty;
+    it is NULL otherwise (the UI renders "실패 사유 기록 없음"). No raw geocoder
+    or database diagnostics are ever surfaced here.
+    """
+
+    id: int
+    facility_name: str
+    facility_category: str
+    ownership: str
+    rcis_sido_name: str
+    rcis_sigungu_name: str
+    # Canonical region assignment; NULL unless the facility matched a region by
+    # exact name (an EXACT_MATCH can carry a region while geocoding failed).
+    region_code: str | None
+    region_name: str | None
+    region_mapping_status: str
+    geocode_status: str | None
+    missing_location_reason: str | None
+
+
+class PaginatedUnmapped(BaseModel):
+    """Bounded page over the facilities without a map location.
+
+    ``total`` is the count of all such facilities in the resolved year, so the
+    caller can page without ever loading the whole set at once.
+    """
+
+    page: int
+    page_size: int
+    total: int
+    items: list[UnmappedFacilityRow]
+
+
+class FacilityMappingTransparencyOut(BaseModel):
+    """Facility map-location transparency report for a citizen data page.
+
+    Reports, over the waste-treatment facilities of one reference year, how many
+    have a usable map location (a geocoded EPSG:4326 point) versus none, with
+    category / ownership / region-mapping / source breakdowns and a paginated
+    list of the facilities without a map location. A missing map location always
+    means the official address could not be geocoded; it is never a zero and
+    never a claim that the facility does not exist.
+    """
+
+    reference_year: int
+    reference_period: str
+    total: int
+    with_map_location: int
+    without_map_location: int
+    without_address: int
+    category_breakdown: list[CategoryBreakdownRow]
+    ownership_breakdown: list[OwnershipBreakdownRow]
+    region_mapping_breakdown: list[RegionMappingBreakdownRow]
+    source_breakdown: list[SourceBreakdownRow]
+    unmapped: PaginatedUnmapped
+    disclaimer: str

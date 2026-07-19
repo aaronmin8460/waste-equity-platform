@@ -457,6 +457,107 @@ export function fetchDataSources(): Promise<DataSourceItem[]> {
   return fetchJson<DataSourceItem[]>("/api/v1/data-sources");
 }
 
+export interface DataFreshnessItem {
+  source_id: string;
+  source_name: string;
+  publication_frequency: string;
+  latest_reference_period: string | null;
+  last_checked_at: string | null;
+  last_changed_at: string | null;
+  last_success_at: string | null;
+  next_scheduled_at: string | null;
+  freshness_status: string;
+}
+
+export function fetchDataFreshness(): Promise<DataFreshnessItem[]> {
+  return fetchJson<DataFreshnessItem[]>("/api/v1/data-freshness");
+}
+
+// --------------------------------------------------------------------------- //
+// Facility mapping transparency (데이터·출처) — how many facilities have a usable
+// map location vs not, with a bounded, paginated list of the un-mapped ones and
+// the RECORDED reason for a missing location (never fabricated).
+// --------------------------------------------------------------------------- //
+
+export interface FacilityCategoryBreakdownRow {
+  category: string;
+  total: number;
+  with_map_location: number;
+  without_map_location: number;
+}
+
+export interface FacilityOwnershipBreakdownRow {
+  ownership: string;
+  total: number;
+}
+
+export interface FacilityRegionMappingBreakdownRow {
+  region_mapping_status: string;
+  total: number;
+}
+
+export interface FacilitySourceBreakdownRow {
+  source_id: string;
+  official_dataset_name: string;
+  total: number;
+}
+
+export interface UnmappedFacilityRow {
+  id: number;
+  facility_name: string;
+  facility_category: string;
+  ownership: string;
+  rcis_sido_name: string;
+  rcis_sigungu_name: string;
+  region_code: string | null;
+  region_name: string | null;
+  region_mapping_status: string;
+  geocode_status: string | null;
+  /** Recorded geocode annotation, or null → the UI shows "실패 사유 기록 없음". */
+  missing_location_reason: string | null;
+}
+
+export interface PaginatedUnmappedFacilities {
+  page: number;
+  page_size: number;
+  total: number;
+  items: UnmappedFacilityRow[];
+}
+
+export interface FacilityMappingTransparency {
+  reference_year: number;
+  reference_period: string;
+  total: number;
+  with_map_location: number;
+  without_map_location: number;
+  without_address: number;
+  category_breakdown: FacilityCategoryBreakdownRow[];
+  ownership_breakdown: FacilityOwnershipBreakdownRow[];
+  region_mapping_breakdown: FacilityRegionMappingBreakdownRow[];
+  source_breakdown: FacilitySourceBreakdownRow[];
+  unmapped: PaginatedUnmappedFacilities;
+  disclaimer: string;
+}
+
+export interface FacilityMappingTransparencyQuery {
+  year?: number | null;
+  page?: number;
+  pageSize?: number;
+}
+
+export function fetchFacilityMappingTransparency(
+  query: FacilityMappingTransparencyQuery = {},
+): Promise<FacilityMappingTransparency> {
+  const params = new URLSearchParams();
+  if (query.year != null) params.set("year", String(query.year));
+  if (query.page != null) params.set("page", String(query.page));
+  if (query.pageSize != null) params.set("page_size", String(query.pageSize));
+  const qs = params.toString();
+  return fetchJson<FacilityMappingTransparency>(
+    `/api/v1/facilities/mapping-transparency${qs ? `?${qs}` : ""}`,
+  );
+}
+
 // --------------------------------------------------------------------------- //
 // Suitability screening (Phase 5.4) — analytical screening only, never legal.
 // --------------------------------------------------------------------------- //

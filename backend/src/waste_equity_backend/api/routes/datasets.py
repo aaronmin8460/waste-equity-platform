@@ -22,21 +22,28 @@ import json
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from ...db import get_session
 from ...models import Region, RegionalPopulation, RegionalWasteStatistics, WasteTreatmentFacility
 from ...models.metadata import GRANULARITY_ANNUAL
 from ...schemas import (
+    CategoryBreakdownRow,
     DatasetEnvelope,
+    FacilityMappingTransparencyOut,
     FacilityOut,
+    OwnershipBreakdownRow,
+    PaginatedUnmapped,
     PopulationOut,
     RegionBoundaryCollection,
     RegionBoundaryFeature,
     RegionBoundaryProperties,
+    RegionMappingBreakdownRow,
     RegionOut,
+    SourceBreakdownRow,
     UnavailableDataError,
+    UnmappedFacilityRow,
     WasteStatisticsOut,
 )
 
@@ -46,6 +53,10 @@ SessionDep = Annotated[Session, Depends(get_session)]
 YearParam = Annotated[
     int | None,
     Query(ge=1990, le=2100, description="Reference year; defaults to the latest available."),
+]
+PageParam = Annotated[int, Query(ge=1, description="1-based page of the unmapped-facility list.")]
+PageSizeParam = Annotated[
+    int, Query(ge=1, le=100, description="Unmapped-facility page size (max 100).")
 ]
 
 RegionLevel = Literal["SIDO", "SIGUNGU"]
@@ -68,6 +79,13 @@ _REGION_VINTAGE: ColumnElement[Any] = func.extract("year", Region.valid_from)
 # series drawn on the SIGUNGU boundaries served by /regions/boundaries.
 _POPULATION_SOURCE_ID = "sgis"
 _POPULATION_GEOGRAPHIC_LEVEL = "SIGUNGU"
+
+# A missing map location means the official address could not be geocoded; it is
+# never a claim that the facility does not exist and never a zero.
+_MAPPING_TRANSPARENCY_DISCLAIMER = (
+    "지도 위치가 없는 시설은 공식 주소를 좌표로 변환(지오코딩)하지 못한 경우이며, "
+    "해당 시설이 존재하지 않거나 처리량이 0임을 의미하지 않습니다."
+)
 
 
 def _not_found(error: UnavailableDataError) -> HTTPException:
@@ -135,6 +153,20 @@ def _require_known_region_code(session: Session, region_code: str) -> None:
                 detail=f"Unknown region_code {region_code!r}.",
             )
         )
+
+
+def _missing_location_reason(geocode_note: str | None) -> str | None:
+    """The operator-recorded geocode annotation, or None when none was recorded.
+
+    Only the curated ``geocode_note`` is ever surfaced, and only when it holds a
+    non-empty value; a NULL or blank note collapses to None so the UI renders its
+    "실패 사유 기록 없음" placeholder. No raw geocoder or database diagnostics,
+    secrets, or filesystem paths are exposed.
+    """
+    if geocode_note is None:
+        return None
+    stripped = geocode_note.strip()
+    return stripped or None
 
 
 def _require_provenance(value: str | None, region_code: str, field_name: str) -> str:
@@ -394,3 +426,174 @@ def list_facilities(
         for facility, region, longitude, latitude in rows
     ]
     return DatasetEnvelope(reference_year=resolved_year, count=len(items), items=items)
+
+
+@router.get(
+    "/facilities/mapping-transparency",
+    response_model=FacilityMappingTransparencyOut,
+)
+def facility_mapping_transparency(
+    session: SessionDep,
+    year: YearParam = None,
+    page: PageParam = 1,
+    page_size: PageSizeParam = 25,
+) -> FacilityMappingTransparencyOut:
+    """Report facility map-location coverage for the citizen transparency page.
+
+    Distinct path from ``/facilities`` (no path parameter, so the two never
+    collide). Breakdown counts come from GROUP BY aggregates; the un-mapped list
+    is bounded with LIMIT/OFFSET. A NULL geometry is reported as "without map
+    location", never as zero, and the only geocode diagnostic surfaced is the
+    curated ``geocode_note``.
+    """
+    resolved_year = _resolve_reference_year(
+        _available_years(session, WasteTreatmentFacility.reference_year),
+        year,
+        "waste-treatment facility",
+    )
+    in_year = WasteTreatmentFacility.reference_year == resolved_year
+
+    totals = session.execute(
+        select(
+            func.count(),
+            func.count().filter(WasteTreatmentFacility.geometry.is_not(None)),
+            func.count().filter(WasteTreatmentFacility.geometry.is_(None)),
+            func.count().filter(
+                or_(
+                    WasteTreatmentFacility.address.is_(None),
+                    func.trim(WasteTreatmentFacility.address) == "",
+                )
+            ),
+        ).where(in_year)
+    ).one()
+    total = int(totals[0])
+    with_map_location = int(totals[1])
+    without_map_location = int(totals[2])
+    without_address = int(totals[3])
+
+    # reference_period comes from a representative row; the non-optional response
+    # field rejects any row missing it (a visible failure) rather than serving it
+    # unsourced. Year resolution guarantees at least one row exists.
+    representative = session.scalars(
+        select(WasteTreatmentFacility)
+        .where(in_year)
+        .order_by(WasteTreatmentFacility.source_pid, WasteTreatmentFacility.source_row_index)
+        .limit(1)
+    ).first()
+    if representative is None:  # defensive: unreachable once a year is resolved
+        raise _not_found(
+            UnavailableDataError(
+                error="NO_DATA_AVAILABLE",
+                detail="No waste-treatment facility data has been ingested.",
+                requested_year=year,
+            )
+        )
+
+    category_rows = session.execute(
+        select(
+            WasteTreatmentFacility.facility_category,
+            func.count(),
+            func.count().filter(WasteTreatmentFacility.geometry.is_not(None)),
+            func.count().filter(WasteTreatmentFacility.geometry.is_(None)),
+        )
+        .where(in_year)
+        .group_by(WasteTreatmentFacility.facility_category)
+        .order_by(WasteTreatmentFacility.facility_category)
+    ).all()
+    category_breakdown = [
+        CategoryBreakdownRow(
+            category=row[0],
+            total=int(row[1]),
+            with_map_location=int(row[2]),
+            without_map_location=int(row[3]),
+        )
+        for row in category_rows
+    ]
+
+    ownership_rows = session.execute(
+        select(WasteTreatmentFacility.ownership, func.count())
+        .where(in_year)
+        .group_by(WasteTreatmentFacility.ownership)
+        .order_by(WasteTreatmentFacility.ownership)
+    ).all()
+    ownership_breakdown = [
+        OwnershipBreakdownRow(ownership=row[0], total=int(row[1])) for row in ownership_rows
+    ]
+
+    region_mapping_rows = session.execute(
+        select(WasteTreatmentFacility.region_mapping_status, func.count())
+        .where(in_year)
+        .group_by(WasteTreatmentFacility.region_mapping_status)
+        .order_by(WasteTreatmentFacility.region_mapping_status)
+    ).all()
+    region_mapping_breakdown = [
+        RegionMappingBreakdownRow(region_mapping_status=row[0], total=int(row[1]))
+        for row in region_mapping_rows
+    ]
+
+    source_rows = session.execute(
+        select(
+            WasteTreatmentFacility.source_id,
+            WasteTreatmentFacility.official_dataset_name,
+            func.count(),
+        )
+        .where(in_year)
+        .group_by(
+            WasteTreatmentFacility.source_id,
+            WasteTreatmentFacility.official_dataset_name,
+        )
+        .order_by(
+            WasteTreatmentFacility.source_id,
+            WasteTreatmentFacility.official_dataset_name,
+        )
+    ).all()
+    source_breakdown = [
+        SourceBreakdownRow(source_id=row[0], official_dataset_name=row[1], total=int(row[2]))
+        for row in source_rows
+    ]
+
+    offset = (page - 1) * page_size
+    unmapped_rows = session.execute(
+        select(WasteTreatmentFacility, Region)
+        .outerjoin(Region, WasteTreatmentFacility.region_id == Region.id)
+        .where(in_year, WasteTreatmentFacility.geometry.is_(None))
+        .order_by(WasteTreatmentFacility.source_pid, WasteTreatmentFacility.id)
+        .limit(page_size)
+        .offset(offset)
+    ).all()
+    unmapped_items = [
+        UnmappedFacilityRow(
+            id=facility.id,
+            facility_name=facility.facility_name,
+            facility_category=facility.facility_category,
+            ownership=facility.ownership,
+            rcis_sido_name=facility.rcis_sido_name,
+            rcis_sigungu_name=facility.rcis_sigungu_name,
+            region_code=region.region_code if region is not None else None,
+            region_name=region.region_name if region is not None else None,
+            region_mapping_status=facility.region_mapping_status,
+            geocode_status=facility.geocode_status,
+            missing_location_reason=_missing_location_reason(facility.geocode_note),
+        )
+        for facility, region in unmapped_rows
+    ]
+
+    return FacilityMappingTransparencyOut(
+        reference_year=resolved_year,
+        reference_period=representative.reference_period,
+        total=total,
+        with_map_location=with_map_location,
+        without_map_location=without_map_location,
+        without_address=without_address,
+        category_breakdown=category_breakdown,
+        ownership_breakdown=ownership_breakdown,
+        region_mapping_breakdown=region_mapping_breakdown,
+        source_breakdown=source_breakdown,
+        unmapped=PaginatedUnmapped(
+            page=page,
+            page_size=page_size,
+            total=without_map_location,
+            items=unmapped_items,
+        ),
+        disclaimer=_MAPPING_TRANSPARENCY_DISCLAIMER,
+    )
