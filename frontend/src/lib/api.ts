@@ -839,3 +839,197 @@ export function fetchLandfillTrends(query: LandfillTrendsQuery = {}): Promise<La
   if (query.wasteName != null && query.wasteName !== "") params.set("waste_name", query.wasteName);
   return fetchJson<LandfillTrends>(`/api/v1/landfill/trends?${params.toString()}`);
 }
+
+// --------------------------------------------------------------------------- //
+// Facility cost model (Phase 4 backend). Standard-construction-cost ANALYSIS —
+// never an actual project budget, an approved subsidy, or a personal tax bill.
+// All money values arrive as exact decimal strings and are kept as strings.
+// --------------------------------------------------------------------------- //
+
+export interface FacilityCostBand {
+  facility_type: string;
+  capacity_min_ton_per_day: string | null;
+  capacity_min_inclusive: boolean;
+  capacity_max_ton_per_day: string | null;
+  capacity_max_inclusive: boolean;
+  cost_per_capacity_bn: string;
+  cost_per_capacity_unit: string;
+}
+
+export interface FacilityCostOptions {
+  derivation_version: string;
+  facility_types: { value: string; label: string }[];
+  subsidy_schemes: { value: string; label: string; rate: string }[];
+  underground_multiplier: { min: string; max: string; default: string; note: string };
+  default_operating_days: number;
+  cost_versions: string[];
+  active_cost_version: string;
+  disclaimer: string;
+}
+
+export interface FacilityCostScenario {
+  facility_type: string;
+  facility_type_label: string;
+  processing_share: string;
+  processing_share_percent: string;
+  operating_days_per_year: number;
+  underground_multiplier: string;
+  underground_multiplier_note: string;
+  subsidy_scheme: string;
+  subsidy_scheme_label: string;
+  subsidy_rate: string;
+  cost_version: string;
+}
+
+export interface FacilityCostOfficialInputRegion {
+  region_code: string;
+  region_name: string;
+  generation_quantity_ton: string;
+  population: number | null;
+}
+
+export interface FacilityCostOfficialInput {
+  waste_stream: string;
+  reference_year: number;
+  waste_reference_period: string;
+  accounting_basis: string;
+  waste_source_id: string;
+  waste_official_dataset_name: string;
+  quantity_unit: string;
+  official_annual_quantity_ton: string;
+  service_region_codes: string[];
+  regions: FacilityCostOfficialInputRegion[];
+  population_source_id: string | null;
+  population_reference_period: string | null;
+  population_definition: string | null;
+  official_service_population: number | null;
+}
+
+export interface FacilityCostCapacity {
+  annual_service_quantity_ton: string;
+  operating_days_per_year: number;
+  facility_capacity_ton_per_day: string;
+  capacity_unit: string;
+}
+
+export interface FacilityCostStandardCost {
+  term_ko: string;
+  matched_band: FacilityCostBand;
+  standard_unit_cost_bn_per_tpd: string;
+  underground_multiplier: string;
+  standard_construction_cost_bn: string;
+  unit: string;
+}
+
+export interface FacilityCostAnnualization {
+  term_ko: string;
+  facility_lifetime_years: number;
+  lifetime_basis: string;
+  annualized_construction_cost_bn: string;
+  unit: string;
+  method: string;
+}
+
+export interface FacilityCostSubsidy {
+  subsidy_scheme: string;
+  subsidy_scheme_label: string;
+  subsidy_rate: string;
+  rate_source: string;
+  rate_reference_period: string;
+  rate_basis: string;
+  estimated_national_subsidy_bn: string;
+  simplified_local_government_share_bn: string;
+  unit: string;
+  note: string;
+}
+
+export interface FacilityCostPerCapita {
+  term_ko: string;
+  per_capita_local_share_won: string | null;
+  official_service_population: number | null;
+  unavailable_reason: string | null;
+  unit: string;
+  caveat: string;
+}
+
+export interface FacilityCostCandidateContext {
+  candidate_id: number;
+  candidate_key: string | null;
+  sido_region_name: string | null;
+  sigungu_region_name: string | null;
+  suitability_status: string | null;
+  run_id: number | null;
+  profile: string | null;
+  note: string;
+  suitability_disclaimer: string;
+}
+
+export interface FacilityCostCompleteness {
+  is_partial: boolean;
+  included_components: string[];
+  missing_components: { component: string; reason: string }[];
+}
+
+export interface FacilityCostProvenance {
+  derivation_version: string;
+  cost_version: string;
+  price_base_date: string;
+  source_document: string;
+  source_page: string;
+  subsidy_rate_source: string;
+  subsidy_rate_reference_period: string;
+}
+
+export interface FacilityCostCalculate {
+  scenario: FacilityCostScenario;
+  official_input: FacilityCostOfficialInput;
+  capacity: FacilityCostCapacity;
+  standard_cost: FacilityCostStandardCost;
+  annualization: FacilityCostAnnualization;
+  subsidy: FacilityCostSubsidy;
+  per_capita: FacilityCostPerCapita;
+  candidate_context: FacilityCostCandidateContext | null;
+  completeness: FacilityCostCompleteness;
+  provenance: FacilityCostProvenance;
+  assumptions: string[];
+  disclaimer: string;
+}
+
+export interface FacilityCostCalculateQuery {
+  facilityType: string;
+  wasteStream: string;
+  subsidyScheme: string;
+  regionCodes: string[];
+  referenceYear?: number | null;
+  processingSharePercent?: string;
+  operatingDays?: number;
+  undergroundMultiplier?: string;
+  costVersion?: string | null;
+  candidateId?: number | null;
+}
+
+export function fetchFacilityCostOptions(): Promise<FacilityCostOptions> {
+  return fetchJson<FacilityCostOptions>("/api/v1/facility-cost/options");
+}
+
+export function fetchFacilityCostCalculate(
+  query: FacilityCostCalculateQuery,
+): Promise<FacilityCostCalculate> {
+  const params = new URLSearchParams({
+    facility_type: query.facilityType,
+    waste_stream: query.wasteStream,
+    subsidy_scheme: query.subsidyScheme,
+    region_codes: query.regionCodes.join(","),
+  });
+  if (query.referenceYear != null) params.set("reference_year", String(query.referenceYear));
+  if (query.processingSharePercent != null)
+    params.set("processing_share_percent", query.processingSharePercent);
+  if (query.operatingDays != null) params.set("operating_days", String(query.operatingDays));
+  if (query.undergroundMultiplier != null)
+    params.set("underground_multiplier", query.undergroundMultiplier);
+  if (query.costVersion) params.set("cost_version", query.costVersion);
+  if (query.candidateId != null) params.set("candidate_id", String(query.candidateId));
+  return fetchJson<FacilityCostCalculate>(
+    `/api/v1/facility-cost/calculate?${params.toString()}`,
+  );
+}
