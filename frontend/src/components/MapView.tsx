@@ -33,6 +33,7 @@ import {
 } from "../lib/metrics";
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import { geometryBounds, isDegenerateBounds, stabilityBadgeLabel } from "../lib/suitability";
+import { statusLabel } from "../lib/glossary";
 
 /**
  * The modes that actually render a map. The 수도권매립지 dashboard mode is not
@@ -320,11 +321,12 @@ export function regionPopupHtml(props: Record<string, unknown>): string {
 // tile would be wasteful) — the exact custom rank is fetched into the sidebar
 // detail on selection; here the score alone is shown.
 function candidateScoreDisplay(props: Record<string, unknown>, scenario = false): string {
-  if (props.status === "EXCLUDED") return "제외 (excluded)";
+  if (props.status === "EXCLUDED") return statusLabel("EXCLUDED");
   if (props.score != null) {
-    return scenario ? `${props.score}` : `${props.score} (rank ${props.rank ?? "-"})`;
+    // Scenario tiles carry no global rank; the exact custom rank is in the sidebar.
+    return scenario ? `점수 ${props.score}` : `점수 ${props.score} · 순위 ${props.rank ?? "-"}`;
   }
-  if (props.provisional_score != null) return `${props.provisional_score} (provisional)`;
+  if (props.provisional_score != null) return `참고용 임시 점수 ${props.provisional_score}`;
   return "-";
 }
 
@@ -336,7 +338,7 @@ function candidateStabilityDisplay(props: Record<string, unknown>): string {
     props.stability_class == null ? null : String(props.stability_class),
     Number(props.stable_count),
   );
-  return label ? `<br/>안정성(stability): ${label}` : "";
+  return label ? `<br/>안정성: ${label}` : "";
 }
 
 export default function MapView({
@@ -444,20 +446,29 @@ export default function MapView({
       if (!feature) return;
       const props = feature.properties as Record<string, unknown>;
       const scenario = candidateContextRef.current === "scenario";
-      const scoreLabel = scenario ? "사용자 가정 기반 점수" : "적합성 점수";
+      // Concise popup: region + plain status + main value + a short pointer to the
+      // full detail. The long disclaimer, versions, and provenance stay in the
+      // sidebar detail sheet — never crammed into the map popup.
+      const status = String(props.status ?? "");
+      const statusText =
+        status === "ELIGIBLE" || status === "REVIEW_REQUIRED" || status === "EXCLUDED"
+          ? statusLabel(status)
+          : status;
       const footer = scenario
-        ? "사용자 가정 기반 시나리오 — 공식 분석 실행·법적 판정이 아님. 정확한 순위는 좌측 상세 참조"
-        : "분석 스크리닝 결과 — 법적 판정이 아님. 상세 근거는 좌측 패널 참조";
+        ? "가중치 바꿔보기 임시 결과 — 자세히는 왼쪽 상세에서"
+        : "공공자료 1차 비교 — 자세히는 왼쪽 목록에서";
       // Replace any prior pinned candidate popup rather than accumulate stale ones.
       candidatePopupRef.current?.remove();
       candidatePopupRef.current = new maplibregl.Popup()
         .setLngLat(event.lngLat)
         .setHTML(
-          `<strong>후보지 ${props.candidate_key}</strong><br/>` +
-            `상태(status): ${props.status}<br/>${scoreLabel}: ${candidateScoreDisplay(props, scenario)}` +
+          `<strong>${props.sigungu_region_name ?? "후보 구역"}</strong><br/>` +
+            `${statusText}` +
+            (candidateScoreDisplay(props, scenario) !== statusText
+              ? ` · ${candidateScoreDisplay(props, scenario)}`
+              : "") +
             candidateStabilityDisplay(props) +
-            `<br/>시군구: ${props.sigungu_region_name ?? ""}<br/>` +
-            `<small>${footer}</small>`,
+            `<br/><small>${footer}</small>`,
         )
         .addTo(map);
       const id = Number(props.candidate_id);

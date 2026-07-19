@@ -115,13 +115,14 @@ import {
   type ComparisonRegionRow,
 } from "../lib/exports";
 import { buildComparisonReport, buildEquityReport, type ReportModel } from "../lib/report";
-import { classifyEquityRaw, stabilityBadgeLabel, topCandidateCellLabel } from "../lib/suitability";
+import { classifyEquityRaw, stabilityBadgeLabel } from "../lib/suitability";
 import {
   COMPONENT_ORDER,
   MODE_LABELS,
   MODE_ORIENTATION,
   PROFILE_META,
   SUBVIEW_LABELS,
+  accountingBasisLabel,
   codeWithName,
   plainError,
   profileLabel,
@@ -1252,7 +1253,7 @@ export default function Home() {
                       출처: waste_statistics · 기준 기간: {facilitySummary.referencePeriod} · 갱신
                       주기: {facilitySummary.frequency}
                     </p>
-                    <p className="mt-1">집계 기준: {facilitySummary.accountingBasis}</p>
+                    <p className="mt-1">집계 기준: {accountingBasisLabel(facilitySummary.accountingBasis)}</p>
                   </div>
                 )}
               </section>
@@ -1948,22 +1949,12 @@ function SuitabilityPanel({
                     {isSelected && (
                       <span className="mr-1 font-semibold text-sky-700">✓ 선택됨</span>
                     )}
-                    #{String(c.rank)} · {String(c.total_score)} · {String(c.sigungu ?? "")}{" "}
+                    <span className="font-medium">#{String(c.rank)}</span> ·{" "}
+                    {String(c.sigungu ?? "")} · {String(c.total_score)}점{" "}
                     <StabilityBadge
                       stabilityClass={String(c.stability_class)}
                       stableCount={Number(c.stable_count)}
                     />
-                    <span className="text-slate-400">
-                      {" "}
-                      (Z {String(c.zoning_score)} R {String(c.road_score)} E {String(c.equity_score)}{" "}
-                      D {String(c.demand_score)})
-                    </span>
-                    <span
-                      className="mt-0.5 block font-mono text-[11px] break-all text-slate-500"
-                      data-testid="stable-candidate-cell"
-                    >
-                      {topCandidateCellLabel(c)}
-                    </span>
                   </button>
                 </li>
               );
@@ -2005,23 +1996,14 @@ function SuitabilityPanel({
                       ✓ 선택됨
                     </span>
                   )}
-                  #{String(c.rank)} · {String(c.total_score)} · {String(c.sigungu ?? "")}{" "}
+                  <span className="font-medium">#{String(c.rank)}</span> ·{" "}
+                  {String(c.sigungu ?? "")} · {String(c.total_score)}점{" "}
                   {c.stability_class != null && c.stable_count != null && (
                     <StabilityBadge
                       stabilityClass={String(c.stability_class)}
                       stableCount={Number(c.stable_count)}
                     />
                   )}
-                  <span className="text-slate-400">
-                    (Z {String(c.zoning_score)} R {String(c.road_score)} E {String(c.equity_score)} D{" "}
-                    {String(c.demand_score)})
-                  </span>
-                  <span
-                    className="mt-0.5 block font-mono text-[11px] break-all text-slate-500"
-                    data-testid="top-candidate-cell"
-                  >
-                    {topCandidateCellLabel(c)}
-                  </span>
                 </button>
               </li>
               );
@@ -2065,8 +2047,7 @@ function SuitabilityPanel({
             ))}
           </ul>
           <p className="mt-1">
-            OFFICIAL_SOURCE_UNAVAILABLE는 공백이며 &quot;해당 없음&quot;의 확인이 아닙니다 (never a
-            confirmed absence).
+            자료가 없는 항목은 공백이며 &quot;해당 없음&quot;을 확인한 것이 아닙니다.
           </p>
         </section>
       )}
@@ -2196,24 +2177,23 @@ function CandidateDetailPanel({
             <div className="mt-1" data-testid="candidate-equity-raw">
               <p>
                 형평성 원자료(소재 시설 부담): <strong>{String(eq.located_burden_kg_per_capita)}</strong>{" "}
-                {String(eq.unit)} · {String(eq.accounting_basis)} · {String(eq.source_id)} (
+                {String(eq.unit)} · {accountingBasisLabel(String(eq.accounting_basis))} · {String(eq.source_id)} (
                 {String(eq.reference_period)})
               </p>
               <p className="text-slate-500" data-testid="equity-score-direction">
-                점수 방향(역방향): 시설 부담이 낮을수록 형평성 점수가 높습니다 (inverse — lower
-                located-facility burden → higher equity score). 형평성 점수{" "}
+                점수 방향: 시설 부담이 낮을수록 형평성 점수가 높습니다. 형평성 점수{" "}
                 <strong>{detail.equity_score ?? "-"}</strong>.
               </p>
               {equityKind === "PARTIAL" && (
                 <p className="text-amber-700" data-testid="equity-partial">
                   일부 시설 처리량 결측 {String(eq.missing_throughput_count)}건 — 부담이 과소집계이며
-                  추정하지 않습니다 (partial; missing throughput is never estimated).
+                  추정하지 않습니다.
                 </p>
               )}
               {equityKind === "OFFICIAL_ZERO" && (
                 <p className="text-slate-500" data-testid="equity-zero-note">
                   소재 시설 {String(eq.facility_count_located)}개 · 결측 0건. 값 0은 공식 측정값 0이며
-                  결측이 아닙니다 (official measured zero, not missing data).
+                  결측이 아닙니다.
                 </p>
               )}
               {equityKind === "MEASURED_VALUE" && (
@@ -2227,12 +2207,12 @@ function CandidateDetailPanel({
             <div className="mt-1" data-testid="candidate-demand-raw">
               <p>
                 수요 원자료: {String(dem.household_per_capita_kg_per_year)} {String(dem.unit)} ·{" "}
-                {String(dem.accounting_basis)} · {String(dem.source_id)} (
+                {accountingBasisLabel(String(dem.accounting_basis))} · {String(dem.source_id)} (
                 {String(dem.reference_period)})
               </p>
               <p className="text-slate-500" data-testid="demand-score-direction">
-                점수 방향(정방향): 1인당 발생량이 높을수록 수요 점수가 높습니다 (higher per-capita
-                generation → higher demand score). 수요 점수 <strong>{detail.demand_score ?? "-"}</strong>.
+                점수 방향: 1인당 발생량이 높을수록 수요 점수가 높습니다. 수요 점수{" "}
+                <strong>{detail.demand_score ?? "-"}</strong>.
               </p>
             </div>
           )}
@@ -2417,7 +2397,7 @@ function DerivedPanel({ info, caveat }: { info: DerivedInfo; caveat?: string }) 
         )}
         <div>
           <dt className="inline font-medium">집계 기준: </dt>
-          <dd className="inline">{info.accountingBasis}</dd>
+          <dd className="inline">{accountingBasisLabel(info.accountingBasis ?? undefined)}</dd>
         </div>
         <div>
           <dt className="inline font-medium">인구 출처: </dt>
@@ -2548,7 +2528,7 @@ function SourcePanel({
         {info.accountingBasis && (
           <div>
             <dt className="inline font-medium">집계 기준: </dt>
-            <dd className="inline">{info.accountingBasis}</dd>
+            <dd className="inline">{accountingBasisLabel(info.accountingBasis ?? undefined)}</dd>
           </div>
         )}
         {info.populationDefinition && (
