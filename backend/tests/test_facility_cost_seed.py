@@ -49,11 +49,15 @@ def test_seeded_rows_match_the_canonical_bands(session: Session) -> None:
             FacilityStandardCost.cost_version == fc.ACTIVE_COST_VERSION
         )
     ).all()
+    # Include the inclusivity flags: the route's band matching (and therefore the
+    # boundary behaviour) depends on them, so they must survive the seed exactly.
     seeded = {
         (
             r.facility_type,
             r.capacity_min_ton_per_day,
+            r.capacity_min_inclusive,
             r.capacity_max_ton_per_day,
+            r.capacity_max_inclusive,
             r.cost_per_capacity_bn,
         )
         for r in rows
@@ -62,7 +66,9 @@ def test_seeded_rows_match_the_canonical_bands(session: Session) -> None:
         (
             b.facility_type,
             b.capacity_min_ton_per_day,
+            b.capacity_min_inclusive,
             b.capacity_max_ton_per_day,
+            b.capacity_max_inclusive,
             b.cost_per_capacity_bn,
         )
         for b in fc.STANDARD_COST_SEED
