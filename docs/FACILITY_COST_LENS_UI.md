@@ -22,11 +22,18 @@ string, formatted without changing its value.
 
 ## Scenario controls (accessible, mobile single-column)
 
-facility type · waste stream · **service regions** (SIGUNGU multi-select from the
-loaded SGIS boundaries) · processing share (%) · operating days · underground
-multiplier (1.00–1.40) · subsidy scheme · cost version (shown only when more than
-one exists). Every control has an associated `<label>`; calculate is disabled until
-at least one service region is chosen.
+facility type · waste stream · **service regions** · processing share (%) ·
+operating days · underground multiplier (1.00–1.40) · subsidy scheme · cost version
+(shown only when more than one exists). Every control has an associated `<label>`;
+calculate is disabled until at least one service region is chosen.
+
+The service-region picker is derived from **calculable coverage** — the regions
+that actually have `RegionalWasteStatistics` for the *selected* waste stream (which
+the backend joins by `region_code`) — so a citizen can never pick a code that
+always returns `OFFICIAL_WASTE_UNAVAILABLE` (notably the SGIS districts of the
+seven RCIS city-level cities). Each option shows its `region_code`, so duplicate
+municipality names (e.g. Seoul 중구 vs Incheon 중구) are unambiguous. Changing the
+waste stream re-derives the choices and clears the (possibly now-invalid) selection.
 
 ## Results (aria-live)
 

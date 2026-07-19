@@ -53,7 +53,36 @@ const LANDFILL_PATHS = new Set([
 export const RESPONSES: Record<string, unknown> = {
   "/api/v1/regions/boundaries": EMPTY_FC,
   "/api/v1/population": EMPTY_ENVELOPE,
-  "/api/v1/waste-statistics": EMPTY_ENVELOPE,
+  // One HOUSEHOLD waste row so the cost lens's calculable-region picker has an
+  // option (the picker derives from regions that actually have waste data). This
+  // is a synthetic layout fixture; the equity map only renders it if the waste
+  // metric is selected, which the layout/a11y specs never do.
+  "/api/v1/waste-statistics": {
+    reference_year: 2022,
+    count: 1,
+    items: [
+      {
+        region_code: "KR-SGIS-11110",
+        region_name: "종로구",
+        waste_stream: "HOUSEHOLD",
+        waste_category_name: "총계",
+        generation_quantity: "10500.000000",
+        recycling_quantity: "0",
+        incineration_quantity: "0",
+        landfill_quantity: "0",
+        other_treatment_quantity: "10500.000000",
+        total_treatment_quantity: "10500.000000",
+        total_treatment_is_derived: true,
+        quantity_unit: "톤/년",
+        accounting_basis: "ORIGIN_BASED_TREATMENT_OUTCOME",
+        source_id: "waste_statistics",
+        source_pid: "NTN007",
+        official_dataset_name: "RCIS 생활계",
+        reference_year: 2022,
+        reference_period: "2022",
+      },
+    ],
+  },
   "/api/v1/facilities": EMPTY_ENVELOPE,
   "/api/v1/equity/waste-per-capita": { ...EMPTY_ENVELOPE, unit: "kg/인/년", excluded_regions: [] },
   "/api/v1/equity/facility-burden": { ...EMPTY_ENVELOPE, unit: "kg/인/년", excluded_regions: [] },

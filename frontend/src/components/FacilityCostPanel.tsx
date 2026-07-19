@@ -96,8 +96,13 @@ function matchedBandLabel(band: FacilityCostBand): string {
 }
 
 export interface FacilityCostPanelProps {
-  /** SIGUNGU service-region options (from the loaded SGIS boundaries). */
-  regions: { code: string; name: string }[];
+  /**
+   * Calculable service regions: the regions that actually have waste statistics,
+   * tagged with their waste stream (from the loaded RegionalWasteStatistics). The
+   * picker offers only the regions calculable for the SELECTED stream, so a citizen
+   * can never choose a code that always returns OFFICIAL_WASTE_UNAVAILABLE.
+   */
+  wasteRegions: { code: string; name: string; stream: string }[];
   /** The currently-selected suitability candidate (for candidate integration). */
   selectedCandidate: CandidateDetail | null;
 }
@@ -113,7 +118,10 @@ interface ScenarioState {
   costVersion: string;
 }
 
-export default function FacilityCostPanel({ regions, selectedCandidate }: FacilityCostPanelProps) {
+export default function FacilityCostPanel({
+  wasteRegions,
+  selectedCandidate,
+}: FacilityCostPanelProps) {
   const [options, setOptions] = useState<FacilityCostOptions | null>(null);
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const [scenario, setScenario] = useState<ScenarioState | null>(null);
@@ -166,10 +174,27 @@ export default function FacilityCostPanel({ regions, selectedCandidate }: Facili
 
   const update = useCallback(
     <K extends keyof ScenarioState>(key: K, value: ScenarioState[K]) => {
-      setScenario((prev) => (prev ? { ...prev, [key]: value } : prev));
+      setScenario((prev) => {
+        if (!prev) return prev;
+        // Changing the waste stream changes which regions are calculable, so drop
+        // the current region selection (it may not exist for the new stream).
+        if (key === "wasteStream") return { ...prev, wasteStream: value as string, regionCodes: [] };
+        return { ...prev, [key]: value };
+      });
     },
     [],
   );
+
+  // The calculable regions for the SELECTED stream, deduped by code and sorted by
+  // name. Only these are offered, so a chosen code always has official waste data.
+  const regionOptions = useMemo(() => {
+    const stream = scenario?.wasteStream;
+    const seen = new Set<string>();
+    return wasteRegions
+      .filter((r) => r.stream === stream && !seen.has(r.code) && seen.add(r.code))
+      .map((r) => ({ code: r.code, name: r.name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [wasteRegions, scenario?.wasteStream]);
 
   const calculate = useCallback(() => {
     if (!scenario || scenario.regionCodes.length === 0) return;
@@ -232,7 +257,7 @@ export default function FacilityCostPanel({ regions, selectedCandidate }: Facili
       <CitizenGuide />
       <ScenarioForm
         options={options}
-        regions={regions}
+        regionOptions={regionOptions}
         scenario={scenario}
         update={update}
         onCalculate={calculate}
@@ -299,14 +324,14 @@ const selectClass =
 
 function ScenarioForm({
   options,
-  regions,
+  regionOptions,
   scenario,
   update,
   onCalculate,
   calculating,
 }: {
   options: FacilityCostOptions;
-  regions: { code: string; name: string }[];
+  regionOptions: { code: string; name: string }[];
   scenario: ScenarioState;
   update: <K extends keyof ScenarioState>(key: K, value: ScenarioState[K]) => void;
   onCalculate: () => void;
@@ -351,7 +376,7 @@ function ScenarioForm({
         </label>
 
         <label className="text-xs font-medium text-slate-600">
-          서비스 지역 (Service regions, SIGUNGU) — 하나 이상 선택
+          서비스 지역 (Service regions) — 하나 이상 선택
           <select
             multiple
             size={6}
@@ -365,14 +390,19 @@ function ScenarioForm({
               )
             }
           >
-            {regions.map((r) => (
+            {regionOptions.map((r) => (
+              // The code disambiguates duplicate names (e.g. 서울 중구 vs 인천 중구).
               <option key={r.code} value={r.code}>
-                {r.name}
+                {r.name} ({r.code})
               </option>
             ))}
           </select>
           <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
-            {noRegions ? "지역을 선택하면 계산할 수 있습니다." : `선택: ${scenario.regionCodes.length}개`}
+            {regionOptions.length === 0
+              ? "이 폐기물 종류로 계산 가능한 지역이 없습니다."
+              : noRegions
+                ? "계산 가능한 지역만 표시됩니다. 지역을 선택하세요."
+                : `선택: ${scenario.regionCodes.length}개`}
           </span>
         </label>
 

@@ -544,14 +544,18 @@ export default function Home() {
   const metricReferencePeriod =
     derivedInfo?.numeratorReferencePeriod ?? sourceInfo?.referencePeriod ?? "";
 
-  // SIGUNGU service-region options for the cost lens (from the loaded SGIS
-  // boundaries, which fetchBoundaries requests at SIGUNGU level).
-  const facilityCostRegions = useMemo(
+  // Service-region options for the cost lens, derived from CALCULABLE coverage:
+  // the regions that actually have RegionalWasteStatistics rows (which the cost
+  // backend joins by region_code, per stream), with their served names + codes.
+  // This excludes the 7 RCIS city-level cities' SGIS districts, which have no
+  // native waste row and would always return OFFICIAL_WASTE_UNAVAILABLE.
+  const facilityCostWasteRegions = useMemo(
     () =>
       data
-        ? data.boundaries.features.map((feature) => ({
-            code: feature.properties.region_code,
-            name: feature.properties.region_name,
+        ? data.waste.items.map((item) => ({
+            code: item.region_code,
+            name: item.region_name,
+            stream: item.waste_stream,
           }))
         : [],
     [data],
@@ -841,7 +845,10 @@ export default function Home() {
                 onSelect={onCandidateClick}
               />
             ) : (
-              <FacilityCostPanel regions={facilityCostRegions} selectedCandidate={selected} />
+              <FacilityCostPanel
+                wasteRegions={facilityCostWasteRegions}
+                selectedCandidate={selected}
+              />
             )}
           </>
         )}

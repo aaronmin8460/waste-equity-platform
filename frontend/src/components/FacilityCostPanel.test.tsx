@@ -161,9 +161,13 @@ vi.mock("../lib/api", async (importOriginal) => {
 
 import FacilityCostPanel from "./FacilityCostPanel";
 
-const REGIONS = [
-  { code: "KR-SGIS-11110", name: "종로구" },
-  { code: "KR-SGIS-11140", name: "중구" },
+// Calculable regions tagged with their waste stream. HOUSEHOLD has three (incl.
+// two 중구 that differ only by code — Seoul vs Incheon); CONSTRUCTION has one.
+const WASTE_REGIONS = [
+  { code: "KR-SGIS-11110", name: "종로구", stream: "HOUSEHOLD" },
+  { code: "KR-SGIS-11140", name: "중구", stream: "HOUSEHOLD" },
+  { code: "KR-SGIS-28110", name: "중구", stream: "HOUSEHOLD" },
+  { code: "KR-SGIS-11110", name: "종로구", stream: "CONSTRUCTION" },
 ];
 
 beforeEach(() => {
@@ -174,7 +178,9 @@ beforeEach(() => {
 afterEach(cleanup);
 
 async function renderPanel(candidate: CandidateDetail | null = null) {
-  const utils = render(<FacilityCostPanel regions={REGIONS} selectedCandidate={candidate} />);
+  const utils = render(
+    <FacilityCostPanel wasteRegions={WASTE_REGIONS} selectedCandidate={candidate} />,
+  );
   await waitFor(() => expect(screen.getByTestId("facility-cost-panel")).toBeDefined());
   return utils;
 }
@@ -223,6 +229,43 @@ describe("scenario form", () => {
     expect(button.disabled).toBe(true);
     selectRegion("KR-SGIS-11110");
     await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
+  it("offers only calculable regions for the selected stream, disambiguated by code", async () => {
+    await renderPanel();
+    const select = screen.getByTestId("facility-cost-regions") as HTMLSelectElement;
+    // HOUSEHOLD (default) → three calculable regions, with the code in each label
+    // so the two 중구 (Seoul vs Incheon) are distinguishable.
+    const labels = Array.from(select.options).map((o) => o.textContent ?? "");
+    expect(labels.length).toBe(3);
+    expect(labels).toContain("중구 (KR-SGIS-11140)");
+    expect(labels).toContain("중구 (KR-SGIS-28110)");
+    // Switching to a stream with narrower coverage narrows the choices — a citizen
+    // can never pick a region the endpoint cannot calculate.
+    fireEvent.change(screen.getByTestId("facility-cost-waste-stream"), {
+      target: { value: "CONSTRUCTION" },
+    });
+    await waitFor(() =>
+      expect((screen.getByTestId("facility-cost-regions") as HTMLSelectElement).options).toHaveLength(
+        1,
+      ),
+    );
+    expect(screen.getByTestId("facility-cost-regions").textContent).toContain("종로구");
+  });
+
+  it("clears the selected regions when the waste stream changes", async () => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11140");
+    expect((screen.getByTestId("facility-cost-calculate") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.change(screen.getByTestId("facility-cost-waste-stream"), {
+      target: { value: "CONSTRUCTION" },
+    });
+    // The 중구 selection is not valid for CONSTRUCTION, so it is cleared.
+    await waitFor(() =>
+      expect((screen.getByTestId("facility-cost-calculate") as HTMLButtonElement).disabled).toBe(
+        true,
+      ),
+    );
   });
 });
 
