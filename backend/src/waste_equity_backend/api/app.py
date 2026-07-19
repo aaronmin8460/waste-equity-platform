@@ -13,6 +13,7 @@ from .routes import (
     metadata,
     reporting,
     suitability,
+    suitability_scenarios,
 )
 
 
@@ -38,7 +39,10 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins(),
         allow_credentials=False,
-        allow_methods=["GET"],
+        # GET for read endpoints; POST for the user-weight scenario preview /
+        # candidate-detail endpoints (Phase 6). These POSTs are stateless, read-only
+        # computations over frozen stored scores — nothing is written.
+        allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
     app.include_router(health.router)
@@ -47,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(equity.router)
     app.include_router(reporting.router)
     app.include_router(suitability.router)
+    app.include_router(suitability_scenarios.router)
     app.include_router(landfill.router)
     app.include_router(facility_cost.router)
     return app
