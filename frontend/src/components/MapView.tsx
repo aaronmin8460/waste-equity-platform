@@ -287,9 +287,36 @@ export default function MapView({
     });
     map.on("moveend", () => recordViewport(map));
     mapRef.current = map;
+
+    // Keep the MapLibre canvas in sync with its container when the layout
+    // changes WITHOUT a window resize: the responsive shell flips its flex
+    // direction at the md breakpoint (stacked ↔ sidebar), the device rotates,
+    // or a mobile collapsible panel above the map expands/collapses. MapLibre's
+    // built-in `trackResize` only listens to window `resize`, so a pure
+    // container reflow would otherwise leave the canvas at its old size (a
+    // stretched/letterboxed map). Coalesce bursts (orientation changes fire
+    // many) into a single resize per animation frame — resizing inside rAF
+    // rather than synchronously in the callback also avoids the "ResizeObserver
+    // loop" warning. Guarded for non-DOM test environments (jsdom has no
+    // ResizeObserver); the fake test map has no resize(), hence optional call.
+    let resizeRaf = 0;
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            if (resizeRaf) return;
+            resizeRaf = requestAnimationFrame(() => {
+              resizeRaf = 0;
+              mapRef.current?.resize?.();
+            });
+          })
+        : null;
+    resizeObserver?.observe(containerRef.current);
+
     return () => {
       loadedRef.current = false;
       appliedTileUrlRef.current = null;
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
+      resizeObserver?.disconnect();
       map.remove();
       mapRef.current = null;
     };

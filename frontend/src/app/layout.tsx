@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -18,6 +18,14 @@ export const metadata: Metadata = {
     "Official-data policy map for waste-management equity across Seoul, Incheon, and Gyeonggi-do.",
 };
 
+// Explicit responsive viewport so phones render at device width (not the ~980px
+// desktop fallback). `initialScale: 1` with the default `userScalable` left on
+// keeps pinch-zoom available for accessibility — we never disable it.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,7 +36,9 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      {/* min-h-dvh (dynamic viewport) so the app fills the visible area even as
+          mobile browser toolbars expand/collapse, instead of the static 100%. */}
+      <body className="min-h-dvh flex flex-col">{children}</body>
     </html>
   );
 }

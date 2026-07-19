@@ -64,3 +64,20 @@ E2E_BACKEND_URL=http://localhost:8000 npm run test:e2e
 It verifies the map loads with real data, the legend and
 source/reference-period metadata render, and that no browser request goes to
 any host other than the backend and the basemap tile service.
+
+## Responsive layout
+
+The dashboard is mobile-usable: a vertical stacked layout with a full-width map
+and collapsible controls below `md` (768 px), and the original side-by-side
+sidebar/map layout at and above it. See
+[RESPONSIVE_LAYOUT.md](RESPONSIVE_LAYOUT.md) for the breakpoints, the map
+minimum-height and MapLibre resize strategy, and the tested viewport sizes. The
+responsive e2e coverage (`e2e/responsive.spec.ts`) intercepts the backend itself
+(`e2e/mockBackend.ts`), so it runs without `E2E_BACKEND_URL`:
+
+```bash
+npx playwright test responsive.spec.ts
+```
+
+Phase 1 (responsive/mobile layout) is implemented on the
+`fix/responsive-mobile-layout` feature branch; it is **not deployed**.
