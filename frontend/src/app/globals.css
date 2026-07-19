@@ -346,3 +346,43 @@ body {
 .maplibregl-popup-close-button {
   color: #475569;
 }
+
+/* Print-ready report isolation.
+   The 보고서 보기 modal renders the report into a `.wep-print` container. When the
+   user prints, only that container is shown: everything else is visibility:hidden
+   and the report is laid out static, full-width, grayscale-safe, with sensible page
+   breaks. The interactive MapLibre map is never part of the report (the report is a
+   text/table summary), so print never captures the canvas or depends on tile CORS. */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .wep-print,
+  .wep-print * {
+    visibility: visible !important;
+  }
+  .wep-print {
+    position: absolute !important;
+    inset: 0 auto auto 0;
+    width: 100%;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 16px !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+  }
+  .wep-no-print {
+    display: none !important;
+  }
+  .wep-print table {
+    page-break-inside: auto;
+  }
+  .wep-print tr {
+    page-break-inside: avoid;
+  }
+  .wep-print section {
+    page-break-inside: avoid;
+  }
+}

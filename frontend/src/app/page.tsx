@@ -14,7 +14,7 @@
  * unreachable or reports no data, the UI shows an explicit state, never fake data.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 import {
@@ -92,6 +92,29 @@ import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import MapLegendOverlay from "../components/MapLegendOverlay";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import TransparencyDashboard from "../components/TransparencyDashboard";
+import RegionRanking from "../components/RegionRanking";
+import RegionComparison, { type ComparisonValue } from "../components/RegionComparison";
+import ShareExportBar from "../components/ShareExportBar";
+import ReportPreview from "../components/ReportPreview";
+import {
+  rankRegions,
+  type RankableRegion,
+  type ScopeSelection,
+} from "../lib/ranking";
+import {
+  decodeUrlState,
+  encodeUrlState,
+  shareableUrl,
+  MAX_COMPARE,
+  type AppUrlState,
+} from "../lib/urlState";
+import { downloadCsv, safeFilename } from "../lib/csv";
+import {
+  buildComparisonCsv,
+  buildRankingCsv,
+  type ComparisonRegionRow,
+} from "../lib/exports";
+import { buildComparisonReport, buildEquityReport, type ReportModel } from "../lib/report";
 import { classifyEquityRaw, stabilityBadgeLabel, topCandidateCellLabel } from "../lib/suitability";
 import {
   COMPONENT_ORDER,
@@ -231,6 +254,16 @@ export default function Home() {
   const [scenarioSelected, setScenarioSelected] = useState<UserScenarioCandidateDetail | null>(
     null,
   );
+
+  // 지역 부담 ranking + comparison + share/export state.
+  const [scope, setScope] = useState<ScopeSelection>("all");
+  const [topN, setTopN] = useState(10);
+  const [comparison, setComparison] = useState<string[]>([]);
+  const [reportKind, setReportKind] = useState<"ranking" | "comparison" | null>(null);
+  const [urlWarnings, setUrlWarnings] = useState<string[]>([]);
+  // Guards so URL state is restored exactly once and written only afterwards
+  // (a one-way state→URL sync via replaceState, so there is no update loop).
+  const urlRestored = useRef(false);
 
   const load = useCallback(() => {
     Promise.all([
@@ -436,6 +469,7 @@ export default function Home() {
   const changeMode = useCallback(
     (next: DashboardMode) => {
       if (next !== "suitability") clearScenario();
+      if (next !== "equity") setReportKind(null); // close the equity report overlay
       setMode(next);
     },
     [clearScenario],
@@ -714,6 +748,193 @@ export default function Home() {
   const metricReferencePeriod =
     derivedInfo?.numeratorReferencePeriod ?? sourceInfo?.referencePeriod ?? "";
 
+  // --- 지역 부담 ranking + comparison + export derivations ------------------- //
+
+  // Every region on the active geography paired with its served value (or undefined
+  // when unavailable) — the input to the ranking, which never fabricates a 0.
+  const rankableRegions = useMemo<RankableRegion[]>(
+    () =>
+      activeBoundaries.features.map((feature) => ({
+        code: feature.properties.region_code,
+        name: feature.properties.region_name,
+        value: regionValues.get(feature.properties.region_code),
+      })),
+    [activeBoundaries, regionValues],
+  );
+
+  // Resolve one region's comparison cell (exact value or 자료 없음). Reuses the same
+  // formatter path as the summary, so an official 0 stays distinct from unavailable.
+  const resolveComparisonValue = useCallback(
+    (code: string): ComparisonValue | null => {
+      const selection = buildRegionSelection(code);
+      if (!selection) return null;
+      const value = regionValues.get(code);
+      return {
+        code,
+        name: selection.regionName,
+        display: value?.display ?? "",
+        hasValue: selection.hasValue,
+        numeric: value?.numeric,
+      };
+    },
+    [buildRegionSelection, regionValues],
+  );
+
+  // Concise source/period/accounting provenance for the CSV + report metadata.
+  const exportProvenance = useMemo(() => {
+    const source = sourceInfo
+      ? `${sourceInfo.sourceName} (${sourceInfo.sourceId})`
+      : derivedInfo
+        ? derivedInfo.numeratorSourceName
+        : "";
+    return {
+      source,
+      referencePeriod: metricReferencePeriod,
+      accountingBasis: sourceInfo?.accountingBasis ?? derivedInfo?.accountingBasis ?? null,
+    };
+  }, [sourceInfo, derivedInfo, metricReferencePeriod]);
+
+  const comparisonExportRows = useCallback((): ComparisonRegionRow[] => {
+    return comparison.map((code) => {
+      const value = resolveComparisonValue(code);
+      return value
+        ? { code, name: value.name, display: value.display, hasValue: value.hasValue }
+        : { code, name: code, display: "", hasValue: false };
+    });
+  }, [comparison, resolveComparisonValue]);
+
+  const downloadRankingCsv = useCallback(() => {
+    const result = rankRegions(rankableRegions, scope, topN);
+    const rows = buildRankingCsv({
+      metricLabel: metric.label,
+      unit,
+      source: exportProvenance.source,
+      referencePeriod: exportProvenance.referencePeriod,
+      accountingBasis: exportProvenance.accountingBasis,
+      scope,
+      result,
+      when: new Date(),
+    });
+    downloadCsv(safeFilename(`지역부담순위_${metric.label}`, "csv"), rows);
+  }, [rankableRegions, scope, topN, metric.label, unit, exportProvenance]);
+
+  const downloadComparisonCsv = useCallback(() => {
+    const rows = buildComparisonCsv({
+      metricLabel: metric.label,
+      unit,
+      source: exportProvenance.source,
+      referencePeriod: exportProvenance.referencePeriod,
+      accountingBasis: exportProvenance.accountingBasis,
+      regions: comparisonExportRows(),
+      when: new Date(),
+    });
+    downloadCsv(safeFilename(`지역비교_${metric.label}`, "csv"), rows);
+  }, [metric.label, unit, exportProvenance, comparisonExportRows]);
+
+  // The report model for the print/PNG preview, built when a report is opened.
+  const reportModel = useMemo<ReportModel | null>(() => {
+    if (reportKind === null) return null;
+    const when = new Date();
+    if (reportKind === "ranking") {
+      return buildEquityReport({
+        metricLabel: metric.label,
+        unit,
+        source: exportProvenance.source,
+        referencePeriod: exportProvenance.referencePeriod,
+        accountingBasis: exportProvenance.accountingBasis,
+        scope,
+        result: rankRegions(rankableRegions, scope, topN),
+        when,
+      });
+    }
+    return buildComparisonReport({
+      metricLabel: metric.label,
+      unit,
+      source: exportProvenance.source,
+      referencePeriod: exportProvenance.referencePeriod,
+      accountingBasis: exportProvenance.accountingBasis,
+      regions: comparisonExportRows(),
+      when,
+    });
+  }, [reportKind, metric.label, unit, exportProvenance, scope, topN, rankableRegions, comparisonExportRows]);
+
+  // --- Shareable, validated URL state -------------------------------------- //
+
+  const currentUrlState = useCallback(
+    (): AppUrlState => ({
+      mode: mode as DashboardArea,
+      metric: metricKey,
+      region: selectedRegionCode,
+      cmp: comparison,
+      scope,
+      top: topN,
+      view: suitabilityView,
+      profile,
+      statusOn: (Object.keys(statusVisibility) as SuitabilityStatus[]).filter(
+        (status) => statusVisibility[status],
+      ),
+      stableOnly,
+      weights: appliedScenario?.weights ?? null,
+      cmpProfile: appliedScenario?.compareProfile ?? "baseline",
+      candidate: selected?.candidate_id ?? null,
+    }),
+    [
+      mode,
+      metricKey,
+      selectedRegionCode,
+      comparison,
+      scope,
+      topN,
+      suitabilityView,
+      profile,
+      statusVisibility,
+      stableOnly,
+      appliedScenario,
+      selected,
+    ],
+  );
+
+  // Restore shared state ONCE, after the regions have loaded (so restored region
+  // and comparison codes resolve against real geography; a code the active metric's
+  // geometry does not contain simply shows no value — never a fabricated one). The
+  // decoder has already whitelisted/bounds-checked every field.
+  useEffect(() => {
+    if (urlRestored.current || data === null || typeof window === "undefined") return;
+    urlRestored.current = true;
+    const { state, warnings } = decodeUrlState(window.location.search);
+    // A one-time restore of external (URL) state after the regions have loaded; the
+    // batched setState calls run once on mount, so the set-state-in-effect guard
+    // (aimed at render-loop cascades) does not apply here.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (state.mode) setMode(state.mode);
+    if (state.metric) setMetricKey(state.metric);
+    if (state.region) setSelectedRegionCode(state.region);
+    if (state.cmp) setComparison(state.cmp.slice(0, MAX_COMPARE));
+    if (state.scope) setScope(state.scope);
+    if (state.top) setTopN(state.top);
+    if (state.view) setSuitabilityView(state.view);
+    if (state.profile) setProfile(state.profile);
+    if (state.statusOn) {
+      setStatusVisibility({
+        ELIGIBLE: state.statusOn.includes("ELIGIBLE"),
+        REVIEW_REQUIRED: state.statusOn.includes("REVIEW_REQUIRED"),
+        EXCLUDED: state.statusOn.includes("EXCLUDED"),
+      });
+    }
+    if (state.stableOnly !== undefined) setStableOnly(state.stableOnly);
+    setUrlWarnings(warnings);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [data]);
+
+  // Passively mirror state into the URL (replaceState — no navigation, no history
+  // spam, no loop) once the initial restore has run.
+  useEffect(() => {
+    if (!urlRestored.current || typeof window === "undefined") return;
+    window.history.replaceState(null, "", encodeUrlState(currentUrlState()));
+  }, [currentUrlState]);
+
+  const getShareUrl = useCallback(() => shareableUrl(currentUrlState()), [currentUrlState]);
+
   // Service-region options for the cost lens, derived from CALCULABLE coverage:
   // the regions that actually have RegionalWasteStatistics rows (which the cost
   // backend joins by region_code, per stream), with their served names + codes.
@@ -956,6 +1177,41 @@ export default function Home() {
               metricProvenance={metricProvenance}
             />
 
+            {/* Regional ranking + comparison + share/export. All read the active
+                metric's served values, so they follow the metric automatically, and
+                selecting a region here drives the ONE canonical selected-region state
+                (map + summary stay in sync). */}
+            <RegionRanking
+              regions={rankableRegions}
+              metricLabel={metric.label}
+              unit={unit}
+              scope={scope}
+              setScope={setScope}
+              topN={topN}
+              setTopN={setTopN}
+              selectedRegionCode={selectedRegionCode}
+              onSelectRegion={(code) => setSelectedRegionCode(code)}
+            />
+
+            <RegionComparison
+              regionOptions={regionOptions}
+              resolveValue={resolveComparisonValue}
+              metricLabel={metric.label}
+              unit={unit}
+              selected={comparison}
+              setSelected={setComparison}
+              onSelectRegionOnMap={(code) => setSelectedRegionCode(code)}
+              maxCompare={MAX_COMPARE}
+            />
+
+            <ShareExportBar
+              getShareUrl={getShareUrl}
+              onDownloadRankingCsv={downloadRankingCsv}
+              onDownloadComparisonCsv={comparison.length > 0 ? downloadComparisonCsv : undefined}
+              onOpenReport={() => setReportKind(comparison.length > 0 ? "comparison" : "ranking")}
+              urlWarnings={urlWarnings}
+            />
+
             {/* The equity map legend is no longer duplicated here — it floats over
                 the map as a single source of truth (MapLegendOverlay below), built
                 from the SAME activeScale palette/breaks the map fill uses. */}
@@ -1126,6 +1382,16 @@ export default function Home() {
           />
         )}
       </div>
+
+      {/* Print / PNG report preview overlay (map-free). Opened from the equity
+          share/export bar; the model is the ranking or the region comparison. */}
+      {reportModel && (
+        <ReportPreview
+          model={reportModel}
+          filenameBase={reportKind === "comparison" ? `지역비교_${metric.label}` : `지역부담순위_${metric.label}`}
+          onClose={() => setReportKind(null)}
+        />
+      )}
     </main>
   );
 }

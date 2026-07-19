@@ -37,7 +37,7 @@ const PROFILES: readonly SuitabilityProfile[] = [
   "critic",
 ];
 const STATUSES: readonly SuitabilityStatus[] = ["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"];
-const SCOPES: readonly ScopeSelection[] = ["all", "11", "28", "41"];
+const SCOPES: readonly ScopeSelection[] = ["all", "11", "23", "31"];
 const TOP_NS: readonly number[] = [5, 10, 20];
 const METRIC_KEYS = new Set<string>(METRICS.map((m) => m.key));
 

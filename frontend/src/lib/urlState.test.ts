@@ -38,11 +38,11 @@ describe("decodeUrlState — version gate", () => {
 describe("decodeUrlState — whitelisting and bounds", () => {
   it("accepts valid enums and bounded numbers", () => {
     const { state, warnings } = decodeUrlState(
-      "?v=1&mode=suitability&metric=HOUSEHOLD&scope=41&top=20&view=scenario&profile=critic",
+      "?v=1&mode=suitability&metric=HOUSEHOLD&scope=31&top=20&view=scenario&profile=critic",
     );
     expect(state.mode).toBe("suitability");
     expect(state.metric).toBe("HOUSEHOLD");
-    expect(state.scope).toBe("41");
+    expect(state.scope).toBe("31");
     expect(state.top).toBe(20);
     expect(state.view).toBe("scenario");
     expect(state.profile).toBe("critic");
@@ -64,7 +64,7 @@ describe("decodeUrlState — whitelisting and bounds", () => {
   });
 
   it("format-screens region codes and rejects arbitrary text", () => {
-    expect(decodeUrlState("?v=1&region=41135").state.region).toBe("41135");
+    expect(decodeUrlState("?v=1&region=KR-SGIS-31011").state.region).toBe("KR-SGIS-31011");
     expect(decodeUrlState("?v=1&region=KR-RCISRG-GOYANG").state.region).toBe("KR-RCISRG-GOYANG");
     const bad = decodeUrlState("?v=1&region=<script>alert(1)</script>");
     expect(bad.state.region).toBeUndefined();
@@ -72,7 +72,7 @@ describe("decodeUrlState — whitelisting and bounds", () => {
   });
 
   it("caps comparison codes at MAX_COMPARE and dedupes", () => {
-    const { state } = decodeUrlState("?v=1&cmp=11110,11110,11140,28710,41135");
+    const { state } = decodeUrlState("?v=1&cmp=KR-SGIS-11110,KR-SGIS-11110,KR-SGIS-11140,KR-SGIS-23510,KR-SGIS-31011");
     expect(state.cmp).toHaveLength(MAX_COMPARE);
     expect(new Set(state.cmp).size).toBe(MAX_COMPARE);
   });
@@ -145,9 +145,9 @@ describe("encode → decode round trip", () => {
     const full: AppUrlState = {
       mode: "suitability",
       metric: "FACILITY_BURDEN_5KM",
-      region: "41135",
-      cmp: ["11110", "28710"],
-      scope: "41",
+      region: "KR-SGIS-31011",
+      cmp: ["KR-SGIS-11110", "KR-SGIS-23510"],
+      scope: "31",
       top: 20,
       view: "scenario",
       profile: "critic",
@@ -161,9 +161,9 @@ describe("encode → decode round trip", () => {
     expect(warnings).toEqual([]);
     expect(state.mode).toBe("suitability");
     expect(state.metric).toBe("FACILITY_BURDEN_5KM");
-    expect(state.region).toBe("41135");
-    expect(state.cmp).toEqual(["11110", "28710"]);
-    expect(state.scope).toBe("41");
+    expect(state.region).toBe("KR-SGIS-31011");
+    expect(state.cmp).toEqual(["KR-SGIS-11110", "KR-SGIS-23510"]);
+    expect(state.scope).toBe("31");
     expect(state.top).toBe(20);
     expect(state.view).toBe("scenario");
     expect(state.profile).toBe("critic");

@@ -16,8 +16,12 @@
  * lists 값이 높은 지역 / 값이 낮은 지역 only.
  */
 
-/** SGIS sido scope codes: Seoul / Incheon / Gyeonggi. */
-export type RegionScope = "11" | "28" | "41";
+/**
+ * SGIS sido scope codes actually used by the region rows: Seoul 11 / Incheon 23 /
+ * Gyeonggi 31. (These are SGIS codes, not the administrative 11/28/41 — the region
+ * boundaries, population, and waste all key on the SGIS values.)
+ */
+export type RegionScope = "11" | "23" | "31";
 
 /** Selectable scope, including the metropolitan-wide default. */
 export type ScopeSelection = RegionScope | "all";
@@ -25,31 +29,29 @@ export type ScopeSelection = RegionScope | "all";
 export const SCOPE_LABELS: Record<ScopeSelection, string> = {
   all: "수도권 전체",
   "11": "서울",
-  "28": "인천",
-  "41": "경기",
+  "23": "인천",
+  "31": "경기",
 };
 
-export const SCOPE_ORDER: readonly ScopeSelection[] = ["all", "11", "28", "41"];
+export const SCOPE_ORDER: readonly ScopeSelection[] = ["all", "11", "23", "31"];
 
 /** Top-N choices offered by the ranking UI. */
 export const TOP_N_OPTIONS: readonly number[] = [5, 10, 20];
 
 /**
  * Classify a region code into its sido scope.
- *  - Numeric SGIS codes ("11", "28710", "41135") → leading two digits.
+ *  - SGIS codes ("KR-SGIS-11110", or a bare "11110") → the first two digits after
+ *    stripping the non-numeric prefix: 11 Seoul, 23 Incheon, 31 Gyeonggi.
  *  - The RCIS reporting derived-city codes ("KR-RCISRG-…") are the seven Gyeonggi
  *    cities only (고양·부천·성남·수원·안산·안양·용인 report at city level), so they
- *    map to Gyeonggi (41). Any other non-numeric code is left unclassified (null),
- *    so it appears only under "수도권 전체".
+ *    map to Gyeonggi (31). Any other code is left unclassified (null), so it appears
+ *    only under "수도권 전체".
  */
 export function regionScope(code: string): RegionScope | null {
-  const m = /^(\d{2})/.exec(code);
-  if (m) {
-    const sido = m[1];
-    if (sido === "11" || sido === "28" || sido === "41") return sido;
-    return null;
-  }
-  if (code.includes("RCISRG")) return "41";
+  if (code.includes("RCISRG")) return "31";
+  const digits = code.replace(/\D/g, "");
+  const sido = digits.slice(0, 2);
+  if (sido === "11" || sido === "23" || sido === "31") return sido;
   return null;
 }
 
