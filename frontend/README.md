@@ -5,6 +5,13 @@ Next.js (App Router) + TypeScript + Tailwind CSS + MapLibre GL map prototype
 Gyeonggi-do: a SIGUNGU choropleth (regional population or per-stream RCIS
 waste generation, served as-is) and a waste-treatment facility point layer.
 
+Phase 7 adds a plain-Korean, citizen-facing redesign (nav **지역 부담 / 후보지 분석 /
+매립지 현황 / 데이터·출처**), regional ranking + comparison, shareable validated URL
+state, injection-safe CSV export, a print/PNG report (map excluded), and a data
+transparency center. Terminology and UX conventions are documented in
+[docs/CITIZEN_LANGUAGE_AND_UX.md](../docs/CITIZEN_LANGUAGE_AND_UX.md); the plain-Korean
+label registry is `src/lib/glossary.ts`.
+
 ## Data rules
 
 - All data comes from the platform backend (`NEXT_PUBLIC_API_BASE_URL`,

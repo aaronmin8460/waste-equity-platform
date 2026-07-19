@@ -28,9 +28,9 @@
    platform's existing light identity (slate neutrals, ColorBrewer-blue data,
    amber warnings, the #2563eb focus ring) so nothing regresses visually — this is
    a naming layer, not a re-skin. Tailwind v4 turns each `--color-*` into
-   `bg-*/text-*/border-*` utilities, each `--radius-*` into `rounded-*`, and each
-   `--shadow-*` into `shadow-*`. The analytical map/legend palette stays the single
-   source of truth in lib/metrics.ts and is intentionally NOT tokenised here. */
+   bg-/text-/border- utilities, each radius token into a rounded- utility, and each
+   shadow token into a shadow- utility. The analytical map/legend palette stays the
+   single source of truth in lib/metrics.ts and is intentionally NOT tokenised. */
 @theme {
   /* Surfaces & text */
   --color-surface: #ffffff;
