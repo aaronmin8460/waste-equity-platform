@@ -137,5 +137,21 @@ export function homeApiMock(actual: Api): Api {
     fetchLandfillSummary: vi.fn().mockRejectedValue(landfillUnavailable()),
     fetchLandfillTrends: vi.fn().mockRejectedValue(landfillUnavailable()),
     fetchLandfillComposition: vi.fn().mockRejectedValue(landfillUnavailable()),
+    // Facility cost lens (Phase 5). Options is a synthetic layout fixture so the
+    // cost sub-view renders its form; the calculate endpoint is not invoked by
+    // these tests (no service region is selected), so it rejects.
+    fetchFacilityCostOptions: vi.fn().mockResolvedValue({
+      derivation_version: "facility-cost-v1",
+      facility_types: [{ value: "sorting_auto", label: "자동선별 재활용시설" }],
+      subsidy_schemes: [{ value: "city_or_county", label: "시·군 (30%)", rate: "0.30" }],
+      underground_multiplier: { min: "1.00", max: "1.40", default: "1.00", note: "지상형 기준" },
+      default_operating_days: 300,
+      cost_versions: ["capex-standard-v2022dec"],
+      active_cost_version: "capex-standard-v2022dec",
+      disclaimer: "표준공사비 기반 설치비 분석입니다.",
+    }),
+    fetchFacilityCostCalculate: vi
+      .fn()
+      .mockRejectedValue(new actual.ApiError(422, null, "no region selected")),
   };
 }

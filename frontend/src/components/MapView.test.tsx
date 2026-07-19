@@ -136,7 +136,8 @@ vi.mock("maplibre-gl", () => {
   class FakePopup {
     html = "";
     added = false;
-    constructor(_options?: unknown) {}
+    // Accepts the real Popup's options arg (ignored); an implicit constructor
+    // already tolerates it, so no explicit parameter is needed.
     setLngLat() {
       return this;
     }
