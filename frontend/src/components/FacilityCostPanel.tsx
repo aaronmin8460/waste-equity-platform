@@ -484,7 +484,7 @@ function Results({
           />
           <Field
             label={`${annualization.term_ko} (내용연수 ${annualization.facility_lifetime_years}년, 가정)`}
-            value={`${formatBn(annualization.annualized_construction_cost_bn).replace("억원", "")}${annualization.unit}`}
+            value={`${formatQuantity(annualization.annualized_construction_cost_bn)} ${annualization.unit}`}
             testId="fc-annualized"
           />
           <Field
