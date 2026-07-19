@@ -80,7 +80,11 @@ import type {
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
+import FacilityCostPanel from "../components/FacilityCostPanel";
 import { classifyEquityRaw, topCandidateCellLabel } from "../lib/suitability";
+
+/** Sub-view inside suitability mode: the score screening, or the cost lens. */
+type SuitabilityView = "score" | "cost";
 
 const MapView = dynamic(() => import("../components/MapView"), { ssr: false });
 
@@ -132,6 +136,8 @@ export default function Home() {
 
   const [mode, setMode] = useState<DashboardMode>("equity");
   const [profile, setProfile] = useState<SuitabilityProfile>("baseline");
+  // Sub-view inside suitability mode: 적합성 점수 (score) or 비용 렌즈 (cost).
+  const [suitabilityView, setSuitabilityView] = useState<SuitabilityView>("score");
 
   // Accessible DOM alternative to clicking a region on the (canvas-only) map.
   // Cleared whenever the metric or mode changes, because the captured display
@@ -538,6 +544,19 @@ export default function Home() {
   const metricReferencePeriod =
     derivedInfo?.numeratorReferencePeriod ?? sourceInfo?.referencePeriod ?? "";
 
+  // SIGUNGU service-region options for the cost lens (from the loaded SGIS
+  // boundaries, which fetchBoundaries requests at SIGUNGU level).
+  const facilityCostRegions = useMemo(
+    () =>
+      data
+        ? data.boundaries.features.map((feature) => ({
+            code: feature.properties.region_code,
+            name: feature.properties.region_name,
+          }))
+        : [],
+    [data],
+  );
+
   if (error !== null) {
     return (
       <main
@@ -807,17 +826,24 @@ export default function Home() {
         )}
 
         {mode === "suitability" && (
-          <SuitabilityPanel
-            suit={suit}
-            suitError={suitError}
-            profile={profile}
-            setProfile={setProfile}
-            statusVisibility={statusVisibility}
-            setStatusVisibility={setStatusVisibility}
-            selected={selected}
-            clearSelected={() => setSelected(null)}
-            onSelect={onCandidateClick}
-          />
+          <>
+            <SuitabilityViewSwitch view={suitabilityView} setView={setSuitabilityView} />
+            {suitabilityView === "score" ? (
+              <SuitabilityPanel
+                suit={suit}
+                suitError={suitError}
+                profile={profile}
+                setProfile={setProfile}
+                statusVisibility={statusVisibility}
+                setStatusVisibility={setStatusVisibility}
+                selected={selected}
+                clearSelected={() => setSelected(null)}
+                onSelect={onCandidateClick}
+              />
+            ) : (
+              <FacilityCostPanel regions={facilityCostRegions} selectedCandidate={selected} />
+            )}
+          </>
         )}
 
       </aside>
@@ -913,6 +939,45 @@ function ModeSwitch({
             onClick={() => setMode(button.key)}
             className={`min-h-[38px] rounded px-3 py-1 text-sm md:min-h-0 ${
               mode === button.key ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"
+            }`}
+            data-testid={button.testId}
+          >
+            {button.label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Suitability sub-view switch — [적합성 점수] [비용 렌즈]. A labelled group of
+// aria-pressed toggle buttons (not a new top-level mode), so the cost lens lives
+// inside the suitability experience.
+// --------------------------------------------------------------------------- //
+
+function SuitabilityViewSwitch({
+  view,
+  setView,
+}: {
+  view: SuitabilityView;
+  setView: (v: SuitabilityView) => void;
+}) {
+  const buttons: { key: SuitabilityView; label: string; testId: string }[] = [
+    { key: "score", label: "적합성 점수", testId: "suitability-view-score" },
+    { key: "cost", label: "비용 렌즈", testId: "suitability-view-cost" },
+  ];
+  return (
+    <section aria-label="적합성 하위 보기 선택">
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="적합성 하위 보기">
+        {buttons.map((button) => (
+          <button
+            key={button.key}
+            type="button"
+            aria-pressed={view === button.key}
+            onClick={() => setView(button.key)}
+            className={`min-h-[38px] rounded px-3 py-1 text-sm md:min-h-0 ${
+              view === button.key ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"
             }`}
             data-testid={button.testId}
           >
