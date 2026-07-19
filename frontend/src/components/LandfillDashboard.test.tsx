@@ -468,6 +468,31 @@ describe("LandfillDashboard", () => {
     }
   });
 
+  it("labels the monthly charts with their y-axis unit and reference period", () => {
+    renderDashboard();
+    const qtyAxis = screen.getByTestId("landfill-trend-quantity-axis").textContent ?? "";
+    expect(qtyAxis).toContain("세로축 단위");
+    expect(qtyAxis).toContain("톤 (t)");
+    // The reference period comes from the trend points (2024-01 in the fixture).
+    expect(qtyAxis).toContain("2024-01");
+    const feeAxis = screen.getByTestId("landfill-trend-fee-axis").textContent ?? "";
+    expect(feeAxis).toContain("억원");
+    // Fee and quantity units must not be confused between the two charts.
+    expect(feeAxis).not.toContain("톤 (t)");
+  });
+
+  it("offers an accessible table fallback with each month's exact value", () => {
+    renderDashboard();
+    const table = screen.getByTestId("landfill-trend-quantity-table");
+    // The hover-only <title> tooltips are unreachable by touch/AT; the table gives
+    // every month's exact value as text.
+    expect(within(table).getByText("2024-01")).toBeDefined();
+    expect(within(table).getByText("90,000 t")).toBeDefined();
+    // The fee table shows the fee in 억원, not tons (9,000,000,000 KRW ÷ 1e8 = 90.0).
+    const feeTable = screen.getByTestId("landfill-trend-fee-table");
+    expect(within(feeTable).getByText("90.0억원")).toBeDefined();
+  });
+
   it("shows no schematic straight-line flow text and no arrow rows", () => {
     const { container } = renderDashboard();
     const text = container.textContent ?? "";

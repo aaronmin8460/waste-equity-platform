@@ -263,6 +263,30 @@ describe("mode toggle group", () => {
   });
 });
 
+describe("map/dashboard readability (Phase 3)", () => {
+  it("shows numbered legend classes with numeric ranges, the unit, and a no-data row", async () => {
+    await renderLoaded();
+    const rows = screen.getAllByTestId("choropleth-legend-row");
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    // Each class row carries a class number (…급) and the metric unit, so a class
+    // is identifiable without relying on color.
+    for (const row of rows) {
+      expect(row.textContent).toContain("급");
+      expect(row.textContent).toContain("persons");
+    }
+    // An explicit no-data category, never rendered as a 0 class.
+    const nodata = screen.getByTestId("choropleth-legend-nodata");
+    expect(nodata.textContent).toContain("데이터 없음");
+  });
+
+  it("presents the metric families as three scannable group cards", async () => {
+    await renderLoaded();
+    expect(screen.getByTestId("metric-group-total")).toBeDefined();
+    expect(screen.getByTestId("metric-group-per_capita")).toBeDefined();
+    expect(screen.getByTestId("metric-group-burden")).toBeDefined();
+  });
+});
+
 describe("single logical heading", () => {
   it("renders exactly one h1 in the equity view", async () => {
     const { container } = await renderLoaded();
