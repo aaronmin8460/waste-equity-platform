@@ -120,6 +120,8 @@ interface MapViewProps {
   palette: readonly string[];
   metricLabel: string;
   metricUnit: string;
+  /** The active metric's reference period, shown in the region tooltip/popup. */
+  metricReferencePeriod: string;
   facilities: FacilityItem[];
   showFacilities: boolean;
   mode: MapMode;
@@ -212,6 +214,41 @@ function statusFilter(visibility: StatusVisibility): maplibregl.FilterSpecificat
   return ["in", ["get", "status"], ["literal", visible]] as unknown as maplibregl.FilterSpecification;
 }
 
+/**
+ * The region tooltip/popup HTML, shared by the desktop hover tooltip and the
+ * click/tap popup so both show the same information: region name, selected metric
+ * label, the exact served value with unit (or the availability text — never a
+ * fabricated 0), the metric's reference period, and the boundary provenance.
+ * `props` are the MapLibre-serialized feature properties (strings/booleans).
+ */
+export function regionPopupHtml(props: Record<string, unknown>): string {
+  // `metric_display` already conveys availability: a served value with its unit,
+  // or "데이터 없음 — {reason}" for a region with no served value (never a 0).
+  const period = props.metric_reference_period
+    ? `<br/><small>지표 기준 기간: ${props.metric_reference_period}</small>`
+    : "";
+  let reportingLines = "";
+  if (props.geometry_kind === "DERIVED") {
+    let children = "";
+    try {
+      children = (JSON.parse(String(props.child_region_names ?? "[]")) as string[]).join("·");
+    } catch {
+      children = "";
+    }
+    reportingLines =
+      `<br/><small>통계 보고 단위: 시 (city) · 수치 출처: RCIS</small>` +
+      (children ? `<br/><small>경계 표시: SGIS ${children} 경계의 파생 합집합</small>` : "") +
+      `<br/><small>구별 공식 폐기물 값은 제공되지 않습니다.</small>`;
+  }
+  return (
+    `<strong>${props.region_name}</strong><br/>${props.metric_label}<br/>` +
+    `${props.metric_display}` +
+    period +
+    `<br/><small>경계 출처: ${props.source_id} (${props.boundary_reference_period}) · 지표 출처는 좌측 패널 참조</small>` +
+    reportingLines
+  );
+}
+
 // Popup score line built from the light tile attributes (full provenance is
 // fetched separately into the detail panel). Excluded cells carry no score/rank.
 function candidateScoreDisplay(props: Record<string, unknown>): string {
@@ -228,6 +265,7 @@ export default function MapView({
   palette,
   metricLabel,
   metricUnit,
+  metricReferencePeriod,
   facilities,
   showFacilities,
   mode,
@@ -245,6 +283,11 @@ export default function MapView({
   const loadedRef = useRef(false);
   const onCandidateClickRef = useRef(onCandidateClick);
   const onRegionClickRef = useRef(onRegionClick);
+  // A single reusable tooltip popup for desktop region hover (no close button, so
+  // it reads as a lightweight tooltip); the last-hovered region code so its HTML
+  // is rebuilt only when the pointer crosses into a different region.
+  const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
+  const hoveredRegionRef = useRef<string | null>(null);
   // Tile URL currently applied to the vector source. A vector source's tiles are
   // immutable once added, so a profile change requires removing and re-adding the
   // source rather than a GeoJSON-style setData swap.
@@ -338,6 +381,9 @@ export default function MapView({
       appliedTileUrlRef.current = null;
       if (resizeRaf) cancelAnimationFrame(resizeRaf);
       resizeObserver?.disconnect();
+      hoverPopupRef.current?.remove();
+      hoverPopupRef.current = null;
+      hoveredRegionRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -348,6 +394,11 @@ export default function MapView({
     if (!map) return;
 
     const refresh = () => {
+      // Invalidate the hover-tooltip cache: the region source is about to be
+      // re-stamped with new metric/value/period, so the next mousemove over the
+      // same region must rebuild the tooltip HTML rather than reuse the stale one
+      // (the cache is keyed by region code, which does not change on a metric swap).
+      hoveredRegionRef.current = null;
       const regionsData: GeoJSON.FeatureCollection = {
         type: "FeatureCollection",
         features: boundaries.features.map((feature) => {
@@ -361,6 +412,7 @@ export default function MapView({
               has_value: value !== undefined,
               metric_value: value?.numeric ?? 0,
               metric_label: metricLabel,
+              metric_reference_period: metricReferencePeriod,
               metric_display: formatRegionMetricDisplay(value?.display, metricUnit, reason),
             },
           };
@@ -437,30 +489,38 @@ export default function MapView({
               boundaryReferencePeriod: props.boundary_reference_period,
             });
           }
-          let reportingLines = "";
-          if (props.geometry_kind === "DERIVED") {
-            let children = "";
-            try {
-              children = (JSON.parse(props.child_region_names ?? "[]") as string[]).join("·");
-            } catch {
-              children = "";
-            }
-            reportingLines =
-              `<br/><small>통계 보고 단위: 시 (city) · 수치 출처: RCIS</small>` +
-              (children
-                ? `<br/><small>경계 표시: SGIS ${children} 경계의 파생 합집합</small>`
-                : "") +
-              `<br/><small>구별 공식 폐기물 값은 제공되지 않습니다.</small>`;
+          // Tap/click pins a popup (this is the mobile path — no hover there).
+          new maplibregl.Popup().setLngLat(event.lngLat).setHTML(regionPopupHtml(props)).addTo(map);
+        });
+
+        // Desktop hover: a lightweight tooltip that follows the pointer, showing
+        // the same information as the tap popup. Touch devices have no hover, so
+        // the tap popup above is their path; a synthetic mouse event there is
+        // cleared by mouseleave. The tooltip HTML is rebuilt only when the pointer
+        // enters a different region (setLngLat still tracks every move).
+        map.on("mousemove", "regions-fill", (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          map.getCanvas().style.cursor = "pointer";
+          const props = feature.properties as Record<string, unknown>;
+          if (!hoverPopupRef.current) {
+            hoverPopupRef.current = new maplibregl.Popup({
+              closeButton: false,
+              closeOnClick: false,
+              className: "wep-hover-tooltip",
+            });
           }
-          new maplibregl.Popup()
-            .setLngLat(event.lngLat)
-            .setHTML(
-              `<strong>${props.region_name}</strong><br/>${props.metric_label}<br/>` +
-                `${props.metric_display}<br/>` +
-                `<small>경계 출처: ${props.source_id} (${props.boundary_reference_period}) · 지표 출처는 좌측 패널 참조</small>` +
-                reportingLines,
-            )
-            .addTo(map);
+          const code = String(props.region_code);
+          if (hoveredRegionRef.current !== code) {
+            hoveredRegionRef.current = code;
+            hoverPopupRef.current.setHTML(regionPopupHtml(props));
+          }
+          hoverPopupRef.current.setLngLat(event.lngLat).addTo(map);
+        });
+        map.on("mouseleave", "regions-fill", () => {
+          map.getCanvas().style.cursor = "";
+          hoveredRegionRef.current = null;
+          hoverPopupRef.current?.remove();
         });
       }
       map.setPaintProperty("regions-fill", "fill-color", fillColorExpression(breaks, palette));
@@ -590,6 +650,7 @@ export default function MapView({
     palette,
     metricLabel,
     metricUnit,
+    metricReferencePeriod,
     facilities,
     showFacilities,
     mode,

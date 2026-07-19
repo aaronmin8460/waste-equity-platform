@@ -25,6 +25,7 @@ import type {
   LandfillTrends,
 } from "../lib/api";
 import {
+  formatDecimalExact,
   formatEffectiveFee,
   formatKrwEok,
   formatKrwPerPerson,
@@ -333,19 +334,26 @@ function LandfillBody({ data }: { data: LandfillDashboardData }) {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <MiniBars
-          title="월별 반입량 (monthly inbound)"
+          title="월별 반입량 (monthly inbound quantity)"
           testId="landfill-trend-quantity"
           points={trends.points}
           pick={(point) => Number(point.quantity_tons)}
           format={(value) => `${Math.round(value).toLocaleString("en-US")} t`}
+          // Lossless: the backend-served exact tons string, never rounded.
+          exactFormat={(point) => `${formatDecimalExact(point.quantity_tons)} t`}
+          yUnit="톤 (t)"
           color="#0d9488"
         />
         <MiniBars
-          title="월별 공식 반입수수료 (monthly fee)"
+          title="월별 공식 반입수수료 (monthly official inbound fee)"
           testId="landfill-trend-fee"
           points={trends.points}
           pick={(point) => Number(point.inbound_fee_krw) / 100_000_000}
           format={(value) => `${value.toFixed(1)}억원`}
+          // Lossless: the exact served KRW fee (the chart's 억원 conversion would
+          // round), so the "exact value" table/tooltip keep full precision.
+          exactFormat={(point) => `${formatDecimalExact(point.inbound_fee_krw)}원`}
+          yUnit="억원 (0.1B KRW)"
           color="#2563eb"
         />
         <BarList
@@ -561,13 +569,24 @@ function MiniBars({
   points,
   pick,
   format,
+  exactFormat,
+  yUnit,
   color,
 }: {
   title: string;
   testId: string;
   points: LandfillTrends["points"];
   pick: (point: LandfillTrends["points"][number]) => number;
+  /** Rounded chart-scale formatter, used only for the "최대" annotation. */
   format: (value: number) => string;
+  /**
+   * Lossless per-point value (with its own unit) from the exact backend string,
+   * used for the hover tooltip and the accessible table so neither shows a value
+   * rounded by the chart formatter.
+   */
+  exactFormat: (point: LandfillTrends["points"][number]) => string;
+  /** The y-axis unit, shown in the axis caption. */
+  yUnit: string;
   color: string;
 }) {
   const width = 240;
@@ -575,18 +594,30 @@ function MiniBars({
   const count = points.length || 1;
   const barWidth = width / count;
   const max = Math.max(1, ...points.map(pick));
+  const firstMonth = points[0]?.reference_month ?? "";
+  const lastMonth = points[points.length - 1]?.reference_month ?? "";
   return (
-    <section aria-label={title} data-testid={testId} className="rounded border border-slate-200 bg-white p-4">
+    <section
+      aria-label={title}
+      data-testid={testId}
+      className="rounded border border-slate-200 bg-white p-4"
+    >
       <h2 className="mb-1 text-sm font-semibold text-slate-800">{title}</h2>
       {points.length === 0 ? (
         <p className="text-xs text-slate-500">해당 기간 데이터 없음</p>
       ) : (
         <>
+          {/* Axis + reference period caption, so the chart's y unit and time span
+              are explicit and the fee/quantity units are never confused. */}
+          <p className="mb-1 text-[11px] text-slate-500" data-testid={`${testId}-axis`}>
+            세로축 단위: <span className="font-medium">{yUnit}</span> · 기준 기간 {firstMonth} –{" "}
+            {lastMonth}
+          </p>
           <svg
             viewBox={`0 0 ${width} ${height}`}
             className="w-full"
             role="img"
-            aria-label={title}
+            aria-label={`${title} — 세로축 단위 ${yUnit}, ${firstMonth}부터 ${lastMonth}까지의 월별 값`}
             preserveAspectRatio="none"
           >
             {points.map((point, index) => {
@@ -601,14 +632,57 @@ function MiniBars({
                   height={barHeight}
                   fill={color}
                 >
-                  <title>{`${point.reference_month}: ${format(value)}`}</title>
+                  {/* Exact served value (lossless) in the hover tooltip. */}
+                  <title>{`${point.reference_month}: ${exactFormat(point)}`}</title>
                 </rect>
               );
             })}
           </svg>
+          {/* Endpoint month labels for the x-axis (a per-bar label would be
+              unreadable at 12 bars). */}
+          <div className="mt-0.5 flex justify-between text-[10px] text-slate-400" aria-hidden>
+            <span>{firstMonth}</span>
+            <span>{lastMonth}</span>
+          </div>
           <p className="text-[11px] text-slate-400">
             최대 {format(max)} · {points.length}개월 · 선택 연도 전체(월 필터 무관)
           </p>
+          {/* Accessible table fallback: the hover <title> tooltips are not reachable
+              by touch or screen readers, so every month's exact value is available
+              here as text. */}
+          <details className="mt-1">
+            <summary className="cursor-pointer text-[11px] font-medium text-slate-500">
+              표로 보기 (view exact monthly values)
+            </summary>
+            <div className="mt-1 max-h-40 overflow-y-auto">
+              <table className="w-full text-left text-[11px]" data-testid={`${testId}-table`}>
+                <caption className="sr-only">
+                  {title} — 월별 정확한 값 (exact monthly values)
+                </caption>
+                <thead>
+                  <tr className="text-slate-500">
+                    <th scope="col" className="py-0.5 pr-3 font-medium">
+                      월 (month)
+                    </th>
+                    <th scope="col" className="py-0.5 font-medium">
+                      정확한 값 (exact value)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {points.map((point) => (
+                    <tr key={point.reference_month}>
+                      <th scope="row" className="py-0.5 pr-3 font-normal text-slate-600">
+                        {point.reference_month}
+                      </th>
+                      {/* Lossless served value, not the chart-rounded formatter. */}
+                      <td className="py-0.5 tabular-nums text-slate-700">{exactFormat(point)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </>
       )}
     </section>

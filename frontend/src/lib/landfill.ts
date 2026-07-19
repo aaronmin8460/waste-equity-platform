@@ -19,6 +19,22 @@ export function formatTons(kg: string | number): string {
   return `${Math.round(kgToTons(kg)).toLocaleString("en-US")} t`;
 }
 
+/**
+ * Group an exact decimal string with thousands separators, trimming trailing
+ * fractional zeros — LOSSLESS (no rounding). For the accessible "exact monthly
+ * values" table, where the served backend precision must be preserved rather than
+ * shown through the chart's rounding formatters. "90000.123456" → "90,000.123456";
+ * "9000000000.00" → "9,000,000,000".
+ */
+export function formatDecimalExact(value: string): string {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+  if (!match) return value;
+  const [, sign, integerPart, fractionPart] = match;
+  const grouped = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const fraction = (fractionPart ?? "").replace(/0+$/, "");
+  return `${sign}${grouped}${fraction ? `.${fraction}` : ""}`;
+}
+
 /** Format KRW as 억원 (hundred-million won) for compact display. */
 export function formatKrwEok(krw: string | number): string {
   const value = typeof krw === "string" ? Number(krw) : krw;

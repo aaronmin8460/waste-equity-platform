@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatDecimalExact,
   formatEffectiveFee,
   formatKrwEok,
   formatKrwPerPerson,
@@ -9,6 +10,22 @@ import {
   kgToTons,
   perCapitaUnavailableLabel,
 } from "./landfill";
+
+describe("formatDecimalExact (lossless)", () => {
+  it("groups integers and trims trailing fractional zeros without rounding", () => {
+    expect(formatDecimalExact("90000.000000")).toBe("90,000");
+    expect(formatDecimalExact("9000000000.00")).toBe("9,000,000,000");
+  });
+
+  it("preserves real fractional precision (never rounds)", () => {
+    expect(formatDecimalExact("90123.456000")).toBe("90,123.456");
+    expect(formatDecimalExact("9000012345.67")).toBe("9,000,012,345.67");
+  });
+
+  it("returns a non-numeric input unchanged", () => {
+    expect(formatDecimalExact("n/a")).toBe("n/a");
+  });
+});
 
 describe("formatting", () => {
   it("formats tonnes from kilograms", () => {

@@ -20,7 +20,10 @@ import type { MapMode, StatusVisibility } from "./MapView";
 
 // Shared recorder for the fake map instances, created before the module mock so
 // the (hoisted) factory can push into it.
-const h = vi.hoisted(() => ({ instances: [] as FakeMapLike[] }));
+const h = vi.hoisted(() => ({
+  instances: [] as FakeMapLike[],
+  popups: [] as { html: string; added: boolean }[],
+}));
 
 interface FakeMapLike {
   sources: Record<string, unknown>;
@@ -35,6 +38,7 @@ interface FakeMapLike {
   emitLayer: (event: string, layerId: string, payload: unknown) => void;
   getSource: (id: string) => unknown;
   getLayer: (id: string) => (Record<string, unknown> & { id: string; source: string }) | undefined;
+  getCanvas: () => { style: { cursor: string } };
 }
 
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
@@ -130,13 +134,23 @@ vi.mock("maplibre-gl", () => {
     remove() {}
   }
   class FakePopup {
+    html = "";
+    added = false;
+    constructor(_options?: unknown) {}
     setLngLat() {
       return this;
     }
-    setHTML() {
+    setHTML(html: string) {
+      this.html = html;
       return this;
     }
     addTo() {
+      this.added = true;
+      h.popups.push(this as unknown as { html: string; added: boolean });
+      return this;
+    }
+    remove() {
+      this.added = false;
       return this;
     }
   }
@@ -145,7 +159,7 @@ vi.mock("maplibre-gl", () => {
 });
 
 // Import AFTER the mock is registered.
-import MapView from "./MapView";
+import MapView, { regionPopupHtml } from "./MapView";
 
 const EMPTY_BOUNDARIES: RegionBoundaryCollection = {
   type: "FeatureCollection",
@@ -171,6 +185,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof MapView>> = {}
     palette: ["#ffffff"] as readonly string[],
     metricLabel: "지표",
     metricUnit: "u",
+    metricReferencePeriod: "2024",
     facilities: [],
     showFacilities: false,
     mode: "suitability" as MapMode,
@@ -196,6 +211,7 @@ function renderAndLoad(props: React.ComponentProps<typeof MapView>) {
 afterEach(() => {
   cleanup();
   h.instances.length = 0;
+  h.popups.length = 0;
 });
 
 describe("MapView suitability vector source", () => {
@@ -386,5 +402,100 @@ describe("MapView accessibility", () => {
     expect(selection.metricDisplay).toContain("데이터 없음");
     expect(selection.metricDisplay).not.toContain("0");
     expect(selection.childRegionNames).toEqual(["덕양구", "일산동구", "일산서구"]);
+  });
+});
+
+const SERVED_REGION_PROPS = {
+  region_code: "KR-SGIS-11110",
+  region_name: "종로구",
+  metric_label: "인구 (Population)",
+  metric_display: "142,000 persons",
+  has_value: "true",
+  metric_reference_period: "2024",
+  source_id: "sgis",
+  boundary_reference_period: "2024",
+  geometry_kind: "NATIVE",
+};
+
+describe("region tooltip content (Phase 3)", () => {
+  it("builds a popup with name, metric label, exact value, unit, and reference period", () => {
+    const html = regionPopupHtml(SERVED_REGION_PROPS);
+    expect(html).toContain("종로구");
+    expect(html).toContain("인구 (Population)");
+    expect(html).toContain("142,000 persons");
+    expect(html).toContain("지표 기준 기간: 2024");
+    expect(html).toContain("경계 출처: sgis (2024)");
+    // A served value carries no "no served value" availability line.
+    expect(html).not.toContain("데이터 없음");
+  });
+
+  it("shows the no-data availability status (never a fabricated value) with the derived note", () => {
+    const html = regionPopupHtml({
+      region_name: "고양시",
+      metric_label: "생활계 폐기물 발생량",
+      metric_display: "데이터 없음 — 출처에서 해당 지역·항목을 보고하지 않음",
+      has_value: "false",
+      metric_reference_period: "2022",
+      source_id: "rcis",
+      boundary_reference_period: "2024",
+      geometry_kind: "DERIVED",
+      child_region_names: JSON.stringify(["덕양구", "일산동구"]),
+    });
+    // metric_display already conveys the no-data availability (never a 0).
+    expect(html).toContain("데이터 없음 — 출처에서 해당 지역·항목을 보고하지 않음");
+    expect(html).toContain("통계 보고 단위: 시");
+    expect(html).toContain("덕양구·일산동구");
+  });
+});
+
+describe("region hover tooltip interaction (Phase 3)", () => {
+  it("opens a hover tooltip on mousemove and removes it on mouseleave", () => {
+    const { map } = renderAndLoad(baseProps({ mode: "equity", candidateTileUrl: null }));
+    map.emitLayer("mousemove", "regions-fill", {
+      features: [{ properties: SERVED_REGION_PROPS }],
+      lngLat: { lng: 126.98, lat: 37.57 },
+    });
+    // Cursor becomes a pointer and a tooltip popup is added with the same content.
+    expect(map.getCanvas().style.cursor).toBe("pointer");
+    const popup = h.popups[h.popups.length - 1];
+    expect(popup.added).toBe(true);
+    expect(popup.html).toContain("종로구");
+    expect(popup.html).toContain("지표 기준 기간: 2024");
+    // Leaving the region resets the cursor and removes the tooltip.
+    map.emitLayer("mouseleave", "regions-fill", {});
+    expect(map.getCanvas().style.cursor).toBe("");
+    expect(popup.added).toBe(false);
+  });
+
+  it("includes the reference period in the tap/click popup too (mobile path)", () => {
+    const { map } = renderAndLoad(baseProps({ mode: "equity", onRegionClick: vi.fn() }));
+    map.emitLayer("click", "regions-fill", {
+      features: [{ properties: SERVED_REGION_PROPS }],
+      lngLat: { lng: 126.98, lat: 37.57 },
+    });
+    const popup = h.popups[h.popups.length - 1];
+    expect(popup.html).toContain("종로구");
+    expect(popup.html).toContain("지표 기준 기간: 2024");
+  });
+
+  it("rebuilds the hover tooltip when the metric changes while hovering one region", () => {
+    const props = baseProps({ mode: "equity", candidateTileUrl: null, metricReferencePeriod: "2022" });
+    const { map, rerender } = renderAndLoad(props);
+    map.emitLayer("mousemove", "regions-fill", {
+      features: [{ properties: { ...SERVED_REGION_PROPS, metric_reference_period: "2022" } }],
+      lngLat: { lng: 126.98, lat: 37.57 },
+    });
+    expect(h.popups[h.popups.length - 1].html).toContain("지표 기준 기간: 2022");
+
+    // The metric changes (a new reference period) → a refresh re-stamps the source
+    // AND resets the hover cache, so the next mousemove over the SAME region shows
+    // the new value rather than the cached one.
+    rerender(<MapView {...props} metricReferencePeriod="2024" />);
+    map.emitLayer("mousemove", "regions-fill", {
+      features: [{ properties: { ...SERVED_REGION_PROPS, metric_reference_period: "2024" } }],
+      lngLat: { lng: 126.98, lat: 37.57 },
+    });
+    expect(h.popups[h.popups.length - 1].html).toContain("지표 기준 기간: 2024");
+    expect(h.popups[h.popups.length - 1].html).not.toContain("지표 기준 기간: 2022");
   });
 });

@@ -534,6 +534,10 @@ export default function Home() {
     return [];
   }, [derivedInfo, sourceInfo]);
 
+  // The active metric's reference period, shown in the map hover/tap tooltip.
+  const metricReferencePeriod =
+    derivedInfo?.numeratorReferencePeriod ?? sourceInfo?.referencePeriod ?? "";
+
   if (error !== null) {
     return (
       <main
@@ -602,17 +606,19 @@ export default function Home() {
   }
 
   // Legend rows read the exact active palette + breaks the map fill uses, so the
-  // swatch count (effective classes) and colors always match the polygons.
+  // swatch count (effective classes) and colors always match the polygons. Each
+  // row carries a class number and the numeric lower–upper range, so a region's
+  // class is readable without relying on color alone.
   const legendRows = activeScale.palette.map((color, index) => {
     const lower = index === 0 ? null : activeScale.breaks[index - 1];
     const upper = index < activeScale.breaks.length ? activeScale.breaks[index] : null;
-    const label =
+    const range =
       lower === null
         ? `< ${upper === null ? "…" : formatLegendValue(upper)}`
         : upper === null
           ? `≥ ${formatLegendValue(lower)}`
           : `${formatLegendValue(lower)} – ${formatLegendValue(upper)}`;
-    return { color, label };
+    return { color, range, classNumber: index + 1 };
   });
 
   return (
@@ -663,8 +669,15 @@ export default function Home() {
                   scanning — no metric calculation changes. */}
               <div className="flex flex-col gap-3">
                 {METRIC_GROUPS.map((group) => (
-                  <fieldset key={group.key} className="m-0 border-0 p-0">
-                    <legend className="mb-1 text-xs font-semibold text-slate-500">
+                  // A light card per group so the three metric families are easy
+                  // to scan; the <fieldset>/<legend> semantics from Phase 2 are
+                  // unchanged (still one radio group via shared name="metric").
+                  <fieldset
+                    key={group.key}
+                    className="m-0 rounded-md border border-slate-200 p-2"
+                    data-testid={`metric-group-${group.key}`}
+                  >
+                    <legend className="px-1 text-xs font-semibold text-slate-600">
                       {group.legend}
                     </legend>
                     <div className="flex flex-col gap-1">
@@ -720,18 +733,30 @@ export default function Home() {
                       data-testid="choropleth-legend-row"
                     >
                       <span
-                        className="inline-block h-4 w-6 rounded-sm border border-slate-300"
+                        className="inline-block h-4 w-6 shrink-0 rounded-sm border border-slate-300"
                         style={{ backgroundColor: row.color }}
                       />
-                      {row.label}
+                      {/* Class number so the class is identifiable without color. */}
+                      <span className="w-8 shrink-0 font-medium tabular-nums text-slate-500">
+                        {row.classNumber}급
+                      </span>
+                      <span className="tabular-nums">
+                        {row.range}
+                        {unit ? ` ${unit}` : ""}
+                      </span>
                     </li>
                   ))}
-                  <li className="flex items-center gap-2 text-xs text-slate-600">
+                  {/* Explicit no-data category (never rendered as a 0 class). */}
+                  <li
+                    className="flex items-center gap-2 text-xs text-slate-600"
+                    data-testid="choropleth-legend-nodata"
+                  >
                     <span
-                      className="inline-block h-4 w-6 rounded-sm border border-slate-300"
+                      className="inline-block h-4 w-6 shrink-0 rounded-sm border border-slate-300"
                       style={{ backgroundColor: NO_DATA_COLOR }}
                     />
-                    데이터 없음 (no served value)
+                    <span className="w-8 shrink-0 font-medium text-slate-500">—</span>
+                    <span>데이터 없음 (no served value)</span>
                   </li>
                 </ul>
               </section>
@@ -816,6 +841,7 @@ export default function Home() {
           palette={activeScale.palette}
           metricLabel={metric.label}
           metricUnit={unit}
+          metricReferencePeriod={metricReferencePeriod}
           facilities={data.facilities.items}
           showFacilities={showFacilities}
           mode={mode}
