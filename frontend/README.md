@@ -71,13 +71,18 @@ The dashboard is mobile-usable: a vertical stacked layout with a full-width map
 and collapsible controls below `md` (768 px), and the original side-by-side
 sidebar/map layout at and above it. See
 [RESPONSIVE_LAYOUT.md](RESPONSIVE_LAYOUT.md) for the breakpoints, the map
-minimum-height and MapLibre resize strategy, and the tested viewport sizes. The
-responsive e2e coverage (`e2e/responsive.spec.ts`) intercepts the backend itself
-(`e2e/mockBackend.ts`), so it runs without `E2E_BACKEND_URL`:
+minimum-height and MapLibre resize strategy, the `vh`-before-`dvh` viewport-height
+fallbacks, and the tested viewport sizes. The responsive e2e coverage
+(`e2e/responsive.spec.ts`) intercepts the backend itself (`e2e/mockBackend.ts`) —
+serving genuinely empty collections and the backend's real "no official data"
+landfill response, never a synthetic value shown as official — so it runs without
+`E2E_BACKEND_URL`:
 
 ```bash
 npx playwright test responsive.spec.ts
 ```
 
-Phase 1 (responsive/mobile layout) is implemented on the
-`fix/responsive-mobile-layout` feature branch; it is **not deployed**.
+Phase 1 (responsive/mobile layout) is **merged into `main`** (PR #27); a Phase 1.1
+follow-up corrects two post-merge review findings (the `vh`/`dvh` fallback ordering
+and the test's non-official landfill fixture). It is **not deployed** to any
+environment, and Phase 2 (accessibility) has **not** been started.

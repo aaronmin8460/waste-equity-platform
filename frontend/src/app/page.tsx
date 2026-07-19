@@ -445,7 +445,7 @@ export default function Home() {
 
   if (error !== null) {
     return (
-      <main className="flex min-h-dvh items-center justify-center bg-slate-100 p-8">
+      <main className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100 p-8">
         <div className="max-w-lg rounded-lg border border-red-300 bg-white p-6 shadow" role="alert">
           <h1 className="text-lg font-semibold text-red-700">데이터를 불러올 수 없습니다</h1>
           <p className="mt-2 text-sm text-slate-700">{error}</p>
@@ -467,7 +467,7 @@ export default function Home() {
 
   if (data === null) {
     return (
-      <main className="flex min-h-dvh items-center justify-center bg-slate-100">
+      <main className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100">
         <p className="text-sm text-slate-600" data-testid="loading">
           공식 데이터를 불러오는 중… (Loading official data…)
         </p>
@@ -480,7 +480,7 @@ export default function Home() {
   // non-map mode cannot reach MapView.
   if (mode === "flow") {
     return (
-      <div className="min-h-dvh bg-slate-100">
+      <div className="min-h-screen min-h-dvh bg-slate-100">
         <div className="mx-auto w-full max-w-screen-2xl px-4 pt-6 sm:px-6 lg:px-8">
           <ModeSwitch mode={mode} setMode={setMode} />
         </div>
@@ -518,8 +518,12 @@ export default function Home() {
     // Mobile: a single vertical column (controls stacked above a full-width map).
     // md+ (tablet-landscape/desktop): the original side-by-side layout — a fixed
     // sidebar on the left, the map filling the rest. `min-h-dvh`/`md:h-dvh` uses
-    // the dynamic viewport so mobile browser chrome never crops the app.
-    <main className="flex min-h-dvh flex-col md:h-dvh md:flex-row">
+    // the dynamic viewport so mobile browser chrome never crops the app; each is
+    // preceded by its static-viewport fallback (`min-h-screen`/`md:h-screen`) so
+    // engines without `dvh` support keep a valid full-viewport height instead of
+    // dropping the whole declaration (which would leave the desktop row — and its
+    // `md:flex-1` map — with no definite height).
+    <main className="flex min-h-screen min-h-dvh flex-col md:h-screen md:h-dvh md:flex-row">
       <aside className="flex w-full flex-col gap-4 border-b border-slate-200 bg-white p-5 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
         <header>
           <h1 className="text-lg font-bold text-slate-900">수도권 폐기물 형평성·적합성 지도</h1>
@@ -656,8 +660,13 @@ export default function Home() {
           height indefinite and the percentage child collapses to zero. A fixed
           60dvh gives a prominent, stable map (and tracks the dynamic viewport, so
           the ResizeObserver in MapView keeps the canvas in sync). md+ drops the
-          fixed height and lets it flex to fill the remaining h-dvh row width. */}
-      <div className="h-[60dvh] min-w-0 md:h-auto md:min-h-0 md:flex-1">
+          fixed height and lets it flex to fill the remaining h-dvh row width.
+          `h-[60vh]` precedes `h-[60dvh]` as a compatibility fallback: an engine
+          without `dvh` support drops the invalid `height:60dvh` declaration and
+          keeps the valid `60vh`, so the box still has a definite height and the
+          map never collapses; engines that do support `dvh` apply it and gain the
+          dynamic-viewport behavior. Order matters — the vh fallback comes first. */}
+      <div className="h-[60vh] h-[60dvh] min-w-0 md:h-auto md:min-h-0 md:flex-1">
         <MapView
           boundaries={activeBoundaries}
           regionValues={regionValues}

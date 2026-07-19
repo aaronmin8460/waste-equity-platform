@@ -1,56 +1,54 @@
 import type { Page, Route } from "@playwright/test";
 
 /**
- * Network stub for layout-only e2e specs.
+ * Network stub for the layout-only responsive e2e spec.
  *
  * The dashboard blocks on a live backend before rendering, so a spec that only
- * cares about *layout* (dimensions, overflow, stacking) still needs well-formed
- * envelopes to get the app past its loading state. These are intentionally empty
- * and are never asserted on or shown to a user as official data — they exist
- * purely so there is a rendered tree to measure. Every backend and tile request
- * is intercepted, so these specs touch no network, no tile server, and no
- * government API. (The live smoke specs, by contrast, use the real backend.)
+ * cares about *layout* (dimensions, overflow, stacking) still needs a well-formed
+ * response for each request to get the app past its loading state. Every value
+ * here is a SYNTHETIC LAYOUT FIXTURE — never real, never official public data. It
+ * exists purely so there is a rendered tree to measure, and the spec asserts only
+ * on layout, never on these values. Every backend and tile request is intercepted,
+ * so the spec touches no network, no tile server, and no government API. (The live
+ * smoke specs, by contrast, use the real backend.)
+ *
+ * The map-mode envelopes are genuinely EMPTY (count: 0, no items/features) — an
+ * empty collection is not fabricated data and carries no official evidence label.
+ *
+ * The 수도권매립지 (landfill) endpoints are deliberately NOT stubbed with an
+ * empty-but-"official" summary: the real backend labels every landfill value with
+ * OFFICIAL_REPORTED_VALUE / OFFICIAL_INPUTS_DERIVED_VALUE evidence, so a synthetic
+ * summary of zeros would render fabricated quantities and fees under official
+ * labels — exactly what the repo-root AGENTS.md forbids. Instead this reproduces
+ * the backend's genuine "no official data" path: `_resolve_period` returns a 404
+ * NO_DATA_AVAILABLE (backend .../routes/landfill.py), so the dashboard renders its
+ * real, explicitly-unavailable state with no fabricated official values at all.
  *
  * Not a spec file (no `.spec.`/`.test.` suffix), so Playwright never runs it.
  */
 
 const EMPTY_FC = { type: "FeatureCollection", reference_year: 2024, count: 0, features: [] };
 const EMPTY_ENVELOPE = { reference_year: 2024, count: 0, items: [] };
-const PERIOD = {
-  year: 2024,
-  month: null,
-  is_complete_year: true,
-  available_through_month: "2024-12",
-  latest_available_month: "2026-05",
-  available_years: [2024],
+
+/**
+ * The exact 404 body the real backend returns when no landfill rows have been
+ * ingested (FastAPI serializes `HTTPException(detail=UnavailableDataError(...))`
+ * as `{ detail: {...} }`; `fetchJson`/`parseStructuredDetail` consume that shape).
+ * This carries no `evidence` object, so nothing synthetic is labeled official.
+ */
+const LANDFILL_NO_DATA = {
+  detail: {
+    error: "NO_DATA_AVAILABLE",
+    detail: "No landfill inbound data has been ingested.",
+    requested_year: null,
+    available_years: [],
+  },
 };
-const EVIDENCE = {
-  quantity_status: "OFFICIAL_REPORTED_VALUE",
-  fee_status: "OFFICIAL_REPORTED_VALUE",
-  derived_status: "OFFICIAL_INPUTS_DERIVED_VALUE",
-  notes: [],
-};
-const FEE_PER_CAPITA = {
-  indicator: "LANDFILL_INBOUND_FEE_PER_CAPITA",
-  fee_per_capita_krw: null,
-  unit: "KRW/인",
-  derivation_version: "landfill-fee-per-capita-v1",
-  derivation_formula: "inbound_fee_krw ÷ population",
-  evidence_status: "OFFICIAL_INPUTS_DERIVED_VALUE",
-  inbound_fee_krw: "0.00",
-  fee_reference_year: 2024,
-  fee_reference_period: "2024",
-  population: null,
-  population_reference_year: null,
-  population_reference_period: null,
-  population_definition: null,
-  population_source_id: null,
-  population_region_level: null,
-  population_unit: null,
-  included_origin_region_codes: [],
-  unavailable_reason: "NO_METROPOLITAN_POPULATION",
-  caveat: "개인의 실제 납부액이 아닙니다.",
-};
+const LANDFILL_PATHS = new Set([
+  "/api/v1/landfill/summary",
+  "/api/v1/landfill/trends",
+  "/api/v1/landfill/composition",
+]);
 
 export const RESPONSES: Record<string, unknown> = {
   "/api/v1/regions/boundaries": EMPTY_FC,
@@ -121,53 +119,9 @@ export const RESPONSES: Record<string, unknown> = {
     assumptions: [],
     disclaimer: "Analytical screening only — not a legal determination.",
   },
-  "/api/v1/landfill/summary": {
-    period: PERIOD,
-    origin_filter: null,
-    waste_filter: null,
-    accounting_basis: "VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW",
-    destination_code: "SUDOKWON_LANDFILL",
-    destination_name: "수도권매립지",
-    total_quantity_kg: "0",
-    total_quantity_tons: "0.000000",
-    total_inbound_fee_krw: "0.00",
-    effective_fee_per_ton: null,
-    fee_per_capita: FEE_PER_CAPITA,
-    largest_origin_share: null,
-    largest_waste_share: null,
-    origin_shares: [],
-    top_waste_types: [],
-    row_count: 0,
-    evidence: EVIDENCE,
-    sources: [],
-    derivation_version: "landfill-effective-fee-v1",
-    caveats: ["광역지자체 단위 자료입니다."],
-  },
-  "/api/v1/landfill/trends": {
-    start_month: "2024-01",
-    end_month: "2024-12",
-    origin_filter: null,
-    waste_filter: null,
-    accounting_basis: "VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW",
-    points: [],
-    evidence: EVIDENCE,
-    sources: [],
-    derivation_version: "landfill-effective-fee-v1",
-    caveats: [],
-  },
-  "/api/v1/landfill/composition": {
-    period: PERIOD,
-    origin_filter: null,
-    accounting_basis: "VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW",
-    total_quantity_kg: "0",
-    total_quantity_tons: "0.000000",
-    total_inbound_fee_krw: "0.00",
-    waste_types: [],
-    evidence: EVIDENCE,
-    sources: [],
-    derivation_version: "landfill-effective-fee-v1",
-    caveats: [],
-  },
+  // The landfill endpoints are intentionally absent here: they are served the real
+  // 404 NO_DATA_AVAILABLE response by the route handler below (see LANDFILL_PATHS),
+  // never a synthetic "official" summary of zeros.
 };
 
 /** Intercept all backend + tile traffic so the app renders with no network. */
@@ -176,6 +130,15 @@ export async function mockBackend(page: Page): Promise<void> {
     const pathname = new URL(route.request().url()).pathname;
     // Vector tiles are nothing to draw in a layout-only run.
     if (pathname.endsWith(".mvt")) return route.abort();
+    // Reproduce the backend's genuine "no official landfill data" response rather
+    // than fabricating an official-labeled empty summary.
+    if (LANDFILL_PATHS.has(pathname)) {
+      return route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify(LANDFILL_NO_DATA),
+      });
+    }
     const body = RESPONSES[pathname];
     if (body === undefined) return route.fulfill({ status: 404, body: "{}" });
     return route.fulfill({

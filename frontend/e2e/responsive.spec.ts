@@ -8,7 +8,10 @@ import { mockBackend } from "./mockBackend";
  * (see mockBackend), so it drives the real application UI — the responsive
  * shell, the MapLibre map container, the collapsible controls — at real viewport
  * sizes without any backend, tile server, or official data. It only ever asserts
- * on *layout* (dimensions, overflow, stacking), never on data values.
+ * on *layout* (dimensions, overflow, stacking), never on data values. The
+ * 수도권매립지 (flow) dashboard is driven to its explicitly-unavailable state (the
+ * mock serves the backend's real 404 NO_DATA response) and is guarded against
+ * ever displaying a synthetic fixture as official public data.
  *
  * Verified viewports:
  *   390 × 844  — iPhone-class phone (primary mobile target)
@@ -81,10 +84,24 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("suitability-summary")).toBeVisible();
       await expectNoHorizontalOverflow(page);
 
-      // 수도권매립지 (full-width dashboard, no map).
+      // 수도권매립지 (full-width dashboard, no map). The mock serves the backend's
+      // real "no official data" response (404 NO_DATA_AVAILABLE), so the dashboard
+      // renders its explicitly-unavailable state — never a fabricated official
+      // summary of zeros.
       await page.getByTestId("mode-flow").click();
       await expect(page.getByTestId("landfill-dashboard")).toBeVisible();
       await expect(page.getByTestId("map-container")).toHaveCount(0);
+      // The unavailable state shows its notice; the filter controls stay usable.
+      await expect(page.getByTestId("landfill-error")).toBeVisible();
+      await expect(page.getByTestId("landfill-filters")).toBeVisible();
+      // Regression guard: this synthetic layout fixture is NOT displayed as
+      // official public data. The KPI and evidence blocks (which carry the
+      // OFFICIAL_REPORTED_VALUE / OFFICIAL_INPUTS_DERIVED_VALUE labels) never
+      // mount, and no official-evidence label text appears anywhere on the page.
+      await expect(page.getByTestId("landfill-kpis")).toHaveCount(0);
+      await expect(page.getByTestId("landfill-evidence")).toHaveCount(0);
+      await expect(page.getByText("OFFICIAL_REPORTED_VALUE")).toHaveCount(0);
+      await expect(page.getByText("OFFICIAL_INPUTS_DERIVED_VALUE")).toHaveCount(0);
       await expectNoHorizontalOverflow(page);
 
       // Back to equity restores the map.

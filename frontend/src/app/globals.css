@@ -66,6 +66,38 @@ body {
   }
 }
 
+/* Dynamic-viewport height fallbacks.
+   Every element that fills the viewport carries a static fallback class *before*
+   its `dvh` class in markup (`h-[60vh] h-[60dvh]`, `min-h-screen min-h-dvh`,
+   `md:h-screen md:h-dvh`) so an engine WITHOUT `dvh` support keeps a valid height
+   instead of dropping the invalid `dvh` declaration — without it the mobile map
+   wrapper would have no definite height and its `h-full` MapLibre child would
+   collapse to zero.
+   Tailwind, however, emits the static utilities AFTER their `dvh` counterparts in
+   the generated stylesheet (`.h-[60dvh]{…}` then `.h-[60vh]{…}`), so where an
+   element carries both, the static class — being later, at equal specificity —
+   would win on EVERY engine, silently reverting the dynamic-viewport behavior even
+   where `dvh` is supported. These `@supports`-guarded rules re-assert the dynamic
+   value so:
+     • engines without `dvh` skip this block and keep the static fallback, and
+     • engines with `dvh` restore the dynamic value (these rules are unlayered and
+       more specific than Tailwind's single-class utilities, so they win).
+   Markup order stays fallback-first for readability and is asserted by the
+   responsive tests; the actual override happens here. */
+@supports (height: 100dvh) {
+  .h-\[60vh\].h-\[60dvh\] {
+    height: 60dvh;
+  }
+  .min-h-screen.min-h-dvh {
+    min-height: 100dvh;
+  }
+  @media (min-width: 768px) {
+    .md\:h-screen.md\:h-dvh {
+      height: 100dvh;
+    }
+  }
+}
+
 /* MapLibre popups keep a white background but inherit the page text color,
    which is near-white in dark mode; pin readable colors explicitly. */
 .maplibregl-popup-content {
