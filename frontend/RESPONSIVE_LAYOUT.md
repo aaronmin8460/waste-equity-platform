@@ -1,9 +1,15 @@
 # Responsive layout (Phase 1 — mobile usability)
 
-Status: **implemented on the `fix/responsive-mobile-layout` feature branch. Not
-deployed.** This phase makes the existing dashboard usable on phones without
-changing analytical logic, the data model, API behavior, map calculations, the
-cost/scoring model, or the visual design beyond what responsive layout requires.
+Status: **merged into `main` (PR #27). Not deployed** to any environment. A
+follow-up (Phase 1.1) corrects two post-merge review findings: it adds explicit
+static-viewport (`vh`) fallbacks in front of the dynamic-viewport (`dvh`)
+utilities, and it replaces the responsive test's landfill fixture with the
+backend's real "no official data" state (no fabricated official values). This
+phase makes the existing dashboard usable on phones without changing analytical
+logic, the data model, API behavior, map calculations, the cost/scoring model, or
+the visual design beyond what responsive layout requires.
+
+Phase 2 (accessibility) has **not** been started.
 
 The dashboard was previously a permanently horizontal `flex` row with a fixed
 384 px (`w-96`) sidebar, so on a ~390 px phone the sidebar filled the viewport and
@@ -48,15 +54,63 @@ layout (a 384 px sidebar beside a 384 px map), which is intentional and overflow
 
 ## Viewport-height strategy
 
-`h-screen` (static `100vh`) is replaced with the dynamic viewport unit `dvh`
-everywhere the app fills the screen:
+The dynamic viewport unit `dvh` is used everywhere the app fills the screen, so
+the layout accounts for mobile browser chrome (address bar) expanding/collapsing
+and is never cropped by, or leaves a gap under, the browser toolbars:
 
 - Root shell: `min-h-dvh` on mobile, `md:h-dvh` on desktop.
 - Loading / error states and the landfill dashboard: `min-h-dvh`.
 - `<body>`: `min-h-dvh`.
 
-`dvh` accounts for mobile browser chrome (address bar) expanding/collapsing, so
-the app is never cropped by, or leaves a gap under, the browser toolbars.
+### `vh` fallback before `dvh` (compatibility)
+
+`dvh` is **not** self-falling-back. On an engine that does not support it, the
+*entire* `min-height: 100dvh` / `height: 60dvh` declaration is invalid and is
+dropped at parse time — the element is then left with **no** height rule at all,
+not with a viewport-relative one. So every `dvh` utility is preceded by its
+static `vh` equivalent as an explicit fallback:
+
+| Element | Classes (fallback first) |
+| --- | --- |
+| Root shell | `min-h-screen min-h-dvh … md:h-screen md:h-dvh` |
+| `<body>` | `min-h-screen min-h-dvh` |
+| Loading / error / flow states | `min-h-screen min-h-dvh` |
+| Landfill dashboard root | `min-h-screen min-h-dvh` |
+| Mobile map wrapper | `h-[60vh] h-[60dvh]` |
+
+How it resolves:
+
+- **Engine without `dvh`:** it drops the invalid `dvh` declaration and keeps the
+  valid `vh` one, so the element still has a definite full/60 % viewport height —
+  the map never collapses.
+- **Engine with `dvh`:** the dynamic value is applied and the dynamic-viewport
+  behavior is preserved (see the override note below).
+
+### The Tailwind ordering caveat (and the `@supports` override)
+
+The markup lists the `vh` class first and the `dvh` class second, but in Tailwind
+v4 that source order does **not** decide the cascade: Tailwind emits the static
+`vh`/`*-screen` utilities *after* their `dvh` counterparts in the generated
+stylesheet (`.h-[60dvh]{…}` then `.h-[60vh]{…}`). Since both classes sit on the
+element at equal specificity, the later rule — the static `vh` one — would win on
+**every** engine, silently reverting the dynamic behavior even where `dvh` is
+supported.
+
+So the dynamic value is re-asserted in `app/globals.css` under
+`@supports (height: 100dvh)` with a two-class selector (`.h-\[60vh\].h-\[60dvh\]`,
+`.min-h-screen.min-h-dvh`, and a `md`-scoped `.md\:h-screen.md\:h-dvh`). These
+rules are unlayered and more specific than Tailwind's single-class utilities, so:
+
+- engines **without** `dvh` fail the `@supports` test, skip the override, and keep
+  the static fallback class; and
+- engines **with** `dvh` apply the override and keep the dynamic-viewport
+  behavior.
+
+This corrects the earlier (incorrect) claim that unsupported engines "fall back to
+viewport-relative behavior" automatically — without the explicit `vh` class they
+fall back to *nothing* — and it is why the fallback lives in both the utility
+classes (for markup readability / the tests) and the `@supports` block (for the
+actual cascade).
 
 An explicit responsive `viewport` is exported from `app/layout.tsx`
 (`width=device-width, initialScale=1`), with pinch-zoom left enabled for
@@ -65,12 +119,14 @@ accessibility.
 ## Map minimum-height strategy
 
 MapLibre's container is `h-full` (100 % of its wrapper). A percentage height needs
-a **definite** parent height, so on mobile the map wrapper uses a fixed
-`h-[60dvh]` rather than a bare `min-h`: a bare min-height leaves the height
-indefinite and the percentage child collapses to zero (the "map collapses when the
-flex direction changes" bug). 60 dvh gives a prominent, stable map (~500 px on a
-844 px phone). On desktop the wrapper switches to `md:flex-1 md:h-auto md:min-h-0`
-and simply fills the fixed-height row.
+a **definite** parent height, so on mobile the map wrapper uses a fixed height
+(`h-[60vh] h-[60dvh]`) rather than a bare `min-h`: a bare min-height leaves the
+height indefinite and the percentage child collapses to zero (the "map collapses
+when the flex direction changes" bug). The `h-[60vh]` fallback is critical here —
+without it, an engine that lacks `dvh` support would drop `h-[60dvh]` entirely and
+reintroduce the exact collapse this fix prevents. 60 dvh gives a prominent, stable
+map (~500 px on a 844 px phone). On desktop the wrapper switches to
+`md:flex-1 md:h-auto md:min-h-0` and simply fills the fixed-height row.
 
 ## MapLibre resize handling
 
@@ -102,7 +158,23 @@ height and is not pushed off-screen, no page-level horizontal overflow
 every mode is selectable, and the map stays visible across mode switches. Mobile
 additionally verifies collapsed panels open/toggle and radios stay reachable;
 desktop verifies the panels are force-expanded with no toggles. `app/responsive.test.tsx`
-adds a jsdom structural guard for the responsive classes.
+adds a jsdom structural guard for the responsive classes, including that the mobile
+map wrapper carries `h-[60vh]` *before* `h-[60dvh]` and the shell carries its
+`min-h-screen` / `md:h-screen` fallbacks before the matching `dvh` classes.
+
+### The test mock uses an unavailable, non-official state
+
+The mock is a **synthetic layout fixture**, never real or official public data.
+Map-mode requests return genuinely empty collections (`count: 0`, no items), which
+carry no evidence labels. The 수도권매립지 (landfill) endpoints are **not** stubbed
+with an empty-but-"official" summary — the real backend labels every landfill value
+`OFFICIAL_REPORTED_VALUE` / `OFFICIAL_INPUTS_DERIVED_VALUE`, so a synthetic summary
+of zeros would render fabricated quantities and fees under official labels, which
+the repo-root `AGENTS.md` forbids. Instead the mock reproduces the backend's real
+"no official data" response (`404 NO_DATA_AVAILABLE`), so the flow dashboard renders
+its **explicitly-unavailable** state and the spec asserts that no official-evidence
+label ever appears. (`homeApiMock.ts` does the same for the jsdom test by rejecting
+the landfill fetchers with the identical `ApiError`.)
 
 ## Known limitations
 
@@ -114,7 +186,10 @@ adds a jsdom structural guard for the responsive classes.
   runs unconditionally. In sandboxed environments the OSM basemap and vector tiles
   are network-blocked, so the map renders blank — the layout assertions measure the
   map **container**, which is robust to tile/WebGL availability.
-- `dvh`/`svh`/`lvh` require a 2022-or-later browser engine; older engines fall back
-  to viewport-relative behavior. Safe-area insets are handled by the default
+- `dvh`/`svh`/`lvh` require a 2022-or-later browser engine. Older engines do **not**
+  fall back on their own — an unsupported `dvh` value invalidates and drops the whole
+  declaration. The layout therefore ships an explicit static-`vh` class before each
+  `dvh` class (see "Viewport-height strategy") so those engines keep a valid
+  full/60 % viewport height. Safe-area insets are handled by the default
   `viewport-fit` (content stays within the safe area); `viewport-fit=cover` is not
   used, so no notch-overlap handling is needed.

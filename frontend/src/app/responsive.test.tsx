@@ -62,7 +62,18 @@ describe("responsive application shell", () => {
     // fixed viewport height on desktop (no unintended document scroll).
     expect(tokens).toContain("min-h-dvh");
     expect(tokens).toContain("md:h-dvh");
-    // No permanently-horizontal `flex` row and no `h-screen` remain on the shell.
+    // Each dvh utility is preceded by its static-viewport fallback, so an engine
+    // without `dvh` support keeps a valid full-viewport height instead of dropping
+    // the declaration entirely (which would leave the desktop row — and its
+    // `md:flex-1` map — with no definite height).
+    expect(tokens).toContain("min-h-screen");
+    expect(tokens).toContain("md:h-screen");
+    // Ordering matters: the fallback must come BEFORE the dvh class so a
+    // dvh-supporting engine applies dvh (later rule, equal specificity).
+    expect(tokens.indexOf("min-h-screen")).toBeLessThan(tokens.indexOf("min-h-dvh"));
+    expect(tokens.indexOf("md:h-screen")).toBeLessThan(tokens.indexOf("md:h-dvh"));
+    // No bare, unconditional static `h-screen` (the pre-responsive full-height
+    // row) remains — the fallbacks above are the min-h-/md:h- prefixed forms.
     expect(tokens).not.toContain("h-screen");
   });
 
@@ -80,8 +91,13 @@ describe("responsive application shell", () => {
     await renderLoaded();
     const wrapper = screen.getByTestId("map-container").parentElement;
     const tokens = classes(wrapper);
-    // Definite height on mobile so the MapLibre child (h-full) never collapses…
+    // Definite height on mobile so the MapLibre child (h-full) never collapses.
+    // A dvh-less engine drops the invalid `height:60dvh` and keeps the valid
+    // `60vh`, so the box always has a definite height — the vh fallback MUST come
+    // before the dvh class (equal specificity → later rule wins on dvh engines).
+    expect(tokens).toContain("h-[60vh]");
     expect(tokens).toContain("h-[60dvh]");
+    expect(tokens.indexOf("h-[60vh]")).toBeLessThan(tokens.indexOf("h-[60dvh]"));
     expect(tokens).toContain("min-w-0");
     // …and flexes to fill the row on desktop.
     expect(tokens).toContain("md:h-auto");
