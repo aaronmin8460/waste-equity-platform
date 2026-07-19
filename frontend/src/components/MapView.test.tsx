@@ -441,8 +441,8 @@ describe("region tooltip content (Phase 3)", () => {
       geometry_kind: "DERIVED",
       child_region_names: JSON.stringify(["덕양구", "일산동구"]),
     });
+    // metric_display already conveys the no-data availability (never a 0).
     expect(html).toContain("데이터 없음 — 출처에서 해당 지역·항목을 보고하지 않음");
-    expect(html).toContain("상태: 데이터 없음");
     expect(html).toContain("통계 보고 단위: 시");
     expect(html).toContain("덕양구·일산동구");
   });

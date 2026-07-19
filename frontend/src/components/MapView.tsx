@@ -222,10 +222,8 @@ function statusFilter(visibility: StatusVisibility): maplibregl.FilterSpecificat
  * `props` are the MapLibre-serialized feature properties (strings/booleans).
  */
 export function regionPopupHtml(props: Record<string, unknown>): string {
-  const hasValue = String(props.has_value) === "true";
-  const availabilityLine = hasValue
-    ? ""
-    : `<br/><small>상태: 데이터 없음 (no served value)</small>`;
+  // `metric_display` already conveys availability: a served value with its unit,
+  // or "데이터 없음 — {reason}" for a region with no served value (never a 0).
   const period = props.metric_reference_period
     ? `<br/><small>지표 기준 기간: ${props.metric_reference_period}</small>`
     : "";
@@ -245,7 +243,6 @@ export function regionPopupHtml(props: Record<string, unknown>): string {
   return (
     `<strong>${props.region_name}</strong><br/>${props.metric_label}<br/>` +
     `${props.metric_display}` +
-    availabilityLine +
     period +
     `<br/><small>경계 출처: ${props.source_id} (${props.boundary_reference_period}) · 지표 출처는 좌측 패널 참조</small>` +
     reportingLines
