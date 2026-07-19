@@ -32,15 +32,28 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // The application content is primarily Korean, so the document language is
+    // `ko`: assistive technology then reads Korean text with the correct voice
+    // and pronunciation rules instead of an English one.
     <html
-      lang="en"
+      lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       {/* min-h-dvh (dynamic viewport) so the app fills the visible area even as
           mobile browser toolbars expand/collapse, instead of the static 100%.
           `min-h-screen` precedes it as a static-viewport fallback: engines without
           `dvh` support drop the invalid `min-height:100dvh` and keep `100vh`. */}
-      <body className="min-h-screen min-h-dvh flex flex-col">{children}</body>
+      <body className="min-h-screen min-h-dvh flex flex-col">
+        {/* Skip link: the first focusable element in the tab order, visually
+            hidden until it receives keyboard focus (see globals.css .skip-link).
+            Activating it moves focus to the primary <main> content region, which
+            carries id="main-content" tabindex="-1" in every rendered view, so a
+            keyboard or screen-reader user can bypass the repeated controls. */}
+        <a href="#main-content" className="skip-link">
+          본문으로 바로가기
+        </a>
+        {children}
+      </body>
     </html>
   );
 }
