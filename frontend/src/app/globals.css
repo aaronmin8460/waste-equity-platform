@@ -55,7 +55,6 @@ body {
 :focus-visible {
   outline: 3px solid #2563eb;
   outline-offset: 2px;
-  border-radius: 2px;
 }
 /* MapLibre's popup close button is an icon-only control; give it the same ring. */
 .maplibregl-popup-close-button:focus-visible {

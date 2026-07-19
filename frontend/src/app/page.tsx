@@ -891,13 +891,16 @@ function RegionSummary({
           </button>
         )}
       </div>
-      <div role="status" className="mt-1">
-        {selected === null ? (
-          <p className="text-slate-500" data-testid="selected-region-empty">
-            지도에서 지역을 클릭하면 이름과 지표 값이 여기에 표시됩니다. (Select a region on the map to
-            read its name and metric value here.)
-          </p>
-        ) : (
+      {/* The live region wraps only the populated state, so a chosen region is
+          announced, while clearing it (e.g. on a metric change) does not read out
+          the empty prompt. */}
+      {selected === null ? (
+        <p className="mt-1 text-slate-500" data-testid="selected-region-empty">
+          지도에서 지역을 클릭하면 이름과 지표 값이 여기에 표시됩니다. (Select a region on the map to
+          read its name and metric value here.)
+        </p>
+      ) : (
+        <div role="status" className="mt-1">
           <dl className="space-y-0.5">
             <div>
               <dt className="inline font-medium">지역: </dt>
@@ -932,8 +935,8 @@ function RegionSummary({
               </p>
             )}
           </dl>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
