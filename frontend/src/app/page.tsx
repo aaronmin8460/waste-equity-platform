@@ -139,11 +139,13 @@ export default function Home() {
   // Sub-view inside suitability mode: 적합성 점수 (score) or 비용 렌즈 (cost).
   const [suitabilityView, setSuitabilityView] = useState<SuitabilityView>("score");
 
-  // Accessible DOM alternative to clicking a region on the (canvas-only) map.
-  // Cleared whenever the metric or mode changes, because the captured display
-  // value describes the metric that was active at click time and would otherwise
-  // go stale under a different metric.
-  const [selectedRegion, setSelectedRegion] = useState<RegionSelection | null>(null);
+  // The persistent identity of the selected region is its region CODE, not a
+  // captured metric-value snapshot. The full RegionSelection (label + value +
+  // provenance) is DERIVED from this code under the currently-active metric (see
+  // `selectedRegion` below), so changing the metric re-computes the summary for the
+  // same region instead of dropping it. Both selection paths — a map region click
+  // and the accessible region <select> — store the same code here.
+  const [selectedRegionCode, setSelectedRegionCode] = useState<string | null>(null);
 
   // Capital-region landfill inbound dashboard (서울·인천·경기 → 수도권매립지) state.
   const [flowYear, setFlowYear] = useState<number | null>(null); // null = latest complete year
@@ -214,14 +216,14 @@ export default function Home() {
     load();
   }, [load]);
 
-  // Select a metric AND drop any accessible selected-region summary: its captured
-  // display value belongs to the metric that was active at click time, so it would
-  // go stale under a different metric. Cleared here (in the event handler) rather
-  // than in an effect. The region summary only renders in equity mode, so leaving
-  // a selection across a mode round-trip with the same metric stays valid.
+  // Select a metric while PRESERVING the selected region: the summary is derived
+  // from `selectedRegionCode` under the active metric, so switching metric simply
+  // re-derives the same region's label + value (or its explicit unavailable text
+  // if the new metric serves no value for it). The stored code is retained here —
+  // it is only dropped when the region no longer exists in the active geography
+  // (handled by the derivation returning null; see `selectedRegion`).
   const selectMetric = useCallback((key: MetricKey) => {
     setMetricKey(key);
-    setSelectedRegion(null);
   }, []);
 
   // Suitability meta (policy + latest run + summary): load once when entering the mode.
@@ -512,6 +514,17 @@ export default function Home() {
     [activeBoundaries, regionValues, metric, unit],
   );
 
+  // The canonical selected-region detail, DERIVED from the persistent region code
+  // under the active metric/geography. `buildRegionSelection` returns null when the
+  // stored code is not present in the active boundary collection — e.g. after the
+  // metric switches to a different geography (native ↔ reporting) that does not
+  // contain it — which safely clears the summary without ever fabricating a value.
+  // A metric change on the SAME geography keeps the region and re-derives its value.
+  const selectedRegion = useMemo<RegionSelection | null>(
+    () => (selectedRegionCode === null ? null : buildRegionSelection(selectedRegionCode)),
+    [selectedRegionCode, buildRegionSelection],
+  );
+
   // Metric SOURCE + reference period(s) to show alongside a selected region value
   // (repo AGENTS.md: every displayed analytical metric must carry its source and
   // reference period). Derived metrics list BOTH inputs. Distinct from the boundary
@@ -736,11 +749,9 @@ export default function Home() {
 
             <RegionSummary
               selected={selectedRegion}
-              clear={() => setSelectedRegion(null)}
+              clear={() => setSelectedRegionCode(null)}
               regionOptions={regionOptions}
-              onSelectRegion={(code) =>
-                setSelectedRegion(code === null ? null : buildRegionSelection(code))
-              }
+              onSelectRegion={(code) => setSelectedRegionCode(code)}
               metricProvenance={metricProvenance}
             />
 
@@ -862,18 +873,15 @@ export default function Home() {
 
       </aside>
 
-      {/* The map wrapper. Its MapLibre child is `h-full` (100% of this box), so
-          on mobile the box needs a *definite* height — a bare `min-h` leaves the
-          height indefinite and the percentage child collapses to zero. A fixed
-          60dvh gives a prominent, stable map (and tracks the dynamic viewport, so
-          the ResizeObserver in MapView keeps the canvas in sync). md+ drops the
-          fixed height and lets it flex to fill the remaining h-dvh row width.
-          `h-[60vh]` precedes `h-[60dvh]` as a compatibility fallback: an engine
-          without `dvh` support drops the invalid `height:60dvh` declaration and
-          keeps the valid `60vh`, so the box still has a definite height and the
-          map never collapses; engines that do support `dvh` apply it and gain the
-          dynamic-viewport behavior. Order matters — the vh fallback comes first. */}
-      <div className="h-[60vh] h-[60dvh] min-w-0 md:h-auto md:min-h-0 md:flex-1">
+      {/* The map wrapper. Its MapLibre child is `h-full` (100% of this box), so the
+          box needs a *definite* height. The dedicated `.map-pane` class (globals.css)
+          owns that responsive sizing unambiguously: a definite 60vh/60dvh with a
+          minimum on mobile (so the percentage child never collapses), and `height:
+          100% / flex: 1 1 0%` at md+ so it fills BOTH the remaining row width and the
+          full row height — leaving no empty strip below the canvas. `min-w-0` keeps
+          the flex child shrinkable so long map content never forces horizontal
+          overflow. MapView renders its own loading/refresh/error overlays inside. */}
+      <div className="map-pane min-w-0">
         <MapView
           boundaries={activeBoundaries}
           regionValues={regionValues}
@@ -900,7 +908,7 @@ export default function Home() {
               ? "지역별 지표를 색으로 표시한 인터랙티브 지도입니다. 지역을 클릭하면 좌측 '선택한 지역' 요약에 이름과 값이 표시되며, 키보드·스크린리더 사용자는 그 요약으로 같은 정보를 확인할 수 있습니다."
               : "500m 적합성 후보 격자를 표시한 인터랙티브 지도입니다. 상세 후보는 좌측 '상위 적합 후보' 목록과 '후보 상세' 패널에서 접근할 수 있습니다. 분석용 스크리닝이며 법적 입지 결정이 아닙니다."
           }
-          onRegionClick={setSelectedRegion}
+          onRegionClick={(code) => setSelectedRegionCode(code)}
         />
       </div>
     </main>

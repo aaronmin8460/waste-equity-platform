@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
+/* This dashboard is a single, light UI. It is deliberately NOT dark-mode aware:
+   every panel, card, and control uses explicit light (slate/white) colors, so a
+   `prefers-color-scheme: dark` override that flipped only the <body> background to
+   near-black left a black frame around an otherwise-light app (and a black strip
+   wherever the app did not fully cover the viewport). Pin an explicit, consistent
+   light background/foreground and declare `color-scheme: light` so form controls,
+   scrollbars, and the canvas backdrop also render in their light variants. A full
+   dark theme is intentionally out of scope for this phase. */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,17 +21,45 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Map pane sizing.
+   Replaces the ambiguous stack of `h-[60vh] h-[60dvh] md:h-auto md:min-h-0
+   md:flex-1` utilities that previously sized the map wrapper. Two problems it
+   fixes:
+     1. The old desktop reset (`md:h-auto`) is a single-class utility, so the
+        `@supports` override that re-asserted the dynamic mobile height
+        (`.h-\[60vh\].h-\[60dvh\] { height: 60dvh }`, two classes) out-specified it
+        and forced 60dvh even at md+ — leaving the map only 60% tall with a large
+        empty (black, under the old dark <body>) strip below it inside the
+        full-height row.
+     2. A percentage-height MapLibre child (`h-full`) needs a definite parent
+        height on mobile, which a bare `min-h` cannot provide.
+   Mobile: a definite 60% viewport height (static `vh` fallback first, then the
+   dynamic `dvh` value under @supports) with a sensible minimum, so the canvas
+   never collapses. md+: fill the fixed-height sidebar row — flex to the remaining
+   width AND the full row height — so nothing is left below the canvas. */
+.map-pane {
+  height: 60vh;
+  min-height: 360px;
+}
+@supports (height: 100dvh) {
+  .map-pane {
+    height: 60dvh;
+  }
+}
+@media (min-width: 768px) {
+  /* Written AFTER the @supports block so, at equal (single-class) specificity,
+     this desktop rule wins over the mobile 60dvh value at md+ widths. */
+  .map-pane {
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 0%;
+  }
 }
 
 /* Skip navigation link (본문으로 바로가기).
@@ -103,15 +140,14 @@ body {
   }
 }
 
-/* Dynamic-viewport height fallbacks.
-   Every element that fills the viewport carries a static fallback class *before*
-   its `dvh` class in markup (`h-[60vh] h-[60dvh]`, `min-h-screen min-h-dvh`,
-   `md:h-screen md:h-dvh`) so an engine WITHOUT `dvh` support keeps a valid height
-   instead of dropping the invalid `dvh` declaration — without it the mobile map
-   wrapper would have no definite height and its `h-full` MapLibre child would
-   collapse to zero.
+/* Dynamic-viewport height fallbacks for the SHELL (root <main>).
+   The shell carries a static fallback class *before* its `dvh` class in markup
+   (`min-h-screen min-h-dvh`, `md:h-screen md:h-dvh`) so an engine WITHOUT `dvh`
+   support keeps a valid full-viewport height instead of dropping the invalid `dvh`
+   declaration — without a definite row height on desktop the `.map-pane` child's
+   `height: 100%` would have nothing to resolve against.
    Tailwind, however, emits the static utilities AFTER their `dvh` counterparts in
-   the generated stylesheet (`.h-[60dvh]{…}` then `.h-[60vh]{…}`), so where an
+   the generated stylesheet (`.min-h-dvh{…}` then `.min-h-screen{…}`), so where an
    element carries both, the static class — being later, at equal specificity —
    would win on EVERY engine, silently reverting the dynamic-viewport behavior even
    where `dvh` is supported. These `@supports`-guarded rules re-assert the dynamic
@@ -120,11 +156,10 @@ body {
      • engines with `dvh` restore the dynamic value (these rules are unlayered and
        more specific than Tailwind's single-class utilities, so they win).
    Markup order stays fallback-first for readability and is asserted by the
-   responsive tests; the actual override happens here. */
+   responsive tests; the actual override happens here. The mobile map-pane height is
+   handled by `.map-pane` above (a dedicated class), NOT here, so no broadly-scoped
+   rule can force the mobile 60dvh value onto the desktop map. */
 @supports (height: 100dvh) {
-  .h-\[60vh\].h-\[60dvh\] {
-    height: 60dvh;
-  }
   .min-h-screen.min-h-dvh {
     min-height: 100dvh;
   }

@@ -232,13 +232,18 @@ describe("accessible selected-region alternative", () => {
     expect(sources).toContain("2024");
   });
 
-  it("clears the selected region when the metric changes", async () => {
+  it("clears the selected region when the active geography no longer contains it", async () => {
     await renderLoaded();
     fireEvent.change(screen.getByTestId("region-select"), {
       target: { value: "KR-SGIS-11110" },
     });
     expect(screen.getByTestId("selected-region-name")).toBeDefined();
-    // Switching metric drops the stale selection (its value belonged to the old metric).
+    // The selection identity (region code) is now preserved across a metric change;
+    // it is only dropped when the new metric's geography lacks the region. Switching
+    // to a waste metric renders on the RCIS reporting geometry (empty in this mock),
+    // which does not contain this SGIS code, so the DERIVED summary safely clears —
+    // never a stale snapshot. Preserving the region across a SAME-geography metric
+    // change (and re-deriving its value) is covered in page.selection.test.tsx.
     fireEvent.click(screen.getByRole("radio", { name: /생활계 폐기물 발생량/ }));
     await waitFor(() => expect(screen.queryByTestId("selected-region-name")).toBeNull());
     expect(screen.getByTestId("selected-region-empty")).toBeDefined();

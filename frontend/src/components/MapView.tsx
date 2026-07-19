@@ -15,7 +15,7 @@
  * non-government) with attribution. The map talks only to the backend.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -142,11 +142,13 @@ interface MapViewProps {
   /** Longer textual explanation, referenced by the container's aria-describedby. */
   ariaDescription: string;
   /**
-   * Fired when a choropleth region is clicked, so the sidebar can render an
-   * accessible DOM summary of the same information the map popup shows. Optional:
-   * suitability mode has no region choropleth.
+   * Fired with the clicked region's CODE, so the sidebar can derive and render an
+   * accessible DOM summary of that region under the active metric. Only the code
+   * is passed (not a value snapshot): page state owns the region identity and
+   * re-derives the label/value, so the summary never goes stale on a metric change.
+   * Optional: suitability mode has no region choropleth.
    */
-  onRegionClick?: (selection: RegionSelection) => void;
+  onRegionClick?: (regionCode: string) => void;
 }
 
 // A MapLibre "step" needs at least one stop; with no breaks (e.g. before data
@@ -288,6 +290,20 @@ export default function MapView({
   // is rebuilt only when the pointer crosses into a different region.
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
   const hoveredRegionRef = useRef<string | null>(null);
+  // The single pinned (click/tap) region popup. Retained so a metric/mode change
+  // can close it before its label/value goes stale, and so a new click replaces the
+  // previous pin instead of accumulating abandoned popups. Removed on unmount.
+  const pinnedPopupRef = useRef<maplibregl.Popup | null>(null);
+
+  // User-visible map states, rendered as overlays inside the map wrapper:
+  //  - mapLoading: MapLibre is initializing / before the first render (map "load").
+  //  - candidateLoading: the suitability candidate vector source is (re)loading its
+  //    tiles after entering suitability mode or switching profile/tile URL.
+  //  - mapError: a concise, non-blocking message if the map cannot initialize or a
+  //    source fails. Transient individual tile fetch failures are NOT escalated here.
+  const [mapLoading, setMapLoading] = useState(true);
+  const [candidateLoading, setCandidateLoading] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
   // Tile URL currently applied to the vector source. A vector source's tiles are
   // immutable once added, so a profile change requires removing and re-adding the
   // source rather than a GeoJSON-style setData swap.
@@ -308,15 +324,29 @@ export default function MapView({
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: BASE_STYLE,
-      bounds: SMA_BOUNDS,
-      fitBoundsOptions: { padding: 16 },
-      attributionControl: { compact: false },
-      // Zoom control stops at the OSM basemap's supported maximum (no z20+ requests).
-      maxZoom: OSM_MAX_ZOOM,
-    });
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: BASE_STYLE,
+        bounds: SMA_BOUNDS,
+        fitBoundsOptions: { padding: 16 },
+        attributionControl: { compact: false },
+        // Zoom control stops at the OSM basemap's supported maximum (no z20+ requests).
+        maxZoom: OSM_MAX_ZOOM,
+      });
+    } catch {
+      // The map genuinely cannot operate (e.g. WebGL unavailable). Surface a
+      // concise state and stop; the application-level backend error handling and
+      // the accessible DOM alternatives (region <select>, candidate list) remain.
+      // Deferred out of the synchronous effect body (queueMicrotask) so it reads as
+      // reacting to an external failure rather than a cascading in-effect setState.
+      queueMicrotask(() => {
+        setMapError("지도를 초기화할 수 없습니다 (map could not be initialized).");
+        setMapLoading(false);
+      });
+      return;
+    }
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
     // Candidate click/hover are bound exactly once (not on every source re-add),
@@ -346,10 +376,38 @@ export default function MapView({
 
     map.on("load", () => {
       loadedRef.current = true;
+      setMapLoading(false);
       recordViewport(map);
       map.fire("wep:refresh");
     });
     map.on("moveend", () => recordViewport(map));
+
+    // Candidate tile-refresh feedback. The candidate vector source becomes
+    // "loaded" once its viewport tiles arrive (or immediately, if the viewport
+    // holds no tiles), and the map reaches "idle" when nothing more is pending —
+    // either clears the refresh indicator, so it never sticks on permanently.
+    map.on("sourcedata", (event) => {
+      const e = event as unknown as { sourceId?: string; isSourceLoaded?: boolean };
+      if (e && e.sourceId === "candidates" && e.isSourceLoaded) setCandidateLoading(false);
+    });
+    map.on("idle", () => setCandidateLoading(false));
+
+    // MapLibre errors. A single raster/vector TILE fetch failing is transient and
+    // must never become a permanent fatal state — MapLibre keeps operating and
+    // overzooms/omits the missing tile. Only escalate to a visible (still
+    // non-blocking) message when the map has not become usable at all (a
+    // style/init-level failure, which carries no sourceId). A failing candidate
+    // source additionally clears its refresh spinner so it does not hang.
+    map.on("error", (event) => {
+      const e = (event ?? {}) as { sourceId?: string };
+      if (e.sourceId === "candidates") setCandidateLoading(false);
+      if (!loadedRef.current && !e.sourceId) {
+        setMapError("지도를 불러오지 못했습니다 (some map resources failed to load).");
+        // The map never became usable; stop the loading overlay so the error is not
+        // shown behind a permanent spinner.
+        setMapLoading(false);
+      }
+    });
     mapRef.current = map;
 
     // Keep the MapLibre canvas in sync with its container when the layout
@@ -384,6 +442,8 @@ export default function MapView({
       hoverPopupRef.current?.remove();
       hoverPopupRef.current = null;
       hoveredRegionRef.current = null;
+      pinnedPopupRef.current?.remove();
+      pinnedPopupRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -398,7 +458,10 @@ export default function MapView({
       // re-stamped with new metric/value/period, so the next mousemove over the
       // same region must rebuild the tooltip HTML rather than reuse the stale one
       // (the cache is keyed by region code, which does not change on a metric swap).
+      // Also close any tooltip currently visible so a stale label/value is not left
+      // on screen until the next pointer move; it is recreated on the next mousemove.
       hoveredRegionRef.current = null;
+      hoverPopupRef.current?.remove();
       const regionsData: GeoJSON.FeatureCollection = {
         type: "FeatureCollection",
         features: boundaries.features.map((feature) => {
@@ -466,31 +529,19 @@ export default function MapView({
           const feature = event.features?.[0];
           if (!feature) return;
           const props = feature.properties as Record<string, string>;
-          // Mirror the same information into the accessible DOM summary. MapLibre
-          // serializes feature properties to strings, so `has_value` arrives as
-          // "true"/"false"; parse the child names defensively.
-          const onSelect = onRegionClickRef.current;
-          if (onSelect) {
-            let childNames: string[] = [];
-            try {
-              childNames = JSON.parse(props.child_region_names ?? "[]") as string[];
-            } catch {
-              childNames = [];
-            }
-            onSelect({
-              regionCode: props.region_code,
-              regionName: props.region_name,
-              metricLabel: props.metric_label,
-              metricDisplay: props.metric_display,
-              hasValue: String(props.has_value) === "true",
-              geometryKind: props.geometry_kind ?? null,
-              childRegionNames: childNames,
-              sourceId: props.source_id,
-              boundaryReferencePeriod: props.boundary_reference_period,
-            });
-          }
+          // Store only the region CODE; page state derives the accessible summary
+          // (name, label, value, provenance) under the currently-active metric, so
+          // it never carries a value snapshot that could go stale on a metric change.
+          onRegionClickRef.current?.(props.region_code);
           // Tap/click pins a popup (this is the mobile path — no hover there).
-          new maplibregl.Popup().setLngLat(event.lngLat).setHTML(regionPopupHtml(props)).addTo(map);
+          // Retain it in a ref so a metric/mode change (or the next click) can close
+          // it before its label/value goes stale; remove any prior pin first so
+          // exactly one stays on screen instead of accumulating abandoned popups.
+          pinnedPopupRef.current?.remove();
+          pinnedPopupRef.current = new maplibregl.Popup()
+            .setLngLat(event.lngLat)
+            .setHTML(regionPopupHtml(props))
+            .addTo(map);
         });
 
         // Desktop hover: a lightweight tooltip that follows the pointer, showing
@@ -564,9 +615,13 @@ export default function MapView({
 
       if (candidateTileUrl) {
         if (!map.getSource("candidates")) {
+          // Entering suitability mode: the candidate tiles start loading.
+          setCandidateLoading(true);
           addCandidateSource(candidateTileUrl);
           appliedTileUrlRef.current = candidateTileUrl;
         } else if (appliedTileUrlRef.current !== candidateTileUrl) {
+          // Profile switch: re-point at the new immutable tiles (they reload).
+          setCandidateLoading(true);
           removeCandidateSource();
           addCandidateSource(candidateTileUrl);
           appliedTileUrlRef.current = candidateTileUrl;
@@ -577,6 +632,10 @@ export default function MapView({
           candidateColorExpression(candidateBreaks),
         );
         map.setFilter("candidates-fill", statusFilter(statusVisibility));
+      } else {
+        // No run to render (e.g. equity mode): ensure the refresh indicator can
+        // never remain visible outside suitability.
+        setCandidateLoading(false);
       }
 
       // --- Facilities ---
@@ -659,6 +718,19 @@ export default function MapView({
     statusVisibility,
   ]);
 
+  // Close any pinned region popup when the active metric (label/unit/reference
+  // period) or the mode changes: its rendered content would otherwise show the
+  // previous metric's label and value. The sidebar's selected-region summary is
+  // derived from the region code in page state and updates independently, so the
+  // selection stays active — only the on-map pin is dismissed; the next click
+  // rebuilds it from the new metric. Runs on mount too (pin is null → no-op).
+  // The deps are the change TRIGGER; the body itself only touches a ref, hence the
+  // exhaustive-deps exception (as with the selected-candidate movement effect).
+  useEffect(() => {
+    pinnedPopupRef.current?.remove();
+    pinnedPopupRef.current = null;
+  }, [metricLabel, metricUnit, metricReferencePeriod, mode]);
+
   // --- Selected-candidate highlight + map movement (list or map selection) ---
   // Uses the full selected geometry (from the candidate detail endpoint) so an
   // off-viewport candidate is both highlighted and brought into view. Keyed on the
@@ -735,6 +807,54 @@ export default function MapView({
         className="h-full w-full"
         data-testid="map-container"
       />
+
+      {/* Initial map-loading overlay. A polite live region so assistive tech
+          announces the loading state and its resolution; `pointer-events-none` so
+          it never blocks map interaction (and it unmounts once the map has loaded,
+          so it can never trap pointer/keyboard focus afterwards). */}
+      {mapLoading && (
+        <div
+          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70"
+          data-testid="map-loading"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="rounded bg-slate-800/90 px-3 py-1.5 text-sm font-medium text-white shadow">
+            지도를 불러오는 중… (Loading map…)
+          </span>
+        </div>
+      )}
+
+      {/* Suitability candidate tile-refresh indicator. Only while the map is
+          already usable (not during initial load), and only a couple of times
+          (entering suitability / switching profile), so it is not a noisy per-tile
+          announcement. `pointer-events-none` keeps the map interactive. */}
+      {candidateLoading && !mapLoading && (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-3 flex justify-center"
+          data-testid="candidate-loading"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="rounded bg-slate-800/90 px-3 py-1 text-xs font-medium text-white shadow">
+            후보지 타일을 갱신하는 중… (Refreshing candidate tiles…)
+          </span>
+        </div>
+      )}
+
+      {/* Concise, non-blocking map error. Never a full-screen fatal takeover for a
+          transient tile failure (see the "error" handler), and it makes no claim
+          about official data availability — the application-level backend error
+          state and the accessible DOM alternatives remain in place. */}
+      {mapError && (
+        <div
+          className="absolute inset-x-2 bottom-2 rounded border border-red-300 bg-white/95 px-3 py-2 text-xs text-red-700 shadow"
+          data-testid="map-error"
+          role="alert"
+        >
+          {mapError}
+        </div>
+      )}
     </div>
   );
 }

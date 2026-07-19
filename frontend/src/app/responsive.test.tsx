@@ -87,22 +87,23 @@ describe("responsive application shell", () => {
     expect(tokens).not.toContain("w-96");
   });
 
-  it("gives the map wrapper a definite mobile height that flexes to fill at md+", async () => {
+  it("sizes the map wrapper via the dedicated .map-pane class (definite mobile height, flex fill at md+)", async () => {
     await renderLoaded();
     const wrapper = screen.getByTestId("map-container").parentElement;
     const tokens = classes(wrapper);
-    // Definite height on mobile so the MapLibre child (h-full) never collapses.
-    // A dvh-less engine drops the invalid `height:60dvh` and keeps the valid
-    // `60vh`, so the box always has a definite height — the vh fallback MUST come
-    // before the dvh class (equal specificity → later rule wins on dvh engines).
-    expect(tokens).toContain("h-[60vh]");
-    expect(tokens).toContain("h-[60dvh]");
-    expect(tokens.indexOf("h-[60vh]")).toBeLessThan(tokens.indexOf("h-[60dvh]"));
+    // A single dedicated class owns the responsive sizing (globals.css): a definite
+    // 60vh/60dvh with a minimum on mobile so the MapLibre child (h-full) never
+    // collapses, and `height:100% / flex:1 1 0%` at md+ so it fills the full row —
+    // no broadly-scoped @supports rule can force the mobile 60dvh onto the desktop
+    // map (the old ambiguous `h-[60vh] h-[60dvh] md:h-auto md:min-h-0 md:flex-1`
+    // stack is replaced). Actual pixel behaviour is asserted in e2e/responsive.spec.ts.
+    expect(tokens).toContain("map-pane");
+    // min-w-0 keeps the flex child shrinkable so long content never overflows.
     expect(tokens).toContain("min-w-0");
-    // …and flexes to fill the row on desktop.
-    expect(tokens).toContain("md:h-auto");
-    expect(tokens).toContain("md:min-h-0");
-    expect(tokens).toContain("md:flex-1");
+    // The ambiguous height utilities that previously forced 60dvh at desktop are gone.
+    expect(tokens).not.toContain("h-[60dvh]");
+    expect(tokens).not.toContain("md:h-auto");
+    expect(tokens).not.toContain("md:flex-1");
   });
 
   it("keeps the map mounted when switching equity → suitability → equity", async () => {

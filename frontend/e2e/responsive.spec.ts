@@ -17,6 +17,8 @@ import { mockBackend } from "./mockBackend";
  *   390 × 844  — iPhone-class phone (primary mobile target)
  *   430 × 932  — large phone
  *   768 × 1024 — tablet portrait (md breakpoint → side-by-side begins here)
+ *   1054 × 800 — narrow desktop (regression case for the map-height fill fix)
+ *   1280 × 800 — desktop
  *   1440 × 900 — desktop
  */
 
@@ -26,6 +28,8 @@ const VIEWPORTS = [
   { name: "mobile 390×844", width: 390, height: 844 },
   { name: "large-mobile 430×932", width: 430, height: 932 },
   { name: "tablet-portrait 768×1024", width: 768, height: 1024 },
+  { name: "narrow-desktop 1054×800", width: 1054, height: 800 },
+  { name: "desktop 1280×800", width: 1280, height: 800 },
   { name: "desktop 1440×900", width: 1440, height: 900 },
 ];
 
@@ -145,6 +149,28 @@ for (const vp of VIEWPORTS) {
         await expect(page.getByTestId("choropleth-legend-row").first()).toBeVisible();
         await expect(page.getByTestId("facilities-toggle")).toBeVisible();
       });
+
+      test("fills the row to the viewport bottom — no empty/black strip below the map", async ({
+        page,
+      }) => {
+        await page.goto("/");
+        const map = page.getByTestId("map-container");
+        await expect(map).toBeVisible();
+        const box = (await map.boundingBox())!;
+        expect(box).not.toBeNull();
+        // The map pane starts at the top of the full-height row…
+        expect(box.y).toBeLessThanOrEqual(4);
+        // …and reaches the bottom of the viewport within a small rounding tolerance,
+        // so no empty (previously black) strip is left below the canvas.
+        expect(box.y + box.height).toBeGreaterThanOrEqual(vp.height - 6);
+        expect(box.y + box.height).toBeLessThanOrEqual(vp.height + 6);
+        // It is NOT the ~60% mobile height (the pre-fix desktop bug, where a
+        // broadly-scoped @supports rule forced 60dvh even at md+).
+        expect(box.height).toBeGreaterThan(vp.height * 0.8);
+        // Meaningful width beside the fixed sidebar.
+        expect(box.width).toBeGreaterThan(200);
+        await expectNoHorizontalOverflow(page);
+      });
     }
 
     if (!isDesktop) {
@@ -164,6 +190,34 @@ for (const vp of VIEWPORTS) {
         // …until its labelled disclosure is opened.
         await page.getByText("지도 범례 (Legend)").click();
         await expect(legendRow).toBeVisible();
+        await expectNoHorizontalOverflow(page);
+      });
+
+      test("keeps a definite, useful map height stacked below the sidebar, fitting any loading overlay", async ({
+        page,
+      }) => {
+        await page.goto("/");
+        const map = page.getByTestId("map-container");
+        await expect(map).toBeVisible();
+        const box = (await map.boundingBox())!;
+        // A definite, useful mobile height (~60% of the viewport) — never collapsed
+        // to zero and never the full desktop height (it stays stacked below the
+        // sidebar, so box.y is below the top of the page).
+        expect(box.height).toBeGreaterThan(vp.height * 0.4);
+        expect(box.height).toBeLessThan(vp.height * 0.85);
+        expect(box.y).toBeGreaterThan(0);
+        // The map-loading overlay, if still visible, is contained within the map box
+        // (it never spills outside the pane or forces overflow).
+        const overlay = page.getByTestId("map-loading");
+        if ((await overlay.count()) > 0) {
+          const ob = await overlay.boundingBox();
+          if (ob) {
+            expect(ob.x).toBeGreaterThanOrEqual(box.x - 1);
+            expect(ob.y).toBeGreaterThanOrEqual(box.y - 1);
+            expect(ob.x + ob.width).toBeLessThanOrEqual(box.x + box.width + 1);
+            expect(ob.y + ob.height).toBeLessThanOrEqual(box.y + box.height + 1);
+          }
+        }
         await expectNoHorizontalOverflow(page);
       });
     }
