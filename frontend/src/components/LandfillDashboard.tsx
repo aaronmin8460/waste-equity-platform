@@ -95,7 +95,7 @@ export default function LandfillDashboard({
 
   return (
     <main
-      className="min-h-screen w-full bg-slate-100 px-4 py-6 sm:px-6 lg:px-8"
+      className="min-h-dvh w-full bg-slate-100 px-4 py-6 sm:px-6 lg:px-8"
       data-testid="landfill-dashboard"
     >
       <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-5">

@@ -445,7 +445,7 @@ export default function Home() {
 
   if (error !== null) {
     return (
-      <main className="flex h-screen items-center justify-center bg-slate-100 p-8">
+      <main className="flex min-h-dvh items-center justify-center bg-slate-100 p-8">
         <div className="max-w-lg rounded-lg border border-red-300 bg-white p-6 shadow" role="alert">
           <h1 className="text-lg font-semibold text-red-700">데이터를 불러올 수 없습니다</h1>
           <p className="mt-2 text-sm text-slate-700">{error}</p>
@@ -467,7 +467,7 @@ export default function Home() {
 
   if (data === null) {
     return (
-      <main className="flex h-screen items-center justify-center bg-slate-100">
+      <main className="flex min-h-dvh items-center justify-center bg-slate-100">
         <p className="text-sm text-slate-600" data-testid="loading">
           공식 데이터를 불러오는 중… (Loading official data…)
         </p>
@@ -480,7 +480,7 @@ export default function Home() {
   // non-map mode cannot reach MapView.
   if (mode === "flow") {
     return (
-      <div className="min-h-screen bg-slate-100">
+      <div className="min-h-dvh bg-slate-100">
         <div className="mx-auto w-full max-w-screen-2xl px-4 pt-6 sm:px-6 lg:px-8">
           <ModeSwitch mode={mode} setMode={setMode} />
         </div>
@@ -515,8 +515,12 @@ export default function Home() {
   });
 
   return (
-    <main className="flex h-screen">
-      <aside className="flex w-96 flex-col gap-4 overflow-y-auto border-r border-slate-200 bg-white p-5">
+    // Mobile: a single vertical column (controls stacked above a full-width map).
+    // md+ (tablet-landscape/desktop): the original side-by-side layout — a fixed
+    // sidebar on the left, the map filling the rest. `min-h-dvh`/`md:h-dvh` uses
+    // the dynamic viewport so mobile browser chrome never crops the app.
+    <main className="flex min-h-dvh flex-col md:h-dvh md:flex-row">
+      <aside className="flex w-full flex-col gap-4 border-b border-slate-200 bg-white p-5 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
         <header>
           <h1 className="text-lg font-bold text-slate-900">수도권 폐기물 형평성·적합성 지도</h1>
           <p className="text-xs text-slate-500">
@@ -551,75 +555,83 @@ export default function Home() {
               </div>
             </section>
 
-            <section aria-label="범례" data-testid="legend">
-              <h2 className="mb-2 text-sm font-semibold text-slate-800">
-                범례 (Legend){unit ? ` — ${unit}` : ""}
-              </h2>
-              <p
-                className="mb-2 text-[11px] text-slate-500"
-                data-testid="choropleth-scale-method"
-              >
-                {scaleMethodNote(activeScale)}
-              </p>
-              <ul className="flex flex-col gap-1" data-testid="choropleth-legend">
-                {legendRows.map((row) => (
-                  <li
-                    key={row.color}
-                    className="flex items-center gap-2 text-xs text-slate-600"
-                    data-testid="choropleth-legend-row"
-                  >
+            <CollapsibleSection label="지도 범례 (Legend)">
+              <section aria-label="범례" data-testid="legend">
+                <h2 className="mb-2 text-sm font-semibold text-slate-800">
+                  범례 (Legend){unit ? ` — ${unit}` : ""}
+                </h2>
+                <p
+                  className="mb-2 text-[11px] text-slate-500"
+                  data-testid="choropleth-scale-method"
+                >
+                  {scaleMethodNote(activeScale)}
+                </p>
+                <ul className="flex flex-col gap-1" data-testid="choropleth-legend">
+                  {legendRows.map((row) => (
+                    <li
+                      key={row.color}
+                      className="flex items-center gap-2 text-xs text-slate-600"
+                      data-testid="choropleth-legend-row"
+                    >
+                      <span
+                        className="inline-block h-4 w-6 rounded-sm border border-slate-300"
+                        style={{ backgroundColor: row.color }}
+                      />
+                      {row.label}
+                    </li>
+                  ))}
+                  <li className="flex items-center gap-2 text-xs text-slate-600">
                     <span
                       className="inline-block h-4 w-6 rounded-sm border border-slate-300"
-                      style={{ backgroundColor: row.color }}
+                      style={{ backgroundColor: NO_DATA_COLOR }}
                     />
-                    {row.label}
+                    데이터 없음 (no served value)
                   </li>
-                ))}
-                <li className="flex items-center gap-2 text-xs text-slate-600">
-                  <span
-                    className="inline-block h-4 w-6 rounded-sm border border-slate-300"
-                    style={{ backgroundColor: NO_DATA_COLOR }}
+                </ul>
+              </section>
+            </CollapsibleSection>
+
+            {(derivedInfo || sourceInfo) && (
+              <CollapsibleSection label="출처 및 방법 (Sources & method)">
+                {derivedInfo && <DerivedPanel info={derivedInfo} caveat={metric.caveat} />}
+                {sourceInfo && <SourcePanel info={sourceInfo} boundaries={activeBoundaries} />}
+              </CollapsibleSection>
+            )}
+
+            <CollapsibleSection label="시설 레이어 (Facility layer)">
+              <section aria-label="시설 레이어">
+                <h2 className="mb-2 text-sm font-semibold text-slate-800">
+                  폐기물 처리시설 (Treatment facilities)
+                </h2>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={showFacilities}
+                    onChange={(event) => setShowFacilities(event.target.checked)}
+                    data-testid="facilities-toggle"
                   />
-                  데이터 없음 (no served value)
-                </li>
-              </ul>
-            </section>
-
-            {derivedInfo && <DerivedPanel info={derivedInfo} caveat={metric.caveat} />}
-            {sourceInfo && <SourcePanel info={sourceInfo} boundaries={activeBoundaries} />}
-
-            <section aria-label="시설 레이어">
-              <h2 className="mb-2 text-sm font-semibold text-slate-800">
-                폐기물 처리시설 (Treatment facilities)
-              </h2>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={showFacilities}
-                  onChange={(event) => setShowFacilities(event.target.checked)}
-                  data-testid="facilities-toggle"
-                />
-                시설 위치 표시 (show facility points)
-              </label>
-              {facilitySummary && (
-                <div
-                  className="mt-2 rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"
-                  data-testid="facility-metadata"
-                >
-                  <p>
-                    좌표 보유 시설 {formatCount(facilitySummary.withCoordinates)} /{" "}
-                    {formatCount(facilitySummary.total)}개 표시.{" "}
-                    <strong>{formatCount(facilitySummary.withoutCoordinates)}개</strong>는 공식
-                    지오코딩이 실패하여 지도에 표시하지 않습니다.
-                  </p>
-                  <p className="mt-1">
-                    출처: waste_statistics · 기준 기간: {facilitySummary.referencePeriod} · 갱신
-                    주기: {facilitySummary.frequency}
-                  </p>
-                  <p className="mt-1">집계 기준: {facilitySummary.accountingBasis}</p>
-                </div>
-              )}
-            </section>
+                  시설 위치 표시 (show facility points)
+                </label>
+                {facilitySummary && (
+                  <div
+                    className="mt-2 rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"
+                    data-testid="facility-metadata"
+                  >
+                    <p>
+                      좌표 보유 시설 {formatCount(facilitySummary.withCoordinates)} /{" "}
+                      {formatCount(facilitySummary.total)}개 표시.{" "}
+                      <strong>{formatCount(facilitySummary.withoutCoordinates)}개</strong>는 공식
+                      지오코딩이 실패하여 지도에 표시하지 않습니다.
+                    </p>
+                    <p className="mt-1">
+                      출처: waste_statistics · 기준 기간: {facilitySummary.referencePeriod} · 갱신
+                      주기: {facilitySummary.frequency}
+                    </p>
+                    <p className="mt-1">집계 기준: {facilitySummary.accountingBasis}</p>
+                  </div>
+                )}
+              </section>
+            </CollapsibleSection>
           </>
         )}
 
@@ -639,7 +651,13 @@ export default function Home() {
 
       </aside>
 
-      <div className="min-w-0 flex-1">
+      {/* The map wrapper. Its MapLibre child is `h-full` (100% of this box), so
+          on mobile the box needs a *definite* height — a bare `min-h` leaves the
+          height indefinite and the percentage child collapses to zero. A fixed
+          60dvh gives a prominent, stable map (and tracks the dynamic viewport, so
+          the ResizeObserver in MapView keeps the canvas in sync). md+ drops the
+          fixed height and lets it flex to fill the remaining h-dvh row width. */}
+      <div className="h-[60dvh] min-w-0 md:h-auto md:min-h-0 md:flex-1">
         <MapView
           boundaries={activeBoundaries}
           regionValues={regionValues}
@@ -682,14 +700,17 @@ function ModeSwitch({
   return (
     <section aria-label="모드 선택">
       <h2 className="mb-2 text-sm font-semibold text-slate-800">모드 (Mode)</h2>
-      <div className="flex flex-wrap gap-1" role="radiogroup" data-testid="mode-switch">
+      {/* flex-wrap keeps all three buttons on screen at 320–430px (they wrap
+          instead of overflowing). A larger tap height on mobile only, so the
+          desktop control stays the same size. */}
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" data-testid="mode-switch">
         {MODE_BUTTONS.map((button) => (
           <button
             key={button.key}
             type="button"
             aria-pressed={mode === button.key}
             onClick={() => setMode(button.key)}
-            className={`rounded px-3 py-1 text-sm ${
+            className={`min-h-[38px] rounded px-3 py-1 text-sm md:min-h-0 ${
               mode === button.key ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"
             }`}
             data-testid={button.testId}
@@ -699,6 +720,40 @@ function ModeSwitch({
         ))}
       </div>
     </section>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Collapsible control section.
+//
+// A native <details> disclosure so no UI dependency or focus-management code is
+// introduced. On small screens the summary is a tappable header that collapses
+// the body, keeping the stacked mobile sidebar short so the map stays reachable.
+// On md+ the summary is hidden and the body is forced open by CSS (see
+// globals.css), so the desktop sidebar is visually unchanged and no analytical
+// option is ever permanently hidden. Children keep their own headings, testids,
+// and aria labels.
+// --------------------------------------------------------------------------- //
+
+function CollapsibleSection({
+  label,
+  defaultOpen = false,
+  children,
+}: {
+  label: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="mobile-collapsible" open={defaultOpen}>
+      <summary className="flex items-center justify-between gap-2 rounded bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-800">
+        <span>{label}</span>
+        <span aria-hidden className="mobile-collapsible-chevron text-xs text-slate-500">
+          ▾
+        </span>
+      </summary>
+      <div className="mobile-collapsible-body flex flex-col gap-4">{children}</div>
+    </details>
   );
 }
 
@@ -749,7 +804,7 @@ function SuitabilityPanel({
   return (
     <>
       <section
-        className="rounded border border-slate-300 bg-slate-50 p-3 text-xs text-slate-700"
+        className="rounded border border-slate-300 bg-slate-50 p-3 text-xs break-words text-slate-700"
         data-testid="suitability-summary"
       >
         <h2 className="mb-1 text-sm font-semibold text-slate-800">적합성 스크리닝 (Suitability)</h2>
@@ -859,7 +914,7 @@ function SuitabilityPanel({
                     {String(c.demand_score)})
                   </span>
                   <span
-                    className="mt-0.5 block font-mono text-[11px] text-slate-500"
+                    className="mt-0.5 block font-mono text-[11px] break-all text-slate-500"
                     data-testid="top-candidate-cell"
                   >
                     {topCandidateCellLabel(c)}
@@ -934,7 +989,7 @@ function ReasonSummary({ title, counts }: { title: string; counts: Record<string
       <ul className="flex flex-col gap-0.5">
         {entries.map(([reason, count]) => (
           <li key={reason} className="flex justify-between gap-2">
-            <span className="truncate">{reason}</span>
+            <span className="min-w-0 truncate">{reason}</span>
             <span className="text-slate-500">{formatCount(count)}</span>
           </li>
         ))}
@@ -955,7 +1010,7 @@ function CandidateDetailPanel({
   const equityKind = classifyEquityRaw(eq);
   return (
     <section
-      className="rounded border border-sky-300 bg-sky-50 p-3 text-xs text-slate-700"
+      className="rounded border border-sky-300 bg-sky-50 p-3 text-xs break-words text-slate-700"
       data-testid="candidate-detail"
     >
       <div className="flex items-center justify-between">

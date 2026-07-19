@@ -25,6 +25,47 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Responsive control sections.
+   On small screens each section is a native <details> disclosure so the sidebar
+   stays short and the map is reachable; the <summary> is the tappable label.
+   On md+ (desktop/tablet-landscape) the summary is hidden and the body is forced
+   visible, so the desktop sidebar renders exactly as before — no toggles are
+   added to the desktop UI and no analytical option is ever permanently hidden. */
+.mobile-collapsible > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.mobile-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+.mobile-collapsible-chevron {
+  transition: transform 0.15s ease;
+}
+.mobile-collapsible[open] > summary .mobile-collapsible-chevron {
+  transform: rotate(180deg);
+}
+@media (max-width: 767px) {
+  .mobile-collapsible[open] > .mobile-collapsible-body {
+    margin-top: 0.5rem;
+  }
+}
+@media (min-width: 768px) {
+  .mobile-collapsible > summary {
+    display: none;
+  }
+  /* Force the disclosure open on desktop across both <details> UA models:
+     older engines hide the non-summary children with `display: none`, while
+     current Chromium/Safari/Firefox wrap them in the ::details-content pseudo
+     and hide it with `content-visibility`. Override both so the desktop sidebar
+     always shows the panel and no analytical option is hidden behind a toggle. */
+  .mobile-collapsible > .mobile-collapsible-body {
+    display: block;
+  }
+  .mobile-collapsible::details-content {
+    content-visibility: visible;
+  }
+}
+
 /* MapLibre popups keep a white background but inherit the page text color,
    which is near-white in dark mode; pin readable colors explicitly. */
 .maplibregl-popup-content {
