@@ -331,6 +331,14 @@ duplicated legend and keeps one legend per map mode.
   `CANDIDATE_REVIEW_COLOR` / `CANDIDATE_EXCLUDED_COLOR` constants (now in
   `lib/metrics.ts`, imported by both the map and the legend). Map colors and legend
   colors therefore can never silently diverge.
+- **Stability control (policy v2).** When the selected run computed CRITIC/stability,
+  the suitability legend adds an accessible native "안정 후보만 보기" checkbox and a
+  `CANDIDATE_STABLE_OUTLINE_COLOR` outline sample. This `stableOnly` state is
+  **separate** from the canonical `statusVisibility`: it restricts ELIGIBLE cells to
+  `stable_count = 3` while REVIEW/EXCLUDED remain governed by their status
+  checkboxes, and STABLE eligible cells always get a distinct
+  `candidates-stable-outline` layer (the selected-candidate highlight stays on top).
+  The control is hidden for a run without stability data.
 - **Rendered in the page, over the map.** The card is a sibling of `<MapView>` inside
   the `relative .map-pane` wrapper (not inside `MapView`), so it receives the derived
   legend data directly and the stubbed-`MapView` unit tests still exercise it. Only

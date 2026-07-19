@@ -89,8 +89,16 @@ candidates
 Each feature carries only the lightweight attributes the map renders/inspects with:
 
 `candidate_id`, `candidate_key`, `status`, `rank`, `score`, `provisional_score`,
-`zoning_score`, `road_score`, `equity_score`, `demand_score`, `sigungu_region_code`,
-`sigungu_region_name`.
+`zoning_score`, `road_score`, `equity_score`, `demand_score`, `stable_count`,
+`stability_class`, `sigungu_region_code`, `sigungu_region_name`.
+
+The `stable_count` / `stability_class` attributes (policy v2) let the map draw the
+distinct **stable-candidate outline** and apply the optional "stable-only" filter
+without any client-side computation. They are present only on ELIGIBLE cells of a
+run that computed stability; NULL/absent otherwise (MVT omits null attributes). The
+`critic` profile is a valid `{profile}` path segment when the run computed it;
+otherwise the endpoint returns a structured `400 PROFILE_NOT_AVAILABLE_FOR_RUN`.
+The source-layer name, immutable cache headers, and ETag behavior are unchanged.
 
 Heavy fields are **deliberately excluded** from every tile feature and remain on the
 detail endpoint (below): `raw_components`, `component_provenance`,

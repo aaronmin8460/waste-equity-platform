@@ -29,6 +29,15 @@ waste generation, served as-is) and a waste-treatment facility point layer.
   score, review cells show a provisional score and no rank. The suitability
   result is analytical screening only — never a legal, permit, or final siting
   determination, and no legal-eligibility flag is shown.
+- Policy v2 adds a fifth **`critic`** weight profile (run-specific,
+  **data-derived** from the run's candidate score structure — not expert/AHP, not
+  a policy-importance judgment) and per-candidate **weight-sensitivity stability**
+  (STABLE / CONDITIONALLY_STABLE / WEIGHT_SENSITIVE across baseline/equal/critic).
+  The CRITIC option and stability UI appear only when the selected run computed
+  them; text-first stability badges, a stable-candidate list, and a stable-only
+  map filter (with a distinct outline) never communicate stability by color alone.
+  Stable does not mean approved, permitted, developable, or legally eligible. See
+  [docs/SUITABILITY_CRITIC_STABILITY.md](../docs/SUITABILITY_CRITIC_STABILITY.md).
 - Quantities arrive as exact decimal strings and are formatted without
   changing their value.
 - The basemap is OpenStreetMap raster tiles (public, non-government) with

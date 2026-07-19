@@ -4,6 +4,18 @@
 `derivation_version: suitability-screening-v1`
 `candidate_grid_version: capital-grid-500m-v1`
 
+> **Versioned successor — policy v2.** The current engine runs at
+> `policy_version: suitability-policy-v2` / `derivation_version:
+> suitability-screening-v3`. v2 is **purely additive**: it adds the data-derived
+> `critic` weight profile and per-candidate weight-sensitivity stability, and
+> leaves every rule in this document — the four **static** weight profiles
+> (`baseline` is still the operational default and is **not** an expert/AHP
+> result), the hard-exclusion and review rules, the component-score formulas, the
+> road-distance curve, and all thresholds — **byte-for-byte unchanged**. This v1
+> document is preserved as the historical explanation of those unchanged rules;
+> the additive CRITIC/stability method is documented in
+> [SUITABILITY_CRITIC_STABILITY.md](SUITABILITY_CRITIC_STABILITY.md).
+
 This document is the **project-approved analytical screening policy** for the
 Phase 5.4 waste-facility suitability screen over the Seoul Metropolitan Area
 (Seoul / Incheon / Gyeonggi-do). It records every classification, exclusion,
