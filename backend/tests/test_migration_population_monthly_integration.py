@@ -12,6 +12,7 @@ import os
 
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
@@ -70,10 +71,20 @@ def _any_region_id(connection: object) -> int:
     return int(region)
 
 
-def test_head_is_0014(engine: Engine) -> None:
+def test_head_matches_the_alembic_script_head(engine: Engine) -> None:
+    # The DB must be at the CURRENT script head — computed from the Alembic script
+    # directory rather than hard-coded, so a later additive migration (e.g. 0015
+    # facility standard costs) never re-breaks this assertion. The monthly-population
+    # migration (0014) remains part of that chain.
     with engine.connect() as connection:
-        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    assert revision == "0014"
+        db_revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    script_head = ScriptDirectory.from_config(_alembic_config("public")).get_current_head()
+    assert db_revision == script_head
+    revisions = {
+        script.revision
+        for script in ScriptDirectory.from_config(_alembic_config("public")).walk_revisions()
+    }
+    assert "0014" in revisions
 
 
 def test_existing_annual_sgis_rows_survived_the_upgrade(engine: Engine) -> None:
