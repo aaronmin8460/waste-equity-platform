@@ -19,6 +19,7 @@ import {
   fetchFacilityCostCalculate,
   fetchFacilityCostOptions,
   type CandidateDetail,
+  type FacilityCostBand,
   type FacilityCostCalculate,
   type FacilityCostOptions,
 } from "../lib/api";
@@ -76,6 +77,22 @@ function formatBn(value: string): string {
 /** Format a 원 decimal string, keeping small values visible. */
 function formatWon(value: string): string {
   return `${formatQuantity(value)}원`;
+}
+
+/**
+ * The matched band's capacity range with its true endpoint semantics: bounded
+ * middle bands are lower-exclusive / upper-inclusive, so the label reflects the
+ * inclusivity flags (e.g. "30 톤/일 초과 ~ 40 톤/일 이하") rather than a bare "30–40".
+ */
+function matchedBandLabel(band: FacilityCostBand): string {
+  const lo = band.capacity_min_ton_per_day;
+  const hi = band.capacity_max_ton_per_day;
+  const loPart =
+    lo !== null ? `${formatQuantity(lo)} 톤/일 ${band.capacity_min_inclusive ? "이상" : "초과"}` : null;
+  const hiPart =
+    hi !== null ? `${formatQuantity(hi)} 톤/일 ${band.capacity_max_inclusive ? "이하" : "미만"}` : null;
+  if (loPart && hiPart) return `${loPart} ~ ${hiPart}`;
+  return loPart ?? hiPart ?? "전체 규모";
 }
 
 export interface FacilityCostPanelProps {
@@ -476,8 +493,6 @@ function Results({
   const { scenario, official_input, capacity, standard_cost, annualization, subsidy, per_capita } =
     result;
   const band = standard_cost.matched_band;
-  const bandRange =
-    `${band.capacity_min_ton_per_day ?? "0"}–${band.capacity_max_ton_per_day ?? "∞"} 톤/일`;
   return (
     // aria-live so the newly calculated result is announced.
     <div className="flex flex-col gap-4" role="status" data-testid="facility-cost-results">
@@ -505,7 +520,8 @@ function Results({
           />
           <Field
             label="적용 표준공사비 구간 (matched band)"
-            value={`${bandRange} · 단가 ${band.cost_per_capacity_bn} ${band.cost_per_capacity_unit}`}
+            value={`${matchedBandLabel(band)} · 단가 ${formatQuantity(band.cost_per_capacity_bn)} ${band.cost_per_capacity_unit}`}
+            testId="fc-matched-band"
           />
           <Field
             label={standard_cost.term_ko}
@@ -600,6 +616,14 @@ function CandidateContext({
         {context.sigungu_region_name ?? "(시군구 미배정)"} · 상태 {context.suitability_status} · run #
         {context.run_id} · {context.profile}
       </p>
+      {/* Source + reference period for the displayed analytical suitability status
+          (AGENTS.md), from the candidate's own provenance. */}
+      {selectedCandidate && (
+        <p className="mt-1 text-slate-500" data-testid="fc-candidate-provenance">
+          분석 기준연도 {selectedCandidate.reference_year} · {selectedCandidate.derivation_version} ·{" "}
+          {selectedCandidate.policy_version} · {selectedCandidate.candidate_grid_version}
+        </p>
+      )}
       <p className="mt-1 text-slate-600">{context.note}</p>
       <p className="mt-1 font-medium text-amber-800">{context.suitability_disclaimer}</p>
     </section>

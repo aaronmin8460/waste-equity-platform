@@ -343,8 +343,17 @@ describe("results", () => {
   });
 });
 
+const CANDIDATE = {
+  candidate_id: 4242,
+  candidate_key: "capital-grid-500m-v1:10_20",
+  reference_year: 2024,
+  derivation_version: "suitability-screening-v1",
+  policy_version: "suitability-policy-v1",
+  candidate_grid_version: "capital-grid-500m-v1",
+} as unknown as CandidateDetail;
+
 describe("candidate integration", () => {
-  it("shows the candidate context and never claims cheapest/approved", async () => {
+  it("shows the candidate context + provenance and never claims cheapest/approved", async () => {
     h.calc.mockResolvedValue(
       calcFixture({
         candidate_context: {
@@ -360,7 +369,7 @@ describe("candidate integration", () => {
         },
       }),
     );
-    await renderPanel();
+    await renderPanel(CANDIDATE);
     selectRegion("KR-SGIS-11110");
     fireEvent.click(screen.getByTestId("facility-cost-calculate"));
     await waitFor(() => expect(screen.getByTestId("facility-cost-candidate")).toBeDefined());
@@ -369,6 +378,25 @@ describe("candidate integration", () => {
     expect(text).toContain("후보 셀별로 크게 달라지지 않습니다");
     expect(text).not.toContain("최저 비용");
     expect(text).not.toContain("승인된");
+    // The analytical status carries its reference year + derivation/policy version.
+    const prov = screen.getByTestId("fc-candidate-provenance").textContent ?? "";
+    expect(prov).toContain("2024");
+    expect(prov).toContain("suitability-screening-v1");
+    expect(prov).toContain("suitability-policy-v1");
+  });
+});
+
+describe("matched band endpoint semantics", () => {
+  it("reflects the inclusivity flags, not a bare min–max", async () => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("fc-matched-band")).toBeDefined());
+    const band = screen.getByTestId("fc-matched-band").textContent ?? "";
+    // The (30, 40] band excludes exactly 30 → shown as "30 … 초과", "40 … 이하".
+    expect(band).toContain("초과");
+    expect(band).toContain("이하");
+    expect(band).not.toMatch(/30[–-]40/);
   });
 });
 
