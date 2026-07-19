@@ -12,7 +12,7 @@
  * and click → candidate-detail.
  */
 
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CandidateDetail, RegionBoundaryCollection } from "../lib/api";
@@ -179,6 +179,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof MapView>> = {}
     statusVisibility: DEFAULT_VISIBILITY,
     selectedCandidate: null as CandidateDetail | null,
     onCandidateClick: vi.fn(),
+    ariaLabel: "지도",
+    ariaDescription: "인터랙티브 지도",
     ...overrides,
   };
 }
@@ -297,5 +299,92 @@ describe("MapView suitability vector source", () => {
     const { map } = renderAndLoad(baseProps({ mode: "equity", candidateTileUrl: null }));
     expect(map.getSource("candidates")).toBeUndefined();
     expect(map.getLayer("candidates-fill")).toBeUndefined();
+  });
+});
+
+describe("MapView accessibility", () => {
+  it("labels the map container as a region with a linked textual description", () => {
+    renderAndLoad(
+      baseProps({
+        ariaLabel: "지역 지표 지도 — 인구",
+        ariaDescription: "지역을 클릭하면 좌측 '선택한 지역' 요약에 값이 표시됩니다.",
+      }),
+    );
+    const container = screen.getByTestId("map-container");
+    // A named landmark, not a bare canvas — screen readers announce it and can
+    // navigate to it.
+    expect(container.getAttribute("role")).toBe("region");
+    expect(container.getAttribute("aria-label")).toBe("지역 지표 지도 — 인구");
+    // The description is a real element referenced by aria-describedby.
+    expect(container.getAttribute("aria-describedby")).toBe("map-accessible-description");
+    const description = document.getElementById("map-accessible-description");
+    expect(description).not.toBeNull();
+    expect(description!.textContent).toContain("선택한 지역");
+  });
+
+  it("mirrors a region click into an accessible selection (never fabricating a value)", () => {
+    const onRegionClick = vi.fn();
+    const { map } = renderAndLoad(baseProps({ mode: "equity", onRegionClick }));
+    // A served region: has_value arrives as the string "true" from MapLibre.
+    map.emitLayer("click", "regions-fill", {
+      features: [
+        {
+          properties: {
+            region_code: "KR-SGIS-11110",
+            region_name: "종로구",
+            metric_label: "인구 (Population)",
+            metric_display: "142,000 persons",
+            has_value: "true",
+            geometry_kind: "NATIVE",
+            child_region_names: "[]",
+            source_id: "sgis",
+            boundary_reference_period: "2024",
+          },
+        },
+      ],
+      lngLat: { lng: 126.98, lat: 37.57 },
+    });
+    expect(onRegionClick).toHaveBeenCalledTimes(1);
+    expect(onRegionClick).toHaveBeenCalledWith({
+      regionCode: "KR-SGIS-11110",
+      regionName: "종로구",
+      metricLabel: "인구 (Population)",
+      metricDisplay: "142,000 persons",
+      hasValue: true,
+      geometryKind: "NATIVE",
+      childRegionNames: [],
+      sourceId: "sgis",
+      boundaryReferencePeriod: "2024",
+    });
+  });
+
+  it("passes through the no-data availability text and parses derived child names", () => {
+    const onRegionClick = vi.fn();
+    const { map } = renderAndLoad(baseProps({ mode: "equity", onRegionClick }));
+    map.emitLayer("click", "regions-fill", {
+      features: [
+        {
+          properties: {
+            region_code: "KR-RCIS-CITY-GOYANG",
+            region_name: "고양시",
+            metric_label: "생활계 폐기물 발생량",
+            // The choropleth builds this text for a region with no served value;
+            // MapView must forward it verbatim, never a 0.
+            metric_display: "데이터 없음 — 출처에서 해당 지역·항목을 보고하지 않음",
+            has_value: "false",
+            geometry_kind: "DERIVED",
+            child_region_names: JSON.stringify(["덕양구", "일산동구", "일산서구"]),
+            source_id: "rcis",
+            boundary_reference_period: "2024",
+          },
+        },
+      ],
+      lngLat: { lng: 126.8, lat: 37.65 },
+    });
+    const selection = onRegionClick.mock.calls[0][0];
+    expect(selection.hasValue).toBe(false);
+    expect(selection.metricDisplay).toContain("데이터 없음");
+    expect(selection.metricDisplay).not.toContain("0");
+    expect(selection.childRegionNames).toEqual(["덕양구", "일산동구", "일산서구"]);
   });
 });

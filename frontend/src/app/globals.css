@@ -25,6 +25,43 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Skip navigation link (본문으로 바로가기).
+   Visually hidden off the top of the viewport until it receives keyboard focus,
+   at which point it slides into view at the top-left. It is a real anchor to
+   #main-content (which is focusable via tabindex="-1"), so activating it moves
+   keyboard focus into the primary content region — a WCAG 2.4.1 bypass block. */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -4rem;
+  z-index: 1000;
+  border-radius: 0.375rem;
+  background: #1e293b;
+  color: #ffffff;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 0.5rem;
+}
+
+/* Consistent, high-contrast keyboard focus indicator across every native and
+   custom control. `:focus-visible` fires only for keyboard/AT focus, so pointer
+   users never see the ring, but keyboard users always get a clear one — status
+   is never communicated by color alone. Kept out of the map canvas, which
+   manages its own interaction affordances. */
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+/* MapLibre's popup close button is an icon-only control; give it the same ring. */
+.maplibregl-popup-close-button:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 1px;
+}
+
 /* Responsive control sections.
    On small screens each section is a native <details> disclosure so the sidebar
    stays short and the map is reachable; the <summary> is the tappable label.

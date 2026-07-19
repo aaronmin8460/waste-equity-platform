@@ -509,6 +509,23 @@ describe("LandfillDashboard", () => {
     expect(screen.queryAllByTestId("landfill-region-row")).toHaveLength(0);
   });
 
+  it("is the skip-link target and announces loaded results via a status region", () => {
+    renderDashboard();
+    // Skip-link target for the flow view.
+    const main = screen.getByTestId("landfill-dashboard");
+    expect(main.getAttribute("id")).toBe("main-content");
+    expect(main.getAttribute("tabindex")).toBe("-1");
+    // A concise status live region announces the loaded period + total quantity.
+    const live = screen.getByTestId("landfill-live");
+    expect(live.getAttribute("role")).toBe("status");
+    expect(live.textContent).toContain("총 반입량");
+  });
+
+  it("marks the loading state as a status live region", () => {
+    renderDashboard({ data: null });
+    expect(screen.getByTestId("landfill-loading").getAttribute("role")).toBe("status");
+  });
+
   it("calls the filter setters when a filter changes", () => {
     const setOrigin = vi.fn();
     const setWaste = vi.fn();

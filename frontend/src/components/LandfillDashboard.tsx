@@ -95,6 +95,9 @@ export default function LandfillDashboard({
 
   return (
     <main
+      // Skip-link target for this view (see layout.tsx / globals.css .skip-link).
+      id="main-content"
+      tabIndex={-1}
       // min-h-screen precedes min-h-dvh as a static-viewport fallback: engines
       // without dvh support drop the invalid min-height:100dvh and keep 100vh.
       className="min-h-screen min-h-dvh w-full bg-slate-100 px-4 py-6 sm:px-6 lg:px-8"
@@ -148,7 +151,7 @@ export default function LandfillDashboard({
         )}
 
         {data === null && error === null && (
-          <p className="text-sm text-slate-600" data-testid="landfill-loading">
+          <p className="text-sm text-slate-600" data-testid="landfill-loading" role="status">
             공식 반입 데이터를 불러오는 중… (Loading official inbound data…)
           </p>
         )}
@@ -285,6 +288,12 @@ function LandfillBody({ data }: { data: LandfillDashboardData }) {
 
   return (
     <>
+      {/* Screen-reader status announced when a filter change loads new official
+          values (the period + total-quantity text changes). Concise, so switching
+          filters does not produce a verbose read-out. */}
+      <p role="status" className="sr-only" data-testid="landfill-live">
+        {periodLabel} 반입 자료를 표시합니다. 총 반입량 {formatTons(summary.total_quantity_kg)}.
+      </p>
       <p className="text-xs text-slate-500">
         기준 기간: <span className="font-medium text-slate-700">{periodLabel}</span>
         {!period.is_complete_year && (
