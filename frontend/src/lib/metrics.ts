@@ -244,6 +244,14 @@ export const NO_DATA_COLOR = "#d9d9d9";
 export const CANDIDATE_REVIEW_COLOR = "#e8a33d";
 export const CANDIDATE_EXCLUDED_COLOR = "#9aa2ad";
 
+/**
+ * Outline color for STABLE eligible candidates (stable across baseline/equal/
+ * critic). A strong, saturated magenta that stays distinguishable from the amber
+ * review dashed outline, the blue selected-candidate highlight, and the grey base
+ * boundaries. Stability is always also labelled with text — never color alone.
+ */
+export const CANDIDATE_STABLE_OUTLINE_COLOR = "#d81b60";
+
 /** Resolve the explicit classification policy for a metric. */
 export function scaleConfigForMetric(metric: MetricDefinition): ChoroplethScaleConfig {
   if (metric.dataset === "facility-burden") {

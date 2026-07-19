@@ -82,10 +82,24 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByRole("radio").first()).toBeVisible();
       await expectNoHorizontalOverflow(page);
 
-      // 적합성 점수 (suitability score) — map + summary.
+      // 적합성 점수 (suitability score) — map + summary + CRITIC/stability.
       await page.getByTestId("mode-suitability").click();
       await expect(page.getByTestId("suitability-summary")).toBeVisible();
       await expect(page.getByTestId("map-container")).toBeVisible();
+      // CRITIC data-derived profile is offered (the mocked run computed it) and
+      // the weight-sensitivity stability summary + counts render.
+      await expect(page.getByTestId("profile-radio-critic")).toBeVisible();
+      await expect(page.getByTestId("stability-summary")).toBeVisible();
+      await expect(page.getByTestId("stability-counts")).toContainText("62");
+      // Selecting CRITIC is a profile round-trip (it re-points the map's immutable
+      // critic vector tiles); the radio reflects the new selection.
+      await page.getByTestId("profile-radio-critic").check();
+      await expect(page.getByTestId("profile-radio-critic")).toBeChecked();
+      await page.getByTestId("profile-radio-baseline").check();
+      // The stable-only map toggle is an accessible native checkbox in the floating
+      // legend (collapsed behind a summary on mobile, force-open at md+), so assert
+      // it is present rather than visible across every viewport in this tour.
+      await expect(page.getByTestId("stable-only-toggle")).toBeAttached();
       await expectNoHorizontalOverflow(page);
 
       // 비용 렌즈 (cost lens) — a full-width dashboard, no map, calculate, results.

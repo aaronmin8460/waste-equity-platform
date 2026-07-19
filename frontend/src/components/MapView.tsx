@@ -30,13 +30,14 @@ import {
   CANDIDATE_EXCLUDED_COLOR,
   CANDIDATE_REVIEW_COLOR,
   CANDIDATE_SCORE_PALETTE_5,
+  CANDIDATE_STABLE_OUTLINE_COLOR,
   FACILITY_CATEGORY_COLORS,
   FACILITY_CATEGORY_LABELS,
   NO_DATA_COLOR,
   formatQuantity,
 } from "../lib/metrics";
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
-import { geometryBounds, isDegenerateBounds } from "../lib/suitability";
+import { geometryBounds, isDegenerateBounds, stabilityBadgeLabel } from "../lib/suitability";
 
 /**
  * The modes that actually render a map. The 수도권매립지 dashboard mode is not
@@ -58,7 +59,11 @@ const OSM_MAX_ZOOM = 19;
 // dataset into viewport-sized pieces (a z14 tile ≈ 2–3 km, tens of 500 m cells).
 const CANDIDATE_TILE_MAX_ZOOM = 14;
 
-const CANDIDATE_LAYER_IDS = ["candidates-fill", "candidates-review-outline"];
+const CANDIDATE_LAYER_IDS = [
+  "candidates-fill",
+  "candidates-review-outline",
+  "candidates-stable-outline",
+];
 
 const BASE_STYLE: maplibregl.StyleSpecification = {
   version: 8,
@@ -84,6 +89,7 @@ const SMA_BOUNDS: [[number, number], [number, number]] = [
 // (MapLegendOverlay) can never diverge.
 const EXCLUDED_COLOR = CANDIDATE_EXCLUDED_COLOR;
 const REVIEW_COLOR = CANDIDATE_REVIEW_COLOR;
+const STABLE_OUTLINE_COLOR = CANDIDATE_STABLE_OUTLINE_COLOR;
 const SELECTED_FILL_COLOR = "#2563eb";
 const SELECTED_OUTLINE_COLOR = "#1d4ed8";
 
@@ -138,6 +144,13 @@ interface MapViewProps {
   /** Stable interior score thresholds for the candidate palette (never per-viewport). */
   candidateBreaks: readonly number[];
   statusVisibility: StatusVisibility;
+  /**
+   * When true, ELIGIBLE cells are restricted to weight-stable ones (stable_count
+   * = 3); REVIEW_REQUIRED/EXCLUDED remain governed by statusVisibility. Independent
+   * of the canonical status filter — never reclassifies review/excluded as
+   * unstable. STABLE eligible cells always receive a distinct outline regardless.
+   */
+  stableOnly: boolean;
   /** Currently-selected candidate (list or map). Drives highlight + map movement. */
   selectedCandidate: CandidateDetail | null;
   onCandidateClick: (candidateId: number) => void;
@@ -215,9 +228,37 @@ const CANDIDATE_OPACITY: maplibregl.ExpressionSpecification = [
   0.8,
 ] as unknown as maplibregl.ExpressionSpecification;
 
-function statusFilter(visibility: StatusVisibility): maplibregl.FilterSpecification {
+// Candidate fill filter. The canonical statusVisibility state is always honored;
+// `stableOnly` is an independent, additive restriction that limits ELIGIBLE cells
+// to weight-stable ones (stable_count = 3) without touching how REVIEW_REQUIRED /
+// EXCLUDED are governed — those never get reclassified as "unstable".
+function candidateFillFilter(
+  visibility: StatusVisibility,
+  stableOnly: boolean,
+): maplibregl.FilterSpecification {
   const visible = (Object.keys(visibility) as SuitabilityStatus[]).filter((s) => visibility[s]);
-  return ["in", ["get", "status"], ["literal", visible]] as unknown as maplibregl.FilterSpecification;
+  const statusIn = ["in", ["get", "status"], ["literal", visible]];
+  if (!stableOnly) {
+    return statusIn as unknown as maplibregl.FilterSpecification;
+  }
+  return [
+    "all",
+    statusIn,
+    ["any", ["!=", ["get", "status"], "ELIGIBLE"], ["==", ["get", "stable_count"], 3]],
+  ] as unknown as maplibregl.FilterSpecification;
+}
+
+// Distinct outline for STABLE eligible cells, shown whenever ELIGIBLE cells are
+// visible (independent of stableOnly). Matches nothing when ELIGIBLE is hidden.
+function stableOutlineFilter(visibility: StatusVisibility): maplibregl.FilterSpecification {
+  if (!visibility.ELIGIBLE) {
+    return ["==", ["get", "status"], "__none__"] as unknown as maplibregl.FilterSpecification;
+  }
+  return [
+    "all",
+    ["==", ["get", "status"], "ELIGIBLE"],
+    ["==", ["get", "stable_count"], 3],
+  ] as unknown as maplibregl.FilterSpecification;
 }
 
 /**
@@ -264,6 +305,17 @@ function candidateScoreDisplay(props: Record<string, unknown>): string {
   return "-";
 }
 
+// Concise stability line for the map popup. Only ELIGIBLE candidates carry a
+// stable_count; review/excluded (and old runs) show nothing here.
+function candidateStabilityDisplay(props: Record<string, unknown>): string {
+  if (props.status !== "ELIGIBLE" || props.stable_count == null) return "";
+  const label = stabilityBadgeLabel(
+    props.stability_class == null ? null : String(props.stability_class),
+    Number(props.stable_count),
+  );
+  return label ? `<br/>안정성(stability): ${label}` : "";
+}
+
 export default function MapView({
   boundaries,
   regionValues,
@@ -278,6 +330,7 @@ export default function MapView({
   candidateTileUrl,
   candidateBreaks,
   statusVisibility,
+  stableOnly,
   selectedCandidate,
   onCandidateClick,
   ariaLabel,
@@ -363,8 +416,9 @@ export default function MapView({
         .setLngLat(event.lngLat)
         .setHTML(
           `<strong>후보지 ${props.candidate_key}</strong><br/>` +
-            `상태(status): ${props.status}<br/>적합성 점수: ${candidateScoreDisplay(props)}<br/>` +
-            `시군구: ${props.sigungu_region_name ?? ""}<br/>` +
+            `상태(status): ${props.status}<br/>적합성 점수: ${candidateScoreDisplay(props)}` +
+            candidateStabilityDisplay(props) +
+            `<br/>시군구: ${props.sigungu_region_name ?? ""}<br/>` +
             `<small>분석 스크리닝 결과 — 법적 판정이 아님. 상세 근거는 좌측 패널 참조</small>`,
         )
         .addTo(map);
@@ -609,6 +663,18 @@ export default function MapView({
           filter: ["==", ["get", "status"], "REVIEW_REQUIRED"],
           paint: { "line-color": "#b45309", "line-width": 0.9, "line-dasharray": [2, 1.5] },
         });
+        // Distinct solid outline for STABLE eligible cells (stable across
+        // baseline/equal/critic). Strong, saturated, solid — distinguishable from
+        // the dashed amber review outline and the blue selected highlight. The
+        // selected-candidate highlight is added later, so it stays visually on top.
+        map.addLayer({
+          id: "candidates-stable-outline",
+          type: "line",
+          source: "candidates",
+          "source-layer": SUITABILITY_TILE_SOURCE_LAYER,
+          filter: stableOutlineFilter(statusVisibility),
+          paint: { "line-color": STABLE_OUTLINE_COLOR, "line-width": 1.8 },
+        });
       };
       const removeCandidateSource = () => {
         for (const id of CANDIDATE_LAYER_IDS) {
@@ -635,7 +701,10 @@ export default function MapView({
           "fill-color",
           candidateColorExpression(candidateBreaks),
         );
-        map.setFilter("candidates-fill", statusFilter(statusVisibility));
+        map.setFilter("candidates-fill", candidateFillFilter(statusVisibility, stableOnly));
+        if (map.getLayer("candidates-stable-outline")) {
+          map.setFilter("candidates-stable-outline", stableOutlineFilter(statusVisibility));
+        }
       } else {
         // No run to render (e.g. equity mode): ensure the refresh indicator can
         // never remain visible outside suitability.
@@ -691,6 +760,13 @@ export default function MapView({
           suitability ? "visible" : "none",
         );
       }
+      if (map.getLayer("candidates-stable-outline")) {
+        map.setLayoutProperty(
+          "candidates-stable-outline",
+          "visibility",
+          suitability ? "visible" : "none",
+        );
+      }
       map.setLayoutProperty(
         "facilities-points",
         "visibility",
@@ -720,6 +796,7 @@ export default function MapView({
     candidateTileUrl,
     candidateBreaks,
     statusVisibility,
+    stableOnly,
   ]);
 
   // Close any pinned region popup when the active metric (label/unit/reference

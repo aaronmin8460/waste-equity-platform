@@ -33,6 +33,9 @@ const fixtures = vi.hoisted(() => ({
     rank: 1,
     total_score: "83.5",
     sigungu: "강화군",
+    stable_count: 3,
+    stability_class: "STABLE",
+    stability_membership: { baseline: true, equal: true, critic: true },
     zoning_score: "90",
     road_score: "70",
     equity_score: "80",
@@ -58,11 +61,14 @@ const fixtures = vi.hoisted(() => ({
     sigungu_region_code: null,
     sigungu_region_name: "강화군",
     nearest_road_distance_m: "120",
+    stable_count: 3,
+    stability_class: "STABLE",
+    stability_membership: { baseline: true, equal: true, critic: true },
     exclusion_reasons: [],
     review_reasons: [],
     run_id: 47,
-    profile_totals: {},
-    profile_ranks: {},
+    profile_totals: { baseline: "83.5", equal: "80.0", critic: "82.1" },
+    profile_ranks: { baseline: 1, equal: 2, critic: 1 },
     penalties: [],
     raw_components: {},
     nearest_road_provenance: {},
@@ -72,10 +78,10 @@ const fixtures = vi.hoisted(() => ({
     clipped_area_ratio: "1",
     geometry: { type: "Point", coordinates: [126.4, 37.7] },
     reference_year: 2024,
-    policy_version: "suitability-policy-v1",
-    derivation_version: "suitability-screening-v1",
+    policy_version: "suitability-policy-v2",
+    derivation_version: "suitability-screening-v3",
     candidate_grid_version: "capital-grid-500m-v1",
-    weights: {},
+    weights: { zoning: "0.4", road: "0.3", equity: "0.2", demand: "0.1" },
     disclaimer: "분석용 스크리닝 결과이며 법적 결정이 아닙니다.",
   },
 }));
@@ -347,5 +353,48 @@ describe("suitability accessible alternatives", () => {
     await waitFor(() => expect(screen.getByTestId("candidate-detail")).toBeDefined());
     expect(screen.getByTestId("top-candidate-selected")).toBeDefined();
     expect(screen.getByTestId("top-candidate-item").getAttribute("aria-current")).toBe("true");
+  });
+});
+
+describe("CRITIC + weight-sensitivity stability", () => {
+  it("renders the CRITIC profile option only when the run computed it (default stays baseline)", async () => {
+    await renderLoaded();
+    await enterSuitability();
+    // baseline is selected by default.
+    expect((screen.getByTestId("profile-radio-baseline") as HTMLInputElement).checked).toBe(true);
+    // The CRITIC option renders (the mocked run carries a critic vector) with its
+    // actual run-specific Z/R/E/D weights and its data-derived methodology note.
+    const criticRadio = screen.getByTestId("profile-radio-critic");
+    expect(criticRadio).toBeDefined();
+    const note = screen.getByTestId("critic-method-note");
+    expect(note.textContent).toContain("CRITIC 데이터 기반 가중치");
+    expect(note.textContent).toContain("0.31"); // actual run critic weight
+  });
+
+  it("shows the stability summary counts and the sensitivity disclaimer", async () => {
+    await renderLoaded();
+    await enterSuitability();
+    const counts = screen.getByTestId("stability-counts");
+    expect(counts.textContent).toContain("62"); // stable
+    expect(counts.textContent).toContain("140"); // conditionally stable
+    expect(counts.textContent).toContain("897"); // weight sensitive
+    expect(screen.getByTestId("stability-summary").textContent).toContain(
+      "최종 입지, 허가 가능성 또는 법적 적격성을 의미하지 않습니다",
+    );
+  });
+
+  it("shows a text stability badge on the top candidate and in the detail panel", async () => {
+    await renderLoaded();
+    await enterSuitability();
+    // The badge is text-first ("안정 후보 3/3"), never color alone.
+    expect(screen.getAllByTestId("stability-badge")[0].textContent).toContain("안정 후보 3/3");
+    fireEvent.click(screen.getByTestId("top-candidate-item"));
+    await waitFor(() => expect(screen.getByTestId("candidate-detail")).toBeDefined());
+    const stability = screen.getByTestId("candidate-stability");
+    // baseline/equal/critic membership is shown.
+    expect(stability.textContent).toContain("baseline");
+    expect(stability.textContent).toContain("critic");
+    // The sensitivity list includes critic automatically.
+    expect(screen.getByTestId("candidate-sensitivity").textContent).toContain("critic");
   });
 });

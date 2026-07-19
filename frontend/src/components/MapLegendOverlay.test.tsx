@@ -57,6 +57,11 @@ const SCORE_CLASSES = [
 function renderSuitability(
   statusVisibility: StatusVisibility,
   onToggleStatus: (s: SuitabilityStatus) => void,
+  extra: {
+    stabilityAvailable?: boolean;
+    stableOnly?: boolean;
+    onToggleStableOnly?: () => void;
+  } = {},
 ) {
   return render(
     <MapLegendOverlay
@@ -68,6 +73,10 @@ function renderSuitability(
       statusVisibility={statusVisibility}
       onToggleStatus={onToggleStatus}
       statusLabels={STATUS_LABELS}
+      stabilityAvailable={extra.stabilityAvailable ?? true}
+      stableOnly={extra.stableOnly ?? false}
+      onToggleStableOnly={extra.onToggleStableOnly ?? (() => undefined)}
+      stableOutlineColor="#d81b60"
       disclaimer="분석용 스크리닝이며 법적 입지 결정이 아닙니다."
     />,
   );
@@ -154,6 +163,29 @@ describe("suitability legend + status filter", () => {
     expect(screen.getByTestId("suitability-legend-note").textContent).toContain(
       "법적 입지 결정이 아닙니다",
     );
+  });
+
+  it("renders an accessible stable-only checkbox and calls its handler", () => {
+    const onToggleStableOnly = vi.fn();
+    renderSuitability({ ELIGIBLE: true, REVIEW_REQUIRED: true, EXCLUDED: false }, () => undefined, {
+      stabilityAvailable: true,
+      onToggleStableOnly,
+    });
+    const box = screen.getByTestId("stable-only-toggle") as HTMLInputElement;
+    expect(box.tagName).toBe("INPUT");
+    expect(box.getAttribute("type")).toBe("checkbox");
+    // The stable outline is explained with text, not color alone.
+    expect(screen.getByTestId("stability-legend-note").textContent).toContain("안정 후보");
+    fireEvent.click(box);
+    expect(onToggleStableOnly).toHaveBeenCalled();
+  });
+
+  it("hides the stability control when the run has no stability data", () => {
+    renderSuitability({ ELIGIBLE: true, REVIEW_REQUIRED: true, EXCLUDED: false }, () => undefined, {
+      stabilityAvailable: false,
+    });
+    expect(screen.queryByTestId("stability-legend")).toBeNull();
+    expect(screen.queryByTestId("stable-only-toggle")).toBeNull();
   });
 });
 

@@ -88,3 +88,28 @@ export function classifyEquityRaw(
   if (raw == null) return null;
   return Number(raw) === 0 ? "OFFICIAL_ZERO" : "MEASURED_VALUE";
 }
+
+/**
+ * Text-first stability badge label for a candidate. Never communicates stability
+ * by color alone — the returned string always carries the count and meaning.
+ * Returns null for candidates that are not stability-classified (REVIEW_REQUIRED,
+ * EXCLUDED, or a run without stability data), so the caller shows no badge.
+ */
+export type StabilityBadgeClass = "STABLE" | "CONDITIONALLY_STABLE" | "WEIGHT_SENSITIVE";
+
+export function stabilityBadgeLabel(
+  stabilityClass: string | null | undefined,
+  stableCount: number | null | undefined,
+): string | null {
+  if (stabilityClass == null || stableCount == null) return null;
+  switch (stabilityClass) {
+    case "STABLE":
+      return "안정 후보 3/3";
+    case "CONDITIONALLY_STABLE":
+      return "조건부 안정 2/3";
+    case "WEIGHT_SENSITIVE":
+      return "가중치 민감 0–1/3";
+    default:
+      return null;
+  }
+}

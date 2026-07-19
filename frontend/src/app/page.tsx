@@ -19,6 +19,7 @@ import dynamic from "next/dynamic";
 
 import {
   ApiError,
+  availableProfiles,
   fetchBoundaries,
   fetchDataSources,
   fetchFacilities,
@@ -36,6 +37,7 @@ import {
   fetchSuitabilitySummary,
   fetchWastePerCapita,
   fetchWasteStatistics,
+  hasCriticStability,
   suitabilityTileUrl,
   type CandidateDetail,
   type DataSourceItem,
@@ -61,6 +63,7 @@ import {
   CANDIDATE_REVIEW_COLOR,
   CANDIDATE_SCORE_BREAKS,
   CANDIDATE_SCORE_PALETTE_5,
+  CANDIDATE_STABLE_OUTLINE_COLOR,
   METRIC_GROUPS,
   METRICS,
   NO_DATA_COLOR,
@@ -84,7 +87,7 @@ import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import MapLegendOverlay from "../components/MapLegendOverlay";
-import { classifyEquityRaw, topCandidateCellLabel } from "../lib/suitability";
+import { classifyEquityRaw, stabilityBadgeLabel, topCandidateCellLabel } from "../lib/suitability";
 
 /** Sub-view inside suitability mode: the score screening, or the cost lens. */
 type SuitabilityView = "score" | "cost";
@@ -98,12 +101,21 @@ const MapView = dynamic(() => import("../components/MapView"), { ssr: false });
  */
 type DashboardMode = MapMode | "flow";
 
-const PROFILES: { key: SuitabilityProfile; label: string }[] = [
-  { key: "baseline", label: "기본 (baseline)" },
-  { key: "equal", label: "균등 (equal)" },
-  { key: "equity_focused", label: "형평성 중심 (equity)" },
-  { key: "access_focused", label: "접근성 중심 (access)" },
+const PROFILES: { key: SuitabilityProfile; label: string; method: string }[] = [
+  { key: "baseline", label: "기본 (baseline)", method: "운영 기본 가정 — 전문가 AHP 산출값이 아님" },
+  { key: "equal", label: "균등 (equal)", method: "균등 비교 가정" },
+  { key: "equity_focused", label: "형평성 중심 (equity)", method: "형평성 민감도 비교 가정" },
+  { key: "access_focused", label: "접근성 중심 (access)", method: "접근성 민감도 비교 가정" },
+  {
+    key: "critic",
+    label: "CRITIC 데이터 기반 (critic)",
+    method: "현재 실행의 후보 점수 분산·상관관계로 계산된 데이터 기반 가중치",
+  },
 ];
+
+// Old runs that predate CRITIC/stability carry no such results.
+const OLD_RUN_NO_CRITIC_MESSAGE =
+  "현재 분석 실행에는 CRITIC/안정성 결과가 없습니다. 새 버전의 분석 실행이 필요합니다.";
 
 const STATUS_LABELS: Record<SuitabilityStatus, string> = {
   ELIGIBLE: "적합 (eligible)",
@@ -165,6 +177,9 @@ export default function Home() {
     REVIEW_REQUIRED: true,
     EXCLUDED: false,
   });
+  // Stable-only map display — a SEPARATE state from the canonical statusVisibility,
+  // so it never alters the status filters or reclassifies review/excluded cells.
+  const [stableOnly, setStableOnly] = useState(false);
 
   const load = useCallback(() => {
     Promise.all([
@@ -351,6 +366,16 @@ export default function Home() {
     () => (mode === "suitability" && suit ? suitabilityTileUrl(suit.run.id, profile) : null),
     [mode, suit, profile],
   );
+
+  // Whether the selected run carries run-specific CRITIC + stability results.
+  const stabilityAvailable = mode === "suitability" && hasCriticStability(suit?.run);
+  // The profile options offered for the selected run (critic only when computed).
+  // The profile selector only renders these options, so the active profile is
+  // always one the run supports — no read ever requests an unavailable profile.
+  const runProfiles = useMemo(() => availableProfiles(suit?.run), [suit?.run]);
+
+  // Stable-only display toggle (independent of statusVisibility).
+  const toggleStableOnly = useCallback(() => setStableOnly((prev) => !prev), []);
 
   const metric = METRICS.find((candidate) => candidate.key === metricKey) ?? METRICS[0];
 
@@ -860,6 +885,8 @@ export default function Home() {
               suitError={suitError}
               profile={profile}
               setProfile={setProfile}
+              runProfiles={runProfiles}
+              stabilityAvailable={stabilityAvailable}
               selected={selected}
               clearSelected={() => setSelected(null)}
               onSelect={onCandidateClick}
@@ -896,6 +923,7 @@ export default function Home() {
           candidateTileUrl={candidateTileUrl}
           candidateBreaks={CANDIDATE_SCORE_BREAKS}
           statusVisibility={statusVisibility}
+          stableOnly={stableOnly && stabilityAvailable}
           selectedCandidate={selected}
           onCandidateClick={onCandidateClick}
           ariaLabel={
@@ -934,6 +962,10 @@ export default function Home() {
             statusVisibility={statusVisibility}
             onToggleStatus={toggleStatus}
             statusLabels={STATUS_LABELS}
+            stabilityAvailable={stabilityAvailable}
+            stableOnly={stableOnly}
+            onToggleStableOnly={toggleStableOnly}
+            stableOutlineColor={CANDIDATE_STABLE_OUTLINE_COLOR}
             disclaimer="분석용 스크리닝이며 법적 입지 결정이 아닙니다."
           />
         )}
@@ -1199,11 +1231,120 @@ function RegionSummary({
 // Suitability panel
 // --------------------------------------------------------------------------- //
 
+// Text-first stability badge. Stability is always conveyed by the label text (the
+// count and meaning), with color only as a secondary cue — never color alone.
+function StabilityBadge({
+  stabilityClass,
+  stableCount,
+}: {
+  stabilityClass: string;
+  stableCount: number;
+}) {
+  const label = stabilityBadgeLabel(stabilityClass, stableCount);
+  if (label === null) return null;
+  const styles: Record<string, string> = {
+    STABLE: "border-pink-600 bg-pink-50 text-pink-800",
+    CONDITIONALLY_STABLE: "border-amber-500 bg-amber-50 text-amber-800",
+    WEIGHT_SENSITIVE: "border-slate-400 bg-slate-100 text-slate-600",
+  };
+  return (
+    <span
+      data-testid="stability-badge"
+      className={`inline-block rounded border px-1 text-[10px] font-semibold ${
+        styles[stabilityClass] ?? styles.WEIGHT_SENSITIVE
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
+// Run-specific CRITIC methodology note: candidate population, method version, the
+// actual Z/R/E/D weights, any zero-variance criteria, and the mandatory disclaimer.
+function CriticMethodNote({ run }: { run: SuitabilityRun }) {
+  const w = run.weight_profiles.critic;
+  if (!w) return null;
+  const deriv = run.weight_derivation as Record<string, unknown>;
+  const pop = deriv.population_candidate_count;
+  const methodVersion = deriv.method_version;
+  const zeroVar = (deriv.zero_variance_criteria as string[] | undefined) ?? [];
+  return (
+    <div
+      className="mt-2 rounded border border-sky-200 bg-sky-50 p-2 text-[11px] text-slate-600"
+      data-testid="critic-method-note"
+    >
+      <p className="font-medium text-slate-700">CRITIC 데이터 기반 가중치</p>
+      <p className="mt-0.5">
+        방법: CRITIC{methodVersion ? ` (${String(methodVersion)})` : ""} · 대상 후보{" "}
+        {pop != null ? formatCount(Number(pop)) : "-"}개 (완전한 ELIGIBLE 후보)
+      </p>
+      <p className="mt-0.5 tabular-nums">
+        가중치: Z {w.zoning} · R {w.road} · E {w.equity} · D {w.demand}
+      </p>
+      {zeroVar.length > 0 && (
+        <p className="mt-0.5" data-testid="critic-zero-variance">
+          분산 0(정보 없음)으로 가중치 0인 기준: {zeroVar.join(", ")}
+        </p>
+      )}
+      <p className="mt-0.5">
+        가중치는 이 실행의 완전한 ELIGIBLE 후보 점수의 분산·상관관계로 계산되며, 조닝/도로/형평성/수요의
+        규범적 중요도가 아닌 선택된 데이터·분석 범위의 구조를 나타냅니다. 전문가 판단·법적 우선순위·보편적
+        정책 중요도가 아닙니다.
+      </p>
+    </div>
+  );
+}
+
+// Weight-sensitivity stability summary: stable/conditional/sensitive counts, the
+// top-10% cutoff, the three compared profiles, and the sensitivity disclaimer.
+function StabilitySummary({ summary }: { summary: SuitabilitySummary }) {
+  return (
+    <section
+      className="rounded border border-slate-300 bg-slate-50 p-3 text-xs text-slate-700"
+      data-testid="stability-summary"
+    >
+      <h2 className="mb-1 text-sm font-semibold text-slate-800">
+        가중치 민감도 안정성 (Weight sensitivity)
+      </h2>
+      <dl className="space-y-0.5" data-testid="stability-counts">
+        <div>
+          <dt className="inline font-medium">안정 후보: </dt>
+          <dd className="inline">{formatCount(summary.candidate_count_stable)}</dd>
+        </div>
+        <div>
+          <dt className="inline font-medium">조건부 안정 후보: </dt>
+          <dd className="inline">{formatCount(summary.candidate_count_conditionally_stable)}</dd>
+        </div>
+        <div>
+          <dt className="inline font-medium">가중치 민감 후보: </dt>
+          <dd className="inline">{formatCount(summary.candidate_count_weight_sensitive)}</dd>
+        </div>
+        <div>
+          <dt className="inline font-medium">상위 기준: </dt>
+          <dd className="inline">
+            상위 10%, rank ≤ {summary.stability_top_cutoff_rank ?? "-"}
+          </dd>
+        </div>
+        <div>
+          <dt className="inline font-medium">비교 방식: </dt>
+          <dd className="inline">baseline / equal / critic</dd>
+        </div>
+      </dl>
+      <p className="mt-1 text-[11px] text-slate-500">
+        안정 후보는 세 비교 방식 모두에서 상위 10%에 포함된 후보입니다. 가중치 변화에 덜 민감하다는
+        뜻이며 최종 입지, 허가 가능성 또는 법적 적격성을 의미하지 않습니다.
+      </p>
+    </section>
+  );
+}
+
 function SuitabilityPanel({
   suit,
   suitError,
   profile,
   setProfile,
+  runProfiles,
+  stabilityAvailable,
   selected,
   clearSelected,
   onSelect,
@@ -1212,6 +1353,8 @@ function SuitabilityPanel({
   suitError: string | null;
   profile: SuitabilityProfile;
   setProfile: (p: SuitabilityProfile) => void;
+  runProfiles: SuitabilityProfile[];
+  stabilityAvailable: boolean;
   selected: CandidateDetail | null;
   clearSelected: () => void;
   onSelect: (id: number) => void;
@@ -1282,25 +1425,107 @@ function SuitabilityPanel({
       <section aria-label="가중치 프로파일" data-testid="profile-selector">
         <h2 className="mb-2 text-sm font-semibold text-slate-800">가중치 프로파일 (Weight profile)</h2>
         <div className="flex flex-col gap-1">
-          {PROFILES.map((p) => (
-            <label key={p.key} className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="radio"
-                name="profile"
-                checked={profile === p.key}
-                onChange={() => setProfile(p.key)}
-              />
-              <span>
-                {p.label} — Z {suit.policy.weight_profiles[p.key]?.zoning} · R{" "}
-                {suit.policy.weight_profiles[p.key]?.road} · E{" "}
-                {suit.policy.weight_profiles[p.key]?.equity} · D{" "}
-                {suit.policy.weight_profiles[p.key]?.demand}
-              </span>
-            </label>
-          ))}
+          {PROFILES.filter((p) => runProfiles.includes(p.key)).map((p) => {
+            // Display the ACTUAL run weights (run-specific for critic), falling back
+            // to the policy static weights only for a pre-CRITIC run whose stored
+            // weight_profiles were never populated. Never a fixed critic constant.
+            const w =
+              (suit.run.weight_profiles ?? {})[p.key] ?? suit.policy.weight_profiles[p.key] ?? {};
+            return (
+              <label key={p.key} className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="profile"
+                  className="mt-1"
+                  checked={profile === p.key}
+                  onChange={() => setProfile(p.key)}
+                  data-testid={`profile-radio-${p.key}`}
+                />
+                <span>
+                  {p.label} — Z {w.zoning} · R {w.road} · E {w.equity} · D {w.demand}
+                  <span className="mt-0.5 block text-[11px] text-slate-500">{p.method}</span>
+                </span>
+              </label>
+            );
+          })}
         </div>
-        <p className="mt-1 text-xs text-slate-500">가중치는 가정입니다 (weights are assumptions).</p>
+        {/* Distinguish policy-assumption profiles from the CRITIC data-derived profile. */}
+        <p className="mt-1 text-xs text-slate-500">
+          baseline·equal·형평성·접근성은 <strong>정책 가정</strong> 가중치(고정)이며 전문가 AHP
+          산출값이 아닙니다. CRITIC은 현재 실행의 후보 점수 구조에서 <strong>데이터로 계산된</strong>{" "}
+          실행별 가중치입니다.
+        </p>
+        {stabilityAvailable ? (
+          <CriticMethodNote run={suit.run} />
+        ) : (
+          <p
+            className="mt-1 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-slate-600"
+            data-testid="critic-unavailable"
+          >
+            {OLD_RUN_NO_CRITIC_MESSAGE}
+          </p>
+        )}
       </section>
+
+      {stabilityAvailable ? (
+        <StabilitySummary summary={s} />
+      ) : (
+        <section
+          className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"
+          data-testid="stability-unavailable"
+        >
+          <h2 className="mb-1 text-sm font-semibold text-slate-800">
+            가중치 민감도 안정성 (Weight sensitivity)
+          </h2>
+          <p>{OLD_RUN_NO_CRITIC_MESSAGE}</p>
+        </section>
+      )}
+
+      {stabilityAvailable && s.top_stable_candidates.length > 0 && (
+        <section aria-label="안정 후보" data-testid="stable-candidates">
+          <h2 className="mb-2 text-sm font-semibold text-slate-800">
+            안정 후보 (Stable across baseline / equal / CRITIC)
+          </h2>
+          <ol className="flex flex-col gap-1 text-xs text-slate-700">
+            {s.top_stable_candidates.map((c) => {
+              const isSelected = selected?.candidate_id === Number(c.candidate_id);
+              return (
+                <li key={String(c.candidate_id)}>
+                  <button
+                    type="button"
+                    aria-current={isSelected ? "true" : undefined}
+                    onClick={() => onSelect(Number(c.candidate_id))}
+                    className={`w-full rounded px-2 py-1 text-left ${
+                      isSelected ? "bg-sky-100 ring-2 ring-sky-500" : "bg-slate-50 hover:bg-slate-100"
+                    }`}
+                    data-testid="stable-candidate-item"
+                  >
+                    {isSelected && (
+                      <span className="mr-1 font-semibold text-sky-700">✓ 선택됨</span>
+                    )}
+                    #{String(c.rank)} · {String(c.total_score)} · {String(c.sigungu ?? "")}{" "}
+                    <StabilityBadge
+                      stabilityClass={String(c.stability_class)}
+                      stableCount={Number(c.stable_count)}
+                    />
+                    <span className="text-slate-400">
+                      {" "}
+                      (Z {String(c.zoning_score)} R {String(c.road_score)} E {String(c.equity_score)}{" "}
+                      D {String(c.demand_score)})
+                    </span>
+                    <span
+                      className="mt-0.5 block font-mono text-[11px] break-all text-slate-500"
+                      data-testid="stable-candidate-cell"
+                    >
+                      {topCandidateCellLabel(c)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      )}
 
       {/* The status filter + score legend now float over the map (MapLegendOverlay);
           they are no longer duplicated in this panel. The map's candidate layer and
@@ -1336,6 +1561,12 @@ function SuitabilityPanel({
                     </span>
                   )}
                   #{String(c.rank)} · {String(c.total_score)} · {String(c.sigungu ?? "")}{" "}
+                  {c.stability_class != null && c.stable_count != null && (
+                    <StabilityBadge
+                      stabilityClass={String(c.stability_class)}
+                      stableCount={Number(c.stable_count)}
+                    />
+                  )}
                   <span className="text-slate-400">
                     (Z {String(c.zoning_score)} R {String(c.road_score)} E {String(c.equity_score)} D{" "}
                     {String(c.demand_score)})
@@ -1474,6 +1705,10 @@ function CandidateDetailPanel({
               </>
             )}
           </p>
+          <p className="mt-1 tabular-nums" data-testid="candidate-selected-weights">
+            선택 프로파일 <strong>{detail.profile}</strong> — 가중치 Z {detail.weights.zoning} · R{" "}
+            {detail.weights.road} · E {detail.weights.equity} · D {detail.weights.demand}
+          </p>
           <table className="mt-1 w-full text-left">
             <tbody>
               <tr>
@@ -1558,6 +1793,32 @@ function CandidateDetailPanel({
               ))}
             </ul>
           </div>
+          {detail.status === "ELIGIBLE" && detail.stable_count != null ? (
+            <div className="mt-2" data-testid="candidate-stability">
+              <p className="font-medium">
+                가중치 민감도 안정성:{" "}
+                <StabilityBadge
+                  stabilityClass={String(detail.stability_class)}
+                  stableCount={detail.stable_count}
+                />
+              </p>
+              <ul className="pl-2">
+                {["baseline", "equal", "critic"].map((p) => (
+                  <li key={p}>
+                    {p}: {detail.stability_membership[p] ? "상위 10% 포함" : "미포함"}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                안정성은 세 비교 방식(baseline·equal·critic) 상위 10% 포함 여부를 나타내는 민감도
+                지표이며, 최종 입지·허가·법적 적격성을 의미하지 않습니다.
+              </p>
+            </div>
+          ) : (
+            <p className="mt-2 text-[11px] text-slate-500" data-testid="candidate-stability-na">
+              안정성 평가 대상 아님 (ELIGIBLE 후보만 평가)
+            </p>
+          )}
         </>
       )}
       <p className="mt-2 text-slate-500">{detail.disclaimer}</p>

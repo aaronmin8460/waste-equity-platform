@@ -73,6 +73,17 @@ interface SuitabilityLegendProps {
   onToggleStatus: (status: SuitabilityStatus) => void;
   /** Bilingual labels for each status. */
   statusLabels: Record<SuitabilityStatus, string>;
+  /**
+   * Whether the selected run carries CRITIC/stability results. When false, the
+   * stability control + outline legend are hidden (an old run has no stable data).
+   */
+  stabilityAvailable: boolean;
+  /** Stable-only display state (independent of statusVisibility). */
+  stableOnly: boolean;
+  /** Flip the stable-only restriction. */
+  onToggleStableOnly: () => void;
+  /** Outline color for STABLE eligible cells (matches the map's stable outline). */
+  stableOutlineColor: string;
   /** Concise analytical-screening disclaimer. */
   disclaimer: string;
 }
@@ -168,6 +179,10 @@ function SuitabilityLegend({
   statusVisibility,
   onToggleStatus,
   statusLabels,
+  stabilityAvailable,
+  stableOnly,
+  onToggleStableOnly,
+  stableOutlineColor,
   disclaimer,
 }: SuitabilityLegendProps) {
   // The status → representative swatch color, matching the candidate fill: eligible
@@ -205,6 +220,32 @@ function SuitabilityLegend({
           </label>
         ))}
       </div>
+
+      {/* Weight-sensitivity stability control + outline sample (only for a run that
+          computed CRITIC/stability). The stable-only restriction is INDEPENDENT of
+          the status checkboxes above and only limits ELIGIBLE cells. */}
+      {stabilityAvailable ? (
+        <div className="mt-2 border-t border-slate-200 pt-2" data-testid="stability-legend">
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={stableOnly}
+              onChange={onToggleStableOnly}
+              data-testid="stable-only-toggle"
+            />
+            <span
+              aria-hidden
+              className="inline-block h-4 w-6 shrink-0 rounded-sm bg-white"
+              style={{ border: `2px solid ${stableOutlineColor}` }}
+            />
+            <span>안정 후보만 보기 (eligible 안정 후보만 제한)</span>
+          </label>
+          <p className="mt-1 text-[11px] text-slate-500" data-testid="stability-legend-note">
+            안정 후보(baseline·equal·critic 상위 10% 모두 포함)는 굵은 자홍색 외곽선으로 표시됩니다.
+            검토/제외 셀은 안정성 평가 대상이 아닙니다.
+          </p>
+        </div>
+      ) : null}
 
       {/* Eligible score classes (0–100), shown with the same palette and thresholds
           the map's candidate fill uses. */}

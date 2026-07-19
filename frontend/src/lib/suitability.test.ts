@@ -4,6 +4,7 @@ import {
   classifyEquityRaw,
   geometryBounds,
   isDegenerateBounds,
+  stabilityBadgeLabel,
   topCandidateCellLabel,
 } from "./suitability";
 
@@ -127,5 +128,22 @@ describe("classifyEquityRaw (official zero vs missing)", () => {
     expect(classifyEquityRaw(undefined)).toBeNull();
     expect(classifyEquityRaw(null)).toBeNull();
     expect(classifyEquityRaw({ is_partial: false })).toBeNull();
+  });
+});
+
+describe("stabilityBadgeLabel (text-first stability badges)", () => {
+  it("labels each stability class with its count and meaning", () => {
+    expect(stabilityBadgeLabel("STABLE", 3)).toBe("안정 후보 3/3");
+    expect(stabilityBadgeLabel("CONDITIONALLY_STABLE", 2)).toBe("조건부 안정 2/3");
+    expect(stabilityBadgeLabel("WEIGHT_SENSITIVE", 1)).toBe("가중치 민감 0–1/3");
+    expect(stabilityBadgeLabel("WEIGHT_SENSITIVE", 0)).toBe("가중치 민감 0–1/3");
+  });
+
+  it("returns null for candidates that are not stability-classified", () => {
+    // review/excluded/old-run candidates carry null stability -> no badge
+    expect(stabilityBadgeLabel(null, null)).toBeNull();
+    expect(stabilityBadgeLabel("STABLE", null)).toBeNull();
+    expect(stabilityBadgeLabel(null, 3)).toBeNull();
+    expect(stabilityBadgeLabel("UNKNOWN", 3)).toBeNull();
   });
 });

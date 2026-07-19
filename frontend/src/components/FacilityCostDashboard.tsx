@@ -28,6 +28,7 @@ import {
   type FacilityCostOptions,
 } from "../lib/api";
 import { formatQuantity } from "../lib/metrics";
+import { stabilityBadgeLabel } from "../lib/suitability";
 
 const WASTE_STREAMS: { value: string; label: string }[] = [
   { value: "HOUSEHOLD", label: "생활계 폐기물 (Household)" },
@@ -988,6 +989,24 @@ function FacilityCostCandidateContext({
           {selectedCandidate.policy_version} · {selectedCandidate.candidate_grid_version}
         </p>
       )}
+      {/* Optional concise stability badge (ELIGIBLE candidates only). Cost V1 does
+          NOT vary by candidate cell, and "stable" is not legal eligibility and adds
+          no land/transport/compensation/site-specific cost — preserved as caveats. */}
+      {selectedCandidate &&
+        selectedCandidate.stable_count != null &&
+        stabilityBadgeLabel(selectedCandidate.stability_class, selectedCandidate.stable_count) && (
+          <p className="mt-1 text-slate-600" data-testid="fc-candidate-stability">
+            가중치 안정성:{" "}
+            <span className="font-semibold">
+              {stabilityBadgeLabel(
+                selectedCandidate.stability_class,
+                selectedCandidate.stable_count,
+              )}
+            </span>{" "}
+            — 민감도 지표이며 법적 적격성이 아니고, 비용 V1은 후보 셀별로 달라지지 않습니다 (토지·운송·보상
+            등 부지별 비용을 추가하지 않음).
+          </p>
+        )}
       <p className="mt-1 text-slate-600">{context.note}</p>
       <p className="mt-1 font-medium text-amber-800">{context.suitability_disclaimer}</p>
     </section>

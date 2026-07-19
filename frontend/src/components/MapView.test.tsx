@@ -201,6 +201,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof MapView>> = {}
     candidateTileUrl: BASELINE_TILE_URL,
     candidateBreaks: [20, 40, 60, 80] as readonly number[],
     statusVisibility: DEFAULT_VISIBILITY,
+    stableOnly: false,
     selectedCandidate: null as CandidateDetail | null,
     onCandidateClick: vi.fn(),
     ariaLabel: "지도",
@@ -324,6 +325,33 @@ describe("MapView suitability vector source", () => {
     const { map } = renderAndLoad(baseProps({ mode: "equity", candidateTileUrl: null }));
     expect(map.getSource("candidates")).toBeUndefined();
     expect(map.getLayer("candidates-fill")).toBeUndefined();
+  });
+
+  it("adds a distinct stable-outline layer filtered to stable ELIGIBLE cells", () => {
+    const { map } = renderAndLoad(baseProps());
+    const stable = map.getLayer("candidates-stable-outline");
+    expect(stable).toBeDefined();
+    expect(stable!["source-layer"]).toBe("candidates");
+    const filter = JSON.stringify(map.filters["candidates-stable-outline"]);
+    expect(filter).toContain("ELIGIBLE");
+    expect(filter).toContain("stable_count");
+    // The selected-candidate highlight is layered above the stable outline.
+    // (candidates-stable-outline is added with the candidate layers; the
+    //  selected-candidate layers are added later, so they stay on top.)
+  });
+
+  it("restricts ELIGIBLE cells to stable ones when stableOnly is enabled", () => {
+    const props = baseProps();
+    const { map, rerender } = renderAndLoad(props);
+    // Off: the fill filter is just the status filter (no stable_count restriction).
+    expect(JSON.stringify(map.filters["candidates-fill"])).not.toContain("stable_count");
+    rerender(<MapView {...props} stableOnly={true} />);
+    const filter = JSON.stringify(map.filters["candidates-fill"]);
+    // On: eligible cells now require stable_count == 3, while other statuses are
+    // still governed by the status filter (never reclassified as unstable).
+    expect(filter).toContain("stable_count");
+    expect(filter).toContain("ELIGIBLE");
+    expect(filter).toContain("REVIEW_REQUIRED");
   });
 });
 

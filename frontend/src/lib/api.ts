@@ -425,15 +425,32 @@ export function fetchDataSources(): Promise<DataSourceItem[]> {
 // Suitability screening (Phase 5.4) — analytical screening only, never legal.
 // --------------------------------------------------------------------------- //
 
-export type SuitabilityProfile = "baseline" | "equal" | "equity_focused" | "access_focused";
+export type SuitabilityProfile =
+  | "baseline"
+  | "equal"
+  | "equity_focused"
+  | "access_focused"
+  | "critic";
 export type SuitabilityStatus = "ELIGIBLE" | "REVIEW_REQUIRED" | "EXCLUDED";
+export type StabilityClass = "STABLE" | "CONDITIONALLY_STABLE" | "WEIGHT_SENSITIVE";
 
 export interface SuitabilityPolicy {
   policy_version: string;
   derivation_version: string;
   candidate_grid_version: string;
+  critic_method_version: string;
+  stability_method_version: string;
   statuses: string[];
+  // Static policy-assumption profiles only (critic is NOT here — it is
+  // data-derived per run and lives on the run's weight_profiles).
   weight_profiles: Record<string, Record<string, string>>;
+  static_weight_profiles: Record<string, Record<string, string>>;
+  data_derived_profiles: Record<string, Record<string, unknown>>;
+  supported_profiles: string[];
+  stability_profiles: string[];
+  stability_top_fraction: string;
+  profile_methodology: Record<string, string>;
+  default_profile: string;
   weight_rationale: Record<string, string>;
   hard_exclusion_codes: Record<string, string>;
   review_codes: Record<string, string>;
@@ -459,6 +476,10 @@ export interface SuitabilityRun {
   candidate_count_excluded: number;
   input_dataset_version_ids: number[];
   input_provenance: Record<string, unknown>;
+  // Actual run weight profiles (static + run-specific critic), {} on old runs.
+  weight_profiles: Record<string, Record<string, string>>;
+  weight_derivation: Record<string, unknown>;
+  stability_definition: Record<string, unknown>;
   started_at: string;
   completed_at: string | null;
   created_at: string;
@@ -479,6 +500,17 @@ export interface SuitabilitySummary {
   review_reason_counts: Record<string, number>;
   sido_distribution: Record<string, Record<string, number>>;
   top_candidates: Array<Record<string, unknown>>;
+  // Weight-sensitivity stability (baseline/equal/critic). Counts are 0 and the
+  // weights/definition empty for runs without CRITIC/stability data.
+  critic_weights: Record<string, string> | null;
+  stability_top_fraction: string | null;
+  stability_top_cutoff_rank: number | null;
+  candidate_count_stable: number;
+  candidate_count_conditionally_stable: number;
+  candidate_count_weight_sensitive: number;
+  top_stable_candidates: Array<Record<string, unknown>>;
+  stability_definition: Record<string, unknown>;
+  stability_available: boolean;
   coverage_notes: string[];
   assumptions: string[];
   disclaimer: string;
@@ -502,6 +534,10 @@ export interface CandidateProperties {
   sigungu_region_code: string | null;
   sigungu_region_name: string | null;
   nearest_road_distance_m: string | null;
+  // Weight-sensitivity stability (ELIGIBLE only; null/{} otherwise).
+  stable_count: number | null;
+  stability_class: StabilityClass | null;
+  stability_membership: Record<string, boolean>;
   exclusion_reasons: string[];
   review_reasons: string[];
 }
@@ -584,6 +620,7 @@ export interface CandidateQuery {
   profile: SuitabilityProfile;
   bbox?: string;
   status?: SuitabilityStatus;
+  stability_class?: StabilityClass;
   sido?: string;
   top?: number;
   limit?: number;
@@ -596,6 +633,7 @@ export function fetchSuitabilityCandidates(
   const params = new URLSearchParams({ profile: query.profile });
   if (query.bbox) params.set("bbox", query.bbox);
   if (query.status) params.set("status", query.status);
+  if (query.stability_class) params.set("stability_class", query.stability_class);
   if (query.sido) params.set("sido", query.sido);
   if (query.top !== undefined) params.set("top", String(query.top));
   if (query.limit !== undefined) params.set("limit", String(query.limit));
@@ -603,6 +641,33 @@ export function fetchSuitabilityCandidates(
     `/api/v1/suitability/candidates?${params.toString()}`,
     signal,
   );
+}
+
+/**
+ * Profiles actually available for a run, derived from its stored weight_profiles.
+ *
+ * The CRITIC profile is only offered when the selected run computed it (its key
+ * is present in weight_profiles); an old run without CRITIC data never exposes an
+ * enabled critic option. Ordered so the four static profiles precede critic.
+ */
+const STATIC_PROFILES: SuitabilityProfile[] = [
+  "baseline",
+  "equal",
+  "equity_focused",
+  "access_focused",
+];
+
+export function availableProfiles(run: SuitabilityRun | null | undefined): SuitabilityProfile[] {
+  // The four static profiles are always available (policy constants). CRITIC is
+  // offered only when the selected run actually computed it (present in its stored
+  // weight_profiles), so an old run without CRITIC data never shows an enabled
+  // critic option.
+  return hasCriticStability(run) ? [...STATIC_PROFILES, "critic"] : [...STATIC_PROFILES];
+}
+
+/** True when the selected run carries run-specific CRITIC + stability results. */
+export function hasCriticStability(run: SuitabilityRun | null | undefined): boolean {
+  return !!run && "critic" in (run.weight_profiles ?? {});
 }
 
 export function fetchSuitabilityCandidateDetail(

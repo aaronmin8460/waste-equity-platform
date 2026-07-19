@@ -4,6 +4,7 @@ import {
   ApiError,
   SUITABILITY_TILE_SOURCE_LAYER,
   apiBaseUrl,
+  availableProfiles,
   fetchJson,
   fetchReportingBoundaries,
   fetchReportingPerCapita,
@@ -11,8 +12,36 @@ import {
   fetchSuitabilityCandidateDetail,
   fetchSuitabilityCandidates,
   fetchSuitabilityPolicy,
+  hasCriticStability,
   suitabilityTileUrl,
+  type SuitabilityRun,
 } from "./api";
+
+function runWith(weightProfiles: Record<string, Record<string, string>>): SuitabilityRun {
+  return {
+    id: 47,
+    derivation_version: "d",
+    policy_version: "p",
+    candidate_grid_version: "g",
+    reference_year: 2024,
+    boundary_vintage: "2024",
+    weight_profile: "baseline",
+    analysis_signature: "sig",
+    status: "SUCCEEDED",
+    candidate_count_total: 0,
+    candidate_count_eligible: 0,
+    candidate_count_review: 0,
+    candidate_count_excluded: 0,
+    input_dataset_version_ids: [],
+    input_provenance: {},
+    weight_profiles: weightProfiles,
+    weight_derivation: {},
+    stability_definition: {},
+    started_at: "",
+    completed_at: null,
+    created_at: "",
+  };
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -180,5 +209,38 @@ describe("suitability client", () => {
     await expect(
       fetchSuitabilityCandidates({ profile: "baseline" }, controller.signal),
     ).rejects.toBe(abortError);
+  });
+
+  it("offers CRITIC only when the run's weight_profiles include it", () => {
+    const withCritic = runWith({
+      baseline: { zoning: "0.4", road: "0.3", equity: "0.2", demand: "0.1" },
+      equal: { zoning: "0.25", road: "0.25", equity: "0.25", demand: "0.25" },
+      equity_focused: { zoning: "0.3", road: "0.15", equity: "0.4", demand: "0.15" },
+      access_focused: { zoning: "0.25", road: "0.4", equity: "0.2", demand: "0.15" },
+      critic: { zoning: "0.31", road: "0.19", equity: "0.28", demand: "0.22" },
+    });
+    expect(hasCriticStability(withCritic)).toBe(true);
+    expect(availableProfiles(withCritic)).toEqual([
+      "baseline",
+      "equal",
+      "equity_focused",
+      "access_focused",
+      "critic",
+    ]);
+  });
+
+  it("hides CRITIC for an old run without critic data (statics still offered)", () => {
+    const oldRun = runWith({
+      baseline: { zoning: "0.35", road: "0.25", equity: "0.25", demand: "0.15" },
+    });
+    expect(hasCriticStability(oldRun)).toBe(false);
+    expect(availableProfiles(oldRun)).toEqual([
+      "baseline",
+      "equal",
+      "equity_focused",
+      "access_focused",
+    ]);
+    // A null run (nothing loaded) still exposes the four static profiles.
+    expect(availableProfiles(null)).not.toContain("critic");
   });
 });
