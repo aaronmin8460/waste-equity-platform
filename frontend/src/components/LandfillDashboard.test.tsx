@@ -481,16 +481,60 @@ describe("LandfillDashboard", () => {
     expect(feeAxis).not.toContain("톤 (t)");
   });
 
-  it("offers an accessible table fallback with each month's exact value", () => {
+  it("offers an accessible table fallback with each month's exact (lossless) value", () => {
     renderDashboard();
     const table = screen.getByTestId("landfill-trend-quantity-table");
     // The hover-only <title> tooltips are unreachable by touch/AT; the table gives
-    // every month's exact value as text.
+    // every month's exact served value as text — no chart rounding.
     expect(within(table).getByText("2024-01")).toBeDefined();
     expect(within(table).getByText("90,000 t")).toBeDefined();
-    // The fee table shows the fee in 억원, not tons (9,000,000,000 KRW ÷ 1e8 = 90.0).
+    // The fee table shows the exact served KRW fee (the chart's 억원 conversion
+    // would round); 9,000,000,000.00 → "9,000,000,000원".
     const feeTable = screen.getByTestId("landfill-trend-fee-table");
-    expect(within(feeTable).getByText("90.0억원")).toBeDefined();
+    expect(within(feeTable).getByText("9,000,000,000원")).toBeDefined();
+  });
+
+  it("keeps fractional precision in the exact table (never chart-rounded)", () => {
+    // A fractional-tonne month and a fee not divisible by ₩10,000,000: the chart
+    // rounds, the table must not.
+    renderDashboard({
+      data: data({}),
+    });
+    // Re-render with a precise trend point via a targeted fixture.
+    cleanup();
+    render(
+      <LandfillDashboard
+        data={{
+          ...data(),
+          trends: {
+            ...data().trends,
+            points: [
+              {
+                reference_month: "2024-02",
+                reference_year: 2024,
+                quantity_kg: "90123456",
+                quantity_tons: "90123.456000",
+                inbound_fee_krw: "9000012345.67",
+                effective_fee_per_ton: "99863.00",
+              },
+            ],
+          },
+        }}
+        error={null}
+        year={null}
+        setYear={noop}
+        month={null}
+        setMonth={noop}
+        origin={null}
+        setOrigin={noop}
+        waste={null}
+        setWaste={noop}
+      />,
+    );
+    const qtyTable = screen.getByTestId("landfill-trend-quantity-table");
+    expect(within(qtyTable).getByText("90,123.456 t")).toBeDefined();
+    const feeTable = screen.getByTestId("landfill-trend-fee-table");
+    expect(within(feeTable).getByText("9,000,012,345.67원")).toBeDefined();
   });
 
   it("shows no schematic straight-line flow text and no arrow rows", () => {

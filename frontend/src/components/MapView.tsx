@@ -394,6 +394,11 @@ export default function MapView({
     if (!map) return;
 
     const refresh = () => {
+      // Invalidate the hover-tooltip cache: the region source is about to be
+      // re-stamped with new metric/value/period, so the next mousemove over the
+      // same region must rebuild the tooltip HTML rather than reuse the stale one
+      // (the cache is keyed by region code, which does not change on a metric swap).
+      hoveredRegionRef.current = null;
       const regionsData: GeoJSON.FeatureCollection = {
         type: "FeatureCollection",
         features: boundaries.features.map((feature) => {

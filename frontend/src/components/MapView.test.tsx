@@ -477,4 +477,25 @@ describe("region hover tooltip interaction (Phase 3)", () => {
     expect(popup.html).toContain("종로구");
     expect(popup.html).toContain("지표 기준 기간: 2024");
   });
+
+  it("rebuilds the hover tooltip when the metric changes while hovering one region", () => {
+    const props = baseProps({ mode: "equity", candidateTileUrl: null, metricReferencePeriod: "2022" });
+    const { map, rerender } = renderAndLoad(props);
+    map.emitLayer("mousemove", "regions-fill", {
+      features: [{ properties: { ...SERVED_REGION_PROPS, metric_reference_period: "2022" } }],
+      lngLat: { lng: 126.98, lat: 37.57 },
+    });
+    expect(h.popups[h.popups.length - 1].html).toContain("지표 기준 기간: 2022");
+
+    // The metric changes (a new reference period) → a refresh re-stamps the source
+    // AND resets the hover cache, so the next mousemove over the SAME region shows
+    // the new value rather than the cached one.
+    rerender(<MapView {...props} metricReferencePeriod="2024" />);
+    map.emitLayer("mousemove", "regions-fill", {
+      features: [{ properties: { ...SERVED_REGION_PROPS, metric_reference_period: "2024" } }],
+      lngLat: { lng: 126.98, lat: 37.57 },
+    });
+    expect(h.popups[h.popups.length - 1].html).toContain("지표 기준 기간: 2024");
+    expect(h.popups[h.popups.length - 1].html).not.toContain("지표 기준 기간: 2022");
+  });
 });

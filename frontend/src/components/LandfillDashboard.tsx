@@ -25,6 +25,7 @@ import type {
   LandfillTrends,
 } from "../lib/api";
 import {
+  formatDecimalExact,
   formatEffectiveFee,
   formatKrwEok,
   formatKrwPerPerson,
@@ -338,6 +339,8 @@ function LandfillBody({ data }: { data: LandfillDashboardData }) {
           points={trends.points}
           pick={(point) => Number(point.quantity_tons)}
           format={(value) => `${Math.round(value).toLocaleString("en-US")} t`}
+          // Lossless: the backend-served exact tons string, never rounded.
+          exactFormat={(point) => `${formatDecimalExact(point.quantity_tons)} t`}
           yUnit="톤 (t)"
           color="#0d9488"
         />
@@ -347,6 +350,9 @@ function LandfillBody({ data }: { data: LandfillDashboardData }) {
           points={trends.points}
           pick={(point) => Number(point.inbound_fee_krw) / 100_000_000}
           format={(value) => `${value.toFixed(1)}억원`}
+          // Lossless: the exact served KRW fee (the chart's 억원 conversion would
+          // round), so the "exact value" table/tooltip keep full precision.
+          exactFormat={(point) => `${formatDecimalExact(point.inbound_fee_krw)}원`}
           yUnit="억원 (0.1B KRW)"
           color="#2563eb"
         />
@@ -563,6 +569,7 @@ function MiniBars({
   points,
   pick,
   format,
+  exactFormat,
   yUnit,
   color,
 }: {
@@ -570,8 +577,15 @@ function MiniBars({
   testId: string;
   points: LandfillTrends["points"];
   pick: (point: LandfillTrends["points"][number]) => number;
+  /** Rounded chart-scale formatter, used only for the "최대" annotation. */
   format: (value: number) => string;
-  /** The y-axis unit, shown in the axis caption and the table-fallback header. */
+  /**
+   * Lossless per-point value (with its own unit) from the exact backend string,
+   * used for the hover tooltip and the accessible table so neither shows a value
+   * rounded by the chart formatter.
+   */
+  exactFormat: (point: LandfillTrends["points"][number]) => string;
+  /** The y-axis unit, shown in the axis caption. */
   yUnit: string;
   color: string;
 }) {
@@ -618,7 +632,8 @@ function MiniBars({
                   height={barHeight}
                   fill={color}
                 >
-                  <title>{`${point.reference_month}: ${format(value)}`}</title>
+                  {/* Exact served value (lossless) in the hover tooltip. */}
+                  <title>{`${point.reference_month}: ${exactFormat(point)}`}</title>
                 </rect>
               );
             })}
@@ -642,7 +657,7 @@ function MiniBars({
             <div className="mt-1 max-h-40 overflow-y-auto">
               <table className="w-full text-left text-[11px]" data-testid={`${testId}-table`}>
                 <caption className="sr-only">
-                  {title} — 월별 값 (단위 {yUnit})
+                  {title} — 월별 정확한 값 (exact monthly values)
                 </caption>
                 <thead>
                   <tr className="text-slate-500">
@@ -650,7 +665,7 @@ function MiniBars({
                       월 (month)
                     </th>
                     <th scope="col" className="py-0.5 font-medium">
-                      {yUnit}
+                      정확한 값 (exact value)
                     </th>
                   </tr>
                 </thead>
@@ -660,9 +675,8 @@ function MiniBars({
                       <th scope="row" className="py-0.5 pr-3 font-normal text-slate-600">
                         {point.reference_month}
                       </th>
-                      <td className="py-0.5 tabular-nums text-slate-700">
-                        {format(pick(point))}
-                      </td>
+                      {/* Lossless served value, not the chart-rounded formatter. */}
+                      <td className="py-0.5 tabular-nums text-slate-700">{exactFormat(point)}</td>
                     </tr>
                   ))}
                 </tbody>
