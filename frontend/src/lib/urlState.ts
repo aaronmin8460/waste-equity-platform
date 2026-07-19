@@ -167,15 +167,20 @@ export function decodeUrlState(search: string): DecodedUrlState {
 
   const status = params.get("status");
   if (status !== null) {
-    const items = status.split(",").filter((s) => s.length > 0);
-    const valid = items.filter((s): s is SuitabilityStatus =>
-      (STATUSES as readonly string[]).includes(s),
-    );
-    // Only accept if every provided token was valid (partial garbage → drop all + warn).
-    if (valid.length === items.length && items.length > 0) {
-      state.statusOn = Array.from(new Set(valid));
-    } else if (items.length > 0) {
-      warnings.push("알 수 없는 상태 필터는 무시했습니다.");
+    if (status === "none") {
+      // Explicit "all statuses hidden" — a valid, distinct state (round-trips).
+      state.statusOn = [];
+    } else {
+      const items = status.split(",").filter((s) => s.length > 0);
+      const valid = items.filter((s): s is SuitabilityStatus =>
+        (STATUSES as readonly string[]).includes(s),
+      );
+      // Only accept if every provided token was valid (partial garbage → drop all + warn).
+      if (valid.length === items.length && items.length > 0) {
+        state.statusOn = Array.from(new Set(valid));
+      } else if (items.length > 0) {
+        warnings.push("알 수 없는 상태 필터는 무시했습니다.");
+      }
     }
   }
 
@@ -244,7 +249,9 @@ export function encodeUrlState(state: AppUrlState): string {
       sortedOn.length === 2 &&
       sortedOn[0] === "ELIGIBLE" &&
       sortedOn[1] === "REVIEW_REQUIRED";
-    if (!isDefault) params.set("status", state.statusOn.join(","));
+    // Encode the all-hidden case as an explicit "none" sentinel so it round-trips
+    // (an empty join would be indistinguishable from "no status param").
+    if (!isDefault) params.set("status", state.statusOn.length ? state.statusOn.join(",") : "none");
     if (state.stableOnly) params.set("stable", "1");
     if (state.view === "scenario" && state.weights) {
       params.set("wz", state.weights.zoning);

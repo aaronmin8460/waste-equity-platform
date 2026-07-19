@@ -115,6 +115,7 @@ import {
   type ComparisonRegionRow,
 } from "../lib/exports";
 import { buildComparisonReport, buildEquityReport, type ReportModel } from "../lib/report";
+import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario";
 import { classifyEquityRaw, stabilityBadgeLabel } from "../lib/suitability";
 import {
   COMPONENT_ORDER,
@@ -262,6 +263,16 @@ export default function Home() {
   const [comparison, setComparison] = useState<string[]>([]);
   const [reportKind, setReportKind] = useState<"ranking" | "comparison" | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<string[]>([]);
+  // A scenario / candidate restored from a shared URL, held until consumed (the
+  // scenario is auto-applied by the lab via the preview API; the candidate is
+  // fetched once the run is ready). Kept in the encoded URL until then so a shared
+  // link is never self-stripped before it can be honoured.
+  const [restoredScenario, setRestoredScenario] = useState<{
+    weights: { zoning: string; road: string; equity: string; demand: string };
+    percents: ScenarioPercents;
+    compareProfile: SuitabilityProfile;
+  } | null>(null);
+  const [restoredCandidate, setRestoredCandidate] = useState<number | null>(null);
   // Guards so URL state is restored exactly once and written only afterwards
   // (a one-way state→URL sync via replaceState, so there is no update loop).
   const urlRestored = useRef(false);
@@ -453,10 +464,13 @@ export default function Home() {
   );
 
   // When the applied scenario is cleared (reset / leaving the lab), drop the
-  // scenario-selected candidate so a stale detail never lingers.
+  // scenario-selected candidate so a stale detail never lingers. A non-null apply
+  // (including the lab auto-applying a shared-URL scenario) consumes the restored
+  // scenario, so the live applied weights own the URL from then on.
   const onScenarioApplied = useCallback((applied: AppliedScenario | null) => {
     setAppliedScenario(applied);
     if (applied === null) setScenarioSelected(null);
+    else setRestoredScenario(null);
   }, []);
 
   // Reset the applied scenario when navigating AWAY from the scenario sub-view (or
@@ -466,6 +480,7 @@ export default function Home() {
   const clearScenario = useCallback(() => {
     setAppliedScenario(null);
     setScenarioSelected(null);
+    setRestoredScenario(null);
   }, []);
   const changeMode = useCallback(
     (next: DashboardMode) => {
@@ -875,9 +890,11 @@ export default function Home() {
         (status) => statusVisibility[status],
       ),
       stableOnly,
-      weights: appliedScenario?.weights ?? null,
-      cmpProfile: appliedScenario?.compareProfile ?? "baseline",
-      candidate: selected?.candidate_id ?? null,
+      // Prefer the live applied scenario / selection; fall back to a not-yet-consumed
+      // shared-URL value so a scenario/candidate link is preserved, not self-stripped.
+      weights: appliedScenario?.weights ?? restoredScenario?.weights ?? null,
+      cmpProfile: appliedScenario?.compareProfile ?? restoredScenario?.compareProfile ?? "baseline",
+      candidate: selected?.candidate_id ?? scenarioSelected?.candidate_id ?? restoredCandidate ?? null,
     }),
     [
       mode,
@@ -891,7 +908,10 @@ export default function Home() {
       statusVisibility,
       stableOnly,
       appliedScenario,
+      restoredScenario,
       selected,
+      scenarioSelected,
+      restoredCandidate,
     ],
   );
 
@@ -923,6 +943,22 @@ export default function Home() {
       });
     }
     if (state.stableOnly !== undefined) setStableOnly(state.stableOnly);
+    // Scenario weights + selected candidate: held for the lab to auto-apply (with
+    // preview-API re-validation) and for the candidate fetch once the run loads.
+    if (state.weights) {
+      const w = state.weights;
+      setRestoredScenario({
+        weights: w,
+        percents: decimalWeightsToPercents({
+          zoning: w.zoning,
+          road: w.road,
+          equity: w.equity,
+          demand: w.demand,
+        }),
+        compareProfile: state.cmpProfile ?? "baseline",
+      });
+    }
+    if (state.candidate) setRestoredCandidate(state.candidate);
     setUrlWarnings(warnings);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data]);
@@ -935,6 +971,23 @@ export default function Home() {
   }, [currentUrlState]);
 
   const getShareUrl = useCallback(() => shareableUrl(currentUrlState()), [currentUrlState]);
+
+  // Restore a shared candidate once the run is loaded (score view): fetch + select
+  // it, which highlights and flies the map to it, then consume the restored id.
+  useEffect(() => {
+    if (
+      restoredCandidate === null ||
+      mode !== "suitability" ||
+      suitabilityView !== "score" ||
+      suit === null ||
+      selected !== null
+    ) {
+      return;
+    }
+    onCandidateClick(restoredCandidate);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- consume the restored id once
+    setRestoredCandidate(null);
+  }, [restoredCandidate, mode, suitabilityView, suit, selected, onCandidateClick]);
 
   // Service-region options for the cost lens, derived from CALCULABLE coverage:
   // the regions that actually have RegionalWasteStatistics rows (which the cost
@@ -1278,6 +1331,14 @@ export default function Home() {
                   scenarioSelected={scenarioSelected}
                   onSelectCandidate={selectScenarioCandidate}
                   onClearSelected={() => setScenarioSelected(null)}
+                  initialScenario={
+                    restoredScenario
+                      ? {
+                          percents: restoredScenario.percents,
+                          compareProfile: restoredScenario.compareProfile,
+                        }
+                      : null
+                  }
                 />
               ) : (
                 <p className="text-sm text-slate-500" role="status">

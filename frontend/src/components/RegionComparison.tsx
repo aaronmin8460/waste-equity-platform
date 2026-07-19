@@ -16,7 +16,7 @@
  * region has a value.
  */
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 export interface ComparisonValue {
   code: string;
@@ -55,8 +55,16 @@ export default function RegionComparison({
   const [activeIndex, setActiveIndex] = useState(-1);
   const listboxId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  const listboxRef = useRef<HTMLUListElement>(null);
 
   const atMax = selected.length >= maxCompare;
+
+  // Keep the active option scrolled into view during keyboard navigation.
+  useEffect(() => {
+    if (!open || activeIndex < 0) return;
+    const el = listboxRef.current?.querySelector<HTMLElement>(`#${CSS.escape(`${listboxId}-opt-${activeIndex}`)}`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [open, activeIndex, listboxId]);
 
   // Filter by Korean name OR region code, excluding already-selected regions.
   const matches = useMemo(() => {
@@ -151,6 +159,7 @@ export default function RegionComparison({
         {open && matches.length > 0 && !atMax && (
           <ul
             id={listboxId}
+            ref={listboxRef}
             role="listbox"
             aria-label="검색 결과"
             className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded border border-slate-200 bg-white shadow-lg"
@@ -195,7 +204,7 @@ export default function RegionComparison({
                   type="button"
                   aria-label={`${r.name} 비교에서 제거`}
                   onClick={() => removeRegion(r.code)}
-                  className="ml-0.5 rounded-full px-1 text-primary-hover hover:bg-white"
+                  className="-mr-1 ml-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-primary-hover hover:bg-white"
                   data-testid="comparison-chip-remove"
                 >
                   ✕

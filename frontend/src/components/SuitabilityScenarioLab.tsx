@@ -69,6 +69,13 @@ interface Props {
   /** Ask the page to fetch a candidate's scenario detail + move/highlight the map. */
   onSelectCandidate: (candidateId: number) => void;
   onClearSelected: () => void;
+  /**
+   * A scenario restored from a shared URL. When present it takes precedence over
+   * the sessionStorage draft and is AUTO-APPLIED once on mount — the apply goes
+   * through the normal preview API path, so the restored weights are re-validated
+   * by the server before anything is shown (never trusted from the URL alone).
+   */
+  initialScenario?: { percents: ScenarioPercents; compareProfile: SuitabilityProfile } | null;
 }
 
 const DEFAULT_PERCENTS: ScenarioPercents = { zoning: 35, road: 25, equity: 25, demand: 15 };
@@ -80,6 +87,7 @@ export default function SuitabilityScenarioLab({
   scenarioSelected,
   onSelectCandidate,
   onClearSelected,
+  initialScenario,
 }: Props) {
   const presets = useMemo(() => scenarioPresets(run), [run]);
   const [draft, setDraft] = useState<ScenarioPercents>(
@@ -113,11 +121,24 @@ export default function SuitabilityScenarioLab({
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time hydrate from URL/session */
+    // A shared-URL scenario wins over the local sessionStorage draft: it seeds the
+    // editor with the shared weights (the page keeps them in the address bar so the
+    // link is not self-stripped). The result is NOT shown until the user presses
+    // 시나리오 적용, which re-validates the weights through the preview API — the
+    // same "a restored draft is never shown as a current result" discipline used
+    // for the sessionStorage draft (and it stays robust under React StrictMode's
+    // effect double-invocation, which would otherwise abort an in-effect fetch).
+    if (initialScenario) {
+      setDraft(initialScenario.percents);
+      setCompareProfile(initialScenario.compareProfile);
+      return;
+    }
     const restored = loadScenarioSession(run.id, runProfiles);
     if (!restored) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydrate from sessionStorage
     setDraft(restored.draftPercents);
     setCompareProfile(restored.compareProfile);
+    /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run.id]);
 

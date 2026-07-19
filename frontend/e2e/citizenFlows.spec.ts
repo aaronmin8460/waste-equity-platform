@@ -314,6 +314,28 @@ test.describe("Task C — 가중치 바꿔보기 (scenario)", () => {
     await expect(page.getByTestId("scenario-lab")).toBeVisible();
     await expect(page.getByTestId("scenario-warning")).toBeVisible();
   });
+
+  test("a shared scenario URL seeds the weights, preserves the link, and applies via the preview API", async ({
+    page,
+  }) => {
+    await mockBackend(page);
+    await page.route("**/api/v1/regions/boundaries**", (r) => json(r, BOUNDARIES));
+    await page.route("**/api/v1/population**", (r) => json(r, POPULATION));
+    await page.route("**/api/v1/suitability/summary**", (r) =>
+      json(r, { ...SUMMARY, top_candidates: [TOP_CANDIDATE] }),
+    );
+    // Open a shared scenario link directly (weights sum to 100%).
+    await page.goto("/?v=1&mode=suitability&view=scenario&wz=0.40000000&wr=0.20000000&we=0.20000000&wd=0.20000000");
+    await expect(page.getByTestId("map-container")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("scenario-lab")).toBeVisible();
+    // The shared weights seeded the editor (40/20/20/20) and the link is preserved
+    // in the address bar (not self-stripped).
+    await expect(page.getByRole("spinbutton", { name: /토지이용/ })).toHaveValue("40");
+    expect(page.url()).toContain("wz=0.4");
+    // One click applies, re-validated through the preview API → results appear.
+    await page.getByTestId("scenario-apply").click();
+    await expect(page.getByTestId("scenario-top-candidates")).toBeVisible();
+  });
 });
 
 test.describe("Task D — 비용 살펴보기 (cost)", () => {

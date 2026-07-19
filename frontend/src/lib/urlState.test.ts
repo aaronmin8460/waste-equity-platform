@@ -87,6 +87,12 @@ describe("decodeUrlState — whitelisting and bounds", () => {
     expect(bad.warnings.length).toBe(1);
   });
 
+  it("round-trips the all-hidden status set via the 'none' sentinel", () => {
+    const q = encodeUrlState({ ...BASE, mode: "suitability", statusOn: [] });
+    expect(q).toContain("status=none");
+    expect(decodeUrlState(q).state.statusOn).toEqual([]);
+  });
+
   it("validates scenario weight format and requires all four", () => {
     const ok = decodeUrlState("?v=1&wz=0.25&wr=0.25&we=0.25&wd=0.25");
     expect(ok.state.weights).toEqual({

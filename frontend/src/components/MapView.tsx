@@ -455,8 +455,8 @@ export default function MapView({
           ? statusLabel(status)
           : status;
       const footer = scenario
-        ? "가중치 바꿔보기 임시 결과 — 자세히는 왼쪽 상세에서"
-        : "공공자료 1차 비교 — 자세히는 왼쪽 목록에서";
+        ? "가중치 바꿔보기 임시 결과 · 법적 판정 아님 · 자세히는 왼쪽 상세"
+        : "공공자료 1차 비교 · 법적 판정 아님 · 자세히는 왼쪽 목록";
       // Replace any prior pinned candidate popup rather than accumulate stale ones.
       candidatePopupRef.current?.remove();
       candidatePopupRef.current = new maplibregl.Popup()

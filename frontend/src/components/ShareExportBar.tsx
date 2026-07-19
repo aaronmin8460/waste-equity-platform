@@ -60,20 +60,23 @@ export default function ShareExportBar({
     <section aria-label="공유 및 내보내기" data-testid="share-export" className="text-xs">
       <h2 className="mb-1 text-sm font-semibold text-slate-800">공유 · 내보내기</h2>
 
-      {urlWarnings && urlWarnings.length > 0 && (
-        <div
-          role="status"
-          className="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800"
-          data-testid="url-warnings"
-        >
-          공유 링크의 일부 설정을 복원하지 못했습니다:
-          <ul className="mt-0.5 list-disc pl-4">
-            {urlWarnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* Always-present live region so a restored-link warning is announced even
+          when it is injected after mount. */}
+      <div role="status" aria-live="polite">
+        {urlWarnings && urlWarnings.length > 0 && (
+          <div
+            className="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800"
+            data-testid="url-warnings"
+          >
+            공유 링크의 일부 설정을 복원하지 못했습니다:
+            <ul className="mt-0.5 list-disc pl-4">
+              {urlWarnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-1.5">
         <button type="button" className="wep-btn-quiet" onClick={copyLink} data-testid="share-copy">
