@@ -78,9 +78,10 @@ for (const vp of VIEWPORTS) {
       await page.getByTestId("mode-suitability").click();
       await expect(page.getByTestId("suitability-summary")).toBeVisible();
 
-      // Switch to the cost lens.
+      // Switch to the cost lens — a FULL-WIDTH dashboard that mounts no map.
       await page.getByTestId("suitability-view-cost").click();
-      await expect(page.getByTestId("facility-cost-panel")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
+      await expect(page.getByTestId("map-container")).toHaveCount(0);
       await expect(page.getByTestId("facility-cost-disclaimer")).toContainText(
         "권고하거나 반대를 설득하기 위한 페이지가 아닙니다",
       );
@@ -108,10 +109,11 @@ for (const vp of VIEWPORTS) {
 
       await expectNoHorizontalOverflow(page);
 
-      // Back to the score view restores the screening panel.
+      // Back to the score view restores the screening panel and the map.
       await page.getByTestId("suitability-view-score").click();
       await expect(page.getByTestId("suitability-summary")).toBeVisible();
-      await expect(page.getByTestId("facility-cost-panel")).toHaveCount(0);
+      await expect(page.getByTestId("map-container")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-dashboard")).toHaveCount(0);
     });
   });
 }

@@ -126,15 +126,30 @@ describe("mobile control collapsing", () => {
   it("wraps the verbose equity panels in native <details> with clear Korean labels", async () => {
     const { container } = await renderLoaded();
     const details = container.querySelectorAll("details.mobile-collapsible");
-    // Legend, sources & method, and facility layer collapse on mobile.
-    expect(details.length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByText("지도 범례 (Legend)")).toBeDefined();
+    // The legend has moved out of the sidebar to a floating map overlay, so the
+    // remaining sidebar disclosures are sources & method and facility layer.
+    expect(details.length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("출처 및 방법 (Sources & method)")).toBeDefined();
     expect(screen.getByText("시설 레이어 (Facility layer)")).toBeDefined();
-    // The section content still lives inside the DOM (never permanently hidden),
+    // The facility toggle still lives inside the DOM (never permanently hidden),
     // so desktop CSS can force it open and screen readers can reach it.
-    expect(screen.getByTestId("legend")).toBeDefined();
     expect(screen.getByTestId("facilities-toggle")).toBeDefined();
+  });
+
+  it("renders the equity legend as a single floating overlay, not in the sidebar", async () => {
+    const { container } = await renderLoaded();
+    // The legend is now a floating <details> over the map (its own class), and there
+    // is exactly one legend section (single source of truth — no sidebar duplicate).
+    const floating = container.querySelectorAll("details.map-legend");
+    expect(floating.length).toBe(1);
+    expect(screen.getByTestId("legend")).toBeDefined();
+    // Its collapse control is labelled text ("범례 (Legend)"), not icon-only.
+    expect(screen.getByTestId("map-legend-summary").textContent).toContain("범례 (Legend)");
+    // The legend is NOT one of the sidebar mobile-collapsible disclosures.
+    const sidebarLegend = container.querySelector(
+      "details.mobile-collapsible [data-testid='legend']",
+    );
+    expect(sidebarLegend).toBeNull();
   });
 
   it("uses flex-wrap on the mode switcher so it never overflows narrow widths", async () => {

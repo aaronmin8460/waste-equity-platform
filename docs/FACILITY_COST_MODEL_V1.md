@@ -7,7 +7,11 @@ annualization, a simplified subsidy / local-share split, and a per-capita local
 share.
 
 Backend only (Phase 4): a versioned reference table + migration, a pure Decimal
-calculation engine, and a read-only GET API. The citizen-facing UI is Phase 5.
+calculation engine, and a read-only GET API. The citizen-facing UI presents this
+response unchanged as a **full-width dashboard** (적합성 → 비용 렌즈, no map) —
+see [`FACILITY_COST_LENS_UI.md`](FACILITY_COST_LENS_UI.md). The model claims below are
+unchanged by that UI; the dashboard only re-lays-out the same response and enforces
+the same terminology guardrails.
 
 ## Purpose and non-purpose
 

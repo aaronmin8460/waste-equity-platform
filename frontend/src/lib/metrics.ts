@@ -234,6 +234,16 @@ export const CANDIDATE_SCORE_BREAKS: readonly number[] = [20, 40, 60, 80];
 
 export const NO_DATA_COLOR = "#d9d9d9";
 
+/**
+ * Suitability candidate STATUS colors, shared by the MapLibre candidate fill
+ * (MapView) and the floating suitability legend (MapLegendOverlay) so the map and
+ * the legend can never show different colors for the same status. Eligible cells
+ * are score-shaded with CANDIDATE_SCORE_PALETTE_5; these two are the non-score
+ * statuses. Kept identical to the historical MapView values.
+ */
+export const CANDIDATE_REVIEW_COLOR = "#e8a33d";
+export const CANDIDATE_EXCLUDED_COLOR = "#9aa2ad";
+
 /** Resolve the explicit classification policy for a metric. */
 export function scaleConfigForMetric(metric: MetricDefinition): ChoroplethScaleConfig {
   if (metric.dataset === "facility-burden") {

@@ -140,6 +140,46 @@ body {
   }
 }
 
+/* Floating map legend (Phase 2/3 UX cleanup).
+   The equity legend and the suitability status/score legend render as a floating
+   <details> card over the map (components/MapLegendOverlay.tsx), not in the sidebar.
+   Mobile: a real disclosure — collapsed by default behind a labelled "범례 (Legend)"
+   summary, so it never covers most of the map; the body scrolls internally.
+   md+ (tablet-landscape/desktop): the summary is hidden and the body is forced open
+   so the legend reads as an always-expanded floating card. This is the SAME
+   force-open technique as the sidebar `.mobile-collapsible` (both <details> UA
+   models: legacy `display:none` children and the modern ::details-content wrapper),
+   but scoped to its own class so the floating legend and the sidebar disclosures
+   never affect each other. Toggling it never resizes the MapLibre canvas: the card
+   is an absolutely-positioned overlay, not part of the map container's box. */
+.map-legend > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.map-legend > summary::-webkit-details-marker {
+  display: none;
+}
+.map-legend-chevron {
+  transition: transform 0.15s ease;
+}
+.map-legend[open] > summary .map-legend-chevron {
+  transform: rotate(180deg);
+}
+@media (min-width: 768px) {
+  .map-legend > summary {
+    display: none;
+  }
+  .map-legend > .map-legend-body {
+    display: block;
+    /* The summary supplied the top padding on mobile; restore it here since the
+       summary is hidden on desktop. */
+    padding-top: 0.75rem;
+  }
+  .map-legend::details-content {
+    content-visibility: visible;
+  }
+}
+
 /* Dynamic-viewport height fallbacks for the SHELL (root <main>).
    The shell carries a static fallback class *before* its `dvh` class in markup
    (`min-h-screen min-h-dvh`, `md:h-screen md:h-dvh`) so an engine WITHOUT `dvh`

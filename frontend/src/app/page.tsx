@@ -57,6 +57,8 @@ import {
   type WasteStatisticsItem,
 } from "../lib/api";
 import {
+  CANDIDATE_EXCLUDED_COLOR,
+  CANDIDATE_REVIEW_COLOR,
   CANDIDATE_SCORE_BREAKS,
   CANDIDATE_SCORE_PALETTE_5,
   METRIC_GROUPS,
@@ -80,7 +82,8 @@ import type {
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
-import FacilityCostPanel from "../components/FacilityCostPanel";
+import FacilityCostDashboard from "../components/FacilityCostDashboard";
+import MapLegendOverlay from "../components/MapLegendOverlay";
 import { classifyEquityRaw, topCandidateCellLabel } from "../lib/suitability";
 
 /** Sub-view inside suitability mode: the score screening, or the cost lens. */
@@ -333,6 +336,13 @@ export default function Home() {
     },
     [profile],
   );
+
+  // Flip one suitability status' visibility in the canonical page state. This is the
+  // single source of truth the MapLibre candidate-layer filter reads AND the floating
+  // legend's checkboxes drive — there is no duplicate visibility state in the legend.
+  const toggleStatus = useCallback((status: SuitabilityStatus) => {
+    setStatusVisibility((prev) => ({ ...prev, [status]: !prev[status] }));
+  }, []);
 
   // Immutable vector-tile URL for the active run + profile. Switching the profile
   // re-points the map's vector source at the new tiles; there is no run to render
@@ -648,6 +658,29 @@ export default function Home() {
     );
   }
 
+  // 적합성 → 비용 렌즈: a full-width facility-cost dashboard with NO map. The cost
+  // model does not vary by map cell in V1, so a map beside it would be dead weight;
+  // this early return mounts no MapView, no map container, and no floating legend.
+  // The main mode switch and the suitability sub-view switch stay reachable above it,
+  // and the selected candidate context is preserved (passed through). The map layout
+  // below is thus only ever reached by the equity map and the suitability SCORE view.
+  if (mode === "suitability" && suitabilityView === "cost") {
+    return (
+      <div className="min-h-screen min-h-dvh bg-slate-100">
+        <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-3 px-4 pt-6 sm:px-6 lg:px-8">
+          <ModeSwitch mode={mode} setMode={setMode} />
+          <SuitabilityViewSwitch view={suitabilityView} setView={setSuitabilityView} />
+        </div>
+        <div className="mt-4">
+          <FacilityCostDashboard
+            wasteRegions={facilityCostWasteRegions}
+            selectedCandidate={selected}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Legend rows read the exact active palette + breaks the map fill uses, so the
   // swatch count (effective classes) and colors always match the polygons. Each
   // row carries a class number and the numeric lower–upper range, so a region's
@@ -662,6 +695,17 @@ export default function Home() {
           ? `≥ ${formatLegendValue(lower)}`
           : `${formatLegendValue(lower)} – ${formatLegendValue(upper)}`;
     return { color, range, classNumber: index + 1 };
+  });
+
+  // Eligible score classes for the suitability floating legend, built from the SAME
+  // palette + stable 0–100 breaks the map's candidate fill uses (never recomputed in
+  // the legend component), so the legend swatches and the map cells always agree.
+  const suitabilityScoreClasses = CANDIDATE_SCORE_PALETTE_5.map((color, index) => {
+    const lower = index === 0 ? null : CANDIDATE_SCORE_BREAKS[index - 1];
+    const upper = index < CANDIDATE_SCORE_BREAKS.length ? CANDIDATE_SCORE_BREAKS[index] : null;
+    const range =
+      lower === null ? `< ${upper}` : upper === null ? `≥ ${lower}` : `${lower} – ${upper}`;
+    return { color, range };
   });
 
   return (
@@ -755,53 +799,9 @@ export default function Home() {
               metricProvenance={metricProvenance}
             />
 
-            <CollapsibleSection label="지도 범례 (Legend)">
-              <section aria-label="범례" data-testid="legend">
-                <h2 className="mb-2 text-sm font-semibold text-slate-800">
-                  범례 (Legend){unit ? ` — ${unit}` : ""}
-                </h2>
-                <p
-                  className="mb-2 text-[11px] text-slate-500"
-                  data-testid="choropleth-scale-method"
-                >
-                  {scaleMethodNote(activeScale)}
-                </p>
-                <ul className="flex flex-col gap-1" data-testid="choropleth-legend">
-                  {legendRows.map((row) => (
-                    <li
-                      key={row.color}
-                      className="flex items-center gap-2 text-xs text-slate-600"
-                      data-testid="choropleth-legend-row"
-                    >
-                      <span
-                        className="inline-block h-4 w-6 shrink-0 rounded-sm border border-slate-300"
-                        style={{ backgroundColor: row.color }}
-                      />
-                      {/* Class number so the class is identifiable without color. */}
-                      <span className="w-8 shrink-0 font-medium tabular-nums text-slate-500">
-                        {row.classNumber}급
-                      </span>
-                      <span className="tabular-nums">
-                        {row.range}
-                        {unit ? ` ${unit}` : ""}
-                      </span>
-                    </li>
-                  ))}
-                  {/* Explicit no-data category (never rendered as a 0 class). */}
-                  <li
-                    className="flex items-center gap-2 text-xs text-slate-600"
-                    data-testid="choropleth-legend-nodata"
-                  >
-                    <span
-                      className="inline-block h-4 w-6 shrink-0 rounded-sm border border-slate-300"
-                      style={{ backgroundColor: NO_DATA_COLOR }}
-                    />
-                    <span className="w-8 shrink-0 font-medium text-slate-500">—</span>
-                    <span>데이터 없음 (no served value)</span>
-                  </li>
-                </ul>
-              </section>
-            </CollapsibleSection>
+            {/* The equity map legend is no longer duplicated here — it floats over
+                the map as a single source of truth (MapLegendOverlay below), built
+                from the SAME activeScale palette/breaks the map fill uses. */}
 
             {(derivedInfo || sourceInfo) && (
               <CollapsibleSection label="출처 및 방법 (Sources & method)">
@@ -849,25 +849,21 @@ export default function Home() {
 
         {mode === "suitability" && (
           <>
+            {/* The 비용 렌즈 sub-view is handled by the full-width early return above,
+                so this sidebar branch always renders the score screening. The switch
+                stays here so the user can enter the cost dashboard. The suitability
+                status filter + score legend now float over the map (MapLegendOverlay
+                below), not in this panel. */}
             <SuitabilityViewSwitch view={suitabilityView} setView={setSuitabilityView} />
-            {suitabilityView === "score" ? (
-              <SuitabilityPanel
-                suit={suit}
-                suitError={suitError}
-                profile={profile}
-                setProfile={setProfile}
-                statusVisibility={statusVisibility}
-                setStatusVisibility={setStatusVisibility}
-                selected={selected}
-                clearSelected={() => setSelected(null)}
-                onSelect={onCandidateClick}
-              />
-            ) : (
-              <FacilityCostPanel
-                wasteRegions={facilityCostWasteRegions}
-                selectedCandidate={selected}
-              />
-            )}
+            <SuitabilityPanel
+              suit={suit}
+              suitError={suitError}
+              profile={profile}
+              setProfile={setProfile}
+              selected={selected}
+              clearSelected={() => setSelected(null)}
+              onSelect={onCandidateClick}
+            />
           </>
         )}
 
@@ -880,8 +876,12 @@ export default function Home() {
           100% / flex: 1 1 0%` at md+ so it fills BOTH the remaining row width and the
           full row height — leaving no empty strip below the canvas. `min-w-0` keeps
           the flex child shrinkable so long map content never forces horizontal
-          overflow. MapView renders its own loading/refresh/error overlays inside. */}
-      <div className="map-pane min-w-0">
+          overflow. MapView renders its own loading/refresh/error overlays inside.
+          `relative` makes it the positioning context for the floating legend below,
+          which is rendered here (in the page, not inside MapView) so it receives the
+          already-computed legend data — the single source of truth shared with the
+          map fill — and so the stubbed-MapView unit tests still exercise it. */}
+      <div className="map-pane relative min-w-0">
         <MapView
           boundaries={activeBoundaries}
           regionValues={regionValues}
@@ -910,6 +910,33 @@ export default function Home() {
           }
           onRegionClick={(code) => setSelectedRegionCode(code)}
         />
+        {/* Floating legend over the lower-left of the map — one legend per map mode.
+            It never recomputes colors/breaks: equity mode receives the page's active
+            scale rows (same palette/breaks as the fill); suitability mode receives the
+            candidate palette/breaks and the CANONICAL statusVisibility state (its
+            checkboxes drive the same filter the map reads). */}
+        {mode === "equity" ? (
+          <MapLegendOverlay
+            mode="equity"
+            metricLabel={metric.label}
+            unit={unit}
+            methodNote={scaleMethodNote(activeScale)}
+            rows={legendRows}
+            noDataColor={NO_DATA_COLOR}
+          />
+        ) : (
+          <MapLegendOverlay
+            mode="suitability"
+            scoreClasses={suitabilityScoreClasses}
+            eligibleColor={CANDIDATE_SCORE_PALETTE_5[3]}
+            reviewColor={CANDIDATE_REVIEW_COLOR}
+            excludedColor={CANDIDATE_EXCLUDED_COLOR}
+            statusVisibility={statusVisibility}
+            onToggleStatus={toggleStatus}
+            statusLabels={STATUS_LABELS}
+            disclaimer="분석용 스크리닝이며 법적 입지 결정이 아닙니다."
+          />
+        )}
       </div>
     </main>
   );
@@ -1177,8 +1204,6 @@ function SuitabilityPanel({
   suitError,
   profile,
   setProfile,
-  statusVisibility,
-  setStatusVisibility,
   selected,
   clearSelected,
   onSelect,
@@ -1187,8 +1212,6 @@ function SuitabilityPanel({
   suitError: string | null;
   profile: SuitabilityProfile;
   setProfile: (p: SuitabilityProfile) => void;
-  statusVisibility: StatusVisibility;
-  setStatusVisibility: (v: StatusVisibility) => void;
   selected: CandidateDetail | null;
   clearSelected: () => void;
   onSelect: (id: number) => void;
@@ -1279,36 +1302,9 @@ function SuitabilityPanel({
         <p className="mt-1 text-xs text-slate-500">가중치는 가정입니다 (weights are assumptions).</p>
       </section>
 
-      <section aria-label="상태 범례 및 필터" data-testid="suitability-legend">
-        <h2 className="mb-2 text-sm font-semibold text-slate-800">상태 (Status) · 점수 범례</h2>
-        <div className="flex flex-col gap-1 text-xs text-slate-600">
-          {(Object.keys(statusVisibility) as SuitabilityStatus[]).map((st) => (
-            <label key={st} className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={statusVisibility[st]}
-                onChange={() =>
-                  setStatusVisibility({ ...statusVisibility, [st]: !statusVisibility[st] })
-                }
-                data-testid={`status-toggle-${st}`}
-              />
-              <span
-                className="inline-block h-4 w-6 rounded-sm border border-slate-300"
-                style={{
-                  backgroundColor:
-                    st === "ELIGIBLE"
-                      ? CANDIDATE_SCORE_PALETTE_5[3]
-                      : st === "REVIEW_REQUIRED"
-                        ? "#e8a33d"
-                        : "#9aa2ad",
-                }}
-              />
-              {STATUS_LABELS[st]}
-            </label>
-          ))}
-          <p className="mt-1">적합 셀은 점수(0–100)로 음영, 검토 셀은 주황 점선, 제외 셀은 회색입니다.</p>
-        </div>
-      </section>
+      {/* The status filter + score legend now float over the map (MapLegendOverlay);
+          they are no longer duplicated in this panel. The map's candidate layer and
+          the floating checkboxes share the same canonical statusVisibility state. */}
 
       <section aria-label="상위 후보" data-testid="top-candidates">
         <h2 className="mb-2 text-sm font-semibold text-slate-800">

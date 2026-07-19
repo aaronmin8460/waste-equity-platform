@@ -1,5 +1,14 @@
 # Responsive layout (Phase 1 — mobile usability)
 
+> **Phase 2/3 update (floating legends + full-width cost dashboard).** The map
+> legends now float over the map instead of living in the sidebar, and the facility
+> cost lens renders as a full-width dashboard with **no map**. See
+> [Floating map legend](#floating-map-legend-phase-23) and
+> [Full-width facility-cost dashboard](#full-width-facility-cost-dashboard-phase-23)
+> below; the cost dashboard's information architecture and terminology rules live in
+> [`../docs/FACILITY_COST_LENS_UI.md`](../docs/FACILITY_COST_LENS_UI.md). Not deployed.
+
+
 Status: **merged into `main` (PR #27). Not deployed** to any environment. A
 follow-up (Phase 1.1) corrects two post-merge review findings: it adds explicit
 static-viewport (`vh`) fallbacks in front of the dynamic-viewport (`dvh`)
@@ -62,10 +71,13 @@ layout (a 384 px sidebar beside a 384 px map), which is intentional and overflow
 - The mode switcher uses `flex-wrap`, so all three modes stay on screen at
   320–430 px (they wrap instead of overflowing); each button has a ≥ 38 px tap
   target on mobile only.
-- Verbose control panels collapse into native `<details>` disclosures with clear
-  Korean labels — 지도 범례 (Legend), 출처 및 방법 (Sources & method), 시설 레이어
-  (Facility layer) — so the map stays reachable with minimal scrolling. Primary
-  controls (mode switch, metric selection) are never collapsed.
+- Verbose sidebar control panels collapse into native `<details>` disclosures with
+  clear Korean labels — 출처 및 방법 (Sources & method), 시설 레이어 (Facility layer)
+  — so the map stays reachable with minimal scrolling. Primary controls (mode switch,
+  metric selection) are never collapsed. The map legend is **no longer** a sidebar
+  disclosure: it floats over the map (see
+  [Floating map legend](#floating-map-legend-phase-23)) and is collapsed by default
+  on mobile behind a labelled "범례 (Legend)" summary.
 - The landfill (수도권매립지) dashboard is already single-column responsive; its
   table scrolls inside its own `overflow-x-auto` container and long ASCII
   identifiers wrap (`break-words`), so the page never scrolls horizontally.
@@ -278,10 +290,13 @@ every mode is selectable, and the map stays visible across mode switches. **Desk
 additionally asserts the map pane reaches the viewport bottom within a small
 rounding tolerance and is taller than 80 % of the viewport (a regression guard for
 the empty-strip bug, where the map was ~60 % tall), and that the panels are
-force-expanded with no toggles. **Mobile** asserts a definite, useful map height
-(~40–85 % of the viewport, stacked below the sidebar), that any visible loading
-overlay is contained within the map box, and that collapsed panels open/toggle with
-radios reachable. `app/responsive.test.tsx` adds a jsdom structural guard for the
+force-expanded with no toggles, and that the floating equity legend sits within the
+map bounds, anchored to the left edge and above the OpenStreetMap attribution.
+**Mobile** asserts a definite, useful map height (~40–85 % of the viewport, stacked
+below the sidebar), that any visible loading overlay is contained within the map box,
+and that collapsed panels — including the floating "범례 (Legend)" — open/toggle with
+radios reachable. `e2e/facilityCost.spec.ts` and `e2e/integration.spec.ts` additionally
+assert the cost lens mounts **zero** map containers at their viewports. `app/responsive.test.tsx` adds a jsdom structural guard for the
 responsive classes, including that the map wrapper carries the dedicated `.map-pane`
 class (and no longer the ambiguous `h-[60dvh] / md:h-auto / md:flex-1` utilities)
 and that the shell carries its `min-h-screen` / `md:h-screen` fallbacks before the
@@ -301,11 +316,76 @@ its **explicitly-unavailable** state and the spec asserts that no official-evide
 label ever appears. (`homeApiMock.ts` does the same for the jsdom test by rejecting
 the landfill fetchers with the identical `ApiError`.)
 
+## Floating map legend (Phase 2/3)
+
+The equity choropleth legend and the suitability status/score legend are rendered as
+a single floating card over the lower-left of the map by
+`components/MapLegendOverlay.tsx`, **not** in the sidebar. This removes the sidebar's
+duplicated legend and keeps one legend per map mode.
+
+- **Single source of truth.** `MapLegendOverlay` is a pure presentation component: it
+  never computes color classes, breaks, thresholds, or the no-data color. The page
+  passes it the already-computed rows — equity mode from the same `activeScale`
+  palette/breaks the MapLibre fill uses, suitability mode from
+  `CANDIDATE_SCORE_PALETTE_5` + `CANDIDATE_SCORE_BREAKS` and the shared
+  `CANDIDATE_REVIEW_COLOR` / `CANDIDATE_EXCLUDED_COLOR` constants (now in
+  `lib/metrics.ts`, imported by both the map and the legend). Map colors and legend
+  colors therefore can never silently diverge.
+- **Rendered in the page, over the map.** The card is a sibling of `<MapView>` inside
+  the `relative .map-pane` wrapper (not inside `MapView`), so it receives the derived
+  legend data directly and the stubbed-`MapView` unit tests still exercise it. Only
+  the small card overlays the map, so the rest of the map stays interactive — there is
+  no full-container wrapper intercepting pointer events, and wheel/scroll inside the
+  card never reaches the map canvas.
+- **Placement.** `absolute`, anchored bottom-left (`bottom-8 left-2`/`md:left-3`),
+  `z-10`, ~288 px wide (`w-[min(86vw,288px)]`), translucent white with a border,
+  shadow, and backdrop blur. It clears the top-right navigation control and — by
+  sitting a fixed distance above the map's bottom edge — never overlaps the
+  bottom-right OpenStreetMap attribution, even when the map (and thus the legend's
+  share of it) is narrow.
+- **Responsive collapse.** A native `<details>` with its own `.map-legend` class:
+  collapsed by default on mobile behind a labelled "범례 (Legend)" `<summary>` (never
+  icon-only), with the body scrolling internally (`max-h-[40vh] overflow-y-auto`) so
+  it never covers most of the map. At `md+` the summary is hidden and the body is
+  force-expanded — the same `<details>` force-open technique as the sidebar
+  `.mobile-collapsible` (legacy `display:none` children **and** the modern
+  `::details-content` wrapper), but scoped to its own class. Because the card is an
+  absolutely-positioned overlay, opening/closing it never resizes the MapLibre canvas.
+- **Suitability status filter.** The three status checkboxes (적합 / 검토 필요 / 제외)
+  moved into the floating legend and still drive the page's canonical
+  `statusVisibility` state via `onToggleStatus` — the exact state MapView filters its
+  candidate layer on. There is no duplicate visibility state in the legend, and a
+  checkbox change updates the MapLibre candidate-layer filter immediately. Status is
+  conveyed by native checkbox labels and swatches (review = amber dashed sample), never
+  by color alone; the eligible score classes (0–100) and the analytical-screening
+  disclaimer are shown alongside.
+
+## Full-width facility-cost dashboard (Phase 2/3)
+
+Selecting 적합성 (Suitability) → 비용 렌즈 now renders a **full-width dashboard** with
+**no map**, instead of a narrow panel beside a mostly-irrelevant map (the cost model
+does not vary by map cell in V1). `app/page.tsx` early-returns this view — it mounts
+no `MapView`, no map container, and no floating legend, mirroring the 수도권매립지
+(flow) full-width pattern. The main mode switch and the 적합성 점수 / 비용 렌즈 sub-view
+switch stay reachable above the dashboard, and the selected suitability candidate is
+passed through for the candidate-context card. Full information architecture,
+KPI definitions, permitted/prohibited terminology, funding-breakdown interpretation,
+the per-capita caveat, and the no-regional-allocation rule are documented in
+[`../docs/FACILITY_COST_LENS_UI.md`](../docs/FACILITY_COST_LENS_UI.md).
+`components/FacilityCostDashboard.tsx` replaces the old `FacilityCostPanel.tsx`; it
+reuses the same calculation/validation/staleness logic and the same official
+`/facility-cost/calculate` response, re-laid-out as a header + warning notice +
+multi-column filter bar (advanced settings in a disclosure) + responsive KPI grid +
+funding breakdown + official-input region table + missing-components list + candidate
+context + provenance.
+
 ## Known limitations
 
 - The **suitability** sidebar panel (provenance, weights, reasons, method) is not
   collapsed on mobile; it is a long single-column scroll. It is overflow-free and
   fully usable — collapsing it further is a possible later refinement.
+- The service-region picker in the cost dashboard remains a native multi-select in
+  this phase; a searchable combobox is a later phase.
 - The **live** e2e specs (`map`, `regressions`, `landfill`) still require
   `E2E_BACKEND_URL` and skip without it; only the self-mocked `responsive.spec.ts`
   runs unconditionally. In sandboxed environments the OSM basemap and vector tiles

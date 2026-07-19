@@ -27,6 +27,8 @@ import type {
 } from "../lib/api";
 import { SUITABILITY_TILE_SOURCE_LAYER } from "../lib/api";
 import {
+  CANDIDATE_EXCLUDED_COLOR,
+  CANDIDATE_REVIEW_COLOR,
   CANDIDATE_SCORE_PALETTE_5,
   FACILITY_CATEGORY_COLORS,
   FACILITY_CATEGORY_LABELS,
@@ -78,8 +80,10 @@ const SMA_BOUNDS: [[number, number], [number, number]] = [
   [127.9, 38.4],
 ];
 
-const EXCLUDED_COLOR = "#9aa2ad";
-const REVIEW_COLOR = "#e8a33d";
+// Status colors sourced from metrics.ts so the map fill and the floating legend
+// (MapLegendOverlay) can never diverge.
+const EXCLUDED_COLOR = CANDIDATE_EXCLUDED_COLOR;
+const REVIEW_COLOR = CANDIDATE_REVIEW_COLOR;
 const SELECTED_FILL_COLOR = "#2563eb";
 const SELECTED_OUTLINE_COLOR = "#1d4ed8";
 

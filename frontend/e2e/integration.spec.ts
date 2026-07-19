@@ -88,9 +88,10 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("map-container")).toBeVisible();
       await expectNoHorizontalOverflow(page);
 
-      // 비용 렌즈 (cost lens) — panel, calculate, results.
+      // 비용 렌즈 (cost lens) — a full-width dashboard, no map, calculate, results.
       await page.getByTestId("suitability-view-cost").click();
-      await expect(page.getByTestId("facility-cost-panel")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
+      await expect(page.getByTestId("map-container")).toHaveCount(0);
       await page.getByTestId("facility-cost-regions").selectOption("KR-SGIS-11110");
       await page.getByTestId("facility-cost-calculate").click();
       await expect(page.getByTestId("fc-standard-cost")).toContainText("120.75 억원");

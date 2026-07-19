@@ -142,12 +142,38 @@ for (const vp of VIEWPORTS) {
         page,
       }) => {
         await page.goto("/");
-        // The mobile disclosure summaries are hidden and their bodies are shown,
-        // so every panel is reachable without interaction — the desktop sidebar
-        // is unchanged from before this feature.
-        await expect(page.getByText("지도 범례 (Legend)")).toBeHidden();
+        // The sidebar disclosure summaries and the floating-legend summary are hidden
+        // and their bodies are shown, so every panel is reachable without interaction
+        // — the desktop layout is unchanged from before this feature.
+        await expect(page.getByTestId("map-legend-summary")).toBeHidden();
         await expect(page.getByTestId("choropleth-legend-row").first()).toBeVisible();
         await expect(page.getByTestId("facilities-toggle")).toBeVisible();
+      });
+
+      test("floats the equity legend inside the map, clear of the attribution", async ({
+        page,
+      }) => {
+        await page.goto("/");
+        const mapBox = (await page.getByTestId("map-container").boundingBox())!;
+        const legend = page.getByTestId("map-legend");
+        await expect(legend).toBeVisible();
+        const legendBox = (await legend.boundingBox())!;
+        // The floating legend sits within the map bounds (small rounding tolerance).
+        expect(legendBox.x).toBeGreaterThanOrEqual(mapBox.x - 2);
+        expect(legendBox.y).toBeGreaterThanOrEqual(mapBox.y - 2);
+        expect(legendBox.x + legendBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width + 2);
+        expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(mapBox.y + mapBox.height + 2);
+        // It is anchored to the LEFT edge of the map.
+        expect(legendBox.x).toBeLessThan(mapBox.x + 24);
+        // It clears the bottom-right OpenStreetMap attribution: the legend's bottom
+        // edge sits above the attribution's top, so the two never overlap even when
+        // the map (and thus the legend's share of it) is narrow.
+        const attrib = page.locator(".maplibregl-ctrl-attrib");
+        const attribBox = await attrib.boundingBox();
+        if (attribBox) {
+          expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(attribBox.y + 2);
+        }
+        await expectNoHorizontalOverflow(page);
       });
 
       test("fills the row to the viewport bottom — no empty/black strip below the map", async ({
@@ -183,12 +209,13 @@ for (const vp of VIEWPORTS) {
         const firstRadio = page.getByRole("radio").first();
         await expect(firstRadio).toBeVisible();
 
-        // The legend is collapsed by default on mobile; its rows are not visible…
+        // The floating legend is collapsed by default on mobile; its rows are not
+        // visible…
         const legendRow = page.getByTestId("choropleth-legend-row").first();
         await expect(legendRow).toBeHidden();
 
-        // …until its labelled disclosure is opened.
-        await page.getByText("지도 범례 (Legend)").click();
+        // …until its labelled "범례 (Legend)" disclosure is opened.
+        await page.getByTestId("map-legend-summary").click();
         await expect(legendRow).toBeVisible();
         await expectNoHorizontalOverflow(page);
       });

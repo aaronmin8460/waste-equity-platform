@@ -69,10 +69,14 @@ any host other than the backend and the basemap tile service.
 
 The dashboard is mobile-usable: a vertical stacked layout with a full-width map
 and collapsible controls below `md` (768 px), and the original side-by-side
-sidebar/map layout at and above it. See
-[RESPONSIVE_LAYOUT.md](RESPONSIVE_LAYOUT.md) for the breakpoints, the map
-minimum-height and MapLibre resize strategy, the `vh`-before-`dvh` viewport-height
-fallbacks, and the tested viewport sizes. The responsive e2e coverage
+sidebar/map layout at and above it. The map legends **float over the map** (a single
+source of truth shared with the map fill, collapsed by default on mobile), and the
+facility cost lens (적합성 → 비용 렌즈) renders as a **full-width dashboard with no
+map**. See [RESPONSIVE_LAYOUT.md](RESPONSIVE_LAYOUT.md) for the breakpoints, the
+floating-legend and full-width-cost-dashboard behavior, the map minimum-height and
+MapLibre resize strategy, the `vh`-before-`dvh` viewport-height fallbacks, and the
+tested viewport sizes, and [../docs/FACILITY_COST_LENS_UI.md](../docs/FACILITY_COST_LENS_UI.md)
+for the cost dashboard's information architecture and terminology rules. The responsive e2e coverage
 (`e2e/responsive.spec.ts`) intercepts the backend itself (`e2e/mockBackend.ts`) —
 serving genuinely empty collections and the backend's real "no official data"
 landfill response, never a synthetic value shown as official — so it runs without

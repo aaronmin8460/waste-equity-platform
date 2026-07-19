@@ -316,17 +316,21 @@ describe("suitability accessible alternatives", () => {
     // Default sub-view is the score screening.
     expect(screen.getByTestId("suitability-view-score").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("suitability-summary")).toBeDefined();
-    // Switch to the cost lens — it mounts and the score panel is gone.
+    // Switch to the cost lens — it mounts as a full-width dashboard and the score
+    // panel (and the map) are gone.
     fireEvent.click(screen.getByTestId("suitability-view-cost"));
-    await waitFor(() => expect(screen.getByTestId("facility-cost-panel")).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId("facility-cost-dashboard")).toBeDefined());
     expect(screen.getByTestId("suitability-view-cost").getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByTestId("suitability-summary")).toBeNull();
+    // The full-width cost dashboard mounts no map.
+    expect(screen.queryByTestId("map-container")).toBeNull();
     // The neutral citizen framing + disclaimer are present.
     expect(screen.getByText("우리 지역에 시설이 생긴다면")).toBeDefined();
-    // Back to the score view.
+    // Back to the score view restores the screening panel (and the map).
     fireEvent.click(screen.getByTestId("suitability-view-score"));
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
-    expect(screen.queryByTestId("facility-cost-panel")).toBeNull();
+    expect(screen.queryByTestId("facility-cost-dashboard")).toBeNull();
+    expect(screen.getByTestId("map-container")).toBeDefined();
   });
 
   it("offers the top candidates as keyboard-operable buttons with a selected marker", async () => {

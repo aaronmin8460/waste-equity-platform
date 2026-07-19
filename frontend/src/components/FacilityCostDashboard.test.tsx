@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 
 /**
- * Facility cost lens tests (Phase 5).
+ * Facility cost lens tests (Phase 2/3 full-width dashboard).
  *
  * The api client is mocked with CONTROLLED CONTRACT FIXTURES (clearly a test
- * environment) so the panel renders without a backend. Asserts the scenario
+ * environment) so the dashboard renders without a backend. Asserts the scenario
  * controls, validation (calculate disabled until a region is chosen), exact values
- * from the fixture, completeness rendered as explicitly unavailable (never 0), the
- * null per-capita path, candidate integration, the citizen guide/disclaimer, the
- * client-only conditions section, and the aria-live result announcement.
+ * from the fixture (KPI grid), completeness rendered as explicitly unavailable
+ * (never 0), the funding breakdown, the official-input region table, the missing
+ * components (never a 0 cost line), the null per-capita path, candidate integration,
+ * the citizen framing/disclaimer, the client-only conditions section, and the
+ * aria-live result announcement.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -159,7 +161,7 @@ vi.mock("../lib/api", async (importOriginal) => {
   };
 });
 
-import FacilityCostPanel from "./FacilityCostPanel";
+import FacilityCostDashboard from "./FacilityCostDashboard";
 
 // Calculable regions tagged with their waste stream. HOUSEHOLD has three (incl.
 // two 중구 that differ only by code — Seoul vs Incheon); CONSTRUCTION has one.
@@ -179,9 +181,11 @@ afterEach(cleanup);
 
 async function renderPanel(candidate: CandidateDetail | null = null) {
   const utils = render(
-    <FacilityCostPanel wasteRegions={WASTE_REGIONS} selectedCandidate={candidate} />,
+    <FacilityCostDashboard wasteRegions={WASTE_REGIONS} selectedCandidate={candidate} />,
   );
-  await waitFor(() => expect(screen.getByTestId("facility-cost-panel")).toBeDefined());
+  // The dashboard shell renders immediately; wait for the scenario form, which
+  // only mounts once the (mocked) options have resolved.
+  await waitFor(() => expect(screen.getByTestId("facility-cost-form")).toBeDefined());
   return utils;
 }
 
@@ -415,6 +419,116 @@ describe("results", () => {
     fireEvent.click(screen.getByTestId("facility-cost-calculate"));
     await waitFor(() => expect(screen.getByTestId("facility-cost-error")).toBeDefined());
     expect(screen.queryByTestId("facility-cost-results")).toBeNull();
+  });
+});
+
+describe("dashboard KPI grid, funding, region table, missing components", () => {
+  async function calculate() {
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-kpi-grid")).toBeDefined());
+  }
+
+  it("renders the eight KPI concepts with their exact units and never a total-cost label", async () => {
+    await calculate();
+    // 1 official annual quantity, 2 scenario quantity, 3 required capacity, 4
+    // standard construction cost, 5 annualized, 6 subsidy, 7 local share, 8 per-capita.
+    expect(screen.getByTestId("fc-official-quantity").textContent).toContain("10,500 톤/년");
+    expect(screen.getByTestId("fc-scenario-quantity").textContent).toContain("10,500 톤/년");
+    expect(screen.getByTestId("fc-capacity").textContent).toContain("35 톤/일");
+    expect(screen.getByTestId("fc-standard-cost").textContent).toContain("120.75 억원");
+    expect(screen.getByTestId("fc-annualized").textContent).toContain("8.05 억원/년");
+    expect(screen.getByTestId("fc-subsidy").textContent).toContain("36.225 억원");
+    expect(screen.getByTestId("fc-local-share").textContent).toContain("84.525 억원");
+    expect(screen.getByTestId("fc-per-capita").textContent).toContain("42,262.5원");
+    // "총비용" never appears (the standard-cost value is not a total). The honest
+    // caveats DO say "…이 아닙니다" (e.g. "실제 총사업비가 아님"), which is required
+    // and must not be mistaken for a prohibited affirmative label — so only the
+    // never-honest "총비용" is banned outright here.
+    expect(document.body.textContent).not.toContain("총비용");
+    // The KPI labels themselves use the honest concept names, not an overstated
+    // "actual/approved/final" claim.
+    const grid = screen.getByTestId("facility-cost-kpi-grid").textContent ?? "";
+    expect(grid).toContain("표준공사비 기반 설치비 산정액");
+    expect(grid).toContain("명목 국고보조 추정액");
+    expect(grid).not.toContain("확정 보조금");
+    expect(grid).not.toContain("확정 사업비");
+  });
+
+  it("shows a funding breakdown of subsidy + local share summing to the installation cost", async () => {
+    await calculate();
+    const funding = screen.getByTestId("facility-cost-funding");
+    expect(funding).toBeDefined();
+    // The exact served strings are shown as text (not reconstructed from floats).
+    expect(screen.getByTestId("fc-funding-subsidy").textContent).toContain("36.225 억원");
+    expect(screen.getByTestId("fc-funding-local").textContent).toContain("84.525 억원");
+    expect(screen.getByTestId("fc-funding-total").textContent).toContain("120.75 억원");
+    // Conceptually subsidy + local == total (36.225 + 84.525 == 120.75).
+    expect(36.225 + 84.525).toBeCloseTo(120.75, 3);
+    // Explicitly states it does NOT imply subsidy approval.
+    expect(funding.textContent).toContain("승인을 의미하지 않");
+  });
+
+  it("uses the official input for the region table without inventing a cost allocation", async () => {
+    await calculate();
+    const table = screen.getByTestId("facility-cost-region-table");
+    const rows = within(table).getAllByTestId("fc-region-row");
+    expect(rows.length).toBe(1);
+    const text = rows[0].textContent ?? "";
+    expect(text).toContain("종로구");
+    expect(text).toContain("10,500");
+    // Population from the official input, never 0명.
+    expect(text).toContain("200,000명");
+    // The share is a labelled derived display; no per-region cost is shown.
+    expect(table.textContent).toContain("표시용 파생값");
+    expect(table.textContent).not.toContain("억원");
+  });
+
+  it("shows the official population as unavailable text, never 0명, when absent", async () => {
+    h.calc.mockResolvedValue(
+      calcFixture({
+        official_input: {
+          ...calcFixture().official_input,
+          regions: [
+            {
+              region_code: "KR-SGIS-11110",
+              region_name: "종로구",
+              generation_quantity_ton: "10500.000000",
+              population: null,
+            },
+          ],
+        },
+      }),
+    );
+    await calculate();
+    const cell = screen.getByTestId("fc-region-population-unavailable").textContent ?? "";
+    expect(cell).toContain("공식 인구 미확정");
+    const table = screen.getByTestId("facility-cost-region-table").textContent ?? "";
+    expect(table).not.toContain("0명");
+  });
+
+  it("lists backend missing components with Korean labels + reasons, never as a 0 cost", async () => {
+    await calculate();
+    const missing = screen.getByTestId("facility-cost-missing");
+    const rows = within(missing).getAllByTestId("facility-cost-missing-row");
+    // The fixture has OPERATING_COST + ACTUAL_TRANSPORT_COST.
+    expect(rows.length).toBe(2);
+    const text = missing.textContent ?? "";
+    expect(text).toContain("운영비");
+    expect(text).toContain("실제 운송비");
+    // The backend reason codes are retained, never discarded.
+    expect(text).toContain("OFFICIAL_SOURCE_NOT_INTEGRATED");
+    expect(text).toContain("ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE");
+    // Missing is never rendered as a zero cost.
+    expect(text).not.toContain("0 억원");
+  });
+
+  it("renders exactly one h1 with the neutral heading", async () => {
+    const { container } = await renderPanel();
+    const h1s = container.querySelectorAll("h1");
+    expect(h1s).toHaveLength(1);
+    expect(h1s[0].textContent).toContain("우리 지역에 시설이 생긴다면");
   });
 });
 
