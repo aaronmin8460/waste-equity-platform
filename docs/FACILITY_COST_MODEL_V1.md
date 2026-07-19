@@ -96,6 +96,12 @@ with its own migration. The migration seeds a self-contained snapshot; a unit te
 asserts it never diverges from the engine's canonical `STANDARD_COST_SEED`, and
 the seed is idempotent (re-running inserts nothing).
 
+Band uniqueness is **NULL-safe**: a plain unique constraint treats NULL bounds as
+distinct, so duplicate first bands `(NULL, upper)` or last bands `(lower, NULL)`
+could slip in and make the lookup find overlapping matches. The unique index
+`COALESCE`s each unbounded bound to `-1` (never a real, nonnegative value) so a
+duplicate band is rejected on both SQLite and PostgreSQL.
+
 ## Formulas
 
 1. `annual_service_quantity_ton = official_annual_quantity_ton × processing_share`
@@ -133,7 +139,11 @@ Range **1.00–1.40**, default **1.00** — a scalar scenario, never a boolean:
 
 Subsidy and local share are **analytical estimates at nominal rates**, not an
 approved grant. Joint-regional eligibility is never inferred merely because
-several regions were selected — it is an explicit scheme the caller chooses.
+several regions were selected — it is an explicit scheme the caller chooses. The
+rate carries its own provenance in the response (`subsidy.rate_source`,
+`rate_reference_period`, `rate_basis`, and `provenance.subsidy_rate_source`): the
+nominal rates are policy rates from the 국고보조금 업무처리지침, used here as an
+analytical assumption.
 
 ## Completeness / unavailable components
 

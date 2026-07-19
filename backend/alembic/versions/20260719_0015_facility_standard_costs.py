@@ -128,18 +128,25 @@ def upgrade() -> None:
             name=op.f("ck_facility_standard_costs_facility_standard_costs_interval_valid"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_facility_standard_costs")),
-        sa.UniqueConstraint(
-            "cost_version",
-            "facility_type",
-            "capacity_min_ton_per_day",
-            "capacity_max_ton_per_day",
-            name="uq_facility_standard_costs_band",
-        ),
     )
     for column in _INDEXED_COLUMNS:
         op.create_index(
             op.f(f"ix_facility_standard_costs_{column}"), _TABLE, [column], unique=False
         )
+    # NULL-safe uniqueness (a plain unique constraint treats NULL bounds as distinct):
+    # COALESCE unbounded bounds to -1 (never a real, nonnegative value) so duplicate
+    # first/last bands are rejected on both PostgreSQL and SQLite.
+    op.create_index(
+        "uq_facility_standard_costs_band",
+        _TABLE,
+        [
+            "cost_version",
+            "facility_type",
+            sa.text("coalesce(capacity_min_ton_per_day, -1)"),
+            sa.text("coalesce(capacity_max_ton_per_day, -1)"),
+        ],
+        unique=True,
+    )
 
     # Idempotent seed: only insert the v2022dec rows if this version is absent, so
     # re-running the seed step never duplicates rows.

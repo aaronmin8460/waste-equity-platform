@@ -41,13 +41,13 @@ def _seed_region(session: Session, region_id: int, code: str, name: str, level: 
     )
 
 
-def _seed_waste(session: Session, region_id: int, quantity: str) -> None:
+def _seed_waste(session: Session, region_id: int, quantity: str, period: str = str(YEAR)) -> None:
     zero = Decimal("0")
     session.add(
         RegionalWasteStatistics(
             region_id=region_id,
             reference_year=YEAR,
-            reference_period=str(YEAR),
+            reference_period=period,
             source_id="waste_statistics",
             source_pid="NTN007",
             official_dataset_name="RCIS 생활계 폐기물 발생 및 처리현황",
@@ -75,7 +75,12 @@ def _seed_waste(session: Session, region_id: int, quantity: str) -> None:
     )
 
 
-def _seed_population(session: Session, region_id: int, population: int) -> None:
+def _seed_population(
+    session: Session,
+    region_id: int,
+    population: int,
+    definition: str = "SGIS_TOTAL_POPULATION",
+) -> None:
     session.add(
         RegionalPopulation(
             region_id=region_id,
@@ -83,7 +88,7 @@ def _seed_population(session: Session, region_id: int, population: int) -> None:
             reference_period=str(YEAR),
             population=population,
             unit="persons",
-            population_definition="SGIS_TOTAL_POPULATION",
+            population_definition=definition,
             source_id="sgis",
             source_administrative_code="11110",
             source_geographic_level="SIGUNGU",
@@ -172,9 +177,16 @@ def test_calculate_full_scenario_exact_values(client: TestClient, seeded: None) 
 
     assert body["annualization"]["facility_lifetime_years"] == 15
     assert Decimal(body["annualization"]["annualized_construction_cost_bn"]) == Decimal("8.05")
+    # The annualized figure is a per-year rate, not a one-time 억원 amount.
+    assert body["annualization"]["unit"] == "억원/년"
 
     sub = body["subsidy"]
     assert Decimal(sub["subsidy_rate"]) == Decimal("0.30")
+    # The nominal rate carries its source + reference period + basis (AGENTS.md).
+    assert "국고보조금 업무처리지침" in sub["rate_source"]
+    assert sub["rate_reference_period"]
+    assert "승인된 국고보조금이 아" in sub["rate_basis"]
+    assert "국고보조금 업무처리지침" in body["provenance"]["subsidy_rate_source"]
     assert Decimal(sub["estimated_national_subsidy_bn"]) == Decimal("36.225")
     assert Decimal(sub["simplified_local_government_share_bn"]) == Decimal("84.525")
 
@@ -257,6 +269,42 @@ def test_calculate_null_per_capita_without_population(client: TestClient, sessio
     assert body["per_capita"]["official_service_population"] is None
     # The standard cost is still present (the cost part does not depend on population).
     assert Decimal(body["standard_cost"]["standard_construction_cost_bn"]) == Decimal("120.75")
+
+
+def test_calculate_null_per_capita_when_population_definitions_differ(
+    client: TestClient, session: Session
+) -> None:
+    # Two regions with different population definitions must NOT be summed into an
+    # incompatible, mislabelled denominator → per-capita null with a reason.
+    seed_standard_costs(session)
+    _seed_region(session, 1, JONGNO, "종로구", "SIGUNGU")
+    _seed_region(session, 2, JUNG, "중구", "SIGUNGU")
+    _seed_waste(session, 1, "5250")
+    _seed_waste(session, 2, "5250")
+    _seed_population(session, 1, 100_000, definition="SGIS_TOTAL_POPULATION")
+    _seed_population(session, 2, 100_000, definition="SGIS_REGISTERED_POPULATION")
+    session.commit()
+    body = _calc(client)["body"]
+    assert body["per_capita"]["per_capita_local_share_won"] is None
+    assert body["per_capita"]["unavailable_reason"] == "INCOMPATIBLE_POPULATION_DEFINITION"
+    # The cost part is still computed.
+    assert Decimal(body["standard_cost"]["standard_construction_cost_bn"]) == Decimal("120.75")
+
+
+def test_calculate_refuses_mixed_waste_reference_periods(
+    client: TestClient, session: Session
+) -> None:
+    # Same year/source/dataset but different reference_period strings must not be
+    # collapsed to an arbitrary period → refuse.
+    seed_standard_costs(session)
+    _seed_region(session, 1, JONGNO, "종로구", "SIGUNGU")
+    _seed_region(session, 2, JUNG, "중구", "SIGUNGU")
+    _seed_waste(session, 1, "5250", period="2022")
+    _seed_waste(session, 2, "5250", period="2022-revised")
+    session.commit()
+    result = _calc(client)
+    assert result["status"] == 500
+    assert result["body"]["detail"]["error"] == "MIXED_WASTE_PROVENANCE"
 
 
 @pytest.mark.parametrize(

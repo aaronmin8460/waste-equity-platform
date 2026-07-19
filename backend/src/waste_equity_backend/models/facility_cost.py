@@ -19,10 +19,11 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Index,
     Integer,
     Numeric,
     String,
-    UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,12 +40,18 @@ Capacity = Numeric(precision=14, scale=6, asdecimal=True)
 class FacilityStandardCost(Base):
     __tablename__ = "facility_standard_costs"
     __table_args__ = (
-        UniqueConstraint(
+        # NULL-safe uniqueness: a plain unique constraint would treat NULL bounds as
+        # distinct, so duplicate first bands (NULL, upper) or last bands (lower, NULL)
+        # could slip in and make lookup_unit_cost find overlapping matches. COALESCE
+        # to -1 (never a real value — capacities are nonnegative) normalizes NULLs so
+        # a duplicate band is rejected on both SQLite and PostgreSQL.
+        Index(
+            "uq_facility_standard_costs_band",
             "cost_version",
             "facility_type",
-            "capacity_min_ton_per_day",
-            "capacity_max_ton_per_day",
-            name="uq_facility_standard_costs_band",
+            text("coalesce(capacity_min_ton_per_day, -1)"),
+            text("coalesce(capacity_max_ton_per_day, -1)"),
+            unique=True,
         ),
         CheckConstraint(
             "cost_per_capacity_bn >= 0",

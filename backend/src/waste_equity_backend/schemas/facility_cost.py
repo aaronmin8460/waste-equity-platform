@@ -143,6 +143,10 @@ class SubsidyOut(BaseModel):
     subsidy_scheme: str
     subsidy_scheme_label: str
     subsidy_rate: Decimal
+    # Source + reference period for the nominal rate (AGENTS.md), and its basis.
+    rate_source: str
+    rate_reference_period: str
+    rate_basis: str
     estimated_national_subsidy_bn: Decimal
     simplified_local_government_share_bn: Decimal
     unit: str
@@ -187,6 +191,8 @@ class ProvenanceOut(BaseModel):
     price_base_date: datetime.date
     source_document: str
     source_page: str
+    subsidy_rate_source: str
+    subsidy_rate_reference_period: str
 
 
 class FacilityCostCalculateOut(BaseModel):

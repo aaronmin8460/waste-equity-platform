@@ -84,6 +84,17 @@ SUBSIDY_SCHEME_LABELS: dict[str, str] = {
     "joint_regional_facility": "광역(공동) 시설 (50%)",
 }
 
+# The nominal national-subsidy rates by local-government type are policy rates from
+# the same 국고보조금 업무처리지침 as the standard-cost table. They are used here as
+# ANALYTICAL ASSUMPTIONS (a scenario), never as an approved grant. Named so the API
+# can carry the rate's source/basis (AGENTS.md: every displayed metric needs a
+# source and reference period).
+SUBSIDY_RATE_SOURCE = (
+    "2025년 폐기물처리시설 국고보조금 업무처리지침 (지방자치단체 유형별 명목 국고보조율)"
+)
+SUBSIDY_RATE_BASIS = "명목 국고보조율(분석용 가정) — 실제 승인된 국고보조금이 아님"
+SUBSIDY_RATE_REFERENCE_PERIOD = "2025 (업무처리지침 기준)"
+
 # Exact-decimal precisions. 톤/일 and 억원 keep six decimals (the storage scale of
 # the source quantities/costs); the per-capita local share is 원 to two decimals.
 _QUANTITY_PRECISION = Decimal("0.000001")

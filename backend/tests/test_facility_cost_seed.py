@@ -5,11 +5,14 @@ seed helper is idempotent and that the self-contained Alembic migration snapshot
 never diverges from the engine's canonical ``STANDARD_COST_SEED``.
 """
 
+import datetime
 import importlib.util
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from waste_equity_backend.analysis import facility_cost as fc
@@ -79,6 +82,38 @@ def test_seeded_rows_match_the_canonical_bands(session: Session) -> None:
         assert row.price_base_date == fc.PRICE_BASE_DATE
         assert row.source_document == fc.SOURCE_DOCUMENT
         assert row.source_page == fc.SOURCE_PAGE
+
+
+def _band_row(min_val: Decimal | None, max_val: Decimal | None) -> FacilityStandardCost:
+    return FacilityStandardCost(
+        cost_version="test-version",
+        facility_type="incineration_new",
+        capacity_min_ton_per_day=min_val,
+        capacity_min_inclusive=min_val is None,
+        capacity_max_ton_per_day=max_val,
+        capacity_max_inclusive=max_val is not None,
+        cost_per_capacity_bn=Decimal("6.24"),
+        price_base_date=datetime.date(2022, 12, 1),
+        source_document="test",
+        source_page="p.1",
+        source_note=None,
+        created_at=datetime.datetime.now(tz=datetime.UTC),
+    )
+
+
+def test_duplicate_null_bound_bands_are_rejected(session: Session) -> None:
+    # A plain unique constraint treats NULL as distinct; the NULL-safe COALESCE
+    # index must still reject a duplicate first band (NULL, 30) …
+    session.add(_band_row(None, Decimal("30")))
+    session.add(_band_row(None, Decimal("30")))
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
+    # … and a duplicate last band (200, NULL).
+    session.add(_band_row(Decimal("200"), None))
+    session.add(_band_row(Decimal("200"), None))
+    with pytest.raises(IntegrityError):
+        session.flush()
 
 
 def test_migration_snapshot_matches_engine_seed() -> None:

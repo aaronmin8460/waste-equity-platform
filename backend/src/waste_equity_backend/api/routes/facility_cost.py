@@ -59,6 +59,8 @@ _POPULATION_SOURCE_ID = "sgis"
 _POPULATION_GEOGRAPHIC_LEVEL = "SIGUNGU"
 _UNIT_COST_UNIT = "억원/(톤·일)"
 _COST_UNIT = "억원"
+# The annualized figure is a per-year rate (억원 ÷ years), not a one-time amount.
+_COST_PER_YEAR_UNIT = "억원/년"
 
 FacilityTypeParam = Literal["incineration_new", "sorting_auto"]
 SubsidySchemeParam = Literal[
@@ -364,12 +366,14 @@ def calculate(
     sources = {row.source_id for row in waste_rows}
     datasets = {row.official_dataset_name for row in waste_rows}
     periods = {row.reference_period for row in waste_rows}
-    if len(bases) != 1 or len(sources) != 1 or len(datasets) != 1:
+    # `periods` is included: the aggregate labels one reference period, so mixed
+    # periods must not be silently collapsed to an arbitrary one.
+    if len(bases) != 1 or len(sources) != 1 or len(datasets) != 1 or len(periods) != 1:
         raise HTTPException(
             status_code=500,
             detail={
                 "error": "MIXED_WASTE_PROVENANCE",
-                "detail": "Waste rows disagree on accounting basis / source / dataset.",
+                "detail": "Waste rows disagree on accounting basis / source / dataset / period.",
             },
         )
     official_quantity = sum(
@@ -402,6 +406,15 @@ def calculate(
     # Exactly one population row per requested region (ambiguous or missing → not
     # complete → per-capita is null with a reason, never fabricated).
     population_complete = all(len(population_by_code.get(code, [])) == 1 for code in codes)
+    # …and every region's denominator must share the same definition and period, so
+    # the summed denominator is not an incompatible, mislabelled mix.
+    incompatible_population = False
+    if population_complete:
+        definitions = {population_by_code[code][0].population_definition for code in codes}
+        pop_periods = {population_by_code[code][0].reference_period for code in codes}
+        if len(definitions) != 1 or len(pop_periods) != 1:
+            population_complete = False
+            incompatible_population = True
     official_population: int | None = None
     population_reason: str | None = None
     pop_source_id: str | None = None
@@ -413,6 +426,8 @@ def calculate(
         pop_source_id = sample.source_id
         pop_reference_period = sample.reference_period
         pop_definition = sample.population_definition
+    elif incompatible_population:
+        population_reason = "INCOMPATIBLE_POPULATION_DEFINITION"
     else:
         population_reason = "NO_MATCHING_SAME_YEAR_POPULATION"
 
@@ -432,7 +447,9 @@ def calculate(
     except fc.FacilityCostError as exc:
         raise _bad_request(exc.code, str(exc)) from exc
 
-    per_capita_reason = calc.per_capita_unavailable_reason or population_reason
+    # The route's population_reason is more specific (missing vs incompatible
+    # definition) than the engine's generic MISSING reason, so it takes precedence.
+    per_capita_reason = population_reason or calc.per_capita_unavailable_reason
 
     candidate_context = (
         _candidate_context(session, candidate_id) if candidate_id is not None else None
@@ -506,13 +523,17 @@ def calculate(
             term_ko="연간 환산 설치비",
             facility_lifetime_years=calc.facility_lifetime_years,
             annualized_construction_cost_bn=calc.annualized_construction_cost_bn,
-            unit=_COST_UNIT,
+            # A per-year rate (억원 ÷ 수명), never a one-time 억원 amount.
+            unit=_COST_PER_YEAR_UNIT,
             method="STRAIGHT_LINE_ANALYTICAL",
         ),
         subsidy=SubsidyOut(
             subsidy_scheme=subsidy_scheme,
             subsidy_scheme_label=fc.SUBSIDY_SCHEME_LABELS[subsidy_scheme],
             subsidy_rate=calc.subsidy_rate,
+            rate_source=fc.SUBSIDY_RATE_SOURCE,
+            rate_reference_period=fc.SUBSIDY_RATE_REFERENCE_PERIOD,
+            rate_basis=fc.SUBSIDY_RATE_BASIS,
             estimated_national_subsidy_bn=calc.estimated_national_subsidy_bn,
             simplified_local_government_share_bn=calc.simplified_local_government_share_bn,
             unit=_COST_UNIT,
@@ -544,6 +565,8 @@ def calculate(
             price_base_date=band_rows[0].price_base_date,
             source_document=band_rows[0].source_document,
             source_page=band_rows[0].source_page,
+            subsidy_rate_source=fc.SUBSIDY_RATE_SOURCE,
+            subsidy_rate_reference_period=fc.SUBSIDY_RATE_REFERENCE_PERIOD,
         ),
         assumptions=ASSUMPTIONS,
         disclaimer=fc.DISCLAIMER,
