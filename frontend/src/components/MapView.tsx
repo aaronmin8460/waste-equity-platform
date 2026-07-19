@@ -89,6 +89,26 @@ export interface RegionDisplayValue {
   display: string;
 }
 
+/**
+ * The region information a map click surfaces, mirrored into an accessible DOM
+ * summary in the sidebar. The MapLibre canvas itself is not reachable by keyboard
+ * or screen readers, so the click also drives a text alternative (page.tsx). No
+ * value here is fabricated: `hasValue`/`metricDisplay` come straight from the
+ * served choropleth feature, and a region with no served value carries its
+ * availability reason instead of a number.
+ */
+export interface RegionSelection {
+  regionCode: string;
+  regionName: string;
+  metricLabel: string;
+  metricDisplay: string;
+  hasValue: boolean;
+  geometryKind: string | null;
+  childRegionNames: string[];
+  sourceId: string;
+  boundaryReferencePeriod: string;
+}
+
 export type StatusVisibility = Record<SuitabilityStatus, boolean>;
 
 // Precise availability reasons the reporting endpoints attach to a region with no
@@ -129,6 +149,16 @@ interface MapViewProps {
   /** Currently-selected candidate (list or map). Drives highlight + map movement. */
   selectedCandidate: CandidateDetail | null;
   onCandidateClick: (candidateId: number) => void;
+  /** Accessible name for the map region landmark (varies by mode). */
+  ariaLabel: string;
+  /** Longer textual explanation, referenced by the container's aria-describedby. */
+  ariaDescription: string;
+  /**
+   * Fired when a choropleth region is clicked, so the sidebar can render an
+   * accessible DOM summary of the same information the map popup shows. Optional:
+   * suitability mode has no region choropleth.
+   */
+  onRegionClick?: (selection: RegionSelection) => void;
 }
 
 // A MapLibre "step" needs at least one stop; with no breaks (e.g. before data
@@ -220,17 +250,22 @@ export default function MapView({
   statusVisibility,
   selectedCandidate,
   onCandidateClick,
+  ariaLabel,
+  ariaDescription,
+  onRegionClick,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const loadedRef = useRef(false);
   const onCandidateClickRef = useRef(onCandidateClick);
+  const onRegionClickRef = useRef(onRegionClick);
   // Tile URL currently applied to the vector source. A vector source's tiles are
   // immutable once added, so a profile change requires removing and re-adding the
   // source rather than a GeoJSON-style setData swap.
   const appliedTileUrlRef = useRef<string | null>(null);
   useEffect(() => {
     onCandidateClickRef.current = onCandidateClick;
+    onRegionClickRef.current = onRegionClick;
   });
 
   // Reflect map state onto the container as read-only data attributes so tests
@@ -397,6 +432,29 @@ export default function MapView({
           const feature = event.features?.[0];
           if (!feature) return;
           const props = feature.properties as Record<string, string>;
+          // Mirror the same information into the accessible DOM summary. MapLibre
+          // serializes feature properties to strings, so `has_value` arrives as
+          // "true"/"false"; parse the child names defensively.
+          const onSelect = onRegionClickRef.current;
+          if (onSelect) {
+            let childNames: string[] = [];
+            try {
+              childNames = JSON.parse(props.child_region_names ?? "[]") as string[];
+            } catch {
+              childNames = [];
+            }
+            onSelect({
+              regionCode: props.region_code,
+              regionName: props.region_name,
+              metricLabel: props.metric_label,
+              metricDisplay: props.metric_display,
+              hasValue: String(props.has_value) === "true",
+              geometryKind: props.geometry_kind ?? null,
+              childRegionNames: childNames,
+              sourceId: props.source_id,
+              boundaryReferencePeriod: props.boundary_reference_period,
+            });
+          }
           let reportingLines = "";
           if (props.geometry_kind === "DERIVED") {
             let children = "";
@@ -616,5 +674,24 @@ export default function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  return <div ref={containerRef} className="h-full w-full" data-testid="map-container" />;
+  // The MapLibre canvas is not reachable by keyboard or screen readers, so the
+  // container is a labelled `region` landmark with a textual description that
+  // points AT users to the accessible DOM alternatives (selected-region summary,
+  // top-candidate list, candidate detail) rendered in the sidebar. This is the
+  // accessible-name/description pattern for a map, not a bare canvas role.
+  return (
+    <div className="relative h-full w-full">
+      <p id="map-accessible-description" className="sr-only">
+        {ariaDescription}
+      </p>
+      <div
+        ref={containerRef}
+        role="region"
+        aria-label={ariaLabel}
+        aria-describedby="map-accessible-description"
+        className="h-full w-full"
+        data-testid="map-container"
+      />
+    </div>
+  );
 }

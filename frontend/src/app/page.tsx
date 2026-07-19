@@ -59,6 +59,7 @@ import {
 import {
   CANDIDATE_SCORE_BREAKS,
   CANDIDATE_SCORE_PALETTE_5,
+  METRIC_GROUPS,
   METRICS,
   NO_DATA_COLOR,
   formatCount,
@@ -70,7 +71,12 @@ import {
   scaleMethodNote,
   type MetricKey,
 } from "../lib/metrics";
-import type { MapMode, RegionDisplayValue, StatusVisibility } from "../components/MapView";
+import type {
+  MapMode,
+  RegionDisplayValue,
+  RegionSelection,
+  StatusVisibility,
+} from "../components/MapView";
 import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
 import { classifyEquityRaw, topCandidateCellLabel } from "../lib/suitability";
@@ -125,6 +131,12 @@ export default function Home() {
 
   const [mode, setMode] = useState<DashboardMode>("equity");
   const [profile, setProfile] = useState<SuitabilityProfile>("baseline");
+
+  // Accessible DOM alternative to clicking a region on the (canvas-only) map.
+  // Cleared whenever the metric or mode changes, because the captured display
+  // value describes the metric that was active at click time and would otherwise
+  // go stale under a different metric.
+  const [selectedRegion, setSelectedRegion] = useState<RegionSelection | null>(null);
 
   // Capital-region landfill inbound dashboard (서울·인천·경기 → 수도권매립지) state.
   const [flowYear, setFlowYear] = useState<number | null>(null); // null = latest complete year
@@ -194,6 +206,16 @@ export default function Home() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Select a metric AND drop any accessible selected-region summary: its captured
+  // display value belongs to the metric that was active at click time, so it would
+  // go stale under a different metric. Cleared here (in the event handler) rather
+  // than in an effect. The region summary only renders in equity mode, so leaving
+  // a selection across a mode round-trip with the same metric stays valid.
+  const selectMetric = useCallback((key: MetricKey) => {
+    setMetricKey(key);
+    setSelectedRegion(null);
+  }, []);
 
   // Suitability meta (policy + latest run + summary): load once when entering the mode.
   useEffect(() => {
@@ -445,7 +467,11 @@ export default function Home() {
 
   if (error !== null) {
     return (
-      <main className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100 p-8">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100 p-8"
+      >
         <div className="max-w-lg rounded-lg border border-red-300 bg-white p-6 shadow" role="alert">
           <h1 className="text-lg font-semibold text-red-700">데이터를 불러올 수 없습니다</h1>
           <p className="mt-2 text-sm text-slate-700">{error}</p>
@@ -467,8 +493,14 @@ export default function Home() {
 
   if (data === null) {
     return (
-      <main className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100">
-        <p className="text-sm text-slate-600" data-testid="loading">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100"
+      >
+        {/* role="status" (an implicit polite live region) so assistive tech
+            announces the loading state and its resolution. */}
+        <p className="text-sm text-slate-600" data-testid="loading" role="status">
           공식 데이터를 불러오는 중… (Loading official data…)
         </p>
       </main>
@@ -523,7 +555,11 @@ export default function Home() {
     // engines without `dvh` support keep a valid full-viewport height instead of
     // dropping the whole declaration (which would leave the desktop row — and its
     // `md:flex-1` map — with no definite height).
-    <main className="flex min-h-screen min-h-dvh flex-col md:h-screen md:h-dvh md:flex-row">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="flex min-h-screen min-h-dvh flex-col md:h-screen md:h-dvh md:flex-row"
+    >
       <aside className="flex w-full flex-col gap-4 border-b border-slate-200 bg-white p-5 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
         <header>
           <h1 className="text-lg font-bold text-slate-900">수도권 폐기물 형평성·적합성 지도</h1>
@@ -540,24 +576,53 @@ export default function Home() {
               <h2 className="mb-2 text-sm font-semibold text-slate-800">
                 지역 지표 (Regional metric)
               </h2>
-              <div className="flex flex-col gap-1">
-                {METRICS.map((candidate) => (
-                  <label
-                    key={candidate.key}
-                    className="flex items-start gap-2 text-sm text-slate-700"
-                  >
-                    <input
-                      type="radio"
-                      name="metric"
-                      className="mt-1"
-                      checked={metricKey === candidate.key}
-                      onChange={() => setMetricKey(candidate.key)}
-                    />
-                    <span>{candidate.label}</span>
-                  </label>
+              {/* Selected-metric summary. role="status" is an implicit polite live
+                  region, so a screen reader announces each metric change, and it
+                  doubles as an always-visible reminder of the active metric. */}
+              <p
+                className="mb-2 rounded bg-slate-50 px-2 py-1 text-xs text-slate-600"
+                role="status"
+                data-testid="selected-metric-summary"
+              >
+                선택한 지표: <span className="font-medium text-slate-800">{metric.label}</span>
+                {unit ? ` · 단위 ${unit}` : ""}
+              </p>
+              {/* The 11 metrics are grouped into semantic <fieldset>s with a
+                  <legend> each. All radios share name="metric", so they stay ONE
+                  logical radio group (arrow keys move across every option); the
+                  fieldsets only provide accessible sub-grouping and visual
+                  scanning — no metric calculation changes. */}
+              <div className="flex flex-col gap-3">
+                {METRIC_GROUPS.map((group) => (
+                  <fieldset key={group.key} className="m-0 border-0 p-0">
+                    <legend className="mb-1 text-xs font-semibold text-slate-500">
+                      {group.legend}
+                    </legend>
+                    <div className="flex flex-col gap-1">
+                      {METRICS.filter((candidate) => candidate.group === group.key).map(
+                        (candidate) => (
+                          <label
+                            key={candidate.key}
+                            className="flex items-start gap-2 text-sm text-slate-700"
+                          >
+                            <input
+                              type="radio"
+                              name="metric"
+                              className="mt-1"
+                              checked={metricKey === candidate.key}
+                              onChange={() => selectMetric(candidate.key)}
+                            />
+                            <span>{candidate.label}</span>
+                          </label>
+                        ),
+                      )}
+                    </div>
+                  </fieldset>
                 ))}
               </div>
             </section>
+
+            <RegionSummary selected={selectedRegion} clear={() => setSelectedRegion(null)} />
 
             <CollapsibleSection label="지도 범례 (Legend)">
               <section aria-label="범례" data-testid="legend">
@@ -682,6 +747,17 @@ export default function Home() {
           statusVisibility={statusVisibility}
           selectedCandidate={selected}
           onCandidateClick={onCandidateClick}
+          ariaLabel={
+            mode === "equity"
+              ? `지역 지표 지도 — ${metric.label} (interactive choropleth map)`
+              : "적합성 후보 격자 지도 (suitability candidate grid, interactive map)"
+          }
+          ariaDescription={
+            mode === "equity"
+              ? "지역별 지표를 색으로 표시한 인터랙티브 지도입니다. 지역을 클릭하면 좌측 '선택한 지역' 요약에 이름과 값이 표시되며, 키보드·스크린리더 사용자는 그 요약으로 같은 정보를 확인할 수 있습니다."
+              : "500m 적합성 후보 격자를 표시한 인터랙티브 지도입니다. 상세 후보는 좌측 '상위 적합 후보' 목록과 '후보 상세' 패널에서 접근할 수 있습니다. 분석용 스크리닝이며 법적 입지 결정이 아닙니다."
+          }
+          onRegionClick={setSelectedRegion}
         />
       </div>
     </main>
@@ -708,11 +784,24 @@ function ModeSwitch({
 }) {
   return (
     <section aria-label="모드 선택">
-      <h2 className="mb-2 text-sm font-semibold text-slate-800">모드 (Mode)</h2>
-      {/* flex-wrap keeps all three buttons on screen at 320–430px (they wrap
+      {/* A non-heading label (not an <h2>): in 수도권매립지 mode the mode switch
+          renders above the dashboard's own <h1>, so a heading here would put an
+          h2 before the h1 and break the heading hierarchy. The group is named via
+          aria-labelledby instead. */}
+      <p id="mode-switch-label" className="mb-2 text-sm font-semibold text-slate-800">
+        모드 (Mode)
+      </p>
+      {/* Toggle buttons with aria-pressed, so role="group" (not radiogroup, which
+          would promise arrow-key roving focus these native buttons do not have).
+          flex-wrap keeps all three buttons on screen at 320–430px (they wrap
           instead of overflowing). A larger tap height on mobile only, so the
           desktop control stays the same size. */}
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" data-testid="mode-switch">
+      <div
+        className="flex flex-wrap gap-1.5"
+        role="group"
+        aria-labelledby="mode-switch-label"
+        data-testid="mode-switch"
+      >
         {MODE_BUTTONS.map((button) => (
           <button
             key={button.key}
@@ -767,6 +856,89 @@ function CollapsibleSection({
 }
 
 // --------------------------------------------------------------------------- //
+// Selected-region summary — the accessible DOM alternative to a map region click.
+//
+// The MapLibre canvas cannot be reached by keyboard or a screen reader, so a
+// region click is mirrored here as text. It never fabricates a value: a region
+// with no served value shows its availability text (from the choropleth feature),
+// not a zero. Kept OUT of a collapsed <details> so its role="status" region can
+// announce the selection (a closed disclosure would hide it from the a11y tree).
+// --------------------------------------------------------------------------- //
+
+function RegionSummary({
+  selected,
+  clear,
+}: {
+  selected: RegionSelection | null;
+  clear: () => void;
+}) {
+  return (
+    <section
+      aria-label="선택한 지역 요약"
+      className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"
+      data-testid="selected-region-summary"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-800">선택한 지역 (Selected region)</h2>
+        {selected && (
+          <button
+            type="button"
+            onClick={clear}
+            className="text-slate-400 hover:text-slate-700"
+            data-testid="selected-region-clear"
+          >
+            지우기 ✕
+          </button>
+        )}
+      </div>
+      <div role="status" className="mt-1">
+        {selected === null ? (
+          <p className="text-slate-500" data-testid="selected-region-empty">
+            지도에서 지역을 클릭하면 이름과 지표 값이 여기에 표시됩니다. (Select a region on the map to
+            read its name and metric value here.)
+          </p>
+        ) : (
+          <dl className="space-y-0.5">
+            <div>
+              <dt className="inline font-medium">지역: </dt>
+              <dd className="inline" data-testid="selected-region-name">
+                {selected.regionName}
+              </dd>
+            </div>
+            <div>
+              <dt className="inline font-medium">{selected.metricLabel}: </dt>
+              {/* hasValue ⇒ served value; otherwise the availability text carried
+                  on the feature (e.g. "데이터 없음 — …"), never a fabricated 0.
+                  Availability is conveyed by the text itself, not by color. */}
+              <dd
+                className={`inline ${
+                  selected.hasValue ? "font-semibold text-slate-900" : "text-amber-700"
+                }`}
+                data-testid="selected-region-value"
+              >
+                {selected.metricDisplay}
+              </dd>
+            </div>
+            <div>
+              <dt className="inline font-medium">경계 출처: </dt>
+              <dd className="inline">
+                {selected.sourceId} ({selected.boundaryReferencePeriod})
+              </dd>
+            </div>
+            {selected.geometryKind === "DERIVED" && selected.childRegionNames.length > 0 && (
+              <p className="mt-1 text-slate-500" data-testid="selected-region-derived-note">
+                통계 보고 단위: 시 (city) · 경계는 {selected.childRegionNames.join("·")} 자치구 경계의
+                파생 합집합입니다. 구별 공식 폐기물 값은 제공되지 않습니다.
+              </p>
+            )}
+          </dl>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// --------------------------------------------------------------------------- //
 // Suitability panel
 // --------------------------------------------------------------------------- //
 
@@ -812,6 +984,13 @@ function SuitabilityPanel({
   const s = suit.summary;
   return (
     <>
+      {/* Screen-reader status: announced when the weight profile changes and when
+          the candidate summary updates (both change this text). Kept concise to
+          avoid verbose repetition; the same counts are shown visibly below. */}
+      <p role="status" className="sr-only" data-testid="suitability-live">
+        가중치 프로파일 {profile}. 적합 후보 {formatCount(s.candidate_count_eligible)}개, 검토 필요{" "}
+        {formatCount(s.candidate_count_review)}개.
+      </p>
       <section
         className="rounded border border-slate-300 bg-slate-50 p-3 text-xs break-words text-slate-700"
         data-testid="suitability-summary"
@@ -909,14 +1088,27 @@ function SuitabilityPanel({
           <p className="text-xs text-slate-500">이 프로파일의 순위 후보가 없습니다.</p>
         ) : (
           <ol className="flex flex-col gap-1 text-xs text-slate-700">
-            {s.top_candidates.map((c) => (
+            {s.top_candidates.map((c) => {
+              const isSelected = selected?.candidate_id === Number(c.candidate_id);
+              return (
               <li key={String(c.candidate_id)}>
                 <button
                   type="button"
+                  aria-current={isSelected ? "true" : undefined}
                   onClick={() => onSelect(Number(c.candidate_id))}
-                  className="w-full rounded bg-slate-50 px-2 py-1 text-left hover:bg-slate-100"
+                  className={`w-full rounded px-2 py-1 text-left ${
+                    isSelected
+                      ? "bg-sky-100 ring-2 ring-sky-500"
+                      : "bg-slate-50 hover:bg-slate-100"
+                  }`}
                   data-testid="top-candidate-item"
                 >
+                  {/* Selection is conveyed by text + a ring, never color alone. */}
+                  {isSelected && (
+                    <span className="mr-1 font-semibold text-sky-700" data-testid="top-candidate-selected">
+                      ✓ 선택됨
+                    </span>
+                  )}
                   #{String(c.rank)} · {String(c.total_score)} · {String(c.sigungu ?? "")}{" "}
                   <span className="text-slate-400">
                     (Z {String(c.zoning_score)} R {String(c.road_score)} E {String(c.equity_score)} D{" "}
@@ -930,7 +1122,8 @@ function SuitabilityPanel({
                   </span>
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ol>
         )}
         <div className="mt-1 text-xs text-slate-500" data-testid="candidate-vector-note">
