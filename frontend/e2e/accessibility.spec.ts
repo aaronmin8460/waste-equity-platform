@@ -45,8 +45,10 @@ for (const vp of VIEWPORTS) {
       // The very first Tab from a fresh load reaches it (first focusable element).
       await page.keyboard.press("Tab");
       await expect(skip).toBeFocused();
-      const after = await skip.boundingBox();
-      expect(after!.y).toBeGreaterThanOrEqual(0);
+      // The link animates into view (transition: top 0.15s). Use a retrying
+      // assertion so we observe the settled on-screen position rather than
+      // sampling a single mid-transition frame (deterministic, no fixed sleep).
+      await expect(skip).toBeInViewport();
 
       // Keyboard focus draws the shared focus-visible ring (status never by color).
       const outlineWidth = await skip.evaluate(
