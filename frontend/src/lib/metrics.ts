@@ -32,11 +32,14 @@ export interface MetricGroup {
   legend: string;
 }
 
-/** Legend text for each metric group, in selection order. */
+/**
+ * Legend text for each metric group, in selection order. Primary citizen labels
+ * (plain Korean); the technical family name is available in methodology docs.
+ */
 export const METRIC_GROUPS: readonly MetricGroup[] = [
-  { key: "total", legend: "총량 지표 (Total-quantity indicators)" },
-  { key: "per_capita", legend: "1인당 형평성 지표 (Per-capita equity indicators)" },
-  { key: "burden", legend: "시설 부담 지표 (Facility-burden indicators)" },
+  { key: "total", legend: "총량 지표" },
+  { key: "per_capita", legend: "1인당 형평성 지표" },
+  { key: "burden", legend: "시설 부담 지표" },
 ] as const;
 
 export interface MetricDefinition {
@@ -63,20 +66,22 @@ const NON_RESIDENTIAL_CAVEAT =
   "사업장·건설 폐기물은 지역 내 사업장/현장 활동으로 발생하므로 주민 1인당 값 해석에 주의가 필요합니다.";
 
 const FACILITY_BURDEN_CAVEAT =
-  "시설 소재지 기준 처리량(FACILITY_LOCATION_BASED_THROUGHPUT)으로, 발생지 기준 " +
+  "시설 소재지 기준 처리량(시설이 처리한 양)이므로, 발생지 기준(지역에서 배출된 양) " +
   "폐기물 통계와 합산하거나 비교할 수 없습니다.";
 
+// Metric labels are PRIMARY citizen UI: plain Korean, no English parenthetical.
+// The technical stream/measure name stays in the source/method provenance panels.
 export const METRICS: MetricDefinition[] = [
   {
     key: "population",
-    label: "인구 (Population)",
+    label: "인구",
     group: "total",
     dataset: "population",
     geography: "native",
   },
   {
     key: "HOUSEHOLD",
-    label: "생활계 폐기물 발생량 (Household waste generation)",
+    label: "생활계 폐기물 발생량",
     group: "total",
     dataset: "waste-statistics",
     geography: "reporting",
@@ -84,7 +89,7 @@ export const METRICS: MetricDefinition[] = [
   },
   {
     key: "BUSINESS_NON_FACILITY",
-    label: "사업장 비배출시설계 발생량 (Business non-facility)",
+    label: "사업장(비배출시설계) 발생량",
     group: "total",
     dataset: "waste-statistics",
     geography: "reporting",
@@ -92,7 +97,7 @@ export const METRICS: MetricDefinition[] = [
   },
   {
     key: "INDUSTRIAL_FACILITY",
-    label: "사업장 배출시설계 발생량 (Industrial facility)",
+    label: "사업장(배출시설계) 발생량",
     group: "total",
     dataset: "waste-statistics",
     geography: "reporting",
@@ -100,7 +105,7 @@ export const METRICS: MetricDefinition[] = [
   },
   {
     key: "CONSTRUCTION",
-    label: "건설 폐기물 발생량 (Construction waste)",
+    label: "건설 폐기물 발생량",
     group: "total",
     dataset: "waste-statistics",
     geography: "reporting",
@@ -108,7 +113,7 @@ export const METRICS: MetricDefinition[] = [
   },
   {
     key: "PER_CAPITA_HOUSEHOLD",
-    label: "1인당 생활계 발생량 (Household per capita) — 형평성 지표",
+    label: "1인당 생활계 발생량",
     group: "per_capita",
     dataset: "waste-per-capita",
     geography: "reporting",
@@ -116,7 +121,7 @@ export const METRICS: MetricDefinition[] = [
   },
   {
     key: "PER_CAPITA_BUSINESS_NON_FACILITY",
-    label: "1인당 사업장 비배출시설계 (Business non-facility per capita)",
+    label: "1인당 사업장(비배출시설계)",
     group: "per_capita",
     dataset: "waste-per-capita",
     geography: "reporting",
@@ -125,7 +130,7 @@ export const METRICS: MetricDefinition[] = [
   },
   {
     key: "PER_CAPITA_INDUSTRIAL_FACILITY",
-    label: "1인당 사업장 배출시설계 (Industrial facility per capita)",
+    label: "1인당 사업장(배출시설계)",
     group: "per_capita",
     dataset: "waste-per-capita",
     geography: "reporting",
@@ -134,7 +139,7 @@ export const METRICS: MetricDefinition[] = [
   },
   {
     key: "PER_CAPITA_CONSTRUCTION",
-    label: "1인당 건설 폐기물 (Construction per capita)",
+    label: "1인당 건설 폐기물",
     group: "per_capita",
     dataset: "waste-per-capita",
     geography: "reporting",
@@ -143,7 +148,7 @@ export const METRICS: MetricDefinition[] = [
   },
   {
     key: "FACILITY_BURDEN_LOCATED",
-    label: "1인당 소재 시설 처리량 (Facility throughput per capita, located) — 부담 지표",
+    label: "1인당 소재 시설 처리량",
     group: "burden",
     dataset: "facility-burden",
     geography: "native",
@@ -152,7 +157,7 @@ export const METRICS: MetricDefinition[] = [
   },
   {
     key: "FACILITY_BURDEN_5KM",
-    label: "1인당 인근 5km 시설 처리량 (Facility throughput per capita, within 5 km)",
+    label: "1인당 인근 5km 시설 처리량",
     group: "burden",
     dataset: "facility-burden",
     geography: "native",

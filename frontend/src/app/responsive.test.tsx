@@ -129,8 +129,8 @@ describe("mobile control collapsing", () => {
     // The legend has moved out of the sidebar to a floating map overlay, so the
     // remaining sidebar disclosures are sources & method and facility layer.
     expect(details.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("출처 및 방법 (Sources & method)")).toBeDefined();
-    expect(screen.getByText("시설 레이어 (Facility layer)")).toBeDefined();
+    expect(screen.getByText("출처와 계산 방법")).toBeDefined();
+    expect(screen.getByText("시설 위치 표시")).toBeDefined();
     // The facility toggle still lives inside the DOM (never permanently hidden),
     // so desktop CSS can force it open and screen readers can reach it.
     expect(screen.getByTestId("facilities-toggle")).toBeDefined();

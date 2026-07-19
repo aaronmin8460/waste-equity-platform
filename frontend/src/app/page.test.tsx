@@ -289,10 +289,12 @@ describe("suitability map uses vector tiles, not a limited GeoJSON slice", () =>
     // renders its real content rather than the loading/error state.
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
 
-    // New, accurate wording: the whole grid is available, only needed tiles ship.
+    // New, accurate plain wording: the whole grid is shown, only the visible part
+    // is loaded quickly. The technical "벡터 타일(MVT)" phrasing stays available in
+    // the "자세히 보기" detail, but no longer leads the primary sentence.
     const note = await screen.findByTestId("candidate-vector-note");
-    expect(note.textContent).toContain("벡터 타일");
-    expect(note.textContent).toContain("전체 데이터");
+    expect(note.textContent).toContain("전체 후보 구역");
+    expect(note.textContent).toContain("전체 자료");
 
     // The old misleading "지도 영역 내 2,000 / …개 표시 (뷰포트 제한)" copy is gone.
     expect(screen.queryByTestId("candidate-viewport-count")).toBeNull();
@@ -319,10 +321,10 @@ describe("가중치 실험실 (weight scenario) sub-view", () => {
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
   }
 
-  it("adds a 가중치 실험실 sub-view button under Suitability", async () => {
+  it("adds a 가중치 바꿔보기 sub-view button under 후보지 분석", async () => {
     await enterSuitability();
     const button = screen.getByTestId("suitability-view-scenario");
-    expect(button.textContent).toContain("가중치 실험실");
+    expect(button.textContent).toContain("가중치 바꿔보기");
   });
 
   it("navigates score → scenario → cost with exactly one MapView and never a second", async () => {

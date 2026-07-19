@@ -195,7 +195,9 @@ describe("metric fieldset groups + live summary", () => {
     await renderLoaded();
     const summary = screen.getByTestId("selected-metric-summary");
     expect(summary.getAttribute("role")).toBe("status");
-    expect(summary.textContent).toContain("인구 (Population)");
+    // Plain-Korean metric label — no English parenthetical in primary UI.
+    expect(summary.textContent).toContain("인구");
+    expect(summary.textContent).not.toContain("(Population)");
     // Switching the metric updates the announced summary text.
     fireEvent.click(screen.getByRole("radio", { name: /생활계 폐기물 발생량/ }));
     await waitFor(() =>
@@ -303,7 +305,7 @@ describe("single logical heading", () => {
     const { container } = await renderLoaded();
     const h1s = container.querySelectorAll("h1");
     expect(h1s).toHaveLength(1);
-    expect(h1s[0].textContent).toContain("수도권 폐기물 형평성·적합성 지도");
+    expect(h1s[0].textContent).toContain("우리 동네 폐기물 지도");
   });
 });
 
@@ -313,7 +315,8 @@ describe("suitability accessible alternatives", () => {
     await enterSuitability();
     const live = screen.getByTestId("suitability-live");
     expect(live.getAttribute("role")).toBe("status");
-    expect(live.textContent).toContain("가중치 프로파일 baseline");
+    // Plain-Korean score basis (no raw profile key) in the live region.
+    expect(live.textContent).toContain("점수 반영 기준 기본 기준");
   });
 
   it("switches between the score screening and the cost lens sub-views", async () => {

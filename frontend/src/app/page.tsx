@@ -91,7 +91,20 @@ import LandfillDashboard from "../components/LandfillDashboard";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import MapLegendOverlay from "../components/MapLegendOverlay";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
+import TransparencyDashboard from "../components/TransparencyDashboard";
 import { classifyEquityRaw, stabilityBadgeLabel, topCandidateCellLabel } from "../lib/suitability";
+import {
+  COMPONENT_ORDER,
+  MODE_LABELS,
+  MODE_ORIENTATION,
+  PROFILE_META,
+  SUBVIEW_LABELS,
+  codeWithName,
+  plainError,
+  profileLabel,
+  statusLabel,
+  type DashboardArea,
+} from "../lib/glossary";
 
 /** Sub-view inside suitability mode: the score screening, the weight lab, or cost. */
 type SuitabilityView = "score" | "scenario" | "cost";
@@ -100,34 +113,59 @@ const MapView = dynamic(() => import("../components/MapView"), { ssr: false });
 
 /**
  * Every selectable mode. `MapMode` is the subset that renders a map; "flow" (the
- * 수도권매립지 inbound dashboard) deliberately has none, so the two types are
- * kept distinct rather than letting a non-map mode reach MapView.
+ * 매립지 현황 inbound dashboard) and "transparency" (the 데이터·출처 page)
+ * deliberately have none, so the types stay distinct rather than letting a non-map
+ * mode reach MapView. `DashboardMode` is exactly the citizen `DashboardArea`.
  */
-type DashboardMode = MapMode | "flow";
+type DashboardMode = MapMode | "flow" | "transparency";
 
+// Plain-Korean score-basis (weight-profile) options. The primary label is the
+// citizen phrasing; `method` is the short detail line shown under it. Both come
+// from the central glossary so wording stays consistent across the app.
 const PROFILES: { key: SuitabilityProfile; label: string; method: string }[] = [
-  { key: "baseline", label: "기본 (baseline)", method: "운영 기본 가정 — 전문가 AHP 산출값이 아님" },
-  { key: "equal", label: "균등 (equal)", method: "균등 비교 가정" },
-  { key: "equity_focused", label: "형평성 중심 (equity)", method: "형평성 민감도 비교 가정" },
-  { key: "access_focused", label: "접근성 중심 (access)", method: "접근성 민감도 비교 가정" },
+  { key: "baseline", label: PROFILE_META.baseline.primary, method: PROFILE_META.baseline.detail ?? "" },
+  { key: "equal", label: PROFILE_META.equal.primary, method: PROFILE_META.equal.detail ?? "" },
   {
-    key: "critic",
-    label: "CRITIC 데이터 기반 (critic)",
-    method: "현재 실행의 후보 점수 분산·상관관계로 계산된 데이터 기반 가중치",
+    key: "equity_focused",
+    label: PROFILE_META.equity_focused.primary,
+    method: PROFILE_META.equity_focused.detail ?? "",
   },
+  {
+    key: "access_focused",
+    label: PROFILE_META.access_focused.primary,
+    method: PROFILE_META.access_focused.detail ?? "",
+  },
+  { key: "critic", label: PROFILE_META.critic.primary, method: PROFILE_META.critic.detail ?? "" },
 ];
 
 // Old runs that predate CRITIC/stability carry no such results.
 const OLD_RUN_NO_CRITIC_MESSAGE =
-  "현재 분석 실행에는 CRITIC/안정성 결과가 없습니다. 새 버전의 분석 실행이 필요합니다.";
+  "이 분석 실행에는 데이터 분포 기준·안정성 결과가 없습니다. 새 버전의 분석 실행이 필요합니다.";
 
+// Plain-Korean primary status labels for legend/popup. The raw code stays in the
+// detail layer (STATUS_META[...].code) where it is genuinely needed for diagnostics.
 const STATUS_LABELS: Record<SuitabilityStatus, string> = {
-  ELIGIBLE: "적합 (eligible)",
-  REVIEW_REQUIRED: "검토 필요 (review)",
-  EXCLUDED: "제외 (excluded)",
+  ELIGIBLE: statusLabel("ELIGIBLE"),
+  REVIEW_REQUIRED: statusLabel("REVIEW_REQUIRED"),
+  EXCLUDED: statusLabel("EXCLUDED"),
 };
 
-interface LoadedData {
+/** A weight component value (decimal string in [0,1]) as a whole percent. */
+function weightPercent(value: string | undefined): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${Math.round(n * 100)}%` : "-";
+}
+
+/**
+ * The four Z/R/E/D weights rendered with their Korean names as percentages, e.g.
+ * "토지이용 조건(Z) 40% · 도로 접근성(R) 30% · …" — never bare single-letter codes.
+ */
+function namedWeights(w: Record<string, string> | undefined): string {
+  const weights = w ?? {};
+  return COMPONENT_ORDER.map((c) => `${codeWithName(c)} ${weightPercent(weights[c])}`).join(" · ");
+}
+
+export interface LoadedData {
   boundaries: RegionBoundaryCollection;
   population: DatasetEnvelope<PopulationItem>;
   waste: DatasetEnvelope<WasteStatisticsItem>;
@@ -237,8 +275,8 @@ export default function Home() {
       .catch((cause: unknown) => {
         setError(
           cause instanceof ApiError
-            ? cause.message
-            : "백엔드에 연결할 수 없습니다 (backend unreachable).",
+            ? plainError(cause.detail?.error ?? cause.message).primary
+            : "공공자료 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
         );
       });
   }, []);
@@ -269,10 +307,8 @@ export default function Home() {
       .catch((cause: unknown) => {
         setSuitError(
           cause instanceof ApiError
-            ? cause.status === 404
-              ? "아직 적합성 분석 실행 결과가 없습니다 (no suitability analysis run yet)."
-              : cause.message
-            : "적합성 데이터를 불러올 수 없습니다.",
+            ? plainError(cause.detail?.error ?? cause.message).primary
+            : "후보지 분석 자료를 불러올 수 없습니다.",
         );
       });
   }, [mode, suit, profile]);
@@ -710,18 +746,13 @@ export default function Home() {
         className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100 p-8"
       >
         <div className="max-w-lg rounded-lg border border-red-300 bg-white p-6 shadow" role="alert">
-          <h1 className="text-lg font-semibold text-red-700">데이터를 불러올 수 없습니다</h1>
+          <h1 className="text-lg font-semibold text-red-700">자료를 불러오지 못했습니다</h1>
           <p className="mt-2 text-sm text-slate-700">{error}</p>
           <p className="mt-2 text-sm text-slate-500">
-            공식 데이터를 불러오지 못하면 지도는 표시되지 않습니다. 대체 데이터는 사용하지 않습니다.
-            (No fallback data is shown.)
+            공공자료를 불러오지 못하면 지도는 표시되지 않습니다. 없는 값을 임의로 채우지 않습니다.
           </p>
-          <button
-            type="button"
-            onClick={retry}
-            className="mt-4 rounded bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700"
-          >
-            다시 시도 (Retry)
+          <button type="button" onClick={retry} className="wep-btn-primary mt-4">
+            다시 시도
           </button>
         </div>
       </main>
@@ -738,7 +769,7 @@ export default function Home() {
         {/* role="status" (an implicit polite live region) so assistive tech
             announces the loading state and its resolution. */}
         <p className="text-sm text-slate-600" data-testid="loading" role="status">
-          공식 데이터를 불러오는 중… (Loading official data…)
+          공공자료를 불러오는 중…
         </p>
       </main>
     );
@@ -747,11 +778,27 @@ export default function Home() {
   // 수도권매립지 mode: a full-width dashboard with no map and no sidebar. The
   // early return also narrows `mode` to MapMode for the map layout below, so a
   // non-map mode cannot reach MapView.
+  if (mode === "transparency") {
+    return (
+      <div className="min-h-screen min-h-dvh bg-slate-100">
+        <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-3 px-4 py-6 sm:px-6 lg:px-8">
+          <header>
+            <h1 className="text-lg font-bold text-slate-900">데이터·출처</h1>
+          </header>
+          <ModeSwitch mode={mode} setMode={changeMode} />
+          <ModeOrientation mode={mode} />
+          <TransparencyDashboard data={data} />
+        </div>
+      </div>
+    );
+  }
+
   if (mode === "flow") {
     return (
       <div className="min-h-screen min-h-dvh bg-slate-100">
-        <div className="mx-auto w-full max-w-screen-2xl px-4 pt-6 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-3 px-4 pt-6 sm:px-6 lg:px-8">
           <ModeSwitch mode={mode} setMode={changeMode} />
+          <ModeOrientation mode={mode} />
         </div>
         <LandfillDashboard
           data={flowData}
@@ -835,19 +882,18 @@ export default function Home() {
     >
       <aside className="flex w-full flex-col gap-4 border-b border-slate-200 bg-white p-5 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
         <header>
-          <h1 className="text-lg font-bold text-slate-900">수도권 폐기물 형평성·적합성 지도</h1>
-          <p className="text-xs text-slate-500">
-            Waste Equity Platform — Seoul · Incheon · Gyeonggi-do
-          </p>
+          <h1 className="text-lg font-bold text-slate-900">우리 동네 폐기물 지도</h1>
+          <p className="text-xs text-slate-500">서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지</p>
         </header>
 
         <ModeSwitch mode={mode} setMode={changeMode} />
+        <ModeOrientation mode={mode} />
 
         {mode === "equity" && (
           <>
             <section aria-label="지표 선택">
               <h2 className="mb-2 text-sm font-semibold text-slate-800">
-                지역 지표 (Regional metric)
+                지역 지표
               </h2>
               {/* Selected-metric summary. role="status" is an implicit polite live
                   region, so a screen reader announces each metric change, and it
@@ -915,16 +961,16 @@ export default function Home() {
                 from the SAME activeScale palette/breaks the map fill uses. */}
 
             {(derivedInfo || sourceInfo) && (
-              <CollapsibleSection label="출처 및 방법 (Sources & method)">
+              <CollapsibleSection label="출처와 계산 방법">
                 {derivedInfo && <DerivedPanel info={derivedInfo} caveat={metric.caveat} />}
                 {sourceInfo && <SourcePanel info={sourceInfo} boundaries={activeBoundaries} />}
               </CollapsibleSection>
             )}
 
-            <CollapsibleSection label="시설 레이어 (Facility layer)">
+            <CollapsibleSection label="시설 위치 표시">
               <section aria-label="시설 레이어">
                 <h2 className="mb-2 text-sm font-semibold text-slate-800">
-                  폐기물 처리시설 (Treatment facilities)
+                  폐기물 처리시설
                 </h2>
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input
@@ -933,7 +979,7 @@ export default function Home() {
                     onChange={(event) => setShowFacilities(event.target.checked)}
                     data-testid="facilities-toggle"
                   />
-                  시설 위치 표시 (show facility points)
+                  지도에 시설 위치 표시
                 </label>
                 {facilitySummary && (
                   <div
@@ -1090,9 +1136,10 @@ export default function Home() {
 // --------------------------------------------------------------------------- //
 
 const MODE_BUTTONS: { key: DashboardMode; label: string; testId: string }[] = [
-  { key: "equity", label: "형평성 (Equity)", testId: "mode-equity" },
-  { key: "suitability", label: "적합성 (Suitability)", testId: "mode-suitability" },
-  { key: "flow", label: "수도권매립지 이동", testId: "mode-flow" },
+  { key: "equity", label: MODE_LABELS.equity, testId: "mode-equity" },
+  { key: "suitability", label: MODE_LABELS.suitability, testId: "mode-suitability" },
+  { key: "flow", label: MODE_LABELS.flow, testId: "mode-flow" },
+  { key: "transparency", label: MODE_LABELS.transparency, testId: "mode-transparency" },
 ];
 
 function ModeSwitch({
@@ -1109,7 +1156,7 @@ function ModeSwitch({
           h2 before the h1 and break the heading hierarchy. The group is named via
           aria-labelledby instead. */}
       <p id="mode-switch-label" className="mb-2 text-sm font-semibold text-slate-800">
-        모드 (Mode)
+        무엇을 볼까요?
       </p>
       {/* Toggle buttons with aria-pressed, so role="group" (not radiogroup, which
           would promise arrow-key roving focus these native buttons do not have).
@@ -1142,9 +1189,22 @@ function ModeSwitch({
 }
 
 // --------------------------------------------------------------------------- //
-// Suitability sub-view switch — [적합성 점수] [비용 렌즈]. A labelled group of
-// aria-pressed toggle buttons (not a new top-level mode), so the cost lens lives
-// inside the suitability experience.
+// One-line, task-oriented orientation shown at the top of each area, so a
+// first-time visitor understands what the area does before reading any control.
+// --------------------------------------------------------------------------- //
+
+function ModeOrientation({ mode }: { mode: DashboardMode }) {
+  return (
+    <p className="wep-orient rounded-md bg-slate-50 px-3 py-2" data-testid="mode-orientation">
+      {MODE_ORIENTATION[mode as DashboardArea]}
+    </p>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Suitability sub-view switch — [후보지 점수] [가중치 바꿔보기] [비용 살펴보기].
+// A labelled group of aria-pressed toggle buttons (not a new top-level mode), so
+// the cost view lives inside the 후보지 분석 experience.
 // --------------------------------------------------------------------------- //
 
 function SuitabilityViewSwitch({
@@ -1155,9 +1215,9 @@ function SuitabilityViewSwitch({
   setView: (v: SuitabilityView) => void;
 }) {
   const buttons: { key: SuitabilityView; label: string; testId: string }[] = [
-    { key: "score", label: "적합성 점수", testId: "suitability-view-score" },
-    { key: "scenario", label: "가중치 실험실", testId: "suitability-view-scenario" },
-    { key: "cost", label: "비용 렌즈", testId: "suitability-view-cost" },
+    { key: "score", label: SUBVIEW_LABELS.score, testId: "suitability-view-score" },
+    { key: "scenario", label: SUBVIEW_LABELS.scenario, testId: "suitability-view-scenario" },
+    { key: "cost", label: SUBVIEW_LABELS.cost, testId: "suitability-view-cost" },
   ];
   return (
     <section aria-label="적합성 하위 보기 선택">
@@ -1248,7 +1308,7 @@ function RegionSummary({
       data-testid="selected-region-summary"
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-800">선택한 지역 (Selected region)</h2>
+        <h2 className="text-sm font-semibold text-slate-800">선택한 지역</h2>
         {selected && (
           <button
             type="button"
@@ -1264,7 +1324,7 @@ function RegionSummary({
           on the active geometry. Selecting one populates the same summary as a map
           click, so pointer input is not required. */}
       <label className="mt-1 block font-medium text-slate-600">
-        지역 선택 (Choose a region)
+        지역 선택
         <select
           className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800"
           data-testid="region-select"
@@ -1284,8 +1344,7 @@ function RegionSummary({
           the empty prompt. */}
       {selected === null ? (
         <p className="mt-2 text-slate-500" data-testid="selected-region-empty">
-          지도에서 지역을 클릭하거나 위 목록에서 지역을 선택하면 이름과 지표 값이 여기에 표시됩니다.
-          (Click a region on the map, or pick one above, to read its name and metric value here.)
+          지도에서 지역을 누르거나 위 목록에서 지역을 선택하면 이름과 값이 여기에 표시됩니다.
         </p>
       ) : (
         <div role="status" className="mt-2">
@@ -1327,7 +1386,7 @@ function RegionSummary({
             </div>
             {selected.geometryKind === "DERIVED" && selected.childRegionNames.length > 0 && (
               <p className="mt-1 text-slate-500" data-testid="selected-region-derived-note">
-                통계 보고 단위: 시 (city) · 경계는 {selected.childRegionNames.join("·")} 자치구 경계의
+                통계 보고 단위: 시 · 경계는 {selected.childRegionNames.join("·")} 자치구 경계의
                 파생 합집합입니다. 구별 공식 폐기물 값은 제공되지 않습니다.
               </p>
             )}
@@ -1387,7 +1446,7 @@ function CriticMethodNote({ run }: { run: SuitabilityRun }) {
       <p className="font-medium text-slate-700">CRITIC 데이터 기반 가중치</p>
       <p className="mt-0.5">
         방법: CRITIC{methodVersion ? ` (${String(methodVersion)})` : ""} · 대상 후보{" "}
-        {pop != null ? formatCount(Number(pop)) : "-"}개 (완전한 ELIGIBLE 후보)
+        {pop != null ? formatCount(Number(pop)) : "-"}개 (자료가 완전한 통과 후보)
       </p>
       <p className="mt-0.5 tabular-nums">
         가중치: Z {w.zoning} · R {w.road} · E {w.equity} · D {w.demand}
@@ -1415,7 +1474,7 @@ function StabilitySummary({ summary }: { summary: SuitabilitySummary }) {
       data-testid="stability-summary"
     >
       <h2 className="mb-1 text-sm font-semibold text-slate-800">
-        가중치 민감도 안정성 (Weight sensitivity)
+        기준을 바꿔도 상위권을 유지하는 정도
       </h2>
       <dl className="space-y-0.5" data-testid="stability-counts">
         <div>
@@ -1476,7 +1535,7 @@ function SuitabilityPanel({
         className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-slate-700"
         data-testid="suitability-error"
       >
-        <h2 className="mb-1 text-sm font-semibold text-slate-800">적합성 스크리닝 (Suitability)</h2>
+        <h2 className="mb-1 text-sm font-semibold text-slate-800">후보지 점수</h2>
         <p>{suitError}</p>
       </section>
     );
@@ -1484,7 +1543,7 @@ function SuitabilityPanel({
   if (suit === null) {
     return (
       <p className="text-sm text-slate-600" data-testid="suitability-loading">
-        적합성 분석을 불러오는 중… (Loading suitability analysis…)
+        후보지 분석을 불러오는 중…
       </p>
     );
   }
@@ -1495,46 +1554,54 @@ function SuitabilityPanel({
           the candidate summary updates (both change this text). Kept concise to
           avoid verbose repetition; the same counts are shown visibly below. */}
       <p role="status" className="sr-only" data-testid="suitability-live">
-        가중치 프로파일 {profile}. 적합 후보 {formatCount(s.candidate_count_eligible)}개, 검토 필요{" "}
+        점수 반영 기준 {profileLabel(profile)}. {statusLabel("ELIGIBLE")}{" "}
+        {formatCount(s.candidate_count_eligible)}개, {statusLabel("REVIEW_REQUIRED")}{" "}
         {formatCount(s.candidate_count_review)}개.
       </p>
       <section
         className="rounded border border-slate-300 bg-slate-50 p-3 text-xs break-words text-slate-700"
         data-testid="suitability-summary"
       >
-        <h2 className="mb-1 text-sm font-semibold text-slate-800">적합성 스크리닝 (Suitability)</h2>
+        <h2 className="mb-1 text-sm font-semibold text-slate-800">후보지 점수 요약</h2>
         <p className="mb-2 font-medium text-amber-800">
-          분석용 스크리닝 결과입니다 — 법적 허가·인허가·최종 입지 결정이 아닙니다. &quot;적합&quot;은
-          법적 적격을 의미하지 않습니다.
+          이 결과는 공공자료를 이용한 1차 비교이며 실제 입지 결정이 아닙니다. &apos;통과&apos;는 법적
+          적격을 의미하지 않습니다.
         </p>
         <dl className="space-y-1">
           <div>
-            <dt className="inline font-medium">실행(run): </dt>
-            <dd className="inline">
-              #{suit.run.id} · 기준연도 {suit.run.reference_year} · 경계 {suit.run.boundary_vintage}
-            </dd>
-          </div>
-          <div>
-            <dt className="inline font-medium">버전: </dt>
-            <dd className="inline">
-              {suit.policy.policy_version} · {suit.policy.derivation_version} ·{" "}
-              {suit.policy.candidate_grid_version}
-            </dd>
-          </div>
-          <div>
-            <dt className="inline font-medium">후보 셀: </dt>
+            <dt className="inline font-medium">후보 구역: </dt>
             <dd className="inline" data-testid="candidate-counts">
-              총 {formatCount(s.candidate_count_total)} · 적합{" "}
-              {formatCount(s.candidate_count_eligible)} · 검토{" "}
-              {formatCount(s.candidate_count_review)} · 제외{" "}
+              전체 {formatCount(s.candidate_count_total)} · {statusLabel("ELIGIBLE")}{" "}
+              {formatCount(s.candidate_count_eligible)} · {statusLabel("REVIEW_REQUIRED")}{" "}
+              {formatCount(s.candidate_count_review)} · {statusLabel("EXCLUDED")}{" "}
               {formatCount(s.candidate_count_excluded)}
             </dd>
           </div>
         </dl>
+        {/* Technical run/version provenance moved behind a disclosure (progressive
+            disclosure) — the citizen sees the counts first; the analyst opens this. */}
+        <details className="mt-2">
+          <summary className="cursor-pointer font-medium text-slate-600">분석 정보 자세히 보기</summary>
+          <dl className="mt-1 space-y-1 text-[11px] text-slate-500">
+            <div>
+              <dt className="inline font-medium">분석 실행: </dt>
+              <dd className="inline">
+                #{suit.run.id} · 기준연도 {suit.run.reference_year} · 경계 {suit.run.boundary_vintage}
+              </dd>
+            </div>
+            <div>
+              <dt className="inline font-medium">버전: </dt>
+              <dd className="inline">
+                분석 규칙 {suit.policy.policy_version} · 계산 방식 {suit.policy.derivation_version} ·
+                분석 구역 {suit.policy.candidate_grid_version}
+              </dd>
+            </div>
+          </dl>
+        </details>
       </section>
 
-      <section aria-label="가중치 프로파일" data-testid="profile-selector">
-        <h2 className="mb-2 text-sm font-semibold text-slate-800">가중치 프로파일 (Weight profile)</h2>
+      <section aria-label="점수 반영 기준" data-testid="profile-selector">
+        <h2 className="mb-2 text-sm font-semibold text-slate-800">점수 반영 기준</h2>
         <div className="flex flex-col gap-1">
           {PROFILES.filter((p) => runProfiles.includes(p.key)).map((p) => {
             // Display the ACTUAL run weights (run-specific for critic), falling back
@@ -1553,18 +1620,19 @@ function SuitabilityPanel({
                   data-testid={`profile-radio-${p.key}`}
                 />
                 <span>
-                  {p.label} — Z {w.zoning} · R {w.road} · E {w.equity} · D {w.demand}
+                  {p.label}
                   <span className="mt-0.5 block text-[11px] text-slate-500">{p.method}</span>
+                  <span className="mt-0.5 block text-[11px] text-slate-400">{namedWeights(w)}</span>
                 </span>
               </label>
             );
           })}
         </div>
-        {/* Distinguish policy-assumption profiles from the CRITIC data-derived profile. */}
+        {/* Distinguish the fixed policy-assumption bases from the data-distribution one. */}
         <p className="mt-1 text-xs text-slate-500">
-          baseline·equal·형평성·접근성은 <strong>정책 가정</strong> 가중치(고정)이며 전문가 AHP
-          산출값이 아닙니다. CRITIC은 현재 실행의 후보 점수 구조에서 <strong>데이터로 계산된</strong>{" "}
-          실행별 가중치입니다.
+          기본·모두 똑같이·지역 부담 중심·도로 접근성 중심은 <strong>운영 가정</strong>으로 정한 고정
+          비율이며 전문가 AHP 결과가 아닙니다. <strong>데이터 분포 기준</strong>은 이 분석 실행의 후보
+          점수 분포에서 자동 계산된 비율입니다.
         </p>
         {stabilityAvailable ? (
           <CriticMethodNote run={suit.run} />
@@ -1586,7 +1654,7 @@ function SuitabilityPanel({
           data-testid="stability-unavailable"
         >
           <h2 className="mb-1 text-sm font-semibold text-slate-800">
-            가중치 민감도 안정성 (Weight sensitivity)
+            기준을 바꿔도 상위권을 유지하는 정도
           </h2>
           <p>{OLD_RUN_NO_CRITIC_MESSAGE}</p>
         </section>
@@ -1595,7 +1663,7 @@ function SuitabilityPanel({
       {stabilityAvailable && s.top_stable_candidates.length > 0 && (
         <section aria-label="안정 후보" data-testid="stable-candidates">
           <h2 className="mb-2 text-sm font-semibold text-slate-800">
-            안정 후보 (Stable across baseline / equal / CRITIC)
+            기준을 바꿔도 상위권인 후보지
           </h2>
           <ol className="flex flex-col gap-1 text-xs text-slate-700">
             {s.top_stable_candidates.map((c) => {
@@ -1644,7 +1712,7 @@ function SuitabilityPanel({
 
       <section aria-label="상위 후보" data-testid="top-candidates">
         <h2 className="mb-2 text-sm font-semibold text-slate-800">
-          상위 적합 후보 (Top eligible — {profile})
+          상위 후보지 · {profileLabel(profile)} 기준
         </h2>
         {s.top_candidates.length === 0 ? (
           <p className="text-xs text-slate-500">이 프로파일의 순위 후보가 없습니다.</p>
@@ -1696,20 +1764,26 @@ function SuitabilityPanel({
         )}
         <div className="mt-1 text-xs text-slate-500" data-testid="candidate-vector-note">
           <p>
-            전체 후보 셀({formatCount(s.candidate_count_total)}개)은 현재 지도 영역에 필요한 벡터
-            타일(MVT)로 표시됩니다 — 뷰포트 표시 개수 제한 없이 전체 데이터가 제공되며, 화면에 필요한
-            타일만 전송됩니다. (전체 데이터 사용 가능; 뷰포트에 필요한 타일만 전송)
+            전체 후보 구역 {formatCount(s.candidate_count_total)}개가 모두 지도에 표시됩니다. 표시
+            개수 제한 없이 전체 자료를 볼 수 있고, 화면에 보이는 부분만 빠르게 불러옵니다.
           </p>
           <p className="mt-0.5">
-            적합 {formatCount(s.candidate_count_eligible)} · 검토{" "}
-            {formatCount(s.candidate_count_review)} · 제외 {formatCount(s.candidate_count_excluded)} —
-            상태 필터는 불러온 벡터 타일에 적용됩니다. 분석용 스크리닝이며 법적 입지 결정이 아닙니다.
+            {statusLabel("ELIGIBLE")} {formatCount(s.candidate_count_eligible)} ·{" "}
+            {statusLabel("REVIEW_REQUIRED")} {formatCount(s.candidate_count_review)} ·{" "}
+            {statusLabel("EXCLUDED")} {formatCount(s.candidate_count_excluded)} — 상태 필터는 지도에
+            함께 적용됩니다. 공공자료 기반 1차 비교이며 실제 입지 결정이 아닙니다.
           </p>
+          <details className="mt-1">
+            <summary className="cursor-pointer text-slate-500">자세히 보기</summary>
+            <p className="mt-1 text-[11px] text-slate-400">
+              지도는 화면에 필요한 부분만 벡터 타일(MVT)로 전송해 빠르게 표시합니다.
+            </p>
+          </details>
         </div>
       </section>
 
-      <ReasonSummary title="제외 사유 (Exclusion reasons)" counts={s.exclusion_reason_counts} />
-      <ReasonSummary title="검토 사유 (Review reasons)" counts={s.review_reason_counts} />
+      <ReasonSummary title="현재 기준에서 제외된 사유" counts={s.exclusion_reason_counts} />
+      <ReasonSummary title="추가 확인이 필요한 사유" counts={s.review_reason_counts} />
 
       {s.coverage_notes.length > 0 && (
         <section
@@ -1717,7 +1791,7 @@ function SuitabilityPanel({
           data-testid="coverage-warnings"
         >
           <h2 className="mb-1 text-sm font-semibold text-slate-800">
-            데이터 공백 (Coverage warnings)
+            자료 공백 안내
           </h2>
           <ul className="list-disc space-y-1 pl-4">
             {s.coverage_notes.map((note) => (
@@ -1736,7 +1810,7 @@ function SuitabilityPanel({
       )}
 
       <section className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        <h2 className="mb-1 text-sm font-semibold text-slate-800">방법·가정 (Method)</h2>
+        <h2 className="mb-1 text-sm font-semibold text-slate-800">계산 방법과 가정</h2>
         <ul className="list-disc space-y-1 pl-4">
           {s.assumptions.map((a) => (
             <li key={a}>{a}</li>
@@ -1784,14 +1858,16 @@ function CandidateDetailPanel({
       data-testid="candidate-detail"
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-800">후보 상세 (Candidate)</h2>
+        <h2 className="text-sm font-semibold text-slate-800">후보 구역 상세</h2>
         <button type="button" onClick={clearSelected} className="text-slate-400 hover:text-slate-700">
           닫기 ✕
         </button>
       </div>
       <p className="mt-1">
-        <strong>{detail.candidate_key}</strong> · {detail.status} ·{" "}
-        {detail.sigungu_region_name ?? "(시군구 미배정)"}
+        <strong>{detail.sigungu_region_name ?? "(지역 미배정)"}</strong> · {statusLabel(detail.status)}
+      </p>
+      <p className="mt-0.5 font-mono text-[11px] break-all text-slate-400">
+        구역 식별키 {detail.candidate_key}
       </p>
       {detail.status === "EXCLUDED" ? (
         <div className="mt-1" data-testid="candidate-exclusion-reasons">

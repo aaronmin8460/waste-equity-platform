@@ -348,9 +348,13 @@ describe("facility-burden metric definitions (Phase 5.2)", () => {
     expect(burden.map((metric) => metric.burdenMeasure).sort()).toEqual(["buffer", "located"]);
   });
 
-  it("always carries the accounting-basis caveat", () => {
+  it("always carries the accounting-basis caveat in plain Korean (no raw enum)", () => {
     for (const metric of burden) {
-      expect(metric.caveat).toContain("FACILITY_LOCATION_BASED_THROUGHPUT");
+      // The caveat keeps the analytical distinction (facility-location vs origin)
+      // but in plain Korean — the raw ORIGIN/FACILITY_* enums no longer leak here.
+      expect(metric.caveat).toContain("시설 소재지 기준");
+      expect(metric.caveat).toContain("발생지 기준");
+      expect(metric.caveat).not.toContain("FACILITY_LOCATION_BASED_THROUGHPUT");
     }
   });
 });
