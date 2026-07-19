@@ -134,6 +134,8 @@ class StandardCostOut(BaseModel):
 class AnnualizationOut(BaseModel):
     term_ko: str
     facility_lifetime_years: int
+    # The lifetime is an analytical assumption (not from the standard-cost table).
+    lifetime_basis: str
     annualized_construction_cost_bn: Decimal
     unit: str
     method: str

@@ -179,6 +179,9 @@ def test_calculate_full_scenario_exact_values(client: TestClient, seeded: None) 
     assert Decimal(body["annualization"]["annualized_construction_cost_bn"]) == Decimal("8.05")
     # The annualized figure is a per-year rate, not a one-time 억원 amount.
     assert body["annualization"]["unit"] == "억원/년"
+    # The lifetime is labelled an analytical assumption (not from the cost table).
+    assert "가정" in body["annualization"]["lifetime_basis"]
+    assert any("내용연수" in a for a in body["assumptions"])
 
     sub = body["subsidy"]
     assert Decimal(sub["subsidy_rate"]) == Decimal("0.30")
@@ -289,6 +292,40 @@ def test_calculate_null_per_capita_when_population_definitions_differ(
     assert body["per_capita"]["unavailable_reason"] == "INCOMPATIBLE_POPULATION_DEFINITION"
     # The cost part is still computed.
     assert Decimal(body["standard_cost"]["standard_construction_cost_bn"]) == Decimal("120.75")
+
+
+def test_calculate_uses_the_vintage_correct_region_name(
+    client: TestClient, session: Session
+) -> None:
+    # Two boundary vintages of the SAME code, with different names; the waste row is
+    # joined to vintage id=1. The output must use that vintage's name, not an
+    # arbitrary one from the unscoped validation query.
+    seed_standard_costs(session)
+    session.execute(
+        insert(Region).values(
+            id=1,
+            region_code=JONGNO,
+            region_name="종로구(2020 경계)",
+            region_level="SIGUNGU",
+            valid_from=datetime.date(2020, 1, 1),
+        )
+    )
+    session.execute(
+        insert(Region).values(
+            id=2,
+            region_code=JONGNO,
+            region_name="종로구(2024 경계)",
+            region_level="SIGUNGU",
+            valid_from=datetime.date(2024, 1, 1),
+        )
+    )
+    _seed_region(session, 3, JUNG, "중구", "SIGUNGU")
+    _seed_waste(session, 1, "5250")  # waste joined to the 2020 vintage (id=1)
+    _seed_waste(session, 3, "5250")
+    session.commit()
+    body = _calc(client)["body"]
+    names = {r["region_code"]: r["region_name"] for r in body["official_input"]["regions"]}
+    assert names[JONGNO] == "종로구(2020 경계)"
 
 
 def test_calculate_refuses_mixed_waste_reference_periods(

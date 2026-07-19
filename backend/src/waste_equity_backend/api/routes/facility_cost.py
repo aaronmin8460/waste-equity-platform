@@ -77,6 +77,10 @@ ASSUMPTIONS = [
     "(Subsidy/local-share are analytical estimates at nominal rates, not approved grants.)",
     "지하화 배수(1.00–1.40)는 분석 시나리오이며 실제 보장된 공사비 배수가 아닙니다. "
     "(The underground multiplier is a scenario, not a guaranteed multiplier.)",
+    "연간 환산에 쓰는 시설 내용연수(소각 15/20년, 자동선별 15년)는 분석용 가정이며 "
+    "표준공사비 표의 값이 아닙니다. "
+    "(The facility lifetime used for annualization is an analytical assumption, "
+    "not a value from the standard-cost table.)",
     "주민 1인당 환산 지방비는 동일 연도의 공식 인구로 나눈 환산값이며 "
     "개인의 세금 청구액이 아닙니다. "
     "(Per-capita local share is a conversion by same-year population, not a personal tax bill.)",
@@ -276,13 +280,15 @@ def calculate(
     # code/name/level, so this also runs on the non-spatial SQLite test tier. Waste
     # and population are joined by region_code (below), not by a resolved region_id,
     # so a code that maps to several boundary vintages is handled correctly.
+    # Existence + level validation only (region_level is stable across vintages).
+    # The DISPLAY name comes later from the vintage the waste row is joined to.
     region_rows = session.execute(
-        select(Region.region_code, Region.region_name, Region.region_level)
+        select(Region.region_code, Region.region_level)
         .where(Region.region_code.in_(codes))
         .distinct()
     ).all()
-    found = {r.region_code: r for r in region_rows}
-    missing_codes = [code for code in codes if code not in found]
+    found_levels = {r.region_code: r.region_level for r in region_rows}
+    missing_codes = [code for code in codes if code not in found_levels]
     if missing_codes:
         raise _not_found(
             UnavailableDataError(
@@ -290,14 +296,12 @@ def calculate(
                 detail=f"Unknown region code(s): {missing_codes}.",
             )
         )
-    non_leaf = [code for code in codes if found[code].region_level != _POPULATION_GEOGRAPHIC_LEVEL]
+    non_leaf = [code for code in codes if found_levels[code] != _POPULATION_GEOGRAPHIC_LEVEL]
     if non_leaf:
         raise _bad_request(
             "NON_LEAF_REGION",
             f"Service regions must be SIGUNGU (leaf) to avoid double counting; got {non_leaf}.",
         )
-
-    ordered_regions = [found[code] for code in codes]
 
     # Resolve the reference year from the waste series for this stream.
     waste_years = _available_years(
@@ -315,6 +319,10 @@ def calculate(
     waste_rows = session.execute(
         select(
             Region.region_code,
+            # The region NAME comes from the Region the waste row is joined to — the
+            # correct boundary vintage — so a historical year never reports a name
+            # from another vintage that the unscoped validation query might hold.
+            Region.region_name,
             RegionalWasteStatistics.generation_quantity,
             RegionalWasteStatistics.quantity_unit,
             RegionalWasteStatistics.accounting_basis,
@@ -481,16 +489,15 @@ def calculate(
             service_region_codes=codes,
             regions=[
                 OfficialInputRegion(
-                    region_code=r.region_code,
-                    region_name=r.region_name,
-                    generation_quantity_ton=waste_by_code[r.region_code].generation_quantity,
+                    region_code=code,
+                    # Vintage-correct name (from the waste-joined Region row).
+                    region_name=waste_by_code[code].region_name,
+                    generation_quantity_ton=waste_by_code[code].generation_quantity,
                     population=(
-                        population_by_code[r.region_code][0].population
-                        if population_complete
-                        else None
+                        population_by_code[code][0].population if population_complete else None
                     ),
                 )
-                for r in ordered_regions
+                for code in codes
             ],
             population_source_id=pop_source_id,
             population_reference_period=pop_reference_period,
@@ -522,6 +529,7 @@ def calculate(
         annualization=AnnualizationOut(
             term_ko="연간 환산 설치비",
             facility_lifetime_years=calc.facility_lifetime_years,
+            lifetime_basis=fc.FACILITY_LIFETIME_BASIS,
             annualized_construction_cost_bn=calc.annualized_construction_cost_bn,
             # A per-year rate (억원 ÷ 수명), never a one-time 억원 amount.
             unit=_COST_PER_YEAR_UNIT,

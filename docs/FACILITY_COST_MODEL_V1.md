@@ -102,6 +102,12 @@ could slip in and make the lookup find overlapping matches. The unique index
 `COALESCE`s each unbounded bound to `-1` (never a real, nonnegative value) so a
 duplicate band is rejected on both SQLite and PostgreSQL.
 
+The reusable seed helper is also **self-verifying**: if the active version is
+already present *in full* it inserts nothing (idempotent no-op); if it is present
+but **partial or mismatched** (a restore, manual repair, or earlier failed seed),
+it raises rather than silently leaving an incomplete version that would fail some
+capacities with `NO_MATCHING_COST_BAND`.
+
 ## Formulas
 
 1. `annual_service_quantity_ton = official_annual_quantity_ton × processing_share`
@@ -114,7 +120,10 @@ duplicate band is rejected on both SQLite and PostgreSQL.
    (exactly one band matches, else a structured error).
 4. `standard_construction_cost_bn = unit_cost × capacity × underground_multiplier`.
 5. `facility_lifetime_years`: incineration ≤ 50 t/day → 15; incineration > 50 →
-   20; sorting_auto → 15.
+   20; sorting_auto → 15. This lifetime is an **analytical assumption** (not a
+   value from the standard-cost table); the response carries it as
+   `annualization.lifetime_basis` and an assumption line so the annualized metric
+   never appears sourced from the guideline.
 6. `annualized_construction_cost_bn = standard_construction_cost_bn ÷ lifetime`
    (straight-line analytical annualization, **not** a payment schedule).
 7. `estimated_national_subsidy_bn = standard_construction_cost_bn × subsidy_rate`.

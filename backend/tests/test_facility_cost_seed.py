@@ -16,7 +16,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from waste_equity_backend.analysis import facility_cost as fc
-from waste_equity_backend.analysis.facility_cost_seed import seed_standard_costs
+from waste_equity_backend.analysis.facility_cost_seed import (
+    PartialStandardCostVersionError,
+    seed_standard_costs,
+)
 from waste_equity_backend.models import FacilityStandardCost
 
 _MIGRATION_PATH = (
@@ -82,6 +85,22 @@ def test_seeded_rows_match_the_canonical_bands(session: Session) -> None:
         assert row.price_base_date == fc.PRICE_BASE_DATE
         assert row.source_document == fc.SOURCE_DOCUMENT
         assert row.source_page == fc.SOURCE_PAGE
+
+
+def test_reseeding_a_partial_version_fails_visibly(session: Session) -> None:
+    # Seed the full version, then drop one band to simulate a partial restore.
+    seed_standard_costs(session)
+    one = session.scalars(
+        select(FacilityStandardCost).where(
+            FacilityStandardCost.cost_version == fc.ACTIVE_COST_VERSION
+        )
+    ).first()
+    assert one is not None
+    session.delete(one)
+    session.flush()
+    # Re-seeding must NOT silently leave the version incomplete — it fails visibly.
+    with pytest.raises(PartialStandardCostVersionError):
+        seed_standard_costs(session)
 
 
 def _band_row(min_val: Decimal | None, max_val: Decimal | None) -> FacilityStandardCost:

@@ -10,25 +10,50 @@ diverge (a consistency test asserts the migration snapshot matches it too).
 
 import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import FacilityStandardCost
 from . import facility_cost as fc
 
 
+class PartialStandardCostVersionError(RuntimeError):
+    """The active version exists in the DB but does not match the canonical seed."""
+
+
+def _band_keys(bands: object) -> set[tuple[object, object, object, object]]:
+    return {
+        (
+            b.facility_type,
+            b.capacity_min_ton_per_day,
+            b.capacity_max_ton_per_day,
+            b.cost_per_capacity_bn,
+        )
+        for b in bands  # type: ignore[attr-defined]
+    }
+
+
 def seed_standard_costs(session: Session) -> int:
     """Insert the active cost version's rows if absent; return rows inserted.
 
-    Idempotent: a second call with the version already present inserts nothing and
-    returns 0, so re-running the seed never duplicates rows.
+    Idempotent AND self-verifying: if the version is already present in full it
+    inserts nothing and returns 0; if it is present but PARTIAL or mismatched (a
+    restore, manual repair, or earlier failed seed left some bands missing/wrong)
+    it raises :class:`PartialStandardCostVersionError` rather than silently leaving
+    an incomplete version that would fail some capacities with NO_MATCHING_COST_BAND.
     """
-    existing = session.scalar(
-        select(func.count())
-        .select_from(FacilityStandardCost)
-        .where(FacilityStandardCost.cost_version == fc.ACTIVE_COST_VERSION)
-    )
+    existing = session.scalars(
+        select(FacilityStandardCost).where(
+            FacilityStandardCost.cost_version == fc.ACTIVE_COST_VERSION
+        )
+    ).all()
     if existing:
+        if _band_keys(existing) != _band_keys(fc.STANDARD_COST_SEED):
+            raise PartialStandardCostVersionError(
+                f"facility_standard_costs for {fc.ACTIVE_COST_VERSION!r} is partial or "
+                f"mismatched ({len(existing)} rows, expected {len(fc.STANDARD_COST_SEED)}); "
+                "refusing to seed over it — repair the version first."
+            )
         return 0
     now = datetime.datetime.now(tz=datetime.UTC)
     for band in fc.STANDARD_COST_SEED:

@@ -95,6 +95,14 @@ SUBSIDY_RATE_SOURCE = (
 SUBSIDY_RATE_BASIS = "명목 국고보조율(분석용 가정) — 실제 승인된 국고보조금이 아님"
 SUBSIDY_RATE_REFERENCE_PERIOD = "2025 (업무처리지침 기준)"
 
+# The facility lifetime used for annualization is an ANALYTICAL ASSUMPTION, not a
+# figure from the standard-cost table. Labelled so the annualized metric never
+# appears sourced from the guideline (only the unit cost is).
+FACILITY_LIFETIME_BASIS = (
+    "분석용 내용연수 가정(소각 ≤50 t/일 15년, >50 20년, 자동선별 15년) — "
+    "표준공사비 표에서 제공되는 값이 아니며 직선 환산에만 사용됩니다."
+)
+
 # Exact-decimal precisions. 톤/일 and 억원 keep six decimals (the storage scale of
 # the source quantities/costs); the per-capita local share is 원 to two decimals.
 _QUANTITY_PRECISION = Decimal("0.000001")
