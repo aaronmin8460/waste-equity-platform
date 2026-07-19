@@ -26,8 +26,20 @@ class SuitabilityPolicyOut(BaseModel):
     policy_version: str
     derivation_version: str
     candidate_grid_version: str
+    critic_method_version: str
+    stability_method_version: str
     statuses: list[str]
+    # Policy-assumption profiles with fixed weights (``critic`` is intentionally
+    # absent — it is data-derived per run, never a policy constant).
     weight_profiles: dict[str, dict[str, str]]
+    static_weight_profiles: dict[str, dict[str, str]]
+    # Catalog of data-derived profiles (method + provenance, no fixed weights).
+    data_derived_profiles: dict[str, Any]
+    supported_profiles: list[str]
+    stability_profiles: list[str]
+    stability_top_fraction: str
+    profile_methodology: dict[str, str]
+    default_profile: str
     weight_rationale: dict[str, str]
     hard_exclusion_codes: dict[str, str]
     review_codes: dict[str, str]
@@ -53,6 +65,13 @@ class SuitabilityRunOut(BaseModel):
     candidate_count_excluded: int
     input_dataset_version_ids: list[int]
     input_provenance: dict[str, Any]
+    # Actual run weight profiles ({profile: {component: weight}}), including the
+    # run-specific ``critic`` vector when the run computed it ({} on old runs).
+    weight_profiles: dict[str, Any]
+    # Transparent CRITIC derivation metadata ({} on historical/pre-CRITIC runs).
+    weight_derivation: dict[str, Any]
+    # Stability definition ({} on historical/pre-stability runs).
+    stability_definition: dict[str, Any]
     started_at: datetime.datetime
     completed_at: datetime.datetime | None
     created_at: datetime.datetime
@@ -78,6 +97,17 @@ class SuitabilitySummaryOut(BaseModel):
     review_reason_counts: dict[str, int]
     sido_distribution: dict[str, dict[str, int]]
     top_candidates: list[dict[str, Any]]
+    # Weight-sensitivity stability (baseline/equal/critic). Counts are 0 and the
+    # actual weights / definition are empty for runs without CRITIC/stability data.
+    critic_weights: dict[str, str] | None
+    stability_top_fraction: str | None
+    stability_top_cutoff_rank: int | None
+    candidate_count_stable: int
+    candidate_count_conditionally_stable: int
+    candidate_count_weight_sensitive: int
+    top_stable_candidates: list[dict[str, Any]]
+    stability_definition: dict[str, Any]
+    stability_available: bool
     coverage_notes: list[str]
     assumptions: list[str]
     disclaimer: str
@@ -101,6 +131,10 @@ class CandidateProperties(BaseModel):
     sigungu_region_code: str | None
     sigungu_region_name: str | None
     nearest_road_distance_m: str | None
+    # Weight-sensitivity stability (ELIGIBLE only; null/{} otherwise).
+    stable_count: int | None
+    stability_class: str | None
+    stability_membership: dict[str, bool]
     exclusion_reasons: list[str]
     review_reasons: list[str]
 
@@ -145,6 +179,10 @@ class CandidateDetailOut(BaseModel):
     demand_score: Decimal | None
     profile_totals: dict[str, Any]
     profile_ranks: dict[str, Any]
+    # Weight-sensitivity stability (ELIGIBLE only; null/{} otherwise).
+    stable_count: int | None
+    stability_class: str | None
+    stability_membership: dict[str, bool]
     sido_region_code: str | None
     sido_region_name: str | None
     sigungu_region_code: str | None

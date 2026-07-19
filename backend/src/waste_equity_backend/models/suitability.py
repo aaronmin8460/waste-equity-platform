@@ -30,6 +30,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -84,8 +85,16 @@ class SuitabilityAnalysisRun(Base):
     # Snapshot of the policy applied (weights, profiles, distance curve,
     # classification summary) so the run is interpretable without the code.
     policy_snapshot: Mapped[Any] = mapped_column(JsonVariant, default=dict)
-    # Full weight profiles used ({profile: {component: weight}}).
+    # Full *actual* run weight profiles ({profile: {component: weight}}), including
+    # the run-specific ``critic`` vector (data-derived, not a policy constant).
     weight_profiles: Mapped[Any] = mapped_column(JsonVariant, default=dict)
+    # Transparent CRITIC derivation metadata (method, population count, means,
+    # standard deviations, correlation matrix, information values, weights,
+    # zero-variance criteria, disclaimer). Empty {} for historical/pre-CRITIC runs.
+    weight_derivation: Mapped[Any] = mapped_column(JsonVariant, default=dict)
+    # Stability definition (compared profiles, top fraction, cutoff rank, classes,
+    # applicability rule, disclaimer). Empty {} for historical/pre-stability runs.
+    stability_definition: Mapped[Any] = mapped_column(JsonVariant, default=dict)
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     error_category: Mapped[str | None] = mapped_column(String(50))
@@ -108,6 +117,12 @@ class SuitabilityCandidate(Base):
         Index("ix_suitability_candidates_rank", "rank"),
         Index("ix_suitability_candidates_sido", "sido_region_code"),
         Index("ix_suitability_candidates_sigungu", "sigungu_region_code"),
+        Index("ix_suitability_candidates_run_stable", "analysis_run_id", "stable_count"),
+        Index(
+            "ix_suitability_candidates_run_stability_class",
+            "analysis_run_id",
+            "stability_class",
+        ),
         # geoalchemy2 attaches the GiST spatial indexes on ``geometry`` and
         # ``centroid`` automatically.
     )
@@ -136,9 +151,19 @@ class SuitabilityCandidate(Base):
     road_score: Mapped[Decimal | None] = mapped_column(Score)
     equity_score: Mapped[Decimal | None] = mapped_column(Score)
     demand_score: Mapped[Decimal | None] = mapped_column(Score)
-    # {profile: total} and {profile: rank} for all sensitivity profiles.
+    # {profile: total} and {profile: rank} for all sensitivity profiles (including
+    # the run-specific ``critic`` profile).
     profile_totals: Mapped[Any] = mapped_column(JsonVariant, default=dict)
     profile_ranks: Mapped[Any] = mapped_column(JsonVariant, default=dict)
+    # Weight-sensitivity stability (ELIGIBLE candidates only). ``stable_count`` is
+    # the number of stability profiles (baseline/equal/critic) under which the
+    # candidate stays in the top fraction; ``stability_class`` is STABLE /
+    # CONDITIONALLY_STABLE / WEIGHT_SENSITIVE; ``stability_membership`` records the
+    # per-profile top-tier booleans. All null/{} for REVIEW_REQUIRED, EXCLUDED, and
+    # historical pre-stability rows — a candidate is never presented as stable then.
+    stable_count: Mapped[int | None] = mapped_column(SmallInteger)
+    stability_class: Mapped[str | None] = mapped_column(String(30))
+    stability_membership: Mapped[Any] = mapped_column(JsonVariant, default=dict)
     # Raw component inputs (zoning class + code, nearest-road distance, raw
     # burden and demand values with unit/basis) kept separate from the scores.
     raw_components: Mapped[Any] = mapped_column(JsonVariant, default=dict)

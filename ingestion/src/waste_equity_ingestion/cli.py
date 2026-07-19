@@ -161,15 +161,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--policy-version",
-        default="suitability-policy-v1",
-        help="suitability-build: screening policy version (default suitability-policy-v1).",
+        default="suitability-policy-v2",
+        help="suitability-build: screening policy version (default suitability-policy-v2).",
     )
     parser.add_argument(
         "--profile",
         default="baseline",
         help=(
             "suitability-build: active weight profile "
-            "(baseline, equal, equity_focused, access_focused; default baseline)."
+            "(baseline, equal, equity_focused, access_focused, critic; default baseline). "
+            "critic is the run-specific CRITIC data-derived profile."
         ),
     )
     parser.add_argument(

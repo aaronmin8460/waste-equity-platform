@@ -30,7 +30,43 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL is not configured")
 
 NOW = datetime.datetime(1999, 1, 1, tzinfo=datetime.UTC)
-ALL_PROFILES = ["baseline", "equal", "equity_focused", "access_focused"]
+STATIC_PROFILES = ["baseline", "equal", "equity_focused", "access_focused"]
+# The seeded run carries the run-specific critic vector too, so candidates hold all
+# five profile totals/ranks.
+ALL_PROFILES = [*STATIC_PROFILES, "critic"]
+
+# A plausible run-specific critic weight vector (data-derived; sums to 1).
+CRITIC_WEIGHTS = {
+    "zoning": "0.30000000",
+    "road": "0.20000000",
+    "equity": "0.35000000",
+    "demand": "0.15000000",
+}
+RUN_WEIGHT_PROFILES = {
+    "baseline": {"zoning": "0.35", "road": "0.25", "equity": "0.25", "demand": "0.15"},
+    "equal": {"zoning": "0.25", "road": "0.25", "equity": "0.25", "demand": "0.25"},
+    "equity_focused": {"zoning": "0.30", "road": "0.15", "equity": "0.40", "demand": "0.15"},
+    "access_focused": {"zoning": "0.25", "road": "0.40", "equity": "0.20", "demand": "0.15"},
+    "critic": CRITIC_WEIGHTS,
+}
+WEIGHT_DERIVATION = {
+    "method": "CRITIC",
+    "method_version": "critic-weights-v1",
+    "criterion_order": ["zoning", "road", "equity", "demand"],
+    "population_status": "ELIGIBLE",
+    "population_candidate_count": 1,
+    "weights": CRITIC_WEIGHTS,
+    "zero_variance_criteria": [],
+    "disclaimer": "CRITIC weights are derived from score variation ...",
+}
+STABILITY_DEFINITION = {
+    "method_version": "suitability-stability-v1",
+    "compared_profiles": ["baseline", "equal", "critic"],
+    "top_fraction": "0.10",
+    "eligible_candidate_count": 1,
+    "top_cutoff_rank": 1,
+    "disclaimer": "Stability means the candidate remains in the top 10% ...",
+}
 
 
 @pytest.fixture
@@ -114,8 +150,8 @@ def _candidate(run_id: int, key: str, x: float, **over: Any) -> SuitabilityCandi
 @pytest.fixture
 def seeded(pg_session: Session) -> dict[str, int]:
     run = SuitabilityAnalysisRun(
-        derivation_version="suitability-screening-v1",
-        policy_version="suitability-policy-v1",
+        derivation_version="suitability-screening-v3",
+        policy_version="suitability-policy-v2",
         candidate_grid_version="capital-grid-500m-v1",
         reference_year=1999,
         boundary_vintage="1999",
@@ -129,7 +165,9 @@ def seeded(pg_session: Session) -> dict[str, int]:
         input_dataset_version_ids=[1, 2],
         input_provenance={"waste_reference_period": "1999"},
         policy_snapshot={},
-        weight_profiles={},
+        weight_profiles=RUN_WEIGHT_PROFILES,
+        weight_derivation=WEIGHT_DERIVATION,
+        stability_definition=STABILITY_DEFINITION,
         started_at=NOW,
         completed_at=NOW,
         created_at=NOW,
@@ -151,6 +189,9 @@ def seeded(pg_session: Session) -> dict[str, int]:
         demand_score=Decimal("50.0000"),
         profile_totals=profile_totals,
         profile_ranks=profile_ranks,
+        stable_count=3,
+        stability_class="STABLE",
+        stability_membership={"baseline": True, "equal": True, "critic": True},
         raw_components={
             "equity": {"accounting_basis": "FACILITY_LOCATION_BASED_THROUGHPUT"},
             "demand": {"accounting_basis": "ORIGIN_BASED_TREATMENT_OUTCOME"},
@@ -180,6 +221,53 @@ def seeded(pg_session: Session) -> dict[str, int]:
     pg_session.add_all([c1, c2, c3])
     pg_session.flush()
     return {"run": run.id, "c1": c1.id, "c2": c2.id, "c3": c3.id}
+
+
+@pytest.fixture
+def seeded_old(pg_session: Session) -> dict[str, int]:
+    """A historical run without CRITIC/stability data (empty derivation metadata)."""
+    run = SuitabilityAnalysisRun(
+        derivation_version="suitability-screening-v2",
+        policy_version="suitability-policy-v1",
+        candidate_grid_version="capital-grid-500m-v1",
+        reference_year=1998,
+        boundary_vintage="1998",
+        weight_profile="baseline",
+        analysis_signature="integration-old-sig",
+        status="SUCCEEDED",
+        candidate_count_total=1,
+        candidate_count_eligible=1,
+        candidate_count_review=0,
+        candidate_count_excluded=0,
+        input_dataset_version_ids=[1],
+        input_provenance={},
+        policy_snapshot={},
+        weight_profiles={p: RUN_WEIGHT_PROFILES[p] for p in STATIC_PROFILES},  # no critic
+        weight_derivation={},
+        stability_definition={},
+        started_at=NOW,
+        completed_at=NOW,
+        created_at=NOW,
+    )
+    pg_session.add(run)
+    pg_session.flush()
+    c1 = _candidate(
+        run.id,
+        "capital-grid-500m-v1:9_9",
+        22.0,
+        status="ELIGIBLE",
+        rank=1,
+        total_score=Decimal("80.0000"),
+        zoning_score=Decimal("55.0000"),
+        road_score=Decimal("100.0000"),
+        equity_score=Decimal("100.0000"),
+        demand_score=Decimal("50.0000"),
+        profile_totals={p: "80.0000" for p in STATIC_PROFILES},
+        profile_ranks=dict.fromkeys(STATIC_PROFILES, 1),
+    )
+    pg_session.add(c1)
+    pg_session.flush()
+    return {"run": run.id, "c1": c1.id}
 
 
 def test_summary(pg_client: TestClient, seeded: dict[str, int]) -> None:
@@ -499,3 +587,160 @@ def test_top_candidates_distinguish_tied_cells(pg_session: Session, pg_client: T
     for entry in top:
         assert entry["centroid_lon"] is not None
         assert entry["centroid_lat"] is not None
+
+
+# --- CRITIC + weight-sensitivity stability (Phase 4/5) -----------------------
+
+
+def test_run_latest_exposes_actual_weight_profiles_and_metadata(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    body = pg_client.get("/api/v1/suitability/runs/latest").json()
+    # actual run-specific weight profiles (static + critic)
+    assert set(body["weight_profiles"]) == set(ALL_PROFILES)
+    assert body["weight_profiles"]["critic"] == CRITIC_WEIGHTS
+    assert body["weight_derivation"]["method"] == "CRITIC"
+    assert body["stability_definition"]["compared_profiles"] == ["baseline", "equal", "critic"]
+
+
+def test_summary_stability_counts_and_critic_weights(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    body = pg_client.get(f"/api/v1/suitability/summary?run_id={seeded['run']}").json()
+    assert body["stability_available"] is True
+    assert body["critic_weights"] == CRITIC_WEIGHTS
+    assert body["stability_top_fraction"] == "0.10"
+    assert body["stability_top_cutoff_rank"] == 1
+    # one STABLE eligible candidate (c1), none conditionally/sensitive
+    assert body["candidate_count_stable"] == 1
+    assert body["candidate_count_conditionally_stable"] == 0
+    assert body["candidate_count_weight_sensitive"] == 0
+    # top_stable_candidates surfaces c1 with its stability metadata
+    assert len(body["top_stable_candidates"]) == 1
+    stable = body["top_stable_candidates"][0]
+    assert stable["candidate_id"] == seeded["c1"]
+    assert stable["stable_count"] == 3
+    assert stable["stability_class"] == "STABLE"
+    assert stable["stability_membership"] == {"baseline": True, "equal": True, "critic": True}
+
+
+def test_summary_critic_profile_selection(pg_client: TestClient, seeded: dict[str, int]) -> None:
+    body = pg_client.get(
+        f"/api/v1/suitability/summary?run_id={seeded['run']}&profile=critic"
+    ).json()
+    assert body["weight_profile"] == "critic"
+    assert body["top_candidates"][0]["candidate_id"] == seeded["c1"]
+
+
+def test_summary_old_run_without_stability(
+    pg_client: TestClient, seeded_old: dict[str, int]
+) -> None:
+    body = pg_client.get(f"/api/v1/suitability/summary?run_id={seeded_old['run']}").json()
+    assert body["stability_available"] is False
+    assert body["critic_weights"] is None
+    assert body["stability_top_cutoff_rank"] is None
+    assert body["candidate_count_stable"] == 0
+    assert body["top_stable_candidates"] == []
+
+
+def test_candidate_detail_stability_and_run_critic_weights(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    body = pg_client.get(f"/api/v1/suitability/candidates/{seeded['c1']}?profile=critic").json()
+    assert body["stable_count"] == 3
+    assert body["stability_class"] == "STABLE"
+    assert body["stability_membership"] == {"baseline": True, "equal": True, "critic": True}
+    # baseline/equal/critic sensitivity all present
+    for p in ("baseline", "equal", "critic"):
+        assert p in body["profile_totals"]
+        assert p in body["profile_ranks"]
+    # weights come from the run's actual critic vector, not a policy constant
+    assert body["weights"] == CRITIC_WEIGHTS
+
+
+def test_candidate_detail_exact_decimal_strings_preserved(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    body = pg_client.get(f"/api/v1/suitability/candidates/{seeded['c1']}").json()
+    assert body["profile_totals"]["baseline"] == "80.0000"
+    # no legal-eligibility claim leaks in
+    assert "legally_eligible" not in json.dumps(body).lower()
+
+
+def test_candidate_detail_critic_unavailable_on_old_run(
+    pg_client: TestClient, seeded_old: dict[str, int]
+) -> None:
+    resp = pg_client.get(f"/api/v1/suitability/candidates/{seeded_old['c1']}?profile=critic")
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["error"] == "PROFILE_NOT_AVAILABLE_FOR_RUN"
+
+
+def test_review_and_excluded_have_no_stability(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    review = pg_client.get(f"/api/v1/suitability/candidates/{seeded['c2']}").json()
+    excluded = pg_client.get(f"/api/v1/suitability/candidates/{seeded['c3']}").json()
+    for body in (review, excluded):
+        assert body["stable_count"] is None
+        assert body["stability_class"] is None
+        assert body["stability_membership"] == {}
+
+
+def test_candidate_list_stability_filter(pg_client: TestClient, seeded: dict[str, int]) -> None:
+    run = seeded["run"]
+    stable = pg_client.get(
+        f"/api/v1/suitability/candidates?run_id={run}&stability_class=STABLE"
+    ).json()
+    assert stable["total_matched"] == 1
+    props = stable["features"][0]["properties"]
+    assert props["candidate_id"] == seeded["c1"]
+    assert props["stable_count"] == 3
+    assert props["stability_class"] == "STABLE"
+    # no candidate is WEIGHT_SENSITIVE in this fixture
+    sensitive = pg_client.get(
+        f"/api/v1/suitability/candidates?run_id={run}&stability_class=WEIGHT_SENSITIVE"
+    ).json()
+    assert sensitive["total_matched"] == 0
+
+
+def test_candidate_list_carries_stability_fields(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    body = pg_client.get(
+        f"/api/v1/suitability/candidates?run_id={seeded['run']}&status=ELIGIBLE"
+    ).json()
+    props = body["features"][0]["properties"]
+    assert props["stable_count"] == 3
+    assert props["stability_class"] == "STABLE"
+
+
+def test_tile_critic_profile_returns_200(pg_client: TestClient, seeded: dict[str, int]) -> None:
+    z = 3
+    x, y = _deg2tile(_CLUSTER_LON, _CLUSTER_LAT, z)
+    resp = pg_client.get(f"/api/v1/suitability/tiles/{seeded['run']}/critic/{z}/{x}/{y}.mvt")
+    assert resp.status_code == 200
+    assert len(resp.content) > 0
+
+
+def test_tile_critic_unavailable_on_old_run(
+    pg_client: TestClient, seeded_old: dict[str, int]
+) -> None:
+    resp = pg_client.get(f"/api/v1/suitability/tiles/{seeded_old['run']}/critic/3/4/3.mvt")
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["error"] == "PROFILE_NOT_AVAILABLE_FOR_RUN"
+
+
+def test_tile_encodes_stability_properties(pg_client: TestClient, seeded: dict[str, int]) -> None:
+    mvt = pytest.importorskip("mapbox_vector_tile")
+    z = 3
+    x, y = _deg2tile(_CLUSTER_LON, _CLUSTER_LAT, z)
+    resp = pg_client.get(f"/api/v1/suitability/tiles/{seeded['run']}/baseline/{z}/{x}/{y}.mvt")
+    decoded = mvt.decode(resp.content)
+    feats = decoded["candidates"]["features"]
+    by_status = {f["properties"]["status"]: f["properties"] for f in feats}
+    # the stable ELIGIBLE cell carries stable_count/stability_class
+    assert by_status["ELIGIBLE"]["stable_count"] == 3
+    assert by_status["ELIGIBLE"]["stability_class"] == "STABLE"
+    # excluded/review cells (no stability) omit the null attributes
+    assert "stable_count" not in by_status["EXCLUDED"]
+    assert "stability_class" not in by_status["REVIEW_REQUIRED"]

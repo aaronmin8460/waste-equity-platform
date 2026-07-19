@@ -100,6 +100,40 @@ def test_migration_creates_schema_and_seeds() -> None:
                 )
             ).scalar()
             assert legacy_unique is None
+
+            # Migration 0016 added CRITIC/stability metadata columns + indexes.
+            run_cols = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'suitability_analysis_runs'"
+                    )
+                ).scalars()
+            )
+            assert {"weight_derivation", "stability_definition"}.issubset(run_cols)
+            cand_cols = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'suitability_candidates'"
+                    )
+                ).scalars()
+            )
+            assert {"stable_count", "stability_class", "stability_membership"}.issubset(cand_cols)
+            stability_indexes = set(
+                connection.execute(
+                    text(
+                        "SELECT indexname FROM pg_indexes "
+                        "WHERE tablename = 'suitability_candidates' AND indexname IN "
+                        "('ix_suitability_candidates_run_stable', "
+                        "'ix_suitability_candidates_run_stability_class')"
+                    )
+                ).scalars()
+            )
+            assert stability_indexes == {
+                "ix_suitability_candidates_run_stable",
+                "ix_suitability_candidates_run_stability_class",
+            }
     finally:
         engine.dispose()
 

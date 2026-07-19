@@ -33,8 +33,35 @@ from ...schemas.suitability import SCREENING_DISCLAIMER
 router = APIRouter(prefix="/api/v1/suitability", tags=["suitability"])
 SessionDep = Annotated[Session, Depends(get_session)]
 
-Profile = Literal["baseline", "equal", "equity_focused", "access_focused"]
+Profile = Literal["baseline", "equal", "equity_focused", "access_focused", "critic"]
 Status = Literal["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"]
+StabilityClass = Literal["STABLE", "CONDITIONALLY_STABLE", "WEIGHT_SENSITIVE"]
+
+# Static profiles are policy constants available for every run; the data-derived
+# ``critic`` profile is only available for runs that actually computed it.
+_STATIC_PROFILE_NAMES = frozenset(policy.STATIC_WEIGHT_PROFILES)
+
+
+def _ensure_profile_available(run_weight_profiles: Any, profile: str, run_id: int) -> None:
+    """Reject a data-derived profile the selected run does not carry (structured 4xx).
+
+    Static profiles are always available. ``critic`` requires the run's stored
+    ``weight_profiles`` to include it, so an old run without CRITIC data returns a
+    clear PROFILE_NOT_AVAILABLE_FOR_RUN rather than a KeyError or a fabricated value.
+    """
+
+    if profile in _STATIC_PROFILE_NAMES:
+        return
+    if isinstance(run_weight_profiles, dict) and profile in run_weight_profiles:
+        return
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "error": "PROFILE_NOT_AVAILABLE_FOR_RUN",
+            "detail": f"Profile {profile} is not available for suitability run {run_id}.",
+        },
+    )
+
 
 # --- Vector-tile (MVT) constants ---------------------------------------------
 # The map serves the *complete* suitability grid as Mapbox Vector Tiles generated
@@ -78,6 +105,8 @@ WITH tile AS (
         c.road_score::double precision AS road_score,
         c.equity_score::double precision AS equity_score,
         c.demand_score::double precision AS demand_score,
+        c.stable_count AS stable_count,
+        c.stability_class AS stability_class,
         c.sigungu_region_code AS sigungu_region_code,
         c.sigungu_region_name AS sigungu_region_name
     FROM suitability_candidates c
@@ -143,6 +172,9 @@ def _run_out(row: Any) -> SuitabilityRunOut:
         candidate_count_excluded=row["candidate_count_excluded"],
         input_dataset_version_ids=row["input_dataset_version_ids"] or [],
         input_provenance=row["input_provenance"] or {},
+        weight_profiles=row["weight_profiles"] or {},
+        weight_derivation=row["weight_derivation"] or {},
+        stability_definition=row["stability_definition"] or {},
         started_at=row["started_at"],
         completed_at=row["completed_at"],
         created_at=row["created_at"],
@@ -153,7 +185,8 @@ _RUN_COLUMNS = (
     "id, derivation_version, policy_version, candidate_grid_version, reference_year, "
     "boundary_vintage, weight_profile, analysis_signature, status, candidate_count_total, "
     "candidate_count_eligible, candidate_count_review, candidate_count_excluded, "
-    "input_dataset_version_ids, input_provenance, started_at, completed_at, created_at"
+    "input_dataset_version_ids, input_provenance, weight_profiles, weight_derivation, "
+    "stability_definition, started_at, completed_at, created_at"
 )
 
 
@@ -164,8 +197,17 @@ def get_policy() -> SuitabilityPolicyOut:
         policy_version=snap["policy_version"],
         derivation_version=snap["derivation_version"],
         candidate_grid_version=snap["candidate_grid_version"],
+        critic_method_version=snap["critic_method_version"],
+        stability_method_version=snap["stability_method_version"],
         statuses=[policy.STATUS_ELIGIBLE, policy.STATUS_REVIEW, policy.STATUS_EXCLUDED],
         weight_profiles=snap["weight_profiles"],
+        static_weight_profiles=snap["static_weight_profiles"],
+        data_derived_profiles=snap["data_derived_profiles"],
+        supported_profiles=snap["supported_profiles"],
+        stability_profiles=snap["stability_profiles"],
+        stability_top_fraction=snap["stability_top_fraction"],
+        profile_methodology=snap["profile_methodology"],
+        default_profile=snap["default_profile"],
         weight_rationale=snap["weight_rationale"],
         hard_exclusion_codes=snap["hard_exclusion_codes"],
         review_codes=snap["review_codes"],
@@ -226,6 +268,8 @@ def summary(
         .first()
     )
     assert run is not None
+    run_weight_profiles = run["weight_profiles"] or {}
+    _ensure_profile_available(run_weight_profiles, profile, resolved)
 
     exclusion_counts: dict[str, int] = {}
     review_counts: dict[str, int] = {}
@@ -270,6 +314,9 @@ def summary(
             "candidate_key": r["candidate_key"],
             "sigungu": r["sigungu_region_name"],
             "total_score": r["total"],
+            "stable_count": r["stable_count"],
+            "stability_class": r["stability_class"],
+            "stability_membership": r["stability_membership"] or {},
             "zoning_score": (str(r["zoning_score"]) if r["zoning_score"] is not None else None),
             "road_score": (str(r["road_score"]) if r["road_score"] is not None else None),
             "equity_score": (str(r["equity_score"]) if r["equity_score"] is not None else None),
@@ -284,7 +331,7 @@ def summary(
         for r in session.execute(
             text(
                 "SELECT id, candidate_key, sigungu_region_name, zoning_score, road_score, "
-                "equity_score, demand_score, "
+                "equity_score, demand_score, stable_count, stability_class, stability_membership, "
                 "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
                 "(profile_ranks->>:profile)::int AS rank, profile_totals->>:profile AS total "
                 "FROM suitability_candidates "
@@ -303,6 +350,65 @@ def summary(
         or reason in ("MISSING_DEMAND_COMPONENT", "MISSING_EQUITY_COMPONENT")
     ]
 
+    # --- Weight-sensitivity stability -------------------------------------------
+    stability_definition = run["stability_definition"] or {}
+    stability_available = bool(stability_definition)
+    stability_counts: dict[str, int] = {}
+    for r in session.execute(
+        text(
+            "SELECT stability_class, count(*) AS c FROM suitability_candidates "
+            "WHERE analysis_run_id = :id AND stability_class IS NOT NULL "
+            "GROUP BY stability_class"
+        ),
+        {"id": resolved},
+    ).mappings():
+        stability_counts[r["stability_class"]] = r["c"]
+
+    # Top stable candidates: ELIGIBLE with stable_count = 3, ordered by the requested
+    # profile rank then candidate_key (deterministic tie-break).
+    top_stable = [
+        {
+            "rank": r["rank"],
+            "candidate_id": r["id"],
+            "candidate_key": r["candidate_key"],
+            "sigungu": r["sigungu_region_name"],
+            "total_score": r["total"],
+            "stable_count": r["stable_count"],
+            "stability_class": r["stability_class"],
+            "stability_membership": r["stability_membership"] or {},
+            "zoning_score": (str(r["zoning_score"]) if r["zoning_score"] is not None else None),
+            "road_score": (str(r["road_score"]) if r["road_score"] is not None else None),
+            "equity_score": (str(r["equity_score"]) if r["equity_score"] is not None else None),
+            "demand_score": (str(r["demand_score"]) if r["demand_score"] is not None else None),
+            "centroid_lon": (
+                round(r["centroid_lon"], 6) if r["centroid_lon"] is not None else None
+            ),
+            "centroid_lat": (
+                round(r["centroid_lat"], 6) if r["centroid_lat"] is not None else None
+            ),
+        }
+        for r in session.execute(
+            text(
+                "SELECT id, candidate_key, sigungu_region_name, zoning_score, road_score, "
+                "equity_score, demand_score, stable_count, stability_class, stability_membership, "
+                "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
+                "(profile_ranks->>:profile)::int AS rank, profile_totals->>:profile AS total "
+                "FROM suitability_candidates "
+                "WHERE analysis_run_id = :id AND status = 'ELIGIBLE' AND stable_count = 3 "
+                "AND (profile_ranks->>:profile) IS NOT NULL "
+                "ORDER BY (profile_ranks->>:profile)::int ASC, candidate_key ASC LIMIT 10"
+            ),
+            {"id": resolved, "profile": profile},
+        ).mappings()
+    ]
+
+    critic_weights_raw = run_weight_profiles.get("critic")
+    critic_weights = (
+        {c: str(v) for c, v in critic_weights_raw.items()}
+        if isinstance(critic_weights_raw, dict)
+        else None
+    )
+
     return SuitabilitySummaryOut(
         run_id=resolved,
         reference_year=run["reference_year"],
@@ -318,6 +424,19 @@ def summary(
         review_reason_counts=review_counts,
         sido_distribution=sido_distribution,
         top_candidates=top,
+        critic_weights=critic_weights,
+        stability_top_fraction=(
+            stability_definition.get("top_fraction") if stability_available else None
+        ),
+        stability_top_cutoff_rank=(
+            stability_definition.get("top_cutoff_rank") if stability_available else None
+        ),
+        candidate_count_stable=stability_counts.get("STABLE", 0),
+        candidate_count_conditionally_stable=stability_counts.get("CONDITIONALLY_STABLE", 0),
+        candidate_count_weight_sensitive=stability_counts.get("WEIGHT_SENSITIVE", 0),
+        top_stable_candidates=top_stable,
+        stability_definition=stability_definition,
+        stability_available=stability_available,
         coverage_notes=coverage_notes,
         assumptions=ASSUMPTIONS,
         disclaimer=SCREENING_DISCLAIMER,
@@ -357,6 +476,7 @@ def list_candidates(
     sido: str | None = None,
     sigungu: str | None = None,
     status: Status | None = None,
+    stability_class: StabilityClass | None = None,
     min_score: float | None = Query(default=None, ge=0, le=100),
     max_score: float | None = Query(default=None, ge=0, le=100),
     top: int | None = Query(default=None, ge=1, le=5000),
@@ -366,13 +486,17 @@ def list_candidates(
     resolved = _resolve_run_id(session, run_id)
     run = (
         session.execute(
-            text("SELECT reference_year FROM suitability_analysis_runs WHERE id = :id"),
+            text(
+                "SELECT reference_year, weight_profiles FROM suitability_analysis_runs "
+                "WHERE id = :id"
+            ),
             {"id": resolved},
         )
         .mappings()
         .first()
     )
     assert run is not None
+    _ensure_profile_available(run["weight_profiles"] or {}, profile, resolved)
     box = _parse_bbox(bbox)
 
     conditions = ["analysis_run_id = :id"]
@@ -395,6 +519,11 @@ def list_candidates(
     elif status is not None:
         conditions.append("status = :status")
         params["status"] = status
+    if stability_class is not None:
+        # Independent of the status filter: stability only applies to ELIGIBLE
+        # candidates, so a stability_class filter implies status = ELIGIBLE.
+        conditions.append("stability_class = :stability_class")
+        params["stability_class"] = stability_class
     if min_score is not None:
         conditions.append("(profile_totals->>:profile)::numeric >= :min_score")
         params["min_score"] = min_score
@@ -429,6 +558,7 @@ def list_candidates(
                        (profile_ranks->>:profile)::int AS profile_rank,
                        profile_totals->>:profile AS profile_total,
                        zoning_score, road_score, equity_score, demand_score,
+                       stable_count, stability_class, stability_membership,
                        sido_region_code, sido_region_name, sigungu_region_code, sigungu_region_name,
                        nearest_road_distance_m, exclusion_reasons, review_reasons,
                        ST_AsGeoJSON(geometry) AS geojson
@@ -489,6 +619,9 @@ def list_candidates(
                         if r["nearest_road_distance_m"] is not None
                         else None
                     ),
+                    stable_count=r["stable_count"],
+                    stability_class=r["stability_class"],
+                    stability_membership=r["stability_membership"] or {},
                     exclusion_reasons=r["exclusion_reasons"] or [],
                     review_reasons=r["review_reasons"] or [],
                 ),
@@ -545,6 +678,15 @@ def candidate_tile(
     # Unknown / non-succeeded run -> structured 404 (same semantics as the read API).
     resolved = _resolve_run_id(session, run_id)
 
+    # A data-derived profile (critic) the run never computed -> structured 4xx, so
+    # an old run without CRITIC data returns PROFILE_NOT_AVAILABLE_FOR_RUN rather
+    # than an empty tile that would silently imply "no candidates here".
+    run_weight_profiles = session.execute(
+        text("SELECT weight_profiles FROM suitability_analysis_runs WHERE id = :id"),
+        {"id": resolved},
+    ).scalar()
+    _ensure_profile_available(run_weight_profiles or {}, profile, resolved)
+
     # Content-independent, immutable ETag: the (run, profile, z, x, y) tuple fully
     # determines the tile bytes because a run is never mutated in place, so we can
     # honor a conditional request without regenerating the tile.
@@ -574,7 +716,8 @@ def candidate_detail(
             text(
                 """
                 SELECT c.*, r.reference_year, r.policy_version, r.derivation_version,
-                       r.candidate_grid_version, ST_AsGeoJSON(c.geometry) AS geojson
+                       r.candidate_grid_version, r.weight_profiles AS run_weight_profiles,
+                       ST_AsGeoJSON(c.geometry) AS geojson
                 FROM suitability_candidates c
                 JOIN suitability_analysis_runs r ON r.id = c.analysis_run_id
                 WHERE c.id = :id
@@ -595,6 +738,8 @@ def candidate_detail(
                 "detail": f"candidate {candidate_id} has no geometry",
             },
         )
+    run_weight_profiles = row["run_weight_profiles"] or {}
+    _ensure_profile_available(run_weight_profiles, profile, row["analysis_run_id"])
     is_excluded = row["status"] == "EXCLUDED"
     is_review = row["status"] == "REVIEW_REQUIRED"
     profile_totals = row["profile_totals"] or {}
@@ -602,6 +747,17 @@ def candidate_detail(
     value = profile_totals.get(profile)
     total = None if is_review or is_excluded else value
     provisional = value if is_review else None
+    # Serve the *actual* run weights for the selected profile. Never use
+    # policy.WEIGHT_PROFILES[profile] — that would fabricate weights for the
+    # data-derived ``critic`` profile. Static profiles fall back to the policy
+    # constant only for pre-CRITIC runs whose weight_profiles were never populated.
+    run_weights = run_weight_profiles.get(profile)
+    if isinstance(run_weights, dict):
+        weights = {c: str(w) for c, w in run_weights.items()}
+    elif profile in _STATIC_PROFILE_NAMES:
+        weights = {c: str(w) for c, w in policy.STATIC_WEIGHT_PROFILES[profile].items()}
+    else:  # pragma: no cover - unreachable: critic availability already enforced
+        weights = {}
     return CandidateDetailOut(
         candidate_id=row["id"],
         run_id=row["analysis_run_id"],
@@ -618,6 +774,9 @@ def candidate_detail(
         demand_score=row["demand_score"],
         profile_totals=profile_totals,
         profile_ranks=profile_ranks,
+        stable_count=row["stable_count"],
+        stability_class=row["stability_class"],
+        stability_membership=row["stability_membership"] or {},
         sido_region_code=row["sido_region_code"],
         sido_region_name=row["sido_region_name"],
         sigungu_region_code=row["sigungu_region_code"],
@@ -637,6 +796,6 @@ def candidate_detail(
         policy_version=row["policy_version"],
         derivation_version=row["derivation_version"],
         candidate_grid_version=row["candidate_grid_version"],
-        weights={c: str(w) for c, w in policy.WEIGHT_PROFILES[profile].items()},
+        weights=weights,
         disclaimer=SCREENING_DISCLAIMER,
     )

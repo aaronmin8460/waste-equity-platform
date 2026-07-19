@@ -46,16 +46,55 @@ def test_policies_ok(client: TestClient) -> None:
     response = client.get("/api/v1/suitability/policies")
     assert response.status_code == 200
     body = response.json()
-    assert body["policy_version"] == "suitability-policy-v1"
+    assert body["policy_version"] == "suitability-policy-v2"
+    assert body["critic_method_version"] == "critic-weights-v1"
+    assert body["stability_method_version"] == "suitability-stability-v1"
     assert body["statuses"] == ["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"]
     assert "UD801" in body["hard_exclusion_codes"]
+    # weight_profiles carries the four *static* policy-assumption profiles only;
+    # critic is data-derived and must NOT appear as a fixed policy weight vector.
     assert set(body["weight_profiles"]) == {
         "baseline",
         "equal",
         "equity_focused",
         "access_focused",
     }
+    assert "critic" not in body["weight_profiles"]
+    assert set(body["static_weight_profiles"]) == set(body["weight_profiles"])
+    # critic appears only in the data-derived catalog (method, no fixed weights).
+    assert "critic" in body["data_derived_profiles"]
+    assert "weights" not in body["data_derived_profiles"]["critic"]
+    assert body["supported_profiles"] == [
+        "baseline",
+        "equal",
+        "equity_focused",
+        "access_focused",
+        "critic",
+    ]
+    assert body["stability_profiles"] == ["baseline", "equal", "critic"]
+    assert body["stability_top_fraction"] == "0.10"
+    assert body["default_profile"] == "baseline"
     assert "not legal eligibility" in body["disclaimer"]
+
+
+def test_critic_profile_unavailable_on_run_without_critic(
+    client: TestClient, session: Session
+) -> None:
+    """An old run whose weight_profiles has no critic returns a structured 4xx for
+    every read that requests the critic profile (never a KeyError or fake value)."""
+    run = _seed_run(session)  # weight_profiles={} -> no critic
+    for path in (
+        f"/api/v1/suitability/summary?run_id={run.id}&profile=critic",
+        f"/api/v1/suitability/candidates?run_id={run.id}&profile=critic",
+        f"/api/v1/suitability/tiles/{run.id}/critic/9/436/201.mvt",
+    ):
+        resp = client.get(path)
+        assert resp.status_code == 400, path
+        assert resp.json()["detail"]["error"] == "PROFILE_NOT_AVAILABLE_FOR_RUN", path
+
+
+def test_bad_stability_class_is_422(client: TestClient) -> None:
+    assert client.get("/api/v1/suitability/candidates?stability_class=MAYBE").status_code == 422
 
 
 def test_runs_empty(client: TestClient) -> None:

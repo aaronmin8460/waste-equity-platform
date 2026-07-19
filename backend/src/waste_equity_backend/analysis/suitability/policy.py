@@ -17,18 +17,36 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Any
 
+from . import critic
+
 # --------------------------------------------------------------------------- #
 # Versions
 # --------------------------------------------------------------------------- #
 
-POLICY_VERSION = "suitability-policy-v1"
-# v2: coverage-gap computation moved from a union of OFFICIAL_SOURCE_UNAVAILABLE
-# cells to effective coverage (an active dataset that evaluates a region/layer
-# satisfies coverage), and structural screening/inputs are restricted to active
-# dataset versions. The policy registry (codes, weights, curves, thresholds) is
-# unchanged, so POLICY_VERSION stays at v1.
-DERIVATION_VERSION = "suitability-screening-v2"
+# policy-v2: adds the ``critic`` data-derived profile (run-specific CRITIC weights,
+# NOT a fixed policy assumption) and per-candidate weight-sensitivity stability
+# (top-10% membership across baseline/equal/critic). The four static profiles, the
+# hard-exclusion/review rules, the component-score formulas, the distance curve,
+# and every threshold are byte-for-byte unchanged; the version bump reflects the
+# new profile-derivation and candidate-output surface.
+POLICY_VERSION = "suitability-policy-v2"
+# screening-v3: the scoring pipeline now also derives run-specific CRITIC weights
+# and computes stability metadata. The four static-profile totals/ranks and all
+# status resolution are unchanged.
+DERIVATION_VERSION = "suitability-screening-v3"
 CANDIDATE_GRID_VERSION = "capital-grid-500m-v1"
+
+# Method versions for the two new analytical artifacts. CRITIC weights are a
+# deterministic function of the signed inputs + this method version, so the
+# analysis signature includes the method version but not the derived vector.
+CRITIC_METHOD_VERSION = "critic-weights-v1"
+STABILITY_METHOD_VERSION = "suitability-stability-v1"
+
+# Stability compares a candidate's rank across three profiles; a candidate is
+# "stable" when it stays in the top fraction under all three. This top fraction is
+# an explicit analytical-policy assumption for stability v1 (not a legal or
+# engineering threshold).
+STABILITY_TOP_FRACTION = Decimal("0.10")
 
 # Deterministic 500 m grid in EPSG:5179 (Korea 2000 / Unified, meters), tiled
 # from the CRS origin (0, 0) so every edge falls on an integer multiple of 500 m.
@@ -53,7 +71,11 @@ EXCLUSION_LABEL = "PROJECT_SCREENING_EXCLUSION"
 
 COMPONENTS = ("zoning", "road", "equity", "demand")
 
-WEIGHT_PROFILES: dict[str, dict[str, Decimal]] = {
+# Policy-assumption profiles with *fixed* weights. These are documented analytical
+# assumptions (baseline is the operational default; the other three are sensitivity
+# comparisons) — NOT expert AHP results, legal priorities, or objectively correct
+# policy weights. Their exact weights are frozen across policy versions.
+STATIC_WEIGHT_PROFILES: dict[str, dict[str, Decimal]] = {
     "baseline": {
         "zoning": Decimal("0.35"),
         "road": Decimal("0.25"),
@@ -80,7 +102,51 @@ WEIGHT_PROFILES: dict[str, dict[str, Decimal]] = {
     },
 }
 
+# Backward-compatible alias: the static profiles ARE the fixed policy-weight
+# registry. ``critic`` is deliberately absent — its weights are data-derived per
+# run and never live in this static registry.
+WEIGHT_PROFILES = STATIC_WEIGHT_PROFILES
+
+# Data-derived profiles: computed per analysis run from the candidate score
+# structure, with no fixed weight vector in this policy module.
+DATA_DERIVED_PROFILES: tuple[str, ...] = ("critic",)
+
+# Every profile the system supports (static + data-derived).
+SUPPORTED_PROFILES: tuple[str, ...] = tuple(STATIC_WEIGHT_PROFILES) + DATA_DERIVED_PROFILES
+
+# Profiles compared for weight-sensitivity stability (an operating assumption + a
+# neutral comparison + the run's data-derived vector).
+STABILITY_PROFILES: tuple[str, ...] = ("baseline", "equal", "critic")
+
+# Stability classes (ELIGIBLE candidates only). These are sensitivity indicators,
+# never a legal, engineering, environmental-review, or final siting determination.
+STABILITY_CLASS_STABLE = "STABLE"
+STABILITY_CLASS_CONDITIONAL = "CONDITIONALLY_STABLE"
+STABILITY_CLASS_SENSITIVE = "WEIGHT_SENSITIVE"
+
+STABILITY_DISCLAIMER = (
+    "Stability means the candidate remains in the top 10% of complete ELIGIBLE "
+    "candidates under baseline, equal, and CRITIC profiles. It is a sensitivity "
+    "indicator, not a legal, engineering, environmental-review, or final siting "
+    "determination."
+)
+
 DEFAULT_PROFILE = "baseline"
+
+# Per-profile method description (citizen-facing, honest about what each is).
+PROFILE_METHODOLOGY: dict[str, str] = {
+    "baseline": "운영 기본 가정 — 전문가 AHP 산출값이 아님 (operating default assumption, not AHP)",
+    "equal": "균등 비교 가정 (equal-weight comparison assumption)",
+    "equity_focused": "형평성 민감도 비교 가정 (equity sensitivity comparison assumption)",
+    "access_focused": "접근성 민감도 비교 가정 (access sensitivity comparison assumption)",
+    "critic": (
+        "CRITIC 데이터 기반 가중치 — 현재 실행의 완전한 ELIGIBLE 후보 네 구성 점수의 "
+        "분산·비중복성으로 계산된 데이터 기반 가중치. 조닝/도로/형평성/수요의 규범적 중요도가 "
+        "아니라 선택된 데이터와 분석 범위의 구조를 나타냄 (data-derived from score variation "
+        "and non-redundancy among complete ELIGIBLE candidates in this run; describes the "
+        "data/scope structure, not normative importance)."
+    ),
+}
 
 WEIGHT_RATIONALE = {
     "zoning": "land-use context is fundamental to screening — largest weight",
@@ -278,34 +344,51 @@ def demand_score_from_rank(percentile: Decimal) -> Decimal:
     return quantize_score(percentile * Decimal("100"))
 
 
-def composite(component_scores: dict[str, Decimal], profile: str) -> Decimal:
-    """Weighted composite of four dimensionless component scores for a profile.
+def _resolve_weights(weights: str | dict[str, Decimal]) -> dict[str, Decimal]:
+    """Accept either a static profile name or an explicit weight mapping.
 
-    All four components must be present (the caller marks REVIEW_REQUIRED and
-    computes a provisional score otherwise). Exact Decimal, quantized to 4 dp.
+    A string names a *static* profile in :data:`STATIC_WEIGHT_PROFILES`; a mapping
+    is used directly (this is how the data-derived ``critic`` weights, which are
+    never in the static registry, are applied). ``composite()`` therefore never
+    assumes a selected profile is statically registered.
     """
 
-    weights = WEIGHT_PROFILES[profile]
-    total = sum((component_scores[c] * weights[c] for c in COMPONENTS), start=Decimal("0"))
+    return STATIC_WEIGHT_PROFILES[weights] if isinstance(weights, str) else weights
+
+
+def composite(component_scores: dict[str, Decimal], weights: str | dict[str, Decimal]) -> Decimal:
+    """Weighted composite of four dimensionless component scores.
+
+    ``weights`` is a static profile name or an explicit ``{component: weight}``
+    mapping (e.g. run-specific CRITIC weights). All four components must be present
+    (the caller marks REVIEW_REQUIRED and computes a provisional score otherwise).
+    Exact Decimal, quantized to 4 dp.
+    """
+
+    w = _resolve_weights(weights)
+    total = sum((component_scores[c] * w[c] for c in COMPONENTS), start=Decimal("0"))
     return quantize_score(total)
 
 
-def provisional_composite(component_scores: dict[str, Decimal], profile: str) -> Decimal | None:
+def provisional_composite(
+    component_scores: dict[str, Decimal], weights: str | dict[str, Decimal]
+) -> Decimal | None:
     """Provisional score for review candidates from the present components only.
 
     Renormalizes the weights over the components that are present so the
     provisional score is a documented partial estimate, never a zero-filled one.
-    Returns None when no component is present.
+    Returns None when no component is present. ``weights`` is a static profile name
+    or an explicit mapping (see :func:`composite`).
     """
 
-    weights = WEIGHT_PROFILES[profile]
+    w = _resolve_weights(weights)
     present = {c: component_scores[c] for c in COMPONENTS if c in component_scores}
     if not present:
         return None
-    weight_sum = sum((weights[c] for c in present), start=Decimal("0"))
+    weight_sum = sum((w[c] for c in present), start=Decimal("0"))
     if weight_sum == 0:
         return None
-    total = sum((present[c] * weights[c] for c in present), start=Decimal("0")) / weight_sum
+    total = sum((present[c] * w[c] for c in present), start=Decimal("0")) / weight_sum
     return quantize_score(total)
 
 
@@ -321,12 +404,20 @@ class SuitabilityPolicyError(RuntimeError):
 def validate_policy() -> None:
     """Fail fast if the registry violates its own invariants."""
 
-    for profile, weights in WEIGHT_PROFILES.items():
+    for profile, weights in STATIC_WEIGHT_PROFILES.items():
         if set(weights) != set(COMPONENTS):
             raise SuitabilityPolicyError(f"profile {profile} must weight exactly {COMPONENTS}")
         total = sum(weights.values(), start=Decimal("0"))
         if total != Decimal("1"):
             raise SuitabilityPolicyError(f"profile {profile} weights sum to {total}, not 1.0")
+    # ``critic`` is data-derived and must never be given a fixed weight vector here.
+    if set(DATA_DERIVED_PROFILES) & set(STATIC_WEIGHT_PROFILES):
+        raise SuitabilityPolicyError("data-derived profiles must not be statically registered")
+    if DEFAULT_PROFILE not in STATIC_WEIGHT_PROFILES:
+        raise SuitabilityPolicyError(f"DEFAULT_PROFILE {DEFAULT_PROFILE} must be a static profile")
+    for prof in STABILITY_PROFILES:
+        if prof not in SUPPORTED_PROFILES:
+            raise SuitabilityPolicyError(f"stability profile {prof} is not supported")
     for rule in ZONING_REGISTRY.values():
         if rule.status_effect == "ELIGIBLE_WITH_PENALTY" and rule.score is None:
             raise SuitabilityPolicyError(f"zoning {rule.code} scored class must have a score")
@@ -346,19 +437,44 @@ def policy_snapshot() -> dict[str, Any]:
     """A JSON-serializable snapshot of the applied policy for a run record."""
 
     validate_policy()
+    static_profiles = {
+        p: {c: str(w) for c, w in weights.items()} for p, weights in STATIC_WEIGHT_PROFILES.items()
+    }
     return {
         "policy_version": POLICY_VERSION,
         "derivation_version": DERIVATION_VERSION,
         "candidate_grid_version": CANDIDATE_GRID_VERSION,
+        "critic_method_version": CRITIC_METHOD_VERSION,
+        "stability_method_version": STABILITY_METHOD_VERSION,
         "grid": {
             "cell_meters": GRID_CELL_METERS,
             "crs": GRID_CRS,
             "origin": GRID_ORIGIN_DESCRIPTION,
             "target_crs": TARGET_CRS,
         },
-        "weight_profiles": {
-            p: {c: str(w) for c, w in weights.items()} for p, weights in WEIGHT_PROFILES.items()
+        # Policy-assumption profiles with fixed weights. ``critic`` is intentionally
+        # absent — its weights are derived per analysis run, not a policy constant.
+        "weight_profiles": static_profiles,
+        "static_weight_profiles": static_profiles,
+        # Data-derived profile *catalog* (no fixed weights; the actual vector lives
+        # on each analysis run's ``weight_profiles``/``weight_derivation``).
+        "data_derived_profiles": {
+            "critic": {
+                "method": critic.CRITIC_METHOD,
+                "method_version": CRITIC_METHOD_VERSION,
+                "criterion_order": list(critic.CRITERION_ORDER),
+                "normalization": critic.NORMALIZATION,
+                "standard_deviation_definition": critic.STANDARD_DEVIATION_DEFINITION,
+                "weights_source": "per-analysis-run (see run.weight_profiles.critic)",
+                "description": PROFILE_METHODOLOGY["critic"],
+                "disclaimer": critic.DISCLAIMER,
+            }
         },
+        "supported_profiles": list(SUPPORTED_PROFILES),
+        "stability_profiles": list(STABILITY_PROFILES),
+        "stability_top_fraction": str(STABILITY_TOP_FRACTION),
+        "profile_methodology": PROFILE_METHODOLOGY,
+        "default_profile": DEFAULT_PROFILE,
         "weight_rationale": WEIGHT_RATIONALE,
         "hard_exclusion_codes": {**PROTECTED_HARD_CODES, **ZONING_HARD_CODES},
         "review_codes": REVIEW_PROTECTED_CODES,

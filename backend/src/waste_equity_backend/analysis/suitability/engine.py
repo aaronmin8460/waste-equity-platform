@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -41,7 +42,7 @@ from ..per_capita import (
     ZeroPopulationError,
     per_capita_kg_per_year,
 )
-from . import policy
+from . import critic, policy
 
 ACCOUNTING_BASIS_ORIGIN_TREATMENT = "ORIGIN_BASED_TREATMENT_OUTCOME"
 DEMAND_WASTE_STREAM = "HOUSEHOLD"
@@ -86,6 +87,18 @@ class SuitabilityBuildReport:
     input_dataset_version_ids: list[int] = field(default_factory=list)
     input_provenance: dict[str, Any] = field(default_factory=dict)
     top_candidates: list[dict[str, Any]] = field(default_factory=list)
+    # CRITIC + stability outputs (None/0 until computed; also populated on reuse).
+    critic_method_version: str = policy.CRITIC_METHOD_VERSION
+    stability_method_version: str = policy.STABILITY_METHOD_VERSION
+    critic_weights: dict[str, str] | None = None
+    critic_candidate_population: int = 0
+    critic_zero_variance_criteria: list[str] = field(default_factory=list)
+    stability_top_fraction: str = str(policy.STABILITY_TOP_FRACTION)
+    stability_cutoff_rank: int | None = None
+    candidate_count_stable: int = 0
+    candidate_count_conditionally_stable: int = 0
+    candidate_count_weight_sensitive: int = 0
+    error_category: str | None = None
     message: str = ""
 
     def sanitized_summary(self) -> dict[str, Any]:
@@ -112,6 +125,17 @@ class SuitabilityBuildReport:
             "input_dataset_version_ids": self.input_dataset_version_ids,
             "input_provenance": self.input_provenance,
             "top_candidates": self.top_candidates,
+            "critic_method_version": self.critic_method_version,
+            "stability_method_version": self.stability_method_version,
+            "critic_weights": self.critic_weights,
+            "critic_candidate_population": self.critic_candidate_population,
+            "critic_zero_variance_criteria": self.critic_zero_variance_criteria,
+            "stability_top_fraction": self.stability_top_fraction,
+            "stability_cutoff_rank": self.stability_cutoff_rank,
+            "candidate_count_stable": self.candidate_count_stable,
+            "candidate_count_conditionally_stable": self.candidate_count_conditionally_stable,
+            "candidate_count_weight_sensitive": self.candidate_count_weight_sensitive,
+            "error_category": self.error_category,
             "message": self.message,
         }
 
@@ -202,10 +226,23 @@ def _resolve_inputs(session: Session, reference_year: int) -> ResolvedInputs:
 
 
 def _analysis_signature(inputs: ResolvedInputs, profile: str) -> str:
+    # The derived CRITIC weight vector is intentionally NOT part of the signature:
+    # it is a deterministic function of the signed inputs (data versions, reference
+    # periods, grid) and the CRITIC method version, so signing those inputs +
+    # ``critic_method_version`` already uniquely determines the vector. Signing the
+    # vector itself would be redundant and would make the signature depend on a
+    # value that is only known after scoring. A changed data version, reference
+    # period, policy version, CRITIC/stability method version, or stability
+    # threshold all change the signature (a distinct run); an identical build
+    # reuses the existing succeeded run.
     payload = {
         "policy_version": policy.POLICY_VERSION,
         "derivation_version": policy.DERIVATION_VERSION,
         "candidate_grid_version": policy.CANDIDATE_GRID_VERSION,
+        "critic_method_version": policy.CRITIC_METHOD_VERSION,
+        "stability_method_version": policy.STABILITY_METHOD_VERSION,
+        "stability_top_fraction": str(policy.STABILITY_TOP_FRACTION),
+        "stability_profiles": list(policy.STABILITY_PROFILES),
         "reference_year": inputs.reference_year,
         "boundary_vintage": inputs.boundary_vintage,
         "structural_version_ids": sorted(inputs.structural_version_ids),
@@ -727,23 +764,30 @@ def _score_candidates(
             component_scores = {}
             road_score_val = None
 
-        # --- Composite / provisional per profile ---
+        # --- Composite / provisional per STATIC profile ---
+        # Static-profile totals are self-contained (fixed weights); the ``critic``
+        # profile needs the whole eligible matrix and is added by
+        # ``_apply_critic_and_stability`` in a later stage. The first-class active
+        # fields are set here only when the active profile is static; a ``critic``
+        # active profile is resolved in that later stage.
         profile_totals: dict[str, str | None] = {}
         total_score: Decimal | None = None
         provisional_score: Decimal | None = None
+        active_is_static = active_profile in policy.STATIC_WEIGHT_PROFILES
         zoning_score = component_scores.get("zoning")
         equity_score = component_scores.get("equity")
         demand_score = component_scores.get("demand")
         if status == policy.STATUS_ELIGIBLE:
-            for prof in policy.WEIGHT_PROFILES:
+            for prof in policy.STATIC_WEIGHT_PROFILES:
                 profile_totals[prof] = str(policy.composite(component_scores, prof))
-            total_score = Decimal(profile_totals[active_profile])  # type: ignore[arg-type]
+            if active_is_static:
+                total_score = Decimal(profile_totals[active_profile])  # type: ignore[arg-type]
         elif status == policy.STATUS_REVIEW:
-            for prof in policy.WEIGHT_PROFILES:
+            for prof in policy.STATIC_WEIGHT_PROFILES:
                 pv = policy.provisional_composite(component_scores, prof)
                 profile_totals[prof] = str(pv) if pv is not None else None
-            pv_active = policy.provisional_composite(component_scores, active_profile)
-            provisional_score = pv_active
+            if active_is_static:
+                provisional_score = policy.provisional_composite(component_scores, active_profile)
 
         for r in exclusion_reasons:
             exclusion_counts[r] = exclusion_counts.get(r, 0) + 1
@@ -778,6 +822,11 @@ def _score_candidates(
                 "demand_score": (str(demand_score) if demand_score is not None else None),
                 "profile_totals": profile_totals,
                 "profile_ranks": {},
+                # Stability is added later for ELIGIBLE candidates only; None/{} means
+                # "not classified" (also the permanent state for review/excluded).
+                "stable_count": None,
+                "stability_class": None,
+                "stability_membership": {},
                 "raw_components": raw,
                 "exclusion_reasons": exclusion_reasons,
                 "review_reasons": review_reasons,
@@ -785,6 +834,9 @@ def _score_candidates(
                 "nearest_road_distance_m": (round(float(dist), 3) if dist is not None else None),
                 "nearest_road_provenance": nearest_road,
                 "component_provenance": component_provenance,
+                # Internal-only exact component Decimals (all four present for
+                # ELIGIBLE), used by the CRITIC/stability stage; never persisted.
+                "_component_decimals": dict(component_scores),
             }
         )
 
@@ -793,18 +845,171 @@ def _score_candidates(
 
 
 def _assign_ranks(scored: list[dict[str, Any]], active_profile: str) -> None:
-    """Rank ELIGIBLE candidates per profile (desc score, tie-break asc candidate_key)."""
+    """Rank ELIGIBLE candidates per STATIC profile (desc score, tie-break asc key).
+
+    The ``critic`` profile's ranks are assigned in ``_apply_critic_and_stability``
+    once its run-specific weights are known. The first-class ``rank`` is set from
+    the active profile here only when the active profile is static.
+    """
 
     eligible = [s for s in scored if s["status"] == policy.STATUS_ELIGIBLE]
-    for prof in policy.WEIGHT_PROFILES:
+    for prof in policy.STATIC_WEIGHT_PROFILES:
         ordered = sorted(
             eligible,
             key=lambda s: (-Decimal(s["profile_totals"][prof]), s["candidate_key"]),
         )
         for idx, s in enumerate(ordered, start=1):
             s["profile_ranks"][prof] = idx
+    if active_profile in policy.STATIC_WEIGHT_PROFILES:
+        for s in eligible:
+            s["rank"] = s["profile_ranks"].get(active_profile)
+
+
+# --------------------------------------------------------------------------- #
+# CRITIC weights + weight-sensitivity stability (Phase 4/5)
+# --------------------------------------------------------------------------- #
+
+
+def _stability_class(stable_count: int) -> str:
+    if stable_count == 3:
+        return policy.STABILITY_CLASS_STABLE
+    if stable_count == 2:
+        return policy.STABILITY_CLASS_CONDITIONAL
+    return policy.STABILITY_CLASS_SENSITIVE
+
+
+def _stability_top_cutoff_rank(eligible_count: int) -> int:
+    """top_cutoff_rank = max(1, ceil(N * STABILITY_TOP_FRACTION))."""
+
+    if eligible_count <= 0:
+        return 0
+    return max(1, math.ceil(eligible_count * policy.STABILITY_TOP_FRACTION))
+
+
+def _stability_definition(eligible_count: int, cutoff_rank: int) -> dict[str, Any]:
+    return {
+        "method": "weight_sensitivity_top_fraction",
+        "method_version": policy.STABILITY_METHOD_VERSION,
+        "compared_profiles": list(policy.STABILITY_PROFILES),
+        "top_fraction": str(policy.STABILITY_TOP_FRACTION),
+        "eligible_candidate_count": eligible_count,
+        "top_cutoff_rank": cutoff_rank,
+        "class_definitions": {
+            policy.STABILITY_CLASS_STABLE: (
+                "top-tier under all 3 stability profiles (stable_count == 3)"
+            ),
+            policy.STABILITY_CLASS_CONDITIONAL: (
+                "top-tier under exactly 2 stability profiles (stable_count == 2)"
+            ),
+            policy.STABILITY_CLASS_SENSITIVE: (
+                "top-tier under 0 or 1 stability profile (stable_count in {0, 1})"
+            ),
+        },
+        "applicability": (
+            "ELIGIBLE candidates only; REVIEW_REQUIRED and EXCLUDED candidates are never "
+            "classified and are never presented as stable."
+        ),
+        "disclaimer": policy.STABILITY_DISCLAIMER,
+    }
+
+
+@dataclass
+class CriticStabilityResult:
+    run_weight_profiles: dict[str, dict[str, str]]
+    weight_derivation: dict[str, Any]
+    stability_definition: dict[str, Any]
+    critic_result: critic.CriticResult
+    top_cutoff_rank: int
+    candidate_count_stable: int
+    candidate_count_conditionally_stable: int
+    candidate_count_weight_sensitive: int
+
+
+def _apply_critic_and_stability(
+    scored: list[dict[str, Any]], active_profile: str, reference_year: int
+) -> CriticStabilityResult:
+    """Derive run-specific CRITIC weights, add critic totals/ranks, and stability.
+
+    Mutates ``scored`` in place: adds the ``critic`` entry to each candidate's
+    ``profile_totals``/``profile_ranks`` and (for ELIGIBLE candidates) populates
+    ``stable_count``/``stability_class``/``stability_membership``. Raises
+    :class:`critic.CriticUndefinedError` when CRITIC cannot be defined (never
+    silently substitutes baseline/equal weights).
+    """
+
+    # Stage 3: complete ELIGIBLE component-score rows (all four present).
+    eligible = [s for s in scored if s["status"] == policy.STATUS_ELIGIBLE]
+    rows = [{c: s["_component_decimals"][c] for c in policy.COMPONENTS} for s in eligible]
+
+    # Stage 4: run-specific CRITIC weights.
+    critic_result = critic.compute_critic_weights(rows)
+    critic_weights = critic_result.weights
+
+    # Stage 5-6: critic totals for every profile-scored candidate.
+    for s in scored:
+        comps = s["_component_decimals"]
+        if s["status"] == policy.STATUS_ELIGIBLE:
+            s["profile_totals"]["critic"] = str(policy.composite(comps, critic_weights))
+        elif s["status"] == policy.STATUS_REVIEW:
+            pv = policy.provisional_composite(comps, critic_weights)
+            s["profile_totals"]["critic"] = str(pv) if pv is not None else None
+        # EXCLUDED: no critic total (profile_totals stays empty).
+
+    # Stage 7: critic ranks over ELIGIBLE candidates (desc total, tie-break key).
+    ordered = sorted(
+        eligible,
+        key=lambda s: (-Decimal(s["profile_totals"]["critic"]), s["candidate_key"]),
+    )
+    for idx, s in enumerate(ordered, start=1):
+        s["profile_ranks"]["critic"] = idx
+
+    # Resolve the first-class active fields when the active profile is critic.
+    if active_profile == "critic":
+        for s in eligible:
+            s["rank"] = s["profile_ranks"]["critic"]
+            s["total_score"] = s["profile_totals"]["critic"]
+        for s in scored:
+            if s["status"] == policy.STATUS_REVIEW:
+                s["provisional_score"] = s["profile_totals"].get("critic")
+
+    # Stage 8: stability — top-fraction membership across baseline/equal/critic.
+    n_elig = len(eligible)
+    cutoff = _stability_top_cutoff_rank(n_elig)
+    counts = {
+        policy.STABILITY_CLASS_STABLE: 0,
+        policy.STABILITY_CLASS_CONDITIONAL: 0,
+        policy.STABILITY_CLASS_SENSITIVE: 0,
+    }
     for s in eligible:
-        s["rank"] = s["profile_ranks"].get(active_profile)
+        membership = {p: bool(s["profile_ranks"][p] <= cutoff) for p in policy.STABILITY_PROFILES}
+        stable_count = sum(1 for v in membership.values() if v)
+        cls = _stability_class(stable_count)
+        s["stability_membership"] = membership
+        s["stable_count"] = stable_count
+        s["stability_class"] = cls
+        counts[cls] += 1
+
+    weight_derivation = critic_result.metadata(method_version=policy.CRITIC_METHOD_VERSION)
+    weight_derivation["reference_year"] = reference_year
+    weight_derivation["policy_version"] = policy.POLICY_VERSION
+    weight_derivation["derivation_version"] = policy.DERIVATION_VERSION
+
+    run_weight_profiles: dict[str, dict[str, str]] = {
+        p: {c: str(w) for c, w in weights.items()}
+        for p, weights in policy.STATIC_WEIGHT_PROFILES.items()
+    }
+    run_weight_profiles["critic"] = critic_result.weights_as_strings()
+
+    return CriticStabilityResult(
+        run_weight_profiles=run_weight_profiles,
+        weight_derivation=weight_derivation,
+        stability_definition=_stability_definition(n_elig, cutoff),
+        critic_result=critic_result,
+        top_cutoff_rank=cutoff,
+        candidate_count_stable=counts[policy.STABILITY_CLASS_STABLE],
+        candidate_count_conditionally_stable=counts[policy.STABILITY_CLASS_CONDITIONAL],
+        candidate_count_weight_sensitive=counts[policy.STABILITY_CLASS_SENSITIVE],
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -831,6 +1036,9 @@ def _persist(
                 demand_score numeric(7,4),
                 profile_totals jsonb,
                 profile_ranks jsonb,
+                stable_count smallint,
+                stability_class varchar,
+                stability_membership jsonb,
                 raw_components jsonb,
                 exclusion_reasons jsonb,
                 review_reasons jsonb,
@@ -848,6 +1056,7 @@ def _persist(
             :gid, :status, :rank, :provisional_score, :total_score, :zoning_score,
             :road_score, :equity_score, :demand_score,
             CAST(:profile_totals AS jsonb), CAST(:profile_ranks AS jsonb),
+            :stable_count, :stability_class, CAST(:stability_membership AS jsonb),
             CAST(:raw_components AS jsonb), CAST(:exclusion_reasons AS jsonb),
             CAST(:review_reasons AS jsonb), CAST(:penalties AS jsonb),
             :nearest_road_distance_m, CAST(:nearest_road_provenance AS jsonb),
@@ -868,6 +1077,9 @@ def _persist(
             "demand_score": s["demand_score"],
             "profile_totals": json.dumps(s["profile_totals"], ensure_ascii=False),
             "profile_ranks": json.dumps(s["profile_ranks"], ensure_ascii=False),
+            "stable_count": s["stable_count"],
+            "stability_class": s["stability_class"],
+            "stability_membership": json.dumps(s["stability_membership"], ensure_ascii=False),
             "raw_components": json.dumps(s["raw_components"], ensure_ascii=False),
             "exclusion_reasons": json.dumps(s["exclusion_reasons"], ensure_ascii=False),
             "review_reasons": json.dumps(s["review_reasons"], ensure_ascii=False),
@@ -888,7 +1100,8 @@ def _persist(
                 analysis_run_id, candidate_key, sido_region_code, sido_region_name,
                 sigungu_region_code, sigungu_region_name, status, rank, provisional_score,
                 total_score, zoning_score, road_score, equity_score, demand_score,
-                profile_totals, profile_ranks, raw_components, exclusion_reasons,
+                profile_totals, profile_ranks, stable_count, stability_class,
+                stability_membership, raw_components, exclusion_reasons,
                 review_reasons, penalties, nearest_road_distance_m, nearest_road_provenance,
                 component_provenance, original_area_m2, clipped_area_m2, clipped_area_ratio,
                 centroid, geometry, created_at
@@ -897,7 +1110,8 @@ def _persist(
                 :run_id, g.candidate_key, g.sido_code, g.sido_name,
                 g.sigungu_code, g.sigungu_name, s.status, s.rank, s.provisional_score,
                 s.total_score, s.zoning_score, s.road_score, s.equity_score, s.demand_score,
-                s.profile_totals, s.profile_ranks, s.raw_components, s.exclusion_reasons,
+                s.profile_totals, s.profile_ranks, s.stable_count, s.stability_class,
+                s.stability_membership, s.raw_components, s.exclusion_reasons,
                 s.review_reasons, s.penalties, s.nearest_road_distance_m, s.nearest_road_provenance,
                 s.component_provenance, g.original_area_m2, g.clipped_area_m2,
                 CASE WHEN g.original_area_m2 > 0
@@ -941,9 +1155,9 @@ def run_suitability_build(
 
     if scope != "capital-region":
         raise SuitabilityBuildError("only --scope capital-region is implemented")
-    if profile not in policy.WEIGHT_PROFILES:
+    if profile not in policy.SUPPORTED_PROFILES:
         raise SuitabilityBuildError(
-            f"unknown profile '{profile}'; allowed: {', '.join(policy.WEIGHT_PROFILES)}"
+            f"unknown profile '{profile}'; allowed: {', '.join(policy.SUPPORTED_PROFILES)}"
         )
     if policy_version != policy.POLICY_VERSION:
         raise SuitabilityBuildError(
@@ -987,7 +1201,8 @@ def run_suitability_build(
                 session.execute(
                     text(
                         "SELECT candidate_count_total, candidate_count_eligible, "
-                        "candidate_count_review, candidate_count_excluded "
+                        "candidate_count_review, candidate_count_excluded, "
+                        "weight_profiles, weight_derivation, stability_definition "
                         "FROM suitability_analysis_runs WHERE id = :id"
                     ),
                     {"id": existing},
@@ -1000,6 +1215,7 @@ def run_suitability_build(
                 report.candidate_count_eligible = counts["candidate_count_eligible"]
                 report.candidate_count_review = counts["candidate_count_review"]
                 report.candidate_count_excluded = counts["candidate_count_excluded"]
+                _apply_reuse_report_extras(session, int(existing), counts, report)
             report.message = (
                 f"suitability run already present for signature (idempotent); reused run {existing}"
             )
@@ -1050,16 +1266,33 @@ def run_suitability_build(
         )
         report.exclusion_reason_counts = exclusion_counts
         report.review_reason_counts = review_counts
+
+        # CRITIC + stability stage (needs the full eligible-candidate matrix).
+        emit("DERIVING_CRITIC_WEIGHTS", f"{report.candidate_count_eligible} eligible in population")
+        cs = _apply_critic_and_stability(scored, profile, reference_year)
+        report.critic_weights = cs.critic_result.weights_as_strings()
+        report.critic_candidate_population = cs.critic_result.population_candidate_count
+        report.critic_zero_variance_criteria = list(cs.critic_result.zero_variance_criteria)
+        report.stability_cutoff_rank = cs.top_cutoff_rank
+        report.candidate_count_stable = cs.candidate_count_stable
+        report.candidate_count_conditionally_stable = cs.candidate_count_conditionally_stable
+        report.candidate_count_weight_sensitive = cs.candidate_count_weight_sensitive
+
+        # Top candidates computed after critic so a critic active profile is ranked.
         report.top_candidates = _top_candidates(session, scored, facts, profile)
 
-        emit("RANKING", f"{report.candidate_count_eligible} eligible ranked")
+        emit(
+            "RANKING",
+            f"{report.candidate_count_eligible} eligible ranked; "
+            f"{cs.candidate_count_stable} stable (cutoff rank {cs.top_cutoff_rank})",
+        )
 
         if write:
             assert run_id is not None
             emit("WRITING_RESULTS", f"persisting {len(scored)} candidates")
             inserted = _persist(session, run_id, scored, now)
             report.candidates_inserted = inserted
-            _finalize_run(session, run_id, report, now)
+            _finalize_run(session, run_id, report, cs, now)
             session.commit()
             emit("VERIFYING_WRITE", f"{inserted} candidate rows written")
             report.message = f"suitability build succeeded (run {run_id}, {inserted} candidates)"
@@ -1073,6 +1306,8 @@ def run_suitability_build(
         return report
     except Exception as exc:
         session.rollback()
+        report.status = "FAILED"
+        report.error_category = getattr(exc, "category", exc.__class__.__name__)
         if write and run_id is not None:
             _mark_run_failed(session, run_id, exc)
         if isinstance(exc, SuitabilityBuildError):
@@ -1107,17 +1342,27 @@ def _new_run_row(
             "facility_reference_period": inputs.facility_reference_period,
         },
         policy_snapshot=policy.policy_snapshot(),
+        # RUNNING row is initialized with the fixed static profiles only; the
+        # actual run weight_profiles (incl. the run-specific critic vector) and the
+        # derivation/stability metadata are written by _finalize_run before the run
+        # is marked SUCCEEDED. Empty {} derivation/stability are safe placeholders.
         weight_profiles={
             p: {c: str(w) for c, w in weights.items()}
-            for p, weights in policy.WEIGHT_PROFILES.items()
+            for p, weights in policy.STATIC_WEIGHT_PROFILES.items()
         },
+        weight_derivation={},
+        stability_definition={},
         started_at=now,
         created_at=now,
     )
 
 
 def _finalize_run(
-    session: Session, run_id: int, report: SuitabilityBuildReport, now: datetime.datetime
+    session: Session,
+    run_id: int,
+    report: SuitabilityBuildReport,
+    cs: CriticStabilityResult,
+    now: datetime.datetime,
 ) -> None:
     session.execute(
         text(
@@ -1125,7 +1370,10 @@ def _finalize_run(
             UPDATE suitability_analysis_runs SET
                 status = 'SUCCEEDED', completed_at = :now,
                 candidate_count_total = :total, candidate_count_eligible = :elig,
-                candidate_count_review = :rev, candidate_count_excluded = :exc
+                candidate_count_review = :rev, candidate_count_excluded = :exc,
+                weight_profiles = CAST(:weight_profiles AS jsonb),
+                weight_derivation = CAST(:weight_derivation AS jsonb),
+                stability_definition = CAST(:stability_definition AS jsonb)
             WHERE id = :id
             """
         ),
@@ -1135,12 +1383,50 @@ def _finalize_run(
             "elig": report.candidate_count_eligible,
             "rev": report.candidate_count_review,
             "exc": report.candidate_count_excluded,
+            "weight_profiles": json.dumps(cs.run_weight_profiles, ensure_ascii=False),
+            "weight_derivation": json.dumps(cs.weight_derivation, ensure_ascii=False),
+            "stability_definition": json.dumps(cs.stability_definition, ensure_ascii=False),
             "id": run_id,
         },
     )
 
 
+def _apply_reuse_report_extras(
+    session: Session, run_id: int, run_row: Any, report: SuitabilityBuildReport
+) -> None:
+    """Populate CRITIC/stability report fields when reusing an existing run."""
+
+    weight_profiles = run_row["weight_profiles"] or {}
+    critic_weights = weight_profiles.get("critic")
+    if isinstance(critic_weights, dict):
+        report.critic_weights = {c: str(v) for c, v in critic_weights.items()}
+    derivation = run_row["weight_derivation"] or {}
+    report.critic_candidate_population = int(derivation.get("population_candidate_count", 0) or 0)
+    report.critic_zero_variance_criteria = list(derivation.get("zero_variance_criteria", []) or [])
+    stability = run_row["stability_definition"] or {}
+    if stability.get("top_cutoff_rank") is not None:
+        report.stability_cutoff_rank = int(stability["top_cutoff_rank"])
+    if stability.get("top_fraction"):
+        report.stability_top_fraction = str(stability["top_fraction"])
+    for r in session.execute(
+        text(
+            "SELECT stability_class, count(*) AS c FROM suitability_candidates "
+            "WHERE analysis_run_id = :id AND stability_class IS NOT NULL "
+            "GROUP BY stability_class"
+        ),
+        {"id": run_id},
+    ).mappings():
+        if r["stability_class"] == policy.STABILITY_CLASS_STABLE:
+            report.candidate_count_stable = r["c"]
+        elif r["stability_class"] == policy.STABILITY_CLASS_CONDITIONAL:
+            report.candidate_count_conditionally_stable = r["c"]
+        elif r["stability_class"] == policy.STABILITY_CLASS_SENSITIVE:
+            report.candidate_count_weight_sensitive = r["c"]
+
+
 def _mark_run_failed(session: Session, run_id: int, exc: Exception) -> None:
+    # Prefer a structured ``category`` (e.g. CRITIC_UNDEFINED) over the class name.
+    category = str(getattr(exc, "category", exc.__class__.__name__))[:50]
     try:
         session.execute(
             text(
@@ -1149,7 +1435,7 @@ def _mark_run_failed(session: Session, run_id: int, exc: Exception) -> None:
             ),
             {
                 "now": _utcnow(),
-                "cat": exc.__class__.__name__[:50],
+                "cat": category,
                 "msg": str(exc)[:1000],
                 "id": run_id,
             },
