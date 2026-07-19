@@ -81,14 +81,15 @@ for (const vp of VIEWPORTS) {
     }) => {
       await page.goto("/");
       // Three semantic groups, each with a <legend>, both on mobile and desktop.
+      // Plain-Korean legends (Phase 7 — no English parenthetical in primary UI).
       await expect(page.locator("fieldset")).toHaveCount(3);
-      await expect(page.getByText("총량 지표 (Total-quantity indicators)")).toBeVisible();
-      await expect(page.getByText("1인당 형평성 지표 (Per-capita equity indicators)")).toBeVisible();
-      await expect(page.getByText("시설 부담 지표 (Facility-burden indicators)")).toBeVisible();
+      await expect(page.getByText("총량 지표", { exact: true })).toBeVisible();
+      await expect(page.getByText("1인당 형평성 지표", { exact: true })).toBeVisible();
+      await expect(page.getByText("시설 부담 지표", { exact: true })).toBeVisible();
       // The selected-metric status region reflects the active metric.
       const summary = page.getByTestId("selected-metric-summary");
       await expect(summary).toHaveAttribute("role", "status");
-      await expect(summary).toContainText("인구 (Population)");
+      await expect(summary).toContainText("인구");
     });
 
     test("keeps the mode toggle group operable with preserved aria-pressed", async ({ page }) => {
