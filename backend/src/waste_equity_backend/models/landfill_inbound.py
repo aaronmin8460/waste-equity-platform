@@ -174,9 +174,7 @@ class LandfillInboundMonthly(Base):
     # Standard ingestion provenance linkage.
     retrieved_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     transformation_version: Mapped[str] = mapped_column(String(100))
-    quantity_raw_response_id: Mapped[int | None] = mapped_column(
-        ForeignKey("raw_api_responses.id")
-    )
+    quantity_raw_response_id: Mapped[int | None] = mapped_column(ForeignKey("raw_api_responses.id"))
     fee_raw_response_id: Mapped[int | None] = mapped_column(ForeignKey("raw_api_responses.id"))
     ingestion_run_id: Mapped[int] = mapped_column(ForeignKey("ingestion_runs.run_id"), index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))

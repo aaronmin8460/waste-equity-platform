@@ -107,8 +107,10 @@ def upgrade() -> None:
     op.create_check_constraint(
         "regional_population_granularity_month_consistent",
         "regional_population",
-        f"(population_temporal_granularity = '{_GRANULARITY_MONTHLY}' AND reference_month IS NOT NULL)"
-        f" OR (population_temporal_granularity = '{_GRANULARITY_ANNUAL}' AND reference_month IS NULL)",
+        f"(population_temporal_granularity = '{_GRANULARITY_MONTHLY}'"
+        " AND reference_month IS NOT NULL)"
+        f" OR (population_temporal_granularity = '{_GRANULARITY_ANNUAL}'"
+        " AND reference_month IS NULL)",
     )
     op.create_check_constraint(
         "regional_population_reference_month_format",

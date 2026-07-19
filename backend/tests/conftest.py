@@ -27,6 +27,7 @@ from waste_equity_backend.models import (
     Base,
     DatasetFreshness,
     DataSource,
+    FacilityStandardCost,
     IngestionRun,
     LandfillInboundMonthly,
     RawApiResponse,
@@ -45,6 +46,8 @@ METADATA_TABLES = [
     RegionalWasteStatistics.__table__,
     # Non-spatial capital-region landfill inbound flow fact table.
     LandfillInboundMonthly.__table__,
+    # Non-spatial versioned facility standard-cost reference table.
+    FacilityStandardCost.__table__,
     # Non-spatial; the candidates table is spatial and is covered by the
     # suitability route integration tests (TEST_DATABASE_URL).
     SuitabilityAnalysisRun.__table__,
