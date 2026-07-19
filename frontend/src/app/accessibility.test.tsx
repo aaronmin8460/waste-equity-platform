@@ -305,6 +305,25 @@ describe("suitability accessible alternatives", () => {
     expect(live.textContent).toContain("가중치 프로파일 baseline");
   });
 
+  it("switches between the score screening and the cost lens sub-views", async () => {
+    await renderLoaded();
+    await enterSuitability();
+    // Default sub-view is the score screening.
+    expect(screen.getByTestId("suitability-view-score").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("suitability-summary")).toBeDefined();
+    // Switch to the cost lens — it mounts and the score panel is gone.
+    fireEvent.click(screen.getByTestId("suitability-view-cost"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-panel")).toBeDefined());
+    expect(screen.getByTestId("suitability-view-cost").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByTestId("suitability-summary")).toBeNull();
+    // The neutral citizen framing + disclaimer are present.
+    expect(screen.getByText("우리 지역에 시설이 생긴다면")).toBeDefined();
+    // Back to the score view.
+    fireEvent.click(screen.getByTestId("suitability-view-score"));
+    await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
+    expect(screen.queryByTestId("facility-cost-panel")).toBeNull();
+  });
+
   it("offers the top candidates as keyboard-operable buttons with a selected marker", async () => {
     await renderLoaded();
     await enterSuitability();
