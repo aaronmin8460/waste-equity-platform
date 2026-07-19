@@ -103,6 +103,37 @@ def test_reseeding_a_partial_version_fails_visibly(session: Session) -> None:
         seed_standard_costs(session)
 
 
+def _first_active_row(session: Session) -> FacilityStandardCost:
+    row = session.scalars(
+        select(FacilityStandardCost).where(
+            FacilityStandardCost.cost_version == fc.ACTIVE_COST_VERSION
+        )
+    ).first()
+    assert row is not None
+    return row
+
+
+def test_reseeding_detects_flipped_inclusivity_flag(session: Session) -> None:
+    # A restore that keeps bounds/cost but flips an inclusivity flag must be caught
+    # (the flag drives band matching).
+    seed_standard_costs(session)
+    row = _first_active_row(session)
+    row.capacity_max_inclusive = not row.capacity_max_inclusive
+    session.flush()
+    with pytest.raises(PartialStandardCostVersionError):
+        seed_standard_costs(session)
+
+
+def test_reseeding_detects_altered_provenance(session: Session) -> None:
+    # Altered provenance must be caught too (never served as official).
+    seed_standard_costs(session)
+    row = _first_active_row(session)
+    row.source_page = "p.999"
+    session.flush()
+    with pytest.raises(PartialStandardCostVersionError):
+        seed_standard_costs(session)
+
+
 def _band_row(min_val: Decimal | None, max_val: Decimal | None) -> FacilityStandardCost:
     return FacilityStandardCost(
         cost_version="test-version",

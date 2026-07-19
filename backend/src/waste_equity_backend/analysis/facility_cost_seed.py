@@ -21,12 +21,17 @@ class PartialStandardCostVersionError(RuntimeError):
     """The active version exists in the DB but does not match the canonical seed."""
 
 
-def _band_keys(bands: object) -> set[tuple[object, object, object, object]]:
+def _band_shapes(bands: object) -> set[tuple[object, ...]]:
+    # Include the inclusivity flags: they drive band matching, so a restore that
+    # keeps the bounds/cost but flips a flag would otherwise pass the check and
+    # then match the wrong rate at runtime.
     return {
         (
             b.facility_type,
             b.capacity_min_ton_per_day,
+            b.capacity_min_inclusive,
             b.capacity_max_ton_per_day,
+            b.capacity_max_inclusive,
             b.cost_per_capacity_bn,
         )
         for b in bands  # type: ignore[attr-defined]
@@ -36,11 +41,13 @@ def _band_keys(bands: object) -> set[tuple[object, object, object, object]]:
 def seed_standard_costs(session: Session) -> int:
     """Insert the active cost version's rows if absent; return rows inserted.
 
-    Idempotent AND self-verifying: if the version is already present in full it
-    inserts nothing and returns 0; if it is present but PARTIAL or mismatched (a
-    restore, manual repair, or earlier failed seed left some bands missing/wrong)
-    it raises :class:`PartialStandardCostVersionError` rather than silently leaving
-    an incomplete version that would fail some capacities with NO_MATCHING_COST_BAND.
+    Idempotent AND self-verifying: if the version is already present in full — with
+    matching band shapes (bounds, inclusivity flags, cost) AND matching provenance
+    — it inserts nothing and returns 0; if it is present but PARTIAL or mismatched
+    (a restore, manual repair, or earlier failed seed left rows missing/wrong) it
+    raises :class:`PartialStandardCostVersionError` rather than silently leaving an
+    incomplete/incorrect version that would match the wrong rate or fail some
+    capacities with NO_MATCHING_COST_BAND, or serve altered provenance as official.
     """
     existing = session.scalars(
         select(FacilityStandardCost).where(
@@ -48,7 +55,14 @@ def seed_standard_costs(session: Session) -> int:
         )
     ).all()
     if existing:
-        if _band_keys(existing) != _band_keys(fc.STANDARD_COST_SEED):
+        provenance_ok = all(
+            row.price_base_date == fc.PRICE_BASE_DATE
+            and row.source_document == fc.SOURCE_DOCUMENT
+            and row.source_page == fc.SOURCE_PAGE
+            and row.source_note == fc.SOURCE_NOTE
+            for row in existing
+        )
+        if not provenance_ok or _band_shapes(existing) != _band_shapes(fc.STANDARD_COST_SEED):
             raise PartialStandardCostVersionError(
                 f"facility_standard_costs for {fc.ACTIVE_COST_VERSION!r} is partial or "
                 f"mismatched ({len(existing)} rows, expected {len(fc.STANDARD_COST_SEED)}); "
