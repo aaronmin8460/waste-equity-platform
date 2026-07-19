@@ -321,12 +321,172 @@ export const RESPONSES: Record<string, unknown> = {
   // never a synthetic "official" summary of zeros.
 };
 
+// --- User-weight scenario lab (Phase 6) mocks ------------------------------ //
+// The preview echoes the posted canonical weights + comparison profile so a test
+// can assert the client sent 8-dp decimal strings; the top candidate shows a rank
+// improvement so rank-movement text is exercised.
+const SCENARIO_TOP_CANDIDATE = {
+  candidate_id: 4242,
+  candidate_key: "capital-grid-500m-v1:12_20",
+  sido_region_code: "28",
+  sido_region_name: "인천광역시",
+  sigungu_region_code: "28710",
+  sigungu_region_name: "강화군",
+  custom_score: "78.5000",
+  custom_rank: 1,
+  comparison_profile: "baseline",
+  comparison_score: "80.0000",
+  comparison_rank: 5,
+  rank_delta: 4,
+  rank_change_direction: "up",
+  zoning_score: "55.0000",
+  road_score: "100.0000",
+  equity_score: "100.0000",
+  demand_score: "50.0000",
+  stable_count: 3,
+  stability_class: "STABLE",
+  centroid_lon: 126.5,
+  centroid_lat: 37.7,
+};
+
+function scenarioPreviewBody(route: Route): Record<string, unknown> {
+  let posted: Record<string, unknown> = {};
+  try {
+    posted = (route.request().postDataJSON() as Record<string, unknown>) ?? {};
+  } catch {
+    posted = {};
+  }
+  const weights =
+    (posted.weights as Record<string, string>) ?? {
+      zoning: "0.35000000",
+      road: "0.25000000",
+      equity: "0.25000000",
+      demand: "0.15000000",
+    };
+  const compare = (posted.compare_profile as string) ?? "baseline";
+  return {
+    scenario_hash: "e2e0000000000000000000000000000000000000000000000000000000000000",
+    scenario_hash_short: "e2e000000000",
+    method_version: "user-weight-scenario-v1",
+    run_id: 47,
+    reference_year: 2022,
+    policy_version: "suitability-policy-v2",
+    derivation_version: "suitability-screening-v3",
+    candidate_grid_version: "capital-grid-500m-v1",
+    canonical_weights: weights,
+    compare_profile: compare,
+    candidate_count_total: 47893,
+    candidate_count_eligible: 1099,
+    candidate_count_review: 34534,
+    candidate_count_excluded: 12260,
+    ranking_population: 1099,
+    top_candidates: [{ ...SCENARIO_TOP_CANDIDATE, comparison_profile: compare }],
+    selected_candidate: null,
+    tile_url: "/api/v1/suitability/scenarios/tiles/47/{z}/{x}/{y}.mvt",
+    assumptions: ["사용자 시나리오는 고정된 한 개 분석 실행의 저장된 구성점수만 재결합합니다"],
+    scenario_label: "사용자 가정 기반 시나리오",
+    scenario_disclaimer:
+      "사용자가 입력한 가중치로 기존 분석 실행의 Z/R/E/D 구성점수를 재결합한 임시 비교 결과입니다.",
+    screening_disclaimer: "Analytical screening only — not a legal permit.",
+  };
+}
+
+function scenarioCandidateBody(candidateId: number): Record<string, unknown> {
+  return {
+    candidate_id: candidateId,
+    run_id: 47,
+    candidate_key: "capital-grid-500m-v1:12_20",
+    status: "ELIGIBLE",
+    is_excluded: false,
+    method_version: "user-weight-scenario-v1",
+    scenario_hash: "e2e0000000000000000000000000000000000000000000000000000000000000",
+    scenario_hash_short: "e2e000000000",
+    canonical_weights: {
+      zoning: "0.35000000",
+      road: "0.25000000",
+      equity: "0.25000000",
+      demand: "0.15000000",
+    },
+    compare_profile: "baseline",
+    custom_score: "78.5000",
+    custom_provisional_score: null,
+    custom_rank: 1,
+    comparison_score: "80.0000",
+    comparison_rank: 5,
+    rank_delta: 4,
+    rank_change_direction: "up",
+    zoning_score: "55.0000",
+    road_score: "100.0000",
+    equity_score: "100.0000",
+    demand_score: "50.0000",
+    contributions: [
+      { component: "zoning", component_score: "55.0000", weight: "0.35000000", weighted_contribution: "19.2500" },
+      { component: "road", component_score: "100.0000", weight: "0.25000000", weighted_contribution: "25.0000" },
+      { component: "equity", component_score: "100.0000", weight: "0.25000000", weighted_contribution: "25.0000" },
+      { component: "demand", component_score: "50.0000", weight: "0.15000000", weighted_contribution: "7.5000" },
+    ],
+    stable_count: 3,
+    stability_class: "STABLE",
+    stability_membership: { baseline: true, equal: true, critic: true },
+    profile_totals: {},
+    profile_ranks: {},
+    sido_region_code: "28",
+    sido_region_name: "인천광역시",
+    sigungu_region_code: "28710",
+    sigungu_region_name: "강화군",
+    exclusion_reasons: [],
+    review_reasons: [],
+    penalties: [],
+    raw_components: {},
+    nearest_road_distance_m: "54.544",
+    nearest_road_provenance: {},
+    component_provenance: {},
+    centroid_lon: 126.5,
+    centroid_lat: 37.7,
+    geometry: {
+      type: "Polygon",
+      coordinates: [
+        [
+          [126.5, 37.7],
+          [126.51, 37.7],
+          [126.51, 37.71],
+          [126.5, 37.71],
+          [126.5, 37.7],
+        ],
+      ],
+    },
+    reference_year: 2022,
+    policy_version: "suitability-policy-v2",
+    derivation_version: "suitability-screening-v3",
+    candidate_grid_version: "capital-grid-500m-v1",
+    scenario_label: "사용자 가정 기반 시나리오",
+    scenario_disclaimer: "사용자가 입력한 가중치로 ...",
+    screening_disclaimer: "Analytical screening only — not a legal permit.",
+  };
+}
+
 /** Intercept all backend + tile traffic so the app renders with no network. */
 export async function mockBackend(page: Page): Promise<void> {
   await page.route("**/api/v1/**", (route: Route) => {
     const pathname = new URL(route.request().url()).pathname;
-    // Vector tiles are nothing to draw in a layout-only run.
+    // Vector tiles are nothing to draw in a layout-only run (stored + scenario).
     if (pathname.endsWith(".mvt")) return route.abort();
+    // User-weight scenario preview + candidate detail (POST, computed on read).
+    if (pathname.endsWith("/scenarios/preview")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(scenarioPreviewBody(route)),
+      });
+    }
+    const scenarioCandidate = pathname.match(/\/scenarios\/candidates\/(\d+)$/);
+    if (scenarioCandidate) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(scenarioCandidateBody(Number(scenarioCandidate[1]))),
+      });
+    }
     // Reproduce the backend's genuine "no official landfill data" response rather
     // than fabricating an official-labeled empty summary.
     if (LANDFILL_PATHS.has(pathname)) {

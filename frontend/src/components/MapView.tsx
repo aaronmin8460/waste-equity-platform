@@ -19,12 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import type {
-  CandidateDetail,
-  FacilityItem,
-  RegionBoundaryCollection,
-  SuitabilityStatus,
-} from "../lib/api";
+import type { FacilityItem, RegionBoundaryCollection, SuitabilityStatus } from "../lib/api";
 import { SUITABILITY_TILE_SOURCE_LAYER } from "../lib/api";
 import {
   CANDIDATE_EXCLUDED_COLOR,
@@ -45,6 +40,24 @@ import { geometryBounds, isDegenerateBounds, stabilityBadgeLabel } from "../lib/
  * origin and no route, so there is nothing map-shaped to draw honestly.
  */
 export type MapMode = "equity" | "suitability";
+
+/**
+ * Whether the suitability candidate tiles are a stored official/analytical profile
+ * or a temporary user-weight scenario. Only affects popup labelling + legend text;
+ * the tile properties (score/status/stable_count) are identical, so the fill,
+ * outline, and highlight expressions are shared across both contexts.
+ */
+export type MapCandidateContext = "stored" | "scenario";
+
+/**
+ * The minimum a selected candidate needs for highlight + fly-to: its id and
+ * geometry. Both the stored `CandidateDetail` and the scenario candidate detail
+ * satisfy this, so scenario selection reuses the same single map highlight path.
+ */
+export interface SelectedCandidate {
+  candidate_id: number;
+  geometry: GeoJSON.Geometry;
+}
 
 // OpenStreetMap standard raster tiles are only published to zoom 19; requesting
 // z20+ returns HTTP 400 (verified against tile.openstreetmap.org). Cap the raster
@@ -152,8 +165,13 @@ interface MapViewProps {
    */
   stableOnly: boolean;
   /** Currently-selected candidate (list or map). Drives highlight + map movement. */
-  selectedCandidate: CandidateDetail | null;
+  selectedCandidate: SelectedCandidate | null;
   onCandidateClick: (candidateId: number) => void;
+  /**
+   * "stored" (default) or "scenario" — labels the candidate popup/score line so a
+   * user-weight scenario tile reads as 사용자 가정 기반 점수, not an official score.
+   */
+  candidateContext?: MapCandidateContext;
   /** Accessible name for the map region landmark (varies by mode). */
   ariaLabel: string;
   /** Longer textual explanation, referenced by the container's aria-describedby. */
@@ -298,9 +316,14 @@ export function regionPopupHtml(props: Record<string, unknown>): string {
 
 // Popup score line built from the light tile attributes (full provenance is
 // fetched separately into the detail panel). Excluded cells carry no score/rank.
-function candidateScoreDisplay(props: Record<string, unknown>): string {
+// Scenario tiles carry NO global rank (ranking the full ELIGIBLE population per
+// tile would be wasteful) — the exact custom rank is fetched into the sidebar
+// detail on selection; here the score alone is shown.
+function candidateScoreDisplay(props: Record<string, unknown>, scenario = false): string {
   if (props.status === "EXCLUDED") return "제외 (excluded)";
-  if (props.score != null) return `${props.score} (rank ${props.rank ?? "-"})`;
+  if (props.score != null) {
+    return scenario ? `${props.score}` : `${props.score} (rank ${props.rank ?? "-"})`;
+  }
   if (props.provisional_score != null) return `${props.provisional_score} (provisional)`;
   return "-";
 }
@@ -333,6 +356,7 @@ export default function MapView({
   stableOnly,
   selectedCandidate,
   onCandidateClick,
+  candidateContext = "stored",
   ariaLabel,
   ariaDescription,
   onRegionClick,
@@ -342,6 +366,12 @@ export default function MapView({
   const loadedRef = useRef(false);
   const onCandidateClickRef = useRef(onCandidateClick);
   const onRegionClickRef = useRef(onRegionClick);
+  // Latest candidate context, read inside the once-bound click handler.
+  const candidateContextRef = useRef<MapCandidateContext>(candidateContext);
+  // The single candidate click/tap popup. Tracked so a scenario re-apply (new tile
+  // URL / hash), a run change, or leaving scenario view can invalidate a stale
+  // custom popup instead of leaving it pinned with outdated numbers.
+  const candidatePopupRef = useRef<maplibregl.Popup | null>(null);
   // A single reusable tooltip popup for desktop region hover (no close button, so
   // it reads as a lightweight tooltip); the last-hovered region code so its HTML
   // is rebuilt only when the pointer crosses into a different region.
@@ -368,6 +398,7 @@ export default function MapView({
   useEffect(() => {
     onCandidateClickRef.current = onCandidateClick;
     onRegionClickRef.current = onRegionClick;
+    candidateContextRef.current = candidateContext;
   });
 
   // Reflect map state onto the container as read-only data attributes so tests
@@ -412,14 +443,21 @@ export default function MapView({
       const feature = event.features?.[0];
       if (!feature) return;
       const props = feature.properties as Record<string, unknown>;
-      new maplibregl.Popup()
+      const scenario = candidateContextRef.current === "scenario";
+      const scoreLabel = scenario ? "사용자 가정 기반 점수" : "적합성 점수";
+      const footer = scenario
+        ? "사용자 가정 기반 시나리오 — 공식 분석 실행·법적 판정이 아님. 정확한 순위는 좌측 상세 참조"
+        : "분석 스크리닝 결과 — 법적 판정이 아님. 상세 근거는 좌측 패널 참조";
+      // Replace any prior pinned candidate popup rather than accumulate stale ones.
+      candidatePopupRef.current?.remove();
+      candidatePopupRef.current = new maplibregl.Popup()
         .setLngLat(event.lngLat)
         .setHTML(
           `<strong>후보지 ${props.candidate_key}</strong><br/>` +
-            `상태(status): ${props.status}<br/>적합성 점수: ${candidateScoreDisplay(props)}` +
+            `상태(status): ${props.status}<br/>${scoreLabel}: ${candidateScoreDisplay(props, scenario)}` +
             candidateStabilityDisplay(props) +
             `<br/>시군구: ${props.sigungu_region_name ?? ""}<br/>` +
-            `<small>분석 스크리닝 결과 — 법적 판정이 아님. 상세 근거는 좌측 패널 참조</small>`,
+            `<small>${footer}</small>`,
         )
         .addTo(map);
       const id = Number(props.candidate_id);
@@ -502,10 +540,21 @@ export default function MapView({
       hoveredRegionRef.current = null;
       pinnedPopupRef.current?.remove();
       pinnedPopupRef.current = null;
+      candidatePopupRef.current?.remove();
+      candidatePopupRef.current = null;
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
+  // Invalidate a pinned candidate popup whenever the candidate tiles change: a
+  // scenario re-apply (new hash → new tile URL), a run/profile change, or leaving
+  // scenario view all re-point `candidateTileUrl`, so a stale custom popup (old
+  // score/weights) must not linger. The next click rebuilds it from the new tiles.
+  useEffect(() => {
+    candidatePopupRef.current?.remove();
+    candidatePopupRef.current = null;
+  }, [candidateTileUrl, candidateContext]);
 
   useEffect(() => {
     const map = mapRef.current;

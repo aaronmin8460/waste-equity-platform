@@ -35,10 +35,12 @@ import {
   fetchSuitabilityLatestRun,
   fetchSuitabilityPolicy,
   fetchSuitabilitySummary,
+  fetchUserScenarioCandidateDetail,
   fetchWastePerCapita,
   fetchWasteStatistics,
   hasCriticStability,
   suitabilityTileUrl,
+  userScenarioTileUrl,
   type CandidateDetail,
   type DataSourceItem,
   type DatasetEnvelope,
@@ -56,6 +58,7 @@ import {
   type SuitabilityRun,
   type SuitabilityStatus,
   type SuitabilitySummary,
+  type UserScenarioCandidateDetail,
   type WasteStatisticsItem,
 } from "../lib/api";
 import {
@@ -87,10 +90,11 @@ import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import MapLegendOverlay from "../components/MapLegendOverlay";
+import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import { classifyEquityRaw, stabilityBadgeLabel, topCandidateCellLabel } from "../lib/suitability";
 
-/** Sub-view inside suitability mode: the score screening, or the cost lens. */
-type SuitabilityView = "score" | "cost";
+/** Sub-view inside suitability mode: the score screening, the weight lab, or cost. */
+type SuitabilityView = "score" | "scenario" | "cost";
 
 const MapView = dynamic(() => import("../components/MapView"), { ssr: false });
 
@@ -180,6 +184,15 @@ export default function Home() {
   // Stable-only map display — a SEPARATE state from the canonical statusVisibility,
   // so it never alters the status filters or reclassifies review/excluded cells.
   const [stableOnly, setStableOnly] = useState(false);
+
+  // 가중치 실험실 (user-weight scenario lab). The lab owns the editor workflow; the
+  // page owns the APPLIED scenario (so the single MapView can render custom tiles)
+  // and the scenario-selected candidate detail (so the map coordinates highlight +
+  // fly-to). Both are null until an explicit apply / candidate selection.
+  const [appliedScenario, setAppliedScenario] = useState<AppliedScenario | null>(null);
+  const [scenarioSelected, setScenarioSelected] = useState<UserScenarioCandidateDetail | null>(
+    null,
+  );
 
   const load = useCallback(() => {
     Promise.all([
@@ -352,6 +365,53 @@ export default function Home() {
     [profile],
   );
 
+  // Fetch a candidate's SCENARIO detail (custom score/rank under the applied
+  // weights) and move/highlight the map — shared by the top-candidate list and a
+  // map click while a scenario is applied. No-op until a scenario is applied.
+  const selectScenarioCandidate = useCallback(
+    (id: number) => {
+      if (!appliedScenario) return;
+      fetchUserScenarioCandidateDetail(id, {
+        run_id: appliedScenario.runId,
+        weights: appliedScenario.weights,
+        compare_profile: appliedScenario.compareProfile,
+      })
+        .then(setScenarioSelected)
+        .catch(() => undefined);
+    },
+    [appliedScenario],
+  );
+
+  // When the applied scenario is cleared (reset / leaving the lab), drop the
+  // scenario-selected candidate so a stale detail never lingers.
+  const onScenarioApplied = useCallback((applied: AppliedScenario | null) => {
+    setAppliedScenario(applied);
+    if (applied === null) setScenarioSelected(null);
+  }, []);
+
+  // Reset the applied scenario when navigating AWAY from the scenario sub-view (or
+  // out of suitability entirely), so the custom tiles never leak into another
+  // view/mode. Event-driven (wrapped setters) rather than an effect. The lab's
+  // draft is separately restored from sessionStorage the next time it mounts.
+  const clearScenario = useCallback(() => {
+    setAppliedScenario(null);
+    setScenarioSelected(null);
+  }, []);
+  const changeMode = useCallback(
+    (next: DashboardMode) => {
+      if (next !== "suitability") clearScenario();
+      setMode(next);
+    },
+    [clearScenario],
+  );
+  const changeSuitabilityView = useCallback(
+    (next: SuitabilityView) => {
+      if (next !== "scenario") clearScenario();
+      setSuitabilityView(next);
+    },
+    [clearScenario],
+  );
+
   // Flip one suitability status' visibility in the canonical page state. This is the
   // single source of truth the MapLibre candidate-layer filter reads AND the floating
   // legend's checkboxes drive — there is no duplicate visibility state in the legend.
@@ -359,13 +419,39 @@ export default function Home() {
     setStatusVisibility((prev) => ({ ...prev, [status]: !prev[status] }));
   }, []);
 
-  // Immutable vector-tile URL for the active run + profile. Switching the profile
-  // re-points the map's vector source at the new tiles; there is no run to render
-  // outside suitability mode.
-  const candidateTileUrl = useMemo(
-    () => (mode === "suitability" && suit ? suitabilityTileUrl(suit.run.id, profile) : null),
-    [mode, suit, profile],
-  );
+  // Whether a user-weight scenario is currently applied AND shown on the map.
+  const scenarioActive = mode === "suitability" && suitabilityView === "scenario" && !!appliedScenario;
+
+  // Immutable vector-tile URL for the active map context:
+  //  - score view: the stored run + profile tiles;
+  //  - scenario view with an applied scenario: the CUSTOM scenario tiles (canonical
+  //    weights + hash in the URL, so re-applying swaps the source once);
+  //  - scenario view before first apply: the stored baseline tiles as a neutral
+  //    candidate-status backdrop (the lab states clearly no scenario is applied yet).
+  // There is no run to render outside suitability mode.
+  const candidateTileUrl = useMemo(() => {
+    if (mode !== "suitability" || !suit) return null;
+    if (suitabilityView === "scenario") {
+      return appliedScenario
+        ? userScenarioTileUrl(
+            appliedScenario.runId,
+            appliedScenario.weights,
+            appliedScenario.scenarioHash,
+          )
+        : suitabilityTileUrl(suit.run.id, "baseline");
+    }
+    return suitabilityTileUrl(suit.run.id, profile);
+  }, [mode, suit, profile, suitabilityView, appliedScenario]);
+
+  // The map's selected candidate + click handler follow the active sub-view: the
+  // scenario view uses the scenario detail (custom score/rank), the score view the
+  // stored detail. A single MapView is shared — never a second map instance.
+  const mapSelectedCandidate =
+    mode === "suitability" && suitabilityView === "scenario" ? scenarioSelected : selected;
+  const mapCandidateClick =
+    mode === "suitability" && suitabilityView === "scenario"
+      ? selectScenarioCandidate
+      : onCandidateClick;
 
   // Whether the selected run carries run-specific CRITIC + stability results.
   const stabilityAvailable = mode === "suitability" && hasCriticStability(suit?.run);
@@ -665,7 +751,7 @@ export default function Home() {
     return (
       <div className="min-h-screen min-h-dvh bg-slate-100">
         <div className="mx-auto w-full max-w-screen-2xl px-4 pt-6 sm:px-6 lg:px-8">
-          <ModeSwitch mode={mode} setMode={setMode} />
+          <ModeSwitch mode={mode} setMode={changeMode} />
         </div>
         <LandfillDashboard
           data={flowData}
@@ -693,8 +779,8 @@ export default function Home() {
     return (
       <div className="min-h-screen min-h-dvh bg-slate-100">
         <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-3 px-4 pt-6 sm:px-6 lg:px-8">
-          <ModeSwitch mode={mode} setMode={setMode} />
-          <SuitabilityViewSwitch view={suitabilityView} setView={setSuitabilityView} />
+          <ModeSwitch mode={mode} setMode={changeMode} />
+          <SuitabilityViewSwitch view={suitabilityView} setView={changeSuitabilityView} />
         </div>
         <div className="mt-4">
           <FacilityCostDashboard
@@ -755,7 +841,7 @@ export default function Home() {
           </p>
         </header>
 
-        <ModeSwitch mode={mode} setMode={setMode} />
+        <ModeSwitch mode={mode} setMode={changeMode} />
 
         {mode === "equity" && (
           <>
@@ -879,18 +965,35 @@ export default function Home() {
                 stays here so the user can enter the cost dashboard. The suitability
                 status filter + score legend now float over the map (MapLegendOverlay
                 below), not in this panel. */}
-            <SuitabilityViewSwitch view={suitabilityView} setView={setSuitabilityView} />
-            <SuitabilityPanel
-              suit={suit}
-              suitError={suitError}
-              profile={profile}
-              setProfile={setProfile}
-              runProfiles={runProfiles}
-              stabilityAvailable={stabilityAvailable}
-              selected={selected}
-              clearSelected={() => setSelected(null)}
-              onSelect={onCandidateClick}
-            />
+            <SuitabilityViewSwitch view={suitabilityView} setView={changeSuitabilityView} />
+            {suitabilityView === "scenario" ? (
+              suit ? (
+                <SuitabilityScenarioLab
+                  run={suit.run}
+                  runProfiles={runProfiles}
+                  onApplied={onScenarioApplied}
+                  scenarioSelected={scenarioSelected}
+                  onSelectCandidate={selectScenarioCandidate}
+                  onClearSelected={() => setScenarioSelected(null)}
+                />
+              ) : (
+                <p className="text-sm text-slate-500" role="status">
+                  적합성 분석 실행을 불러오는 중입니다…
+                </p>
+              )
+            ) : (
+              <SuitabilityPanel
+                suit={suit}
+                suitError={suitError}
+                profile={profile}
+                setProfile={setProfile}
+                runProfiles={runProfiles}
+                stabilityAvailable={stabilityAvailable}
+                selected={selected}
+                clearSelected={() => setSelected(null)}
+                onSelect={onCandidateClick}
+              />
+            )}
           </>
         )}
 
@@ -922,10 +1025,11 @@ export default function Home() {
           mode={mode}
           candidateTileUrl={candidateTileUrl}
           candidateBreaks={CANDIDATE_SCORE_BREAKS}
+          candidateContext={scenarioActive ? "scenario" : "stored"}
           statusVisibility={statusVisibility}
           stableOnly={stableOnly && stabilityAvailable}
-          selectedCandidate={selected}
-          onCandidateClick={onCandidateClick}
+          selectedCandidate={mapSelectedCandidate}
+          onCandidateClick={mapCandidateClick}
           ariaLabel={
             mode === "equity"
               ? `지역 지표 지도 — ${metric.label} (interactive choropleth map)`
@@ -966,7 +1070,13 @@ export default function Home() {
             stableOnly={stableOnly}
             onToggleStableOnly={toggleStableOnly}
             stableOutlineColor={CANDIDATE_STABLE_OUTLINE_COLOR}
-            disclaimer="분석용 스크리닝이며 법적 입지 결정이 아닙니다."
+            disclaimer={
+              scenarioActive
+                ? "사용자 가정 기반 임시 비교이며 공식 분석 실행·법적 입지 결정이 아닙니다."
+                : "분석용 스크리닝이며 법적 입지 결정이 아닙니다."
+            }
+            scenarioActive={scenarioActive}
+            scenarioWeights={appliedScenario?.weights ?? null}
           />
         )}
       </div>
@@ -1046,6 +1156,7 @@ function SuitabilityViewSwitch({
 }) {
   const buttons: { key: SuitabilityView; label: string; testId: string }[] = [
     { key: "score", label: "적합성 점수", testId: "suitability-view-score" },
+    { key: "scenario", label: "가중치 실험실", testId: "suitability-view-scenario" },
     { key: "cost", label: "비용 렌즈", testId: "suitability-view-cost" },
   ];
   return (

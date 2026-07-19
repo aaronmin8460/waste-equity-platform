@@ -18,6 +18,9 @@ export interface UnavailableDataDetail {
   detail: string;
   requested_year: number | null;
   available_years: number[];
+  // Structured context for validation errors (e.g. INVALID_SCENARIO_WEIGHTS
+  // carries `{ sum }` / `{ missing }`). Absent on most errors.
+  fields?: Record<string, unknown> | null;
 }
 
 export interface RegionBoundaryProperties {
@@ -361,7 +364,40 @@ function parseStructuredDetail(body: unknown): UnavailableDataDetail | null {
     detail: candidate.detail,
     requested_year: candidate.requested_year ?? null,
     available_years: candidate.available_years ?? [],
+    fields: candidate.fields ?? null,
   };
+}
+
+/**
+ * POST variant of {@link fetchJsonSignal}: a stateless read-only computation
+ * (the scenario endpoints compute over frozen stored scores and never write).
+ * Preserves the structured error body (including `fields`) as an {@link ApiError}.
+ */
+export async function postJsonSignal<T>(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await fetch(`${apiBaseUrl()}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    let detail: UnavailableDataDetail | null = null;
+    try {
+      detail = parseStructuredDetail(await response.json());
+    } catch {
+      detail = null;
+    }
+    const message = detail
+      ? `${detail.error}: ${detail.detail}`
+      : `Backend request failed with status ${response.status}`;
+    throw new ApiError(response.status, detail, message);
+  }
+  return (await response.json()) as T;
 }
 
 export async function fetchJson<T>(path: string): Promise<T> {
@@ -699,6 +735,185 @@ export function suitabilityTileUrl(runId: number, profile: SuitabilityProfile): 
 
 /** Vector-tile source-layer name the map binds its candidate layers to. */
 export const SUITABILITY_TILE_SOURCE_LAYER = "candidates";
+
+// --------------------------------------------------------------------------- //
+// User-weight scenario lab (Phase 6) — 사용자 가정 기반 시나리오.
+//
+// A TEMPORARY, on-read decision-support experiment: it recombines ONE fixed
+// succeeded run's frozen Z/R/E/D component scores under user-supplied weights.
+// It is NOT a stored profile — `SuitabilityProfile` still means only the five
+// official/analytical profiles, and a user scenario is a SEPARATE type here.
+// Nothing is persisted; no official run/CRITIC/stability is created or changed.
+// --------------------------------------------------------------------------- //
+
+/** Direction a candidate's rank moved under the scenario vs the comparison profile. */
+export type UserScenarioRankDirection = "up" | "down" | "same";
+
+/** Canonical Z/R/E/D weights as exact 8-dp decimal strings (e.g. "0.35000000"). */
+export interface UserScenarioWeights {
+  zoning: string;
+  road: string;
+  equity: string;
+  demand: string;
+}
+
+export interface UserScenarioRequest {
+  run_id?: number | null;
+  weights: UserScenarioWeights;
+  compare_profile: SuitabilityProfile;
+  top_n?: number;
+  selected_candidate_id?: number | null;
+}
+
+export interface UserScenarioContribution {
+  component: string;
+  component_score: string | null;
+  weight: string;
+  weighted_contribution: string | null;
+}
+
+export interface UserScenarioTopCandidate {
+  candidate_id: number;
+  candidate_key: string;
+  sido_region_code: string | null;
+  sido_region_name: string | null;
+  sigungu_region_code: string | null;
+  sigungu_region_name: string | null;
+  custom_score: string;
+  custom_rank: number;
+  comparison_profile: string;
+  comparison_score: string | null;
+  comparison_rank: number | null;
+  rank_delta: number | null;
+  rank_change_direction: UserScenarioRankDirection | null;
+  zoning_score: string | null;
+  road_score: string | null;
+  equity_score: string | null;
+  demand_score: string | null;
+  stable_count: number | null;
+  stability_class: StabilityClass | null;
+  centroid_lon: number | null;
+  centroid_lat: number | null;
+}
+
+export interface UserScenarioCandidateDetail {
+  candidate_id: number;
+  run_id: number;
+  candidate_key: string;
+  status: SuitabilityStatus;
+  is_excluded: boolean;
+  method_version: string;
+  scenario_hash: string;
+  scenario_hash_short: string;
+  canonical_weights: UserScenarioWeights;
+  compare_profile: string;
+  custom_score: string | null;
+  custom_provisional_score: string | null;
+  custom_rank: number | null;
+  comparison_score: string | null;
+  comparison_rank: number | null;
+  rank_delta: number | null;
+  rank_change_direction: UserScenarioRankDirection | null;
+  zoning_score: string | null;
+  road_score: string | null;
+  equity_score: string | null;
+  demand_score: string | null;
+  contributions: UserScenarioContribution[];
+  stable_count: number | null;
+  stability_class: StabilityClass | null;
+  stability_membership: Record<string, boolean>;
+  profile_totals: Record<string, string | null>;
+  profile_ranks: Record<string, number | null>;
+  sido_region_code: string | null;
+  sido_region_name: string | null;
+  sigungu_region_code: string | null;
+  sigungu_region_name: string | null;
+  exclusion_reasons: string[];
+  review_reasons: string[];
+  penalties: string[];
+  raw_components: Record<string, unknown>;
+  nearest_road_distance_m: string | null;
+  nearest_road_provenance: Record<string, unknown>;
+  component_provenance: Record<string, unknown>;
+  centroid_lon: number | null;
+  centroid_lat: number | null;
+  geometry: GeoJSON.Geometry;
+  reference_year: number;
+  policy_version: string;
+  derivation_version: string;
+  candidate_grid_version: string;
+  scenario_label: string;
+  scenario_disclaimer: string;
+  screening_disclaimer: string;
+}
+
+export interface UserScenarioPreview {
+  scenario_hash: string;
+  scenario_hash_short: string;
+  method_version: string;
+  run_id: number;
+  reference_year: number;
+  policy_version: string;
+  derivation_version: string;
+  candidate_grid_version: string;
+  canonical_weights: UserScenarioWeights;
+  compare_profile: string;
+  candidate_count_total: number;
+  candidate_count_eligible: number;
+  candidate_count_review: number;
+  candidate_count_excluded: number;
+  ranking_population: number;
+  top_candidates: UserScenarioTopCandidate[];
+  selected_candidate: UserScenarioCandidateDetail | null;
+  tile_url: string;
+  assumptions: string[];
+  scenario_label: string;
+  scenario_disclaimer: string;
+  screening_disclaimer: string;
+}
+
+/** Preview a user-weight scenario against a fixed run (one POST per explicit apply). */
+export function previewUserWeightScenario(
+  request: UserScenarioRequest,
+  signal?: AbortSignal,
+): Promise<UserScenarioPreview> {
+  return postJsonSignal<UserScenarioPreview>(
+    "/api/v1/suitability/scenarios/preview",
+    request,
+    signal,
+  );
+}
+
+/** One candidate's full scenario result (custom score/rank, weighted contributions). */
+export function fetchUserScenarioCandidateDetail(
+  candidateId: number,
+  request: UserScenarioRequest,
+  signal?: AbortSignal,
+): Promise<UserScenarioCandidateDetail> {
+  return postJsonSignal<UserScenarioCandidateDetail>(
+    `/api/v1/suitability/scenarios/candidates/${candidateId}`,
+    request,
+    signal,
+  );
+}
+
+/**
+ * MapLibre custom-scenario vector-tile URL. Canonical 8-dp weights + the scenario
+ * hash are in the query so the tile is fully determined by its URL (bounded
+ * one-day browser cache). Same origin-resolution as {@link suitabilityTileUrl}.
+ */
+export function userScenarioTileUrl(
+  runId: number,
+  weights: UserScenarioWeights,
+  scenarioHash: string,
+): string {
+  const base = apiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
+  return (
+    `${base}/api/v1/suitability/scenarios/tiles/${runId}/{z}/{x}/{y}.mvt` +
+    `?wz=${weights.zoning}&wr=${weights.road}&we=${weights.equity}&wd=${weights.demand}` +
+    `&scenario_hash=${scenarioHash}`
+  );
+}
 
 // --------------------------------------------------------------------------- //
 // Capital-region Sudokwon Landfill inbound flow (V2 Phase 1) — the only

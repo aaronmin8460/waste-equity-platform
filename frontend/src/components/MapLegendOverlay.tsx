@@ -86,6 +86,14 @@ interface SuitabilityLegendProps {
   stableOutlineColor: string;
   /** Concise analytical-screening disclaimer. */
   disclaimer: string;
+  /**
+   * When true, the candidate tiles are a user-weight scenario (사용자 가정 기반 점수):
+   * the legend heads the score classes with the applied Z/R/E/D weights + a scenario
+   * disclaimer, and clarifies that stability is the STORED run's, not the scenario's.
+   */
+  scenarioActive?: boolean;
+  /** Applied scenario weights as canonical strings (shown when scenarioActive). */
+  scenarioWeights?: { zoning: string; road: string; equity: string; demand: string } | null;
 }
 
 export type MapLegendOverlayProps = EquityLegendProps | SuitabilityLegendProps;
@@ -184,7 +192,11 @@ function SuitabilityLegend({
   onToggleStableOnly,
   stableOutlineColor,
   disclaimer,
+  scenarioActive = false,
+  scenarioWeights = null,
 }: SuitabilityLegendProps) {
+  const pct = (w: string | undefined): string =>
+    w == null ? "—" : `${Math.round(Number(w) * 100)}%`;
   // The status → representative swatch color, matching the candidate fill: eligible
   // cells are score-shaded (a representative mid class), review cells amber, excluded
   // gray. Status is ALSO conveyed by the text label and (for review) a dashed sample,
@@ -197,6 +209,18 @@ function SuitabilityLegend({
   return (
     <section aria-label="상태 범례 및 필터" data-testid="suitability-legend">
       <h2 className="mb-1 text-sm font-semibold text-slate-800">상태 (Status) · 점수 범례</h2>
+      {scenarioActive && (
+        <div
+          className="mb-2 rounded border border-indigo-200 bg-indigo-50 p-2 text-[11px] text-indigo-900"
+          data-testid="scenario-legend-header"
+        >
+          <p className="font-semibold">사용자 가정 기반 점수</p>
+          <p className="mt-0.5">
+            적용 가중치 Z/R/E/D: {pct(scenarioWeights?.zoning)} / {pct(scenarioWeights?.road)} /{" "}
+            {pct(scenarioWeights?.equity)} / {pct(scenarioWeights?.demand)}
+          </p>
+        </div>
+      )}
       <div className="flex flex-col gap-1 text-xs text-slate-600" data-testid="status-filters">
         {(Object.keys(statusVisibility) as SuitabilityStatus[]).map((st) => (
           <label key={st} className="flex items-center gap-2">
@@ -243,6 +267,12 @@ function SuitabilityLegend({
           <p className="mt-1 text-[11px] text-slate-500" data-testid="stability-legend-note">
             안정 후보(baseline·equal·critic 상위 10% 모두 포함)는 굵은 자홍색 외곽선으로 표시됩니다.
             검토/제외 셀은 안정성 평가 대상이 아닙니다.
+            {scenarioActive && (
+              <span data-testid="scenario-stability-note" className="mt-1 block">
+                안정성 표시는 저장된 run의 baseline/equal/CRITIC 비교 결과이며 현재 사용자 시나리오의
+                안정성 평가가 아닙니다. 사용자 가중치를 바꿔도 안정성은 재계산되지 않습니다.
+              </span>
+            )}
           </p>
         </div>
       ) : null}

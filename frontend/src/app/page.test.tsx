@@ -311,3 +311,42 @@ describe("suitability map uses vector tiles, not a limited GeoJSON slice", () =>
     expect(vi.mocked(fetchSuitabilityCandidates)).not.toHaveBeenCalled();
   });
 });
+
+describe("가중치 실험실 (weight scenario) sub-view", () => {
+  async function enterSuitability() {
+    await renderHome();
+    fireEvent.click(screen.getByTestId("mode-suitability"));
+    await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
+  }
+
+  it("adds a 가중치 실험실 sub-view button under Suitability", async () => {
+    await enterSuitability();
+    const button = screen.getByTestId("suitability-view-scenario");
+    expect(button.textContent).toContain("가중치 실험실");
+  });
+
+  it("navigates score → scenario → cost with exactly one MapView and never a second", async () => {
+    await enterSuitability();
+    // score view: one map
+    expect(screen.getAllByTestId("map-container").length).toBe(1);
+
+    // scenario view: lab + warning, still exactly one map
+    fireEvent.click(screen.getByTestId("suitability-view-scenario"));
+    await waitFor(() => expect(screen.getByTestId("scenario-lab")).toBeDefined());
+    expect(screen.getByTestId("scenario-warning")).toBeDefined();
+    expect(screen.getAllByTestId("map-container").length).toBe(1);
+
+    // cost view: no map at all
+    fireEvent.click(screen.getByTestId("suitability-view-cost"));
+    await waitFor(() => expect(screen.queryByTestId("map-container")).toBeNull());
+  });
+
+  it("shows the scenario warning and no-applied state before any apply", async () => {
+    await enterSuitability();
+    fireEvent.click(screen.getByTestId("suitability-view-scenario"));
+    await waitFor(() => expect(screen.getByTestId("scenario-lab")).toBeDefined());
+    expect(screen.getByTestId("scenario-no-applied")).toBeDefined();
+    // CRITIC preset is offered because the mocked run computed it.
+    expect(screen.getByTestId("scenario-preset-critic")).toBeDefined();
+  });
+});
