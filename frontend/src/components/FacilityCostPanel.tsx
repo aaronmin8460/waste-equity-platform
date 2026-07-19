@@ -69,6 +69,30 @@ const PAGE_DISCLAIMER =
   "이 페이지는 시설 설치를 권고하거나 반대를 설득하기 위한 페이지가 아닙니다. 공식 데이터로 필요성, " +
   "비용, 입지 조건과 불확실성을 함께 검토하기 위한 시민 의사결정 지원 도구입니다.";
 
+// Source + reference period for the subsidy rates shown in the scenario selector,
+// so their provenance is visible in every state (not only after a calculation).
+const SUBSIDY_RATE_FORM_NOTE =
+  "명목 국고보조율(분석용 가정) · 출처: 폐기물처리시설 국고보조금 업무처리지침 · 기준 2025 지침 · " +
+  "실제 승인된 국고보조금이 아닙니다.";
+
+/** Validate the numeric scenario inputs; returns an actionable message or null. */
+function validateScenario(s: ScenarioState, options: FacilityCostOptions): string | null {
+  const share = Number(s.processingSharePercent);
+  if (s.processingSharePercent === "" || Number.isNaN(share) || share < 0 || share > 100) {
+    return "지역 처리 비율은 0–100(%) 사이여야 합니다.";
+  }
+  if (!Number.isInteger(s.operatingDays) || s.operatingDays < 1 || s.operatingDays > 366) {
+    return "연간 가동일수는 1–366 사이여야 합니다.";
+  }
+  const min = Number(options.underground_multiplier.min);
+  const max = Number(options.underground_multiplier.max);
+  const um = Number(s.undergroundMultiplier);
+  if (s.undergroundMultiplier === "" || Number.isNaN(um) || um < min || um > max) {
+    return `지하화 배수는 ${options.underground_multiplier.min}–${options.underground_multiplier.max} 사이여야 합니다.`;
+  }
+  return null;
+}
+
 /** Format an 억원 decimal string without changing its value. */
 function formatBn(value: string): string {
   return `${formatQuantity(value)} 억원`;
@@ -197,7 +221,10 @@ export default function FacilityCostPanel({
   }, [wasteRegions, scenario?.wasteStream]);
 
   const calculate = useCallback(() => {
-    if (!scenario || scenario.regionCodes.length === 0) return;
+    // Guard: never fire with no region or invalid numeric inputs (the button is
+    // also disabled in those states) — avoids an unnecessary backend 422.
+    if (!scenario || !options || scenario.regionCodes.length === 0) return;
+    if (validateScenario(scenario, options) !== null) return;
     const myId = (requestSeq.current += 1);
     const mySig = JSON.stringify({
       scenario,
@@ -231,7 +258,7 @@ export default function FacilityCostPanel({
       .finally(() => {
         if (myId === requestSeq.current) setCalculating(false);
       });
-  }, [scenario, selectedCandidate]);
+  }, [scenario, options, selectedCandidate]);
 
   if (optionsError) {
     return (
@@ -252,6 +279,8 @@ export default function FacilityCostPanel({
     );
   }
 
+  const validationMessage = validateScenario(scenario, options);
+
   return (
     <div className="flex flex-col gap-4" data-testid="facility-cost-panel">
       <CitizenGuide />
@@ -262,6 +291,7 @@ export default function FacilityCostPanel({
         update={update}
         onCalculate={calculate}
         calculating={calculating}
+        validationMessage={validationMessage}
       />
       {/* Results/errors are shown ONLY while they still match the live inputs. A
           control change (or a new map candidate) changes currentSig, so an
@@ -329,6 +359,7 @@ function ScenarioForm({
   update,
   onCalculate,
   calculating,
+  validationMessage,
 }: {
   options: FacilityCostOptions;
   regionOptions: { code: string; name: string }[];
@@ -336,6 +367,7 @@ function ScenarioForm({
   update: <K extends keyof ScenarioState>(key: K, value: ScenarioState[K]) => void;
   onCalculate: () => void;
   calculating: boolean;
+  validationMessage: string | null;
 }) {
   const noRegions = scenario.regionCodes.length === 0;
   return (
@@ -466,6 +498,14 @@ function ScenarioForm({
               </option>
             ))}
           </select>
+          {/* Source + reference period for the displayed rates (AGENTS.md), visible
+              even before/without a calculation. */}
+          <span
+            className="mt-0.5 block text-[11px] font-normal text-slate-400"
+            data-testid="facility-cost-subsidy-note"
+          >
+            {SUBSIDY_RATE_FORM_NOTE}
+          </span>
         </label>
 
         {options.cost_versions.length > 1 && (
@@ -486,10 +526,17 @@ function ScenarioForm({
           </label>
         )}
 
+        {/* Validation is announced accessibly, and the button is disabled while
+            an input is out of range — no avoidable backend 422. */}
+        {validationMessage && (
+          <p className="text-xs text-amber-700" role="alert" data-testid="facility-cost-validation">
+            {validationMessage}
+          </p>
+        )}
         <button
           type="button"
           onClick={onCalculate}
-          disabled={noRegions || calculating}
+          disabled={noRegions || calculating || validationMessage !== null}
           className="mt-1 rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           data-testid="facility-cost-calculate"
         >

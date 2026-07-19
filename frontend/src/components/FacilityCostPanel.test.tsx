@@ -253,6 +253,38 @@ describe("scenario form", () => {
     expect(screen.getByTestId("facility-cost-regions").textContent).toContain("종로구");
   });
 
+  it("shows the subsidy-rate source in the form, before any calculation", async () => {
+    await renderPanel();
+    const note = screen.getByTestId("facility-cost-subsidy-note").textContent ?? "";
+    expect(note).toContain("국고보조금 업무처리지침");
+    expect(note).toContain("승인된 국고보조금이 아");
+  });
+
+  it("validates numeric inputs, disabling calculate with an announced message", async () => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    const button = screen.getByTestId("facility-cost-calculate") as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    // Out-of-range processing share → disabled + accessible message.
+    fireEvent.change(screen.getByTestId("facility-cost-processing-share"), {
+      target: { value: "150" },
+    });
+    await waitFor(() => expect(button.disabled).toBe(true));
+    expect(screen.getByTestId("facility-cost-validation").textContent).toContain("0–100");
+    expect(screen.getByTestId("facility-cost-validation").getAttribute("role")).toBe("alert");
+    // A blank operating-days field (stored as 0) is also caught.
+    fireEvent.change(screen.getByTestId("facility-cost-processing-share"), {
+      target: { value: "100" },
+    });
+    fireEvent.change(screen.getByTestId("facility-cost-operating-days"), { target: { value: "" } });
+    await waitFor(() => expect(button.disabled).toBe(true));
+    // Fixing the inputs re-enables calculate.
+    fireEvent.change(screen.getByTestId("facility-cost-operating-days"), {
+      target: { value: "300" },
+    });
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
   it("clears the selected regions when the waste stream changes", async () => {
     await renderPanel();
     selectRegion("KR-SGIS-11140");

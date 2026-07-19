@@ -549,6 +549,13 @@ export default function Home() {
   // backend joins by region_code, per stream), with their served names + codes.
   // This excludes the 7 RCIS city-level cities' SGIS districts, which have no
   // native waste row and would always return OFFICIAL_WASTE_UNAVAILABLE.
+  //
+  // Assumption: this uses /waste-statistics' single latest ingested year, which
+  // matches the current RCIS ingestion where every stream shares one reference
+  // year. If a future PID-specific refresh left one stream a year behind, its
+  // regions could be under-offered here even though /facility-cost/calculate
+  // (which resolves the latest year PER stream) could still compute them; that
+  // would then warrant a backend per-stream coverage endpoint.
   const facilityCostWasteRegions = useMemo(
     () =>
       data

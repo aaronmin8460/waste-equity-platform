@@ -34,6 +34,15 @@ always returns `OFFICIAL_WASTE_UNAVAILABLE` (notably the SGIS districts of the
 seven RCIS city-level cities). Each option shows its `region_code`, so duplicate
 municipality names (e.g. Seoul 중구 vs Incheon 중구) are unambiguous. Changing the
 waste stream re-derives the choices and clears the (possibly now-invalid) selection.
+This uses `/waste-statistics`' single latest ingested year, which matches the
+current RCIS ingestion where every stream shares one reference year (see the
+`page.tsx` comment for the future per-stream-year caveat).
+
+The **numeric inputs are validated** before calculate is enabled (processing share
+0–100, operating days 1–366, underground multiplier within its bounds), with an
+`role="alert"` message — no avoidable backend 422. The **subsidy-rate source** (the
+국고보조금 업무처리지침 nominal rates, an analytical assumption) is shown beside the
+subsidy selector in every state, not only after a calculation.
 
 ## Results (aria-live)
 
