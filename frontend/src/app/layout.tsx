@@ -37,8 +37,10 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       {/* min-h-dvh (dynamic viewport) so the app fills the visible area even as
-          mobile browser toolbars expand/collapse, instead of the static 100%. */}
-      <body className="min-h-dvh flex flex-col">{children}</body>
+          mobile browser toolbars expand/collapse, instead of the static 100%.
+          `min-h-screen` precedes it as a static-viewport fallback: engines without
+          `dvh` support drop the invalid `min-height:100dvh` and keep `100vh`. */}
+      <body className="min-h-screen min-h-dvh flex flex-col">{children}</body>
     </html>
   );
 }
