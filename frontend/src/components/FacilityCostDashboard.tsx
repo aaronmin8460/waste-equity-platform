@@ -1,18 +1,37 @@
 "use client";
 
 /**
- * Citizen-facing facility cost lens (Phase 2/3), rendered as a FULL-WIDTH dashboard
- * (not a narrow sidebar beside a mostly-irrelevant map). The cost view mounts no
- * MapView — the cost model does not vary by map cell in V1, so a map would be dead
- * weight. See page.tsx for the full-width routing.
+ * Citizen-facing facility cost lens, rendered as a FULL-WIDTH dashboard (not a
+ * narrow sidebar beside a mostly-irrelevant map). The cost view mounts no MapView —
+ * the cost model does not vary by map cell in V1, so a map would be dead weight.
+ * See page.tsx for the full-width routing.
  *
  * This is a decision-support tool, NOT propaganda for or against a facility. It
  * presents the backend's **standard-construction-cost analysis** with its disclaimer
  * and completeness: it never shows an actual total project cost, an approved subsidy,
  * a personal tax bill, or a cheapest-site ranking, and it renders unavailable
- * components as explicitly unavailable — never as 0. All displayed money is the exact
- * backend-served decimal string, formatted without changing its value. Numeric
- * conversion is used ONLY for chart proportions, never to reconstruct a shown value.
+ * components as explicitly unavailable — never as 0.
+ *
+ * TWO VIEWS (desktop redesign Phase 3). Phase 2 redesigned SETUP; Phase 3 splits
+ * setup from results:
+ *   - `setup`   — the region picker, conditions, advanced settings, primary action.
+ *   - `results` — one hero answer, three secondary KPIs, everything else collapsed.
+ * A successful calculation switches to `results`; a failure stays on `setup` with an
+ * actionable error; "설정 바꾸기" returns to `setup` with every input intact and
+ * issues no request. The results view is DERIVED (`resultCurrent`), so a stale
+ * result — including a late response from superseded inputs — can never open or
+ * survive on it.
+ *
+ * NUMBER CONTRACT. Primary surfaces show an APPROXIMATION produced by
+ * `lib/displayNumber.ts` ("약 121억원"). The exact backend decimal string is never
+ * changed and stays reachable in the "정밀값과 계산 기준" accordion, formatted only
+ * by `formatQuantity` (comma grouping; value-preserving). `Number()` conversion is
+ * used ONLY for the decorative funding-bar proportions and the derived display
+ * share — never to produce a value described as exact.
+ *
+ * REASON CODES. Backend codes (`OFFICIAL_SOURCE_NOT_INTEGRATED`, …) are mapped to
+ * plain Korean via lib/glossary.ts. They are not deleted: every raw code stays in
+ * the API response and in a `data-diagnostic` disclosure.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -26,14 +45,35 @@ import {
   type FacilityCostCalculate,
   type FacilityCostOfficialInput,
   type FacilityCostOptions,
+  type SuitabilityProfile,
+  type SuitabilityStatus,
 } from "../lib/api";
+import {
+  approximateAnnualBillionWon,
+  approximateBillionWon,
+  approximatePercent,
+  approximateTonPerDay,
+  approximateWonAsManwon,
+  type ApproximateValue,
+} from "../lib/displayNumber";
+import {
+  accountingBasisLabel,
+  MISSING_COMPONENT_META,
+  missingComponentLabel,
+  missingReasonExplanation,
+  perCapitaUnavailableExplanation,
+  profileLabel,
+  statusLabel,
+} from "../lib/glossary";
 import { formatQuantity } from "../lib/metrics";
 import { regionDisplayName } from "../lib/regionDisplay";
 import { stabilityBadgeLabel } from "../lib/suitability";
 import Accordion from "./ui/Accordion";
 import EmptyState from "./ui/EmptyState";
 import InfoBanner from "./ui/InfoBanner";
+import KpiCard from "./ui/KpiCard";
 import SearchableRegionPicker from "./ui/SearchableRegionPicker";
+import Skeleton from "./ui/Skeleton";
 
 // Primary labels are plain Korean only — the parenthesised English that used to
 // follow each one ("생활계 폐기물 (Household)") is the G3 duplication the redesign
@@ -50,9 +90,9 @@ function wasteStreamLabel(value: string): string {
   return WASTE_STREAMS.find((s) => s.value === value)?.label ?? value;
 }
 
-// The fixed minimum list of unavailable / non-claims the warning panel must always
+// The fixed minimum list of unavailable / non-claims the SETUP notice must always
 // show, regardless of the backend's structured missing_components. These are the
-// analytical-honesty guardrails (Task 10): what this number is NOT.
+// analytical-honesty guardrails: what this number is NOT.
 const COMPLETENESS_NOTICES = [
   "운영비 미포함",
   "실제 운송비 미포함",
@@ -64,14 +104,70 @@ const COMPLETENESS_NOTICES = [
   "주민 개인의 실제 세금 청구액이 아님",
 ];
 
-// Backend missing_components codes → clear Korean labels. The backend REASON is
-// always retained alongside; missing is never rendered as zero.
-const MISSING_COMPONENT_LABELS: Record<string, string> = {
-  OPERATING_COST: "운영비",
-  ACTUAL_TRANSPORT_COST: "실제 운송비",
-  LAND_AND_COMPENSATION: "토지·보상비",
-  REMAINING_LANDFILL_COST: "잔여 매립비용",
+/**
+ * The cost components this analysis excludes, in a fixed display order. The first
+ * four are the components the endpoint itself enumerates in `missing_components`;
+ * the fifth is a standing project-level exclusion the endpoint does not enumerate,
+ * so it carries its own wording rather than a served reason.
+ */
+const EXCLUDED_COMPONENT_ORDER = [
+  "OPERATING_COST",
+  "ACTUAL_TRANSPORT_COST",
+  "LAND_AND_COMPENSATION",
+  "REMAINING_LANDFILL_COST",
+];
+
+const SITE_WORKS_EXCLUSION = {
+  label: "후보지별 토목조건",
+  explanation: "후보지마다 다른 지형·기반시설 조건에 따른 공사비 차이는 반영하지 않았습니다.",
 };
+
+interface ExcludedRow {
+  label: string;
+  explanation: string;
+  /** The raw served reason code, when the backend reported this component. */
+  servedReason: string | null;
+  /** The raw component code, when this row corresponds to a backend component. */
+  code: string | null;
+}
+
+/**
+ * Merge the served `missing_components` with the standing exclusion list.
+ *
+ * Nothing is dropped: a component the backend reports uses ITS served reason, a
+ * component it does not report still appears with the registry explanation, and a
+ * component this build has never seen is appended rather than swallowed.
+ */
+function excludedCostRows(missing: { component: string; reason: string }[]): ExcludedRow[] {
+  const served = new Map(missing.map((m) => [m.component, m]));
+  const rows: ExcludedRow[] = EXCLUDED_COMPONENT_ORDER.map((code) => {
+    const hit = served.get(code);
+    served.delete(code);
+    return {
+      label: missingComponentLabel(code),
+      explanation: hit
+        ? missingReasonExplanation(hit.reason)
+        : MISSING_COMPONENT_META[code].explanation,
+      servedReason: hit?.reason ?? null,
+      code,
+    };
+  });
+  for (const [code, m] of served) {
+    rows.push({
+      label: missingComponentLabel(code),
+      explanation: missingReasonExplanation(m.reason),
+      servedReason: m.reason,
+      code,
+    });
+  }
+  rows.push({
+    label: SITE_WORKS_EXCLUSION.label,
+    explanation: SITE_WORKS_EXCLUSION.explanation,
+    servedReason: null,
+    code: null,
+  });
+  return rows;
+}
 
 const PAGE_DISCLAIMER =
   "이 페이지는 시설 설치를 권고하거나 반대를 설득하기 위한 페이지가 아닙니다. 공식 데이터로 필요성, " +
@@ -80,14 +176,22 @@ const PAGE_DISCLAIMER =
 const HEADER_SUBTITLE =
   "선택한 지역의 공식 폐기물 자료를 기준으로 필요한 시설 규모와 표준공사비 기반 설치비를 계산합니다.";
 
-// The three non-claims that must be readable BEFORE anything is expanded. The full
-// eight-item exclusion list stays in the collapsed accordion below (redesign plan
-// §9 Phase 2 AC 6: at most one banner on the setup screen, remaining exclusions in
-// an accordion whose summary states how many items it holds). Nothing is deleted —
-// this is a change of prominence, not of content.
+// The three non-claims that must be readable BEFORE anything is expanded, on both
+// views. The full eight-item exclusion list stays in the collapsed setup accordion,
+// and the results view carries its own "포함되지 않은 비용" accordion. Nothing is
+// deleted — this is a change of prominence, not of content.
 const SETUP_NON_CLAIMS =
   "표준공사비를 기준으로 한 참고용 추정치입니다. 실제 총사업비가 아니며, 주민 개인에게 청구되는 " +
   "금액이나 세금 고지액도 아닙니다.";
+
+// The results-screen equivalent: the same four non-claims, stated compactly beside
+// the numbers they qualify. One neutral banner, never role="alert" — a standing
+// disclaimer must not interrupt a screen reader on every render.
+const RESULTS_NON_CLAIMS =
+  "정부 표준공사비 기준으로 계산한 참고용 추정치입니다. 실제 총사업비가 아니며, 국비 보조금이 " +
+  "승인되었다는 뜻도 아니고, 1인당 금액은 주민 개인에게 청구되는 금액이 아닙니다.";
+
+const PER_CAPITA_NON_CLAIM = "개인에게 실제로 청구되는 세금이나 부담금이 아닙니다.";
 
 // Source + reference period for the subsidy rates shown in the scenario selector,
 // so their provenance is visible in every state (not only after a calculation).
@@ -121,6 +225,16 @@ function formatBn(value: string): string {
 /** Format a 원 decimal string, keeping small values visible. */
 function formatWon(value: string): string {
   return `${formatQuantity(value)}원`;
+}
+
+/**
+ * The approximate text for a primary surface, with a safe fallback.
+ *
+ * A malformed decimal string makes `displayNumber` return null; the caller then
+ * shows the UNCHANGED exact string rather than substituting a fabricated zero.
+ */
+function approxOrExact(approx: ApproximateValue | null, exact: string, unit: string): string {
+  return approx?.text ?? `${formatQuantity(exact)} ${unit}`.trim();
 }
 
 /**
@@ -190,6 +304,10 @@ export default function FacilityCostDashboard({
   const [result, setResult] = useState<FacilityCostCalculate | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [calculating, setCalculating] = useState(false);
+  // Which of the two views the citizen asked for. It is only ever a REQUEST: the
+  // results view also requires a current result (see `showResults` below), so this
+  // flag alone can never surface a stale calculation.
+  const [view, setView] = useState<"setup" | "results">("setup");
   // The input signature the current result/error was computed for. The result is
   // shown ONLY while it still matches the live inputs (scenario + selected
   // candidate), so a stale result never sits beside changed controls.
@@ -197,6 +315,10 @@ export default function FacilityCostDashboard({
   // Monotonic request id: a superseded in-flight response is discarded, so a late
   // response from an old scenario can never overwrite a newer one.
   const requestSeq = useRef(0);
+  // Focus target when returning from results, and the flag that distinguishes a
+  // deliberate return from the first paint (which must not steal focus).
+  const setupHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const returningToSetup = useRef(false);
 
   const currentSig = useMemo(
     () => JSON.stringify({ scenario, candidateId: selectedCandidate?.candidate_id ?? null }),
@@ -296,17 +418,35 @@ export default function FacilityCostDashboard({
         setResult(res);
         setOutputSig(mySig);
         setCalcError(null);
+        // Only a CURRENT, successful response opens the results view.
+        setView("results");
       })
       .catch((cause: unknown) => {
         if (myId !== requestSeq.current) return; // superseded → discard
         setResult(null);
         setOutputSig(mySig);
         setCalcError(cause instanceof ApiError ? cause.message : "비용을 계산할 수 없습니다.");
+        // A failed calculation stays on setup, with the settings intact.
+        setView("setup");
       })
       .finally(() => {
         if (myId === requestSeq.current) setCalculating(false);
       });
   }, [scenario, options, selectedCandidate]);
+
+  /** Return to setup. Pure view state — it issues no request and clears no input. */
+  const editSettings = useCallback(() => {
+    returningToSetup.current = true;
+    setView("setup");
+  }, []);
+
+  // Move focus to the first setup heading after a deliberate return, so a keyboard
+  // or screen-reader user is not left at the top of the document. Never on mount.
+  useEffect(() => {
+    if (view !== "setup" || !returningToSetup.current) return;
+    returningToSetup.current = false;
+    setupHeadingRef.current?.focus();
+  }, [view]);
 
   return (
     <div
@@ -346,6 +486,9 @@ export default function FacilityCostDashboard({
           errorCurrent={errorCurrent}
           calcError={calcError}
           selectedCandidate={selectedCandidate}
+          view={view}
+          onEditSettings={editSettings}
+          setupHeadingRef={setupHeadingRef}
         />
       )}
     </div>
@@ -367,6 +510,9 @@ function FacilityCostBody({
   errorCurrent,
   calcError,
   selectedCandidate,
+  view,
+  onEditSettings,
+  setupHeadingRef,
 }: {
   options: FacilityCostOptions;
   scenario: ScenarioState;
@@ -380,10 +526,31 @@ function FacilityCostBody({
   errorCurrent: boolean;
   calcError: string | null;
   selectedCandidate: CandidateDetail | null;
+  view: "setup" | "results";
+  onEditSettings: () => void;
+  setupHeadingRef: React.RefObject<HTMLHeadingElement | null>;
 }) {
   const validationMessage = validateScenario(scenario, options);
+  // The results view is DERIVED, not merely requested: it also requires a result
+  // that still matches the live inputs. If the selected candidate changes while the
+  // results are open, `resultCurrent` goes false and the citizen is returned to
+  // setup with the "recalculate" notice — a stale answer is never displayed.
+  const showResults = view === "results" && resultCurrent && result !== null;
+
+  if (showResults && result !== null) {
+    return (
+      <div className="mt-4">
+        <FacilityCostResultsView
+          result={result}
+          selectedCandidate={selectedCandidate}
+          onEditSettings={onEditSettings}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="mt-4 flex flex-col gap-5">
+    <div className="mt-4 flex flex-col gap-5" data-testid="facility-cost-setup-view">
       <FacilityCostSetup
         options={options}
         scenario={scenario}
@@ -393,36 +560,45 @@ function FacilityCostBody({
         onCalculate={calculate}
         calculating={calculating}
         validationMessage={validationMessage}
-        result={resultCurrent ? result : null}
+        headingRef={setupHeadingRef}
       />
 
-      {/* Results/errors are shown ONLY while they still match the live inputs. A
-          control change (or a new map candidate) changes currentSig, so an
-          out-of-date output disappears until the user recalculates.
-
-          Phase 2 deliberately leaves this results block untouched below the
-          redesigned setup workflow; splitting setup from results is Phase 3. */}
-      {errorCurrent && (
-        <InfoBanner
-          tone="error"
-          title="계산할 수 없습니다"
-          role="alert"
-          testId="facility-cost-error"
-        >
-          <p className="font-semibold">{calcError}</p>
-          <p className="mt-1 text-xs">
-            공식 데이터를 계산할 수 없으면 값을 표시하지 않습니다. 대체 데이터는 사용하지 않습니다.
+      {/* A calculation in flight is its own visible state: a decorative skeleton
+          where the answer will appear, plus a polite live region (the skeleton is
+          aria-hidden and announces nothing on its own). */}
+      {calculating && (
+        <div className="mx-auto w-full max-w-6xl" data-testid="facility-cost-calculating">
+          <p className="text-sm text-ink-muted" role="status" data-testid="facility-cost-calculating-status">
+            결과를 계산하고 있습니다…
           </p>
-        </InfoBanner>
+          <Skeleton lines={4} className="mt-3" />
+        </div>
       )}
+
+      {errorCurrent && (
+        <div className="mx-auto w-full max-w-6xl">
+          <InfoBanner
+            tone="error"
+            title="계산할 수 없습니다"
+            role="alert"
+            testId="facility-cost-error"
+          >
+            <p className="font-semibold">{calcError}</p>
+            <p className="mt-1 text-xs">
+              공식 데이터를 계산할 수 없으면 값을 표시하지 않습니다. 대체 데이터는 사용하지 않습니다.
+            </p>
+          </InfoBanner>
+        </div>
+      )}
+
       {result && !resultCurrent && !calculating && (
-        <p className="text-xs text-warn" role="status" data-testid="facility-cost-stale">
+        <p
+          className="mx-auto w-full max-w-6xl text-xs text-warn"
+          role="status"
+          data-testid="facility-cost-stale"
+        >
           입력이 변경되었습니다. 다시 계산하세요.
         </p>
-      )}
-
-      {resultCurrent && result && (
-        <FacilityCostResults result={result} selectedCandidate={selectedCandidate} />
       )}
     </div>
   );
@@ -433,9 +609,8 @@ function FacilityCostBody({
 function FacilityCostHeader() {
   return (
     <header data-testid="facility-cost-header">
-      {/* The one h1 for this view. It now names the task in the same vocabulary as
-          the 비용 살펴보기 sub-view tab that leads here, instead of the previous
-          scenario framing ("우리 지역에 시설이 생긴다면"). */}
+      {/* The one h1 for this view, on BOTH the setup and results screens — the two
+          views are one page, so the results screen adds an h2, not a second h1. */}
       <h1 className="text-2xl font-bold text-ink">시설 비용 살펴보기</h1>
       <p className="mt-1 max-w-3xl text-sm text-ink-muted">{HEADER_SUBTITLE}</p>
     </header>
@@ -445,24 +620,18 @@ function FacilityCostHeader() {
 // --------------------------------------------------------------------------- //
 
 /**
- * What this analysis is NOT, rationed into two layers.
- *
- * BEFORE: one large amber panel carried the page disclaimer, all eight non-claims,
- * and the backend's missing components, above every setup control. The Phase 0
- * audit found warning styling so pervasive (60 hand-rolled amber utilities across 8
- * components) that the mandatory caveats had stopped being read.
- *
- * AFTER: a single compact neutral banner states the three claims a citizen must not
- * misread (reference estimate / not total project cost / not a personal bill), and
- * the full eight-item list plus the served missing components live in a COLLAPSED
- * accordion whose summary states how many items it holds. Nothing is removed and no
- * wording is softened — only its prominence changes (redesign plan §9 Phase 2 AC 6).
+ * What this analysis is NOT, rationed into two layers on the SETUP screen: a single
+ * compact neutral banner with the three claims a citizen must not misread, and the
+ * full eight-item list in a COLLAPSED accordion whose summary states how many items
+ * it holds. Nothing is removed and no wording is softened — only its prominence
+ * changes.
  *
  * `facility-cost-completeness` stays on the element that holds the full list, so its
- * test contract is unchanged.
+ * test contract is unchanged. The backend's structured `missing_components` are no
+ * longer duplicated here: Phase 3 gives them their own results accordion
+ * ("포함되지 않은 비용"), which is the screen they actually belong to.
  */
-function FacilityCostNotice({ result }: { result: FacilityCostCalculate | null }) {
-  const missing = result?.completeness.missing_components ?? [];
+function FacilityCostNotice() {
   return (
     <>
       {/* Standing disclaimer: informational, never role="alert" — it must not
@@ -485,38 +654,9 @@ function FacilityCostNotice({ result }: { result: FacilityCostCalculate | null }
               <li key={notice}>{notice}</li>
             ))}
           </ul>
-          {missing.length > 0 && <FacilityCostMissingComponents missing={missing} />}
         </Accordion>
       </div>
     </>
-  );
-}
-
-/** Backend structured missing components with Korean labels + retained reason codes. */
-function FacilityCostMissingComponents({
-  missing,
-}: {
-  missing: FacilityCostCalculate["completeness"]["missing_components"];
-}) {
-  return (
-    <div
-      className="mt-3 rounded-card border border-hairline bg-surface-muted p-3"
-      data-testid="facility-cost-missing"
-    >
-      <p className="text-xs font-semibold text-ink-muted">
-        서버가 명시한 미포함 비용 항목 (missing — never counted as 0):
-      </p>
-      <ul className="mt-1 flex flex-col gap-1">
-        {missing.map((m) => (
-          <li key={m.component} className="text-xs text-ink-muted" data-testid="facility-cost-missing-row">
-            <span className="font-medium text-ink">
-              {MISSING_COMPONENT_LABELS[m.component] ?? m.component}
-            </span>{" "}
-            <span className="text-warn">미포함</span> — {m.reason}
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 
@@ -528,7 +668,8 @@ const labelClass = "block text-sm font-medium text-ink";
 const captionClass = "mt-1 block text-xs font-normal text-ink-subtle";
 
 /**
- * The redesigned setup workflow (Phase 2).
+ * The redesigned setup workflow (Phase 2, unchanged by Phase 3 apart from the
+ * heading focus target used when returning from results).
  *
  * Desktop layout: a constrained centred container holding a two-column grid — setup
  * controls on the left, a compact scenario summary on the right that sticks while
@@ -547,7 +688,7 @@ function FacilityCostSetup({
   onCalculate,
   calculating,
   validationMessage,
-  result,
+  headingRef,
 }: {
   options: FacilityCostOptions;
   scenario: ScenarioState;
@@ -557,7 +698,7 @@ function FacilityCostSetup({
   onCalculate: () => void;
   calculating: boolean;
   validationMessage: string | null;
-  result: FacilityCostCalculate | null;
+  headingRef: React.RefObject<HTMLHeadingElement | null>;
 }) {
   const noRegions = scenario.regionCodes.length === 0;
   const noFacilityTypes = options.facility_types.length === 0;
@@ -579,13 +720,20 @@ function FacilityCostSetup({
 
   return (
     <div className="mx-auto w-full max-w-6xl" data-testid="facility-cost-form">
-      <FacilityCostNotice result={result} />
+      <FacilityCostNotice />
 
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         {/* ── Left column: the setup controls ─────────────────────────────── */}
         <div className="flex flex-col gap-4">
           <section className="wep-card p-4" aria-labelledby="fc-step-regions">
-            <h2 id="fc-step-regions" className="text-base font-semibold text-ink">
+            {/* tabIndex -1 so returning from the results view can land focus here
+                (it is a programmatic target only, never a Tab stop). */}
+            <h2
+              id="fc-step-regions"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-base font-semibold text-ink"
+            >
               1. 처리할 지역
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
@@ -964,142 +1112,216 @@ function FacilityCostSetupSummary({
 }
 
 // --------------------------------------------------------------------------- //
+// Results view (Phase 3)
+// --------------------------------------------------------------------------- //
 
-function FacilityCostResults({
+/**
+ * The calculated answer, in one deliberate order: return-to-setup → heading and
+ * scenario context → one compact disclaimer → hero KPI → three secondary KPIs →
+ * collapsed detail accordions.
+ *
+ * Only the KPI block is a live region: it holds the answer worth announcing, and
+ * keeping the accordions outside it means a collapsed `<details>` is never the only
+ * home for a `role="status"` (Accordion.tsx's stated consumer contract).
+ */
+function FacilityCostResultsView({
   result,
   selectedCandidate,
+  onEditSettings,
 }: {
   result: FacilityCostCalculate;
   selectedCandidate: CandidateDetail | null;
+  onEditSettings: () => void;
 }) {
+  const excluded = useMemo(
+    () => excludedCostRows(result.completeness.missing_components),
+    [result.completeness.missing_components],
+  );
+
   return (
-    // aria-live so the newly calculated result is announced.
-    <div className="flex flex-col gap-5" role="status" data-testid="facility-cost-results">
-      <FacilityCostKpiGrid result={result} />
-      <FacilityCostFundingBreakdown result={result} />
-      <FacilityCostRegionTable officialInput={result.official_input} />
-      {result.candidate_context && (
-        <FacilityCostCandidateContext
-          context={result.candidate_context}
-          selectedCandidate={selectedCandidate}
-        />
-      )}
-      <FacilityCostEvidence result={result} />
+    <div className="mx-auto w-full max-w-6xl" data-testid="facility-cost-results-view">
+      {/* A native button, not history navigation: the two views are internal state,
+          so hijacking the back button would break the browser's own semantics. */}
+      <button
+        type="button"
+        onClick={onEditSettings}
+        className="wep-btn-quiet"
+        data-testid="facility-cost-edit-settings"
+      >
+        ← 설정 바꾸기
+      </button>
+
+      <div className="mt-4">
+        <h2 className="text-xl font-bold text-ink">시설 비용 계산 결과</h2>
+        <p className="mt-1 text-sm text-ink-muted" data-testid="facility-cost-results-context">
+          {resultsContextLine(result)}
+        </p>
+      </div>
+
+      {/* One compact neutral banner. A standing disclaimer is never role="alert". */}
+      <div className="mt-3">
+        <InfoBanner tone="info" testId="facility-cost-results-notice">
+          <p>{RESULTS_NON_CLAIMS}</p>
+        </InfoBanner>
+      </div>
+
+      <div className="mt-5 flex flex-col gap-4" role="status" data-testid="facility-cost-results">
+        <FacilityCostHeroKpi result={result} />
+        <FacilityCostSecondaryKpis result={result} />
+      </div>
+
+      <div className="mt-6 flex flex-col gap-3" data-testid="facility-cost-result-sections">
+        <Accordion label="국비·지방비 구성" testId="facility-cost-funding-section">
+          <FacilityCostFundingBreakdown result={result} />
+        </Accordion>
+
+        <Accordion label="지역별 공식 투입 데이터" testId="facility-cost-region-section">
+          <FacilityCostRegionTable officialInput={result.official_input} />
+        </Accordion>
+
+        {/* Omitted entirely when no candidate was carried in — an empty accordion
+            would imply there is something to open. */}
+        {result.candidate_context && (
+          <Accordion label="선택한 후보지 정보" testId="facility-cost-candidate-section">
+            <FacilityCostCandidateContext
+              context={result.candidate_context}
+              selectedCandidate={selectedCandidate}
+            />
+          </Accordion>
+        )}
+
+        <Accordion label="계산 가정" testId="facility-cost-assumptions">
+          <FacilityCostAssumptions result={result} />
+        </Accordion>
+
+        <Accordion
+          label={`포함되지 않은 비용 ${excluded.length}개`}
+          testId="facility-cost-exclusions"
+        >
+          <FacilityCostExclusions rows={excluded} />
+        </Accordion>
+
+        <Accordion label="출처와 계산 방법" testId="facility-cost-methodology-section">
+          <FacilityCostEvidence result={result} />
+        </Accordion>
+
+        <Accordion label="정밀값과 계산 기준" testId="facility-cost-exact-values">
+          <FacilityCostExactValues result={result} />
+        </Accordion>
+      </div>
     </div>
   );
+}
+
+/**
+ * "선택한 3개 지역 · 서울 종로구 · 생활계 폐기물 · 처리 비율 100% · 자동선별 재활용시설"
+ *
+ * Built from the regions the backend actually calculated with, named through
+ * `regionDisplayName` so 서울 중구 and 인천 중구 stay distinguishable WITHOUT a raw
+ * region code reaching the screen (the Phase 2 rule, carried into results).
+ */
+function resultsContextLine(result: FacilityCostCalculate): string {
+  const regions = result.official_input.regions;
+  const labels = regions.map((r) => regionDisplayName(r.region_code, r.region_name));
+  const share = approximatePercent(result.scenario.processing_share_percent);
+  return [
+    `선택한 ${regions.length}개 지역`,
+    summariseRegions(labels),
+    wasteStreamLabel(result.official_input.waste_stream),
+    `처리 비율 ${share?.text ?? `${result.scenario.processing_share_percent}%`}`,
+    result.scenario.facility_type_label,
+  ].join(" · ");
 }
 
 // --------------------------------------------------------------------------- //
 
-function KpiCard({
-  label,
-  value,
-  caption,
-  testId,
-  valueTestId,
-  emphasis,
-}: {
-  label: string;
-  value: string;
-  caption?: string;
-  testId?: string;
-  valueTestId?: string;
-  emphasis?: boolean;
-}) {
-  return (
-    <div
-      className="flex flex-col rounded border border-slate-200 bg-white p-3"
-      data-testid={testId}
-    >
-      <dt className="text-[11px] text-slate-500">{label}</dt>
-      <dd
-        className={`mt-1 font-semibold tabular-nums ${emphasis ? "text-lg text-slate-900" : "text-base text-slate-800"}`}
-        data-testid={valueTestId}
-      >
-        {value}
-      </dd>
-      {caption && <p className="mt-1 text-[11px] text-slate-400">{caption}</p>}
-    </div>
-  );
-}
-
-/** Value card for the per-capita KPI, which may be an explicit unavailable reason. */
-function PerCapitaCard({ result }: { result: FacilityCostCalculate }) {
+/**
+ * The one dominant answer: the per-resident conversion of the simplified local
+ * share, shown as a readable approximation.
+ *
+ * It is NOT a bill. The caveat is served by the backend and is restated in the
+ * project's own words, and the label is never rewritten to 주민 부담 청구액 /
+ * 실제 세금 / 개인 부담금 / 확정 주민 부담. When the backend cannot compute it, the
+ * card keeps its position and shows the plain-Korean rendering of the served
+ * reason — never 0원, and never an invented per-capita of our own.
+ */
+function FacilityCostHeroKpi({ result }: { result: FacilityCostCalculate }) {
   const pc = result.per_capita;
+  const available = pc.per_capita_local_share_won !== null;
+  const approx = available ? approximateWonAsManwon(pc.per_capita_local_share_won as string) : null;
+
   return (
-    <div className="flex flex-col rounded border border-slate-200 bg-white p-3">
-      <dt className="text-[11px] text-slate-500">{pc.term_ko}</dt>
-      {pc.per_capita_local_share_won !== null ? (
-        <dd className="mt-1 text-base font-semibold tabular-nums text-slate-800" data-testid="fc-per-capita">
-          {formatWon(pc.per_capita_local_share_won)}
-        </dd>
-      ) : (
-        // Never rendered as 0 — the served reason is shown instead, and the card
-        // stays visible with its caveat.
-        <dd className="mt-1 text-sm font-semibold text-amber-700" data-testid="fc-per-capita-unavailable">
-          계산 불가 ({pc.unavailable_reason})
-        </dd>
-      )}
-      <p className="mt-1 text-[11px] text-slate-400">{pc.caveat}</p>
-    </div>
+    <dl>
+      <KpiCard
+        size="hero"
+        label={pc.term_ko}
+        value={
+          available
+            ? approxOrExact(approx, pc.per_capita_local_share_won as string, pc.unit)
+            : undefined
+        }
+        unavailableReason={
+          available
+            ? undefined
+            : `계산 불가 — ${perCapitaUnavailableExplanation(pc.unavailable_reason)}`
+        }
+        caption={
+          <>
+            <span className="block font-medium text-warn">{PER_CAPITA_NON_CLAIM}</span>
+            <span className="mt-1 block">{pc.caveat}</span>
+            {available && (
+              <span className="mt-1 block">
+                정확한 값은 아래 &ldquo;정밀값과 계산 기준&rdquo;에서 확인할 수 있습니다.
+              </span>
+            )}
+          </>
+        }
+        testId="facility-cost-hero"
+        valueTestId={available ? "fc-per-capita" : "fc-per-capita-unavailable"}
+      />
+    </dl>
   );
 }
 
-function FacilityCostKpiGrid({ result }: { result: FacilityCostCalculate }) {
-  const { scenario, official_input, capacity, standard_cost, annualization, subsidy } = result;
-  const band = standard_cost.matched_band;
+/**
+ * The three supporting numbers, all approximations. Each keeps the honest concept
+ * name the backend serves — never 총비용 / 총사업비 / 확정 사업비 / 최종 사업비.
+ */
+function FacilityCostSecondaryKpis({ result }: { result: FacilityCostCalculate }) {
+  const { capacity, standard_cost, annualization } = result;
   return (
-    <section aria-label="핵심 지표 (Key indicators)" data-testid="facility-cost-kpi-grid">
-      <h2 className="mb-2 text-sm font-semibold text-slate-800">핵심 지표 (Key indicators)</h2>
-      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          label="공식 연간 폐기물 발생량"
-          value={`${formatQuantity(official_input.official_annual_quantity_ton)} ${official_input.quantity_unit}`}
-          valueTestId="fc-official-quantity"
-        />
-        <KpiCard
-          label="시나리오 처리량"
-          value={`${formatQuantity(capacity.annual_service_quantity_ton)} 톤/년`}
-          caption={`처리 비율 ${scenario.processing_share_percent}%`}
-          valueTestId="fc-scenario-quantity"
-        />
-        <KpiCard
-          label="필요 시설 규모"
-          value={`${formatQuantity(capacity.facility_capacity_ton_per_day)} ${capacity.capacity_unit}`}
-          valueTestId="fc-capacity"
-        />
-        <KpiCard
-          label={standard_cost.term_ko}
-          value={formatBn(standard_cost.standard_construction_cost_bn)}
-          caption={`적용 구간: ${matchedBandLabel(band)}`}
-          valueTestId="fc-standard-cost"
-          emphasis
-        />
-        <KpiCard
-          label={`${annualization.term_ko} (내용연수 ${annualization.facility_lifetime_years}년, 가정)`}
-          value={`${formatQuantity(annualization.annualized_construction_cost_bn)} ${annualization.unit}`}
-          valueTestId="fc-annualized"
-        />
-        <KpiCard
-          label={`명목 국고보조 추정액 (${subsidy.subsidy_scheme_label})`}
-          value={formatBn(subsidy.estimated_national_subsidy_bn)}
-          caption={`명목 보조율 ${subsidy.subsidy_rate} · ${subsidy.rate_basis}`}
-          valueTestId="fc-subsidy"
-        />
-        <KpiCard
-          label="단순 지방비 추정액"
-          value={formatBn(subsidy.simplified_local_government_share_bn)}
-          valueTestId="fc-local-share"
-        />
-        <PerCapitaCard result={result} />
-      </dl>
-      {/* The matched band's endpoint semantics, kept as an explicit line so its
-          inclusivity is readable and testable. */}
-      <p className="mt-2 text-[11px] text-slate-500" data-testid="fc-matched-band">
-        적용 표준공사비 구간: {matchedBandLabel(band)} · 단가 {formatQuantity(band.cost_per_capacity_bn)}{" "}
-        {band.cost_per_capacity_unit}
-      </p>
-    </section>
+    <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <KpiCard
+        label={standard_cost.term_ko}
+        value={approxOrExact(
+          approximateBillionWon(standard_cost.standard_construction_cost_bn),
+          standard_cost.standard_construction_cost_bn,
+          standard_cost.unit,
+        )}
+        caption={`적용 구간: ${matchedBandLabel(standard_cost.matched_band)}`}
+        valueTestId="fc-standard-cost"
+      />
+      <KpiCard
+        label="필요한 시설 규모"
+        value={approxOrExact(
+          approximateTonPerDay(capacity.facility_capacity_ton_per_day),
+          capacity.facility_capacity_ton_per_day,
+          capacity.capacity_unit,
+        )}
+        caption={`연간 가동일수 ${capacity.operating_days_per_year}일 기준`}
+        valueTestId="fc-capacity"
+      />
+      <KpiCard
+        label={annualization.term_ko}
+        value={approxOrExact(
+          approximateAnnualBillionWon(annualization.annualized_construction_cost_bn),
+          annualization.annualized_construction_cost_bn,
+          annualization.unit,
+        )}
+        caption={`내용연수 ${annualization.facility_lifetime_years}년 가정`}
+        valueTestId="fc-annualized"
+      />
+    </dl>
   );
 }
 
@@ -1110,7 +1332,8 @@ function FacilityCostKpiGrid({ result }: { result: FacilityCostCalculate }) {
  * national subsidy + simplified local share. A stacked horizontal bar; the widths
  * use Number() conversion for proportion only — every displayed money value is the
  * exact backend string. Annualized cost is deliberately NOT mixed in, and missing
- * components are NOT shown as zero-width categories (they are in the notice panel).
+ * components are NOT shown as zero-width categories (they are in the exclusions
+ * accordion).
  */
 function FacilityCostFundingBreakdown({ result }: { result: FacilityCostCalculate }) {
   const total = Number(result.standard_cost.standard_construction_cost_bn);
@@ -1119,55 +1342,64 @@ function FacilityCostFundingBreakdown({ result }: { result: FacilityCostCalculat
   const subsidyPct = total > 0 ? Math.max(0, Math.min(100, (subsidyN / total) * 100)) : 0;
   const localPct = total > 0 ? Math.max(0, Math.min(100, (localN / total) * 100)) : 0;
   return (
-    <section
-      aria-label="설치비 재원 구성"
-      className="rounded border border-slate-200 bg-white p-4"
-      data-testid="facility-cost-funding"
-    >
-      <h2 className="text-sm font-semibold text-slate-800">
-        {result.standard_cost.term_ko} 재원 구성 (분석용)
-      </h2>
-      <p className="mt-1 text-[11px] text-slate-500">
+    <section aria-label="설치비 재원 구성" data-testid="facility-cost-funding">
+      <p className="text-xs text-ink-subtle">
         일회성 설치비 산정액을 명목 국고보조 추정액과 단순 지방비 추정액으로 나눈 분석용 구성입니다. 보조금
         승인을 의미하지 않으며, 연간 환산 설치비와 합산하지 않습니다.
       </p>
       {/* The stacked bar is decorative; every value is available as text below. */}
       <div
         aria-hidden
-        className="mt-3 flex h-5 w-full overflow-hidden rounded border border-slate-300"
+        className="mt-3 flex h-5 w-full overflow-hidden rounded border border-hairline-strong"
       >
-        <div className="h-full bg-sky-600" style={{ width: `${subsidyPct}%` }} />
-        <div className="h-full bg-slate-400" style={{ width: `${localPct}%` }} />
+        <div className="h-full bg-primary" style={{ width: `${subsidyPct}%` }} />
+        <div className="h-full bg-hairline-strong" style={{ width: `${localPct}%` }} />
       </div>
-      <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="flex items-center gap-2">
-          <span aria-hidden className="inline-block h-3 w-3 rounded-sm bg-sky-600" />
+          <span aria-hidden className="inline-block h-3 w-3 rounded-sm bg-primary" />
           <div>
-            <dt className="text-[11px] text-slate-500">명목 국고보조 추정액</dt>
-            <dd className="text-sm font-semibold tabular-nums text-slate-800" data-testid="fc-funding-subsidy">
+            <dt className="text-xs text-ink-subtle">명목 국고보조 추정액</dt>
+            <dd className="text-sm font-semibold tabular-nums text-ink" data-testid="fc-funding-subsidy">
               {formatBn(result.subsidy.estimated_national_subsidy_bn)}
             </dd>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span aria-hidden className="inline-block h-3 w-3 rounded-sm bg-slate-400" />
+          <span aria-hidden className="inline-block h-3 w-3 rounded-sm bg-hairline-strong" />
           <div>
-            <dt className="text-[11px] text-slate-500">단순 지방비 추정액</dt>
-            <dd className="text-sm font-semibold tabular-nums text-slate-800" data-testid="fc-funding-local">
+            <dt className="text-xs text-ink-subtle">단순 지방비 추정액</dt>
+            <dd className="text-sm font-semibold tabular-nums text-ink" data-testid="fc-funding-local">
               {formatBn(result.subsidy.simplified_local_government_share_bn)}
             </dd>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span aria-hidden className="inline-block h-3 w-3 rounded-sm border border-slate-300" />
+          <span aria-hidden className="inline-block h-3 w-3 rounded-sm border border-hairline-strong" />
           <div>
-            <dt className="text-[11px] text-slate-500">합계 (설치비 산정액)</dt>
-            <dd className="text-sm font-semibold tabular-nums text-slate-800" data-testid="fc-funding-total">
+            <dt className="text-xs text-ink-subtle">합계 (설치비 산정액)</dt>
+            <dd className="text-sm font-semibold tabular-nums text-ink" data-testid="fc-funding-total">
               {formatBn(result.standard_cost.standard_construction_cost_bn)}
             </dd>
           </div>
         </div>
       </dl>
+      <dl className="mt-3 flex flex-col gap-1 text-xs text-ink-muted">
+        <div>
+          <dt className="inline font-medium">적용 보조 시나리오: </dt>
+          <dd className="inline" data-testid="fc-funding-scheme">
+            {result.subsidy.subsidy_scheme_label} · 명목 보조율 {result.subsidy.subsidy_rate}
+          </dd>
+        </div>
+        <div>
+          <dt className="inline font-medium">보조율 근거: </dt>
+          <dd className="inline" data-testid="fc-funding-rate-basis">
+            {result.subsidy.rate_basis} · 출처 {result.subsidy.rate_source} · 기준{" "}
+            {result.subsidy.rate_reference_period}
+          </dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-xs font-medium text-warn">{result.subsidy.note}</p>
     </section>
   );
 }
@@ -1187,23 +1419,29 @@ function FacilityCostRegionTable({
 }) {
   const total = Number(officialInput.official_annual_quantity_ton);
   return (
-    <section
-      aria-label="지역별 공식 투입 데이터"
-      className="rounded border border-slate-200 bg-white p-4"
-      data-testid="facility-cost-region-table"
-    >
-      <h2 className="text-sm font-semibold text-slate-800">지역별 공식 투입 데이터 (Official input)</h2>
-      <p className="mt-1 text-[11px] text-slate-500">
+    <section aria-label="지역별 공식 투입 데이터" data-testid="facility-cost-region-table">
+      <p className="text-xs text-ink-subtle">
         비중은 공식 지역 발생량 ÷ 공식 합계로 계산한 표시용 파생값입니다. 비용은 지역별로 배분하지 않습니다.
       </p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[28rem] text-left text-xs">
+          <caption className="sr-only">
+            선택한 지역별 공식 연간 폐기물 발생량, 공식 인구, 전체 발생량 중 비중
+          </caption>
           <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              <th className="py-1 pr-3 font-medium">지역</th>
-              <th className="py-1 pr-3 font-medium">공식 연간 발생량</th>
-              <th className="py-1 pr-3 font-medium">인구</th>
-              <th className="py-1 font-medium">전체 발생량 중 비중</th>
+            <tr className="border-b border-hairline text-ink-subtle">
+              <th scope="col" className="py-1 pr-3 font-medium">
+                지역
+              </th>
+              <th scope="col" className="py-1 pr-3 font-medium">
+                공식 연간 발생량
+              </th>
+              <th scope="col" className="py-1 pr-3 font-medium">
+                인구
+              </th>
+              <th scope="col" className="py-1 font-medium">
+                전체 발생량 중 비중
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -1213,26 +1451,28 @@ function FacilityCostRegionTable({
               return (
                 <tr
                   key={region.region_code}
-                  className="border-b border-slate-100 last:border-0"
+                  className="border-b border-hairline last:border-0"
                   data-testid="fc-region-row"
                 >
-                  <td className="py-1 pr-3 text-slate-800">
-                    {region.region_name}{" "}
-                    <span className="text-slate-400">({region.region_code})</span>
-                  </td>
-                  <td className="py-1 pr-3 tabular-nums text-slate-700">
+                  <th scope="row" className="py-1 pr-3 text-left font-normal text-ink">
+                    {/* The metro-prefixed display name, so 서울 중구 and 인천 중구
+                        are distinguishable without exposing a raw code (the code is
+                        in the diagnostic list below). */}
+                    {regionDisplayName(region.region_code, region.region_name)}
+                  </th>
+                  <td className="py-1 pr-3 tabular-nums text-ink-muted">
                     {formatQuantity(region.generation_quantity_ton)} {officialInput.quantity_unit}
                   </td>
-                  <td className="py-1 pr-3 tabular-nums text-slate-700">
+                  <td className="py-1 pr-3 tabular-nums text-ink-muted">
                     {region.population !== null ? (
                       `${region.population.toLocaleString("en-US")}명`
                     ) : (
-                      <span className="text-amber-700" data-testid="fc-region-population-unavailable">
+                      <span className="text-warn" data-testid="fc-region-population-unavailable">
                         공식 인구 미확정
                       </span>
                     )}
                   </td>
-                  <td className="py-1 tabular-nums text-slate-700">
+                  <td className="py-1 tabular-nums text-ink-muted">
                     {sharePct !== null ? `${sharePct.toFixed(1)}%` : "—"}
                   </td>
                 </tr>
@@ -1241,12 +1481,31 @@ function FacilityCostRegionTable({
           </tbody>
         </table>
       </div>
+      <details className="mt-3" data-diagnostic="true" data-testid="fc-region-codes">
+        <summary className="cursor-pointer text-xs text-ink-subtle">지역 코드 자세히 보기</summary>
+        <p className="mt-1 break-words text-xs text-ink-subtle">
+          {officialInput.regions.map((r) => `${r.region_name}: ${r.region_code}`).join(" · ")}
+        </p>
+      </details>
     </section>
   );
 }
 
 // --------------------------------------------------------------------------- //
 
+/**
+ * Candidate context.
+ *
+ * The candidate is identified to a citizen by its REGION, and its screening outcome
+ * by the plain status label — not by the grid key (`capital-grid-500m-v1:10_20`) or
+ * the raw enum (`ELIGIBLE`), which are technical identifiers this project's own
+ * glossary demotes to a detail layer. Nothing is lost: the key, the raw status, the
+ * profile, the run, the reference year, and every version string stay in the
+ * diagnostic disclosure below, which is what `fc-candidate-provenance` marks.
+ *
+ * An `ELIGIBLE` screening status is never reinterpreted as legally eligible,
+ * permitted, approved, or developable.
+ */
 function FacilityCostCandidateContext({
   context,
   selectedCandidate,
@@ -1254,33 +1513,43 @@ function FacilityCostCandidateContext({
   context: NonNullable<FacilityCostCalculate["candidate_context"]>;
   selectedCandidate: CandidateDetail | null;
 }) {
+  const regionLabel =
+    [context.sido_region_name, context.sigungu_region_name].filter(Boolean).join(" ") ||
+    "(시군구 미배정)";
+  const status = context.suitability_status;
+  const profile = context.profile;
   return (
-    <section
-      aria-label="후보지 연계"
-      className="rounded border border-sky-300 bg-sky-50 p-4 text-xs text-slate-700"
-      data-testid="facility-cost-candidate"
-    >
-      <h2 className="text-sm font-semibold text-slate-900">선택한 후보지 (Selected candidate)</h2>
-      <p className="mt-1">
-        <strong>{context.candidate_key ?? selectedCandidate?.candidate_key}</strong> ·{" "}
-        {context.sigungu_region_name ?? "(시군구 미배정)"} · 상태 {context.suitability_status} · run #
-        {context.run_id} · {context.profile}
+    <section aria-label="후보지 연계" className="text-xs text-ink-muted" data-testid="facility-cost-candidate">
+      <p className="text-ink">
+        <strong>{regionLabel}</strong>
+        {status ? ` · ${statusLabel(status as SuitabilityStatus)}` : ""}
+        {profile ? ` · ${profileLabel(profile as SuitabilityProfile)}` : ""}
       </p>
       {/* Source + reference period for the displayed analytical suitability status
-          (AGENTS.md), from the candidate's own provenance. */}
-      {selectedCandidate && (
-        <p className="mt-1 text-slate-500" data-testid="fc-candidate-provenance">
-          분석 기준연도 {selectedCandidate.reference_year} · {selectedCandidate.derivation_version} ·{" "}
-          {selectedCandidate.policy_version} · {selectedCandidate.candidate_grid_version}
+          (AGENTS.md), from the candidate's own provenance — with the technical
+          identifiers kept here rather than in the primary line. */}
+      <details className="mt-1" data-diagnostic="true">
+        <summary className="cursor-pointer text-ink-subtle">후보지 분석 정보 자세히 보기</summary>
+        <p className="mt-1 break-words" data-testid="fc-candidate-provenance">
+          {context.candidate_key ?? selectedCandidate?.candidate_key} · 분석 실행 #{context.run_id} ·
+          상태 코드 {status ?? "—"} · 점수 기준 {profile ?? "—"}
+          {selectedCandidate && (
+            <>
+              {" "}
+              · 분석 기준연도 {selectedCandidate.reference_year} ·{" "}
+              {selectedCandidate.derivation_version} · {selectedCandidate.policy_version} ·{" "}
+              {selectedCandidate.candidate_grid_version}
+            </>
+          )}
         </p>
-      )}
+      </details>
       {/* Optional concise stability badge (ELIGIBLE candidates only). Cost V1 does
           NOT vary by candidate cell, and "stable" is not legal eligibility and adds
           no land/transport/compensation/site-specific cost — preserved as caveats. */}
       {selectedCandidate &&
         selectedCandidate.stable_count != null &&
         stabilityBadgeLabel(selectedCandidate.stability_class, selectedCandidate.stable_count) && (
-          <p className="mt-1 text-slate-600" data-testid="fc-candidate-stability">
+          <p className="mt-1" data-testid="fc-candidate-stability">
             가중치 안정성:{" "}
             <span className="font-semibold">
               {stabilityBadgeLabel(
@@ -1292,9 +1561,111 @@ function FacilityCostCandidateContext({
             등 부지별 비용을 추가하지 않음).
           </p>
         )}
-      <p className="mt-1 text-slate-600">{context.note}</p>
-      <p className="mt-1 font-medium text-amber-800">{context.suitability_disclaimer}</p>
+      <p className="mt-1">{context.note}</p>
+      <p className="mt-1 font-medium text-warn">{context.suitability_disclaimer}</p>
     </section>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+
+/**
+ * What the calculation assumed, in Korean-first labels. Technical identifiers
+ * (derivation version, cost version, annualization method) are demoted to the
+ * diagnostic disclosure at the end rather than used as primary labels.
+ */
+function FacilityCostAssumptions({ result }: { result: FacilityCostCalculate }) {
+  const { scenario, capacity, annualization, standard_cost, official_input } = result;
+  const rows: { label: string; value: string; testId?: string }[] = [
+    { label: "폐기물 종류", value: wasteStreamLabel(official_input.waste_stream) },
+    { label: "시설 종류", value: scenario.facility_type_label },
+    { label: "지역 처리 비율", value: `${scenario.processing_share_percent}%` },
+    { label: "연간 가동일수", value: `${capacity.operating_days_per_year}일` },
+    {
+      label: "지하화 배수",
+      value: `${scenario.underground_multiplier} · ${scenario.underground_multiplier_note}`,
+    },
+    {
+      label: "보조 시나리오",
+      value: `${scenario.subsidy_scheme_label} · 명목 보조율 ${scenario.subsidy_rate}`,
+    },
+    { label: "적용 공사비 기준", value: standard_cost.term_ko },
+    {
+      label: "적용 표준공사비 구간",
+      value: `${matchedBandLabel(standard_cost.matched_band)} · 단가 ${formatQuantity(
+        standard_cost.matched_band.cost_per_capacity_bn,
+      )} ${standard_cost.matched_band.cost_per_capacity_unit}`,
+      testId: "fc-matched-band",
+    },
+    {
+      label: "연간 환산 기준",
+      value: `내용연수 ${annualization.facility_lifetime_years}년 · ${annualization.lifetime_basis}`,
+    },
+  ];
+
+  return (
+    <div className="text-xs text-ink-muted">
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <dt className="inline font-medium text-ink">{row.label}: </dt>
+            <dd className="inline" data-testid={row.testId}>
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <ul className="mt-3 list-disc space-y-1 pl-4" data-testid="fc-assumption-list">
+        {result.assumptions.map((a) => (
+          <li key={a}>{a}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+
+/**
+ * The cost items this analysis does not include.
+ *
+ * Every component is stated in plain Korean with a plain reason. The raw backend
+ * component/reason codes are NOT discarded — they sit in the diagnostic disclosure
+ * at the end, which is also the only place they may appear (redesign plan §9 Phase 3
+ * AC6/AC7). An unavailable component is never described as 0.
+ */
+function FacilityCostExclusions({ rows }: { rows: ExcludedRow[] }) {
+  const served = rows.filter((r) => r.servedReason !== null);
+  return (
+    <div data-testid="facility-cost-missing">
+      <p className="text-xs text-ink-subtle">
+        아래 항목은 이 계산에 포함되지 않았습니다. 자료가 없어 계산하지 못한 것이며, 비용이 0이라는 뜻이
+        아닙니다.
+      </p>
+      <ul className="mt-2 flex flex-col gap-2">
+        {rows.map((row) => (
+          <li key={row.label} className="text-sm" data-testid="facility-cost-missing-row">
+            <span className="font-medium text-ink">{row.label}</span>{" "}
+            <span className="text-warn">미포함</span>
+            <span className="mt-0.5 block text-xs text-ink-muted">{row.explanation}</span>
+          </li>
+        ))}
+      </ul>
+      {served.length > 0 && (
+        <details className="mt-3" data-diagnostic="true" data-testid="facility-cost-missing-diagnostic">
+          <summary className="cursor-pointer text-xs text-ink-subtle">
+            서버가 보낸 항목 코드 자세히 보기
+          </summary>
+          <ul className="mt-1 flex flex-col gap-0.5 break-words text-xs text-ink-subtle">
+            {served.map((row) => (
+              <li key={row.code}>
+                {row.code}: {row.servedReason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -1302,44 +1673,34 @@ function FacilityCostCandidateContext({
 
 function FacilityCostEvidence({ result }: { result: FacilityCostCalculate }) {
   const p = result.provenance;
+  const basis = result.official_input.accounting_basis;
   return (
-    <section
-      aria-label="출처와 방법"
-      className="rounded border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600"
-      data-testid="facility-cost-methodology"
-    >
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">출처·방법 (Sources & method)</h2>
-      <dl className="grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2">
+    <section aria-label="출처와 방법" className="text-xs text-ink-muted" data-testid="facility-cost-methodology">
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
         <div>
-          <dt className="inline font-medium">공사비 출처: </dt>
+          <dt className="inline font-medium text-ink">공사비 출처: </dt>
           <dd className="inline" data-testid="fc-source">
             {p.source_document} · {p.source_page} · 기준일 {p.price_base_date}
           </dd>
         </div>
         <div>
-          <dt className="inline font-medium">보조율 출처: </dt>
+          <dt className="inline font-medium text-ink">보조율 출처: </dt>
           <dd className="inline">
             {p.subsidy_rate_source} · {p.subsidy_rate_reference_period}
-          </dd>
-        </div>
-        <div>
-          <dt className="inline font-medium">계산 버전: </dt>
-          <dd className="inline">
-            {p.derivation_version} · {p.cost_version}
           </dd>
         </div>
         {/* Source + reference period for every official input behind the derived
             metrics (AGENTS.md), not just the periods. */}
         <div data-testid="fc-waste-source">
-          <dt className="inline font-medium">발생량 출처: </dt>
+          <dt className="inline font-medium text-ink">발생량 출처: </dt>
           <dd className="inline">
             {result.official_input.waste_official_dataset_name} (
-            {result.official_input.waste_source_id}) · 집계 {result.official_input.accounting_basis}{" "}
-            · 기준 {result.official_input.waste_reference_period}
+            {result.official_input.waste_source_id}) · 집계 {accountingBasisLabel(basis)} · 기준{" "}
+            {result.official_input.waste_reference_period}
           </dd>
         </div>
         <div data-testid="fc-population-source">
-          <dt className="inline font-medium">인구 출처: </dt>
+          <dt className="inline font-medium text-ink">인구 출처: </dt>
           <dd className="inline">
             {result.official_input.population_source_id
               ? `${result.official_input.population_source_id} · 정의 ${
@@ -1349,15 +1710,106 @@ function FacilityCostEvidence({ result }: { result: FacilityCostCalculate }) {
           </dd>
         </div>
       </dl>
-      <details className="mt-2">
-        <summary className="cursor-pointer font-medium">계산 가정 (assumptions)</summary>
-        <ul className="mt-1 list-disc space-y-1 pl-4">
-          {result.assumptions.map((a) => (
-            <li key={a}>{a}</li>
-          ))}
+      <p className="mt-2 font-medium text-warn">{result.disclaimer}</p>
+    </section>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+
+/**
+ * The exact backend-served values, unchanged.
+ *
+ * Every number here is the ORIGINAL API decimal string passed through
+ * `formatQuantity` (comma grouping only — value-preserving). None of them is
+ * reconstructed from the approximation shown above, and none is parsed to a
+ * JavaScript Number on the way to the screen.
+ */
+function FacilityCostExactValues({ result }: { result: FacilityCostCalculate }) {
+  const { official_input, capacity, standard_cost, annualization, subsidy, per_capita } = result;
+  const rows: { label: string; value: string; testId: string }[] = [
+    {
+      label: "공식 연간 폐기물 발생량",
+      value: `${formatQuantity(official_input.official_annual_quantity_ton)} ${official_input.quantity_unit}`,
+      testId: "fc-official-quantity",
+    },
+    {
+      label: "시나리오 처리량",
+      value: `${formatQuantity(capacity.annual_service_quantity_ton)} 톤/년`,
+      testId: "fc-scenario-quantity",
+    },
+    {
+      label: "필요한 시설 규모",
+      value: `${formatQuantity(capacity.facility_capacity_ton_per_day)} ${capacity.capacity_unit}`,
+      testId: "fc-exact-capacity",
+    },
+    {
+      label: standard_cost.term_ko,
+      value: formatBn(standard_cost.standard_construction_cost_bn),
+      testId: "fc-exact-standard-cost",
+    },
+    {
+      label: annualization.term_ko,
+      value: `${formatQuantity(annualization.annualized_construction_cost_bn)} ${annualization.unit}`,
+      testId: "fc-exact-annualized",
+    },
+    {
+      label: "명목 국고보조 추정액",
+      value: formatBn(subsidy.estimated_national_subsidy_bn),
+      testId: "fc-exact-subsidy",
+    },
+    {
+      label: "단순 지방비 추정액",
+      value: formatBn(subsidy.simplified_local_government_share_bn),
+      testId: "fc-exact-local-share",
+    },
+  ];
+
+  return (
+    <div className="text-xs text-ink-muted">
+      <p className="text-xs text-ink-subtle">
+        위쪽 카드의 값은 읽기 쉽도록 반올림한 표시용 근삿값입니다. 아래는 서버가 계산한 값 그대로입니다.
+      </p>
+      <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.testId}>
+            <dt className="inline font-medium text-ink">{row.label}: </dt>
+            <dd className="inline tabular-nums" data-testid={row.testId}>
+              {row.value}
+            </dd>
+          </div>
+        ))}
+        <div>
+          <dt className="inline font-medium text-ink">{per_capita.term_ko}: </dt>
+          {per_capita.per_capita_local_share_won !== null ? (
+            <dd className="inline tabular-nums" data-testid="fc-exact-per-capita">
+              {formatWon(per_capita.per_capita_local_share_won)}
+            </dd>
+          ) : (
+            // Unavailable stays unavailable here too — never a fabricated 0원.
+            <dd className="inline text-warn" data-testid="fc-exact-per-capita-unavailable">
+              계산 불가 — {perCapitaUnavailableExplanation(per_capita.unavailable_reason)}
+            </dd>
+          )}
+        </div>
+      </dl>
+
+      <details className="mt-3" data-diagnostic="true" data-testid="facility-cost-diagnostics">
+        <summary className="cursor-pointer text-xs text-ink-subtle">기술 정보 자세히 보기</summary>
+        <ul className="mt-1 flex flex-col gap-0.5 break-words text-xs text-ink-subtle">
+          <li>계산 방식 버전: {result.provenance.derivation_version}</li>
+          <li>공사비 버전: {result.provenance.cost_version}</li>
+          <li>연간 환산 방식: {annualization.method}</li>
+          <li>집계 기준 코드: {official_input.accounting_basis}</li>
+          <li>기준 연도: {official_input.reference_year}</li>
+          <li>
+            포함된 항목 코드: {result.completeness.included_components.join(", ") || "—"}
+          </li>
+          {per_capita.unavailable_reason && (
+            <li>1인당 지방비 미제공 사유 코드: {per_capita.unavailable_reason}</li>
+          )}
         </ul>
       </details>
-      <p className="mt-2 font-medium text-amber-800">{result.disclaimer}</p>
-    </section>
+    </div>
   );
 }

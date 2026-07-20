@@ -274,6 +274,114 @@ export function accountingBasisLabel(basis: string | null | undefined): string {
 }
 
 // --------------------------------------------------------------------------- //
+// Facility-cost reason codes.
+//
+// The cost endpoint states WHY a cost component, or the per-capita conversion, is
+// unavailable — as an ALL-CAPS code (`OFFICIAL_SOURCE_NOT_INTEGRATED`). A code is
+// not an explanation: it tells a citizen nothing, and reading one on the results
+// screen is the "raw enum in primary UI" failure this module exists to prevent
+// (docs/UI_UX_DESKTOP_REDESIGN_PLAN.md §9 Phase 3 AC6).
+//
+// The codes are NOT deleted. They stay in the API response, in the TypeScript
+// types, in a diagnostic disclosure, and in tests (§5 rule 12) — only their
+// PROMINENCE changes. Each explanation below is grounded in the code itself and in
+// the backend that emits it (analysis/facility_cost.py `MISSING_COMPONENTS`,
+// api/routes/facility_cost.py `population_reason`); nothing infers a specific
+// missing dataset the code does not name.
+// --------------------------------------------------------------------------- //
+
+export interface MissingComponentMeta {
+  /** Plain-Korean component name — safe as primary text. */
+  primary: string;
+  /**
+   * Short parenthetical reason. This is the wording the transparency centre
+   * already renders ("운영비 (공식 자료 미연계)"); it lives here so the two
+   * surfaces can never drift into two different translations of one code.
+   */
+  short: string;
+  /** One plain sentence explaining the absence — safe as primary text. */
+  explanation: string;
+  /** The backend component code. Diagnostic layer only. */
+  code: string;
+}
+
+/** The four cost components the backend reports as not included, keyed by code. */
+export const MISSING_COMPONENT_META: Record<string, MissingComponentMeta> = {
+  OPERATING_COST: {
+    primary: "운영비",
+    short: "공식 자료 미연계",
+    explanation: "시설을 운영하는 데 드는 비용의 공식 자료가 아직 이 분석에 연결되지 않았습니다.",
+    code: "OPERATING_COST",
+  },
+  ACTUAL_TRANSPORT_COST: {
+    primary: "실제 운송비",
+    short: "실 경로·계약 단가 미확보",
+    explanation: "실제 수집·운반 경로와 계약 단가 자료가 없어 계산할 수 없습니다.",
+    code: "ACTUAL_TRANSPORT_COST",
+  },
+  LAND_AND_COMPENSATION: {
+    primary: "토지·보상비",
+    short: "필지별 비용 미확보",
+    explanation: "부지가 정해져야 알 수 있는 필지별 토지·보상 비용 자료가 없습니다.",
+    code: "LAND_AND_COMPENSATION",
+  },
+  REMAINING_LANDFILL_COST: {
+    primary: "잔여 매립비용",
+    short: "시설 물질수지 미확립",
+    explanation: "시설에서 처리하고 남는 물질의 양이 확정되지 않아 계산할 수 없습니다.",
+    code: "REMAINING_LANDFILL_COST",
+  },
+};
+
+/** Plain component name for a backend component code (falls back to the code). */
+export function missingComponentLabel(component: string): string {
+  return MISSING_COMPONENT_META[component]?.primary ?? component;
+}
+
+/**
+ * The safe generic explanation. Used for a code this registry does not know, so an
+ * unrecognised code never becomes an invented claim about a specific dataset.
+ */
+export const UNKNOWN_REASON_EXPLANATION = "현재 공식 계산 자료가 제공되지 않습니다.";
+
+/** Backend `missing_components[].reason` → plain sentence. */
+export const MISSING_REASON_EXPLANATIONS: Record<string, string> = {
+  OFFICIAL_SOURCE_NOT_INTEGRATED: "이 항목의 공식 자료가 아직 이 분석에 연결되지 않았습니다.",
+  ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE:
+    "실제 수집·운반 경로와 계약 단가 자료가 없어 계산할 수 없습니다.",
+  PARCEL_SPECIFIC_COST_UNAVAILABLE:
+    "부지가 정해져야 알 수 있는 필지별 비용 자료가 없어 계산할 수 없습니다.",
+  FACILITY_MASS_BALANCE_NOT_ESTABLISHED:
+    "시설에서 처리하고 남는 물질의 양이 확정되지 않아 계산할 수 없습니다.",
+};
+
+export function missingReasonExplanation(reason: string | null | undefined): string {
+  if (!reason) return UNKNOWN_REASON_EXPLANATION;
+  return MISSING_REASON_EXPLANATIONS[reason] ?? UNKNOWN_REASON_EXPLANATION;
+}
+
+/**
+ * Backend `per_capita.unavailable_reason` → plain sentence.
+ *
+ * Each states only what the code states. None of them implies the value is zero:
+ * an unavailable per-capita share stays unavailable (repo AGENTS.md; redesign plan
+ * §5 rules 2–3).
+ */
+export const PER_CAPITA_UNAVAILABLE_EXPLANATIONS: Record<string, string> = {
+  NO_OFFICIAL_SERVICE_POPULATION:
+    "선택한 지역의 공식 인구가 제공되지 않아 1인당 값을 계산할 수 없습니다.",
+  NO_MATCHING_SAME_YEAR_POPULATION:
+    "폐기물 자료와 같은 연도의 공식 인구 자료가 없어 1인당 값을 계산할 수 없습니다.",
+  INCOMPATIBLE_POPULATION_DEFINITION:
+    "폐기물 자료와 인구 자료의 집계 정의가 달라 1인당 값을 계산할 수 없습니다.",
+};
+
+export function perCapitaUnavailableExplanation(reason: string | null | undefined): string {
+  if (!reason) return UNKNOWN_REASON_EXPLANATION;
+  return PER_CAPITA_UNAVAILABLE_EXPLANATIONS[reason] ?? UNKNOWN_REASON_EXPLANATION;
+}
+
+// --------------------------------------------------------------------------- //
 // General term glossary — technical term → plain primary + detail. Used by the
 // "자세히 보기" / methodology layers and the transparency center.
 // --------------------------------------------------------------------------- //
@@ -355,6 +463,19 @@ export const FORBIDDEN_PRIMARY_TOKENS: readonly string[] = [
   "suitability-policy",
   "suitability-screening",
   "capital-grid-500m",
+  // Facility-cost components and reason codes (redesign plan §9 Phase 3 AC7). They
+  // remain legal inside a diagnostic disclosure — the audit scans primary text.
+  "OPERATING_COST",
+  "ACTUAL_TRANSPORT_COST",
+  "LAND_AND_COMPENSATION",
+  "REMAINING_LANDFILL_COST",
+  "OFFICIAL_SOURCE_NOT_INTEGRATED",
+  "ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE",
+  "PARCEL_SPECIFIC_COST_UNAVAILABLE",
+  "FACILITY_MASS_BALANCE_NOT_ESTABLISHED",
+  "NO_OFFICIAL_SERVICE_POPULATION",
+  "NO_MATCHING_SAME_YEAR_POPULATION",
+  "INCOMPATIBLE_POPULATION_DEFINITION",
 ];
 
 /**

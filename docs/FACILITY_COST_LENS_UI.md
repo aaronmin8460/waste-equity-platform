@@ -30,32 +30,69 @@ in the cost view) and `app/accessibility.test.tsx`.
 
 ## Information architecture
 
-`FacilityCostDashboard` lays the existing `/facility-cost/calculate` response out as:
+Since Phase 3 of the desktop redesign the dashboard is **two internal views**, not one
+long page. `view` is component state — there is no route, no history entry, and no URL
+parameter — and the results view is *derived*: it renders only while `resultCurrent`
+holds, so a stale result can never be displayed beside changed inputs.
+
+| Transition | Trigger | Effect |
+| --- | --- | --- |
+| setup → results | a **successful, current** calculation | results replace the setup form |
+| results → setup | the **← 설정 바꾸기** button | every input retained; **no request issued** |
+| stays on setup | a failed calculation | `role="alert"` error, settings kept, retry allowed |
+| stays on setup | a calculation in flight | `Skeleton` + `role="status"` progress |
+| results → setup | inputs change under a held result | stale notice, result hidden until recalculated |
+
+A superseded in-flight response is discarded by the monotonic `requestSeq`, so a late
+response from old inputs can neither render nor navigate.
+
+**Shared, on both views:**
 
 1. **Header** — `<h1>` **시설 비용 살펴보기** + supporting explanation ("선택한 지역의
    공식 폐기물 자료를 기준으로 필요한 시설 규모와 표준공사비 기반 설치비를 계산합니다."). It is
-   the single logical `h1` of the full-width view, and it names the task in the same
-   vocabulary as the 비용 살펴보기 sub-view tab that leads here. (Before Phase 2 of the
-   desktop redesign it read 우리 지역에 시설이 생긴다면.)
+   the single logical `h1` of the full-width view — the results view adds an `<h2>`,
+   never a second `h1` — and it names the task in the same vocabulary as the
+   비용 살펴보기 sub-view tab that leads here. (Before Phase 2 of the desktop redesign
+   it read 우리 지역에 시설이 생긴다면.)
+
+**Setup view** (`facility-cost-setup-view`):
+
 2. **Notice** — a single compact `InfoBanner` (`tone="info"`, never `role="alert"`)
    carrying the fixed disclaimer that this page does not recommend for or against
    construction, plus the three claims a citizen must not misread: standard-cost
    reference estimate / not actual total project cost / not a personal bill. The full
-   eight-item non-claims list and, when a result is present, the backend's structured
-   `missing_components` sit directly below it in a **collapsed** `Accordion` whose
-   summary states the item count ("분석에 포함되지 않은 항목 8가지"). Nothing is deleted
-   and no wording is softened — only prominence changes, so the mandatory caveats are
-   read rather than tuned out (Phase 0 audit finding G4).
+   eight-item non-claims list sits directly below it in a **collapsed** `Accordion`
+   whose summary states the item count ("분석에 포함되지 않은 항목 8가지"). Nothing is
+   deleted and no wording is softened — only prominence changes, so the mandatory
+   caveats are read rather than tuned out (Phase 0 audit finding G4). Since Phase 3 the
+   backend's structured `missing_components` are no longer duplicated here: they have
+   their own results accordion, which is the screen they belong to.
 3. **Setup workflow** — a constrained centred two-column grid: numbered setup steps on
    the left, a sticky scenario summary carrying the primary action on the right (see
    below).
-4. **KPI grid** — the eight indicators (see below), responsive 1→2→4 columns.
-5. **Funding breakdown** — a stacked bar splitting the one-time installation cost into
-   nominal subsidy + simplified local share.
-6. **Official-input region table** — per-region generation, population, derived share.
-7. **Missing components** — backend `missing_components` with Korean labels + reasons.
-8. **Candidate context** — when entered from a selected candidate.
-9. **Provenance / evidence** — sources, versions, assumptions, disclaimer.
+
+**Results view** (`facility-cost-results-view`) — answer first, in this fixed order:
+
+4. **← 설정 바꾸기** (`facility-cost-edit-settings`) — a native button, not history
+   navigation. Returning moves focus to the first setup heading.
+5. **Heading + scenario context** — `<h2>` 시설 비용 계산 결과 and a one-line summary of
+   what was calculated: region count, a short region summary, waste stream, processing
+   share, facility type. Regions are named through `regionDisplayName` (서울 종로구), so
+   **no raw region code appears**, and a long selection collapses to "… 외 N개" rather
+   than listing 60+ names.
+6. **Disclaimer** — one compact `InfoBanner` (`tone="info"`, never `role="alert"`)
+   stating the four non-claims: standard-cost reference / not actual total project cost
+   / subsidy not approved / per-capita not a personal bill.
+7. **Hero KPI** — 주민 1인당 환산 지방비, `size="hero"`, the largest number on screen.
+8. **Three secondary KPIs** — 표준공사비 기반 설치비 산정액 · 필요한 시설 규모 ·
+   연간 환산 설치비, in an `lg:grid-cols-3` row.
+9. **Collapsed detail `Accordion`s**, in order: 국비·지방비 구성 → 지역별 공식 투입 데이터
+   → 선택한 후보지 정보 (omitted entirely when no candidate) → 계산 가정 →
+   포함되지 않은 비용 N개 → 출처와 계산 방법 → 정밀값과 계산 기준.
+
+Only the KPI block (`facility-cost-results`) is the `role="status"` live region. The
+accordions sit outside it, so a collapsed `<details>` is never the only home for a live
+region that must announce while closed.
 
 The client-only **citizen deliberation** block (a conditions checklist plus a stance
 radio group) was item 10 until Phase 2 of the desktop redesign, which removed it in
@@ -77,8 +114,55 @@ URL state. It was not replaced with another survey or checklist.
 | 7 | 단순 지방비 추정액 | `subsidy.simplified_local_government_share_bn` | 억원 |
 | 8 | 주민 1인당 환산 지방비 | `per_capita.per_capita_local_share_won` | 원 |
 
-The KPI grid section is a labelled group (`aria-label="핵심 지표"`), and the results
-container is a `role="status"` region so a screen reader announces a new calculation.
+Since Phase 3 these eight are **ranked, not gridded**. Every value is still displayed —
+none was removed — but only four are KPI cards:
+
+| Placement | Indicators |
+| --- | --- |
+| Hero card (`size="hero"`) | 8 주민 1인당 환산 지방비 |
+| Three secondary cards | 4 표준공사비 기반 설치비 산정액 · 3 필요한 시설 규모 · 5 연간 환산 설치비 |
+| 국비·지방비 구성 accordion | 6 명목 국고보조 추정액 · 7 단순 지방비 추정액 (+ the total) |
+| 정밀값과 계산 기준 accordion | 1, 2 and the exact value of every other indicator |
+
+The KPI block (`facility-cost-results`) is a `role="status"` region so a screen reader
+announces a new calculation.
+
+### Display rounding (presentation only)
+
+Cards show a human-readable APPROXIMATION produced by
+[`frontend/src/lib/displayNumber.ts`](../frontend/src/lib/displayNumber.ts); the exact
+backend decimal string is unchanged and stays reachable in 정밀값과 계산 기준.
+
+| Unit | Display precision | Example |
+| --- | --- | --- |
+| 억원 | 1억원 단위 | `"1277.222078"` → `약 1,277억원` |
+| 억원/년 | 1억원 단위, "/년" appended | `"8.050000"` → `약 8억원/년` |
+| 원 → 만원 | 원 ÷ 10,000, 1만원 단위 | `"439553.13"` → `약 44만원` |
+| 원/인 | identical to 원 → 만원 (the hero) | `"42262.50"` → `약 4만원` |
+| 톤/일 | 1톤/일 단위 below 100, 10톤/일 단위 at and above 100 | `"279.479667"` → `약 280톤/일` |
+| % | 1% 단위 | `"62.5"` → `약 63%` |
+
+Rounding is half-up on the magnitude, applied once. The module's guarantees:
+
+- **No floating point anywhere.** Rounding is string/BigInt only, so a value beyond
+  `Number.MAX_SAFE_INTEGER` still rounds correctly, and none of these helpers can be
+  used to reconstruct an exact value. A unit test scans the source for `Number(`,
+  `parseFloat`, `parseInt`, `toFixed`, and `Math.`.
+- **A non-zero value never displays as `0`.** Below one display unit it reads
+  "1억원 미만", because "약 0억원" for a real cost would read as free.
+- **An exact zero drops the `약`** — claiming approximation for an exact value is its
+  own small dishonesty. So is claiming it when nothing was rounded away
+  (`"35.000000"` → `35톤/일`, no `약`).
+- **Malformed input returns `null`**, and the caller falls back to the unchanged exact
+  string. It never substitutes zero.
+
+### Exact values
+
+`정밀값과 계산 기준` carries every exact figure, rendered from the ORIGINAL API string
+through `formatQuantity` (comma grouping only — value-preserving): 표준공사비 기반 설치비
+산정액 `120.75 억원`, 주민 1인당 환산 지방비 `42,262.5원`, 필요한 시설 규모 `35 톤/일`, and so
+on. No exact value is reconstructed from an approximation, and CSV/report exports are
+untouched by display rounding.
 
 ## Permitted vs prohibited terminology
 
@@ -115,9 +199,36 @@ proportion only. Rules:
 ## Per-capita caveat
 
 `per_capita.per_capita_local_share_won` is a simplified per-resident conversion of the
-local share, **not** an individual tax bill; the card always shows its caveat. When the
-backend cannot compute it (no compatible official population), the card stays visible
-and shows the served `unavailable_reason` — **never a fabricated `0원`**.
+local share, **not** an individual tax bill. It is the **hero** result since Phase 3, so
+its caveat carries the most weight on the screen: the card states
+"개인에게 실제로 청구되는 세금이나 부담금이 아닙니다." above the backend's own served
+caveat. The label stays `per_capita.term_ko` (주민 1인당 환산 지방비) and is never
+relabelled 주민 부담 청구액 / 실제 세금 / 개인 부담금 / 확정 주민 부담.
+
+When the backend cannot compute it (no compatible official population), the hero keeps
+its position and shows the plain-Korean rendering of the served `unavailable_reason` —
+**never a fabricated `0원`**, and never a per-capita of our own invention. The raw
+reason code stays in the diagnostic disclosure.
+
+## Backend reason codes
+
+Reason codes are ALL-CAPS enums; a code is not an explanation. Since Phase 3 the results
+surface renders plain Korean, and the codes are demoted — **never deleted**. They remain
+in the API response, the TypeScript types, tests, and a `data-diagnostic` disclosure.
+
+The single source of truth is
+[`frontend/src/lib/glossary.ts`](../frontend/src/lib/glossary.ts):
+`MISSING_COMPONENT_META`, `MISSING_REASON_EXPLANATIONS`, and
+`PER_CAPITA_UNAVAILABLE_EXPLANATIONS`, with `UNKNOWN_REASON_EXPLANATION`
+("현재 공식 계산 자료가 제공되지 않습니다.") as the safe fallback so an unrecognised code
+never becomes an invented claim about a specific dataset. All eleven codes are also in
+`FORBIDDEN_PRIMARY_TOKENS`, and `FacilityCostDashboard.test.tsx` scans the whole results
+surface (diagnostic subtrees removed) against that list.
+
+`MISSING_COMPONENT_META` also holds the short parenthetical wording the transparency
+centre renders ("운영비 (공식 자료 미연계)"), so the two surfaces cannot drift into two
+translations of one code. Phase 6 is where `TransparencyDashboard.tsx` starts consuming
+it; Phase 3 only establishes the registry and asserts the strings match.
 
 ## No regional cost allocation
 
@@ -212,6 +323,13 @@ disappears and a "입력이 변경되었습니다. 다시 계산하세요." noti
 recalculates. A superseded in-flight response (inputs changed while it was pending) is
 discarded by a monotonic request id and never rendered.
 
+Since Phase 3 the same gate also governs *navigation*: the results view is derived from
+`resultCurrent`, so it can only be reached by a successful **current** response, and it
+collapses back to setup the moment the inputs stop matching. A late response from
+superseded inputs therefore cannot open a stale results screen either. Returning via
+설정 바꾸기 is pure view state — it issues no request, clears no input, and does not
+touch browser history.
+
 ## Candidate integration
 
 When a suitability candidate is selected, its `candidate_id` is passed to the backend
@@ -224,11 +342,28 @@ transport, or site-specific cost (unavailable in V1).
 
 ## Accessibility
 
-One logical `h1`; section headings in order; every input has an associated label; the
-KPI group and each section carry accessible names; the results block is `role="status"`
-(polite announcement); validation and calculation errors use `role="alert"`; the
-funding chart is decorative (`aria-hidden`) with full text equivalents; no meaning is
-conveyed by color alone. Native form controls throughout.
+One logical `h1` **on both views** (the results view adds an `<h2>`); section headings in
+order; every input has an associated label; the KPI group and each section carry
+accessible names; the KPI block is `role="status"` (polite announcement); validation and
+calculation errors use `role="alert"`; the funding chart is decorative (`aria-hidden`)
+with full text equivalents; no meaning is conveyed by color alone. Native form controls
+throughout, and both views keep exactly one `#main-content` skip target and no `<aside>`.
+
+Phase 3 adds two behaviours:
+
+- **Calculating** shows a decorative `Skeleton` (`aria-hidden`, announces nothing) beside
+  a separate polite `facility-cost-calculating-status` live region, so the progress is
+  announced without the skeleton being read out.
+- **Returning to setup** moves DOM focus to the first setup heading
+  (`#fc-step-regions`, `tabIndex={-1}` — a programmatic target, never a Tab stop), so a
+  keyboard or screen-reader user is not dropped at the top of the document. Focus is
+  moved only on a deliberate return, never on first paint.
+
+The results detail sections are native `<details>`/`<summary>` `Accordion`s and sit
+**outside** the live region, so a collapsed disclosure is never the only home for a
+`role="status"` that must announce while closed. The region table keeps a `<caption>`,
+`scope="col"` headers, a `scope="row"` region cell, and its own `overflow-x-auto`
+container.
 
 The service-region combobox follows the ARIA 1.2 pattern: the input is `role="combobox"`
 with `aria-expanded`, `aria-controls`, `aria-autocomplete="list"`, and
@@ -248,18 +383,43 @@ inside their own `overflow-x-auto` container, and the page never scrolls horizon
 
 ## Tests
 
-- `components/FacilityCostDashboard.test.tsx` — controls, validation, the eight KPI
-  values, the funding breakdown (subsidy + local = installation cost, no approval
-  claim), the official-input region table (no invented allocation, never `0명`), the
-  missing-components list (Korean labels + retained reasons, never a `0` cost), the
-  null per-capita path, candidate integration, one `h1`, exact monetary strings,
-  stale/late-response hiding, structured errors, and duplicate-submit prevention —
-  from controlled contract fixtures clearly in the test environment.
+- `lib/displayNumber.test.ts` — the documented precision per unit, half-up boundaries,
+  comma formatting, exact zero vs sub-unit "미만", malformed input → `null` (never a
+  fabricated zero), values beyond `Number.MAX_SAFE_INTEGER`, the caller's string left
+  unmutated, and a source scan proving no floating-point path exists.
+- `lib/glossary.test.ts` — the reason-code registries cover every code the backend can
+  emit, no explanation echoes its own code or implies a zero cost, unknown codes fall
+  back to the safe generic sentence, and the transparency centre's wording is preserved
+  verbatim.
+- `components/FacilityCostDashboard.test.tsx` — controls, validation, the setup↔results
+  transition (success navigates, failure stays, inputs preserved on return, no request
+  on return, recalculation uses the changed inputs, late responses cannot navigate), the
+  hero and three secondary KPIs as approximations, the exact strings in 정밀값과 계산
+  기준, the funding breakdown (subsidy + local = installation cost, no approval claim),
+  the official-input region table (no invented allocation, never `0명`), the exclusions
+  accordion (plain Korean, never a `0` cost, unknown components appended not swallowed),
+  the null per-capita path, candidate integration, one `h1`, no map, no `<aside>`,
+  and — the terminology audit extended to this surface — that no
+  `FORBIDDEN_PRIMARY_TOKENS` entry appears once diagnostic subtrees are removed.
+  (The audit lives here rather than in `app/terminology.audit.test.tsx` because that
+  file's `homeApiMock` rejects `fetchFacilityCostCalculate`, so no result can be
+  rendered there.)
 - `app/accessibility.test.tsx` — the suitability sub-view switch (score ↔ cost),
   the full-width cost view mounting no map, and the neutral framing.
 - `e2e/facilityCost.spec.ts`, `e2e/integration.spec.ts` — the full scenario→results
   flow at mobile + desktop, zero map containers in the cost view, no horizontal
   overflow, and the round-trip back to the score view (which restores the map).
+- `e2e/phase3CostResults.spec.ts` — the results workflow at 1440×900, 1280×800, and
+  390×844: the transition, one hero + three secondary KPIs (hero font size strictly
+  larger), accordions collapsed then revealing exact values, no raw region code and no
+  raw reason code in the VISIBLE text, codes still present in the diagnostic disclosure,
+  return-to-setup preserving chips and inputs while issuing no request (verified by
+  spying on the request URLs), recalculation carrying the changed value, a failed
+  request staying on setup, and no horizontal overflow.
+- `e2e/phase3Review.spec.ts` — opt-in design-review screenshots
+  (`CAPTURE_PHASE3_REVIEW=1`) written to the gitignored
+  `frontend/test-results/phase-3-cost-results/`. It asserts nothing and never writes to
+  `docs/ui-baseline/desktop/`, which holds the Phase 0 before-redesign baseline.
 
 The e2e/vitest fixtures are controlled contract fixtures clearly in the test
 environment; the cost result is analytical standard-cost data shown only with its
