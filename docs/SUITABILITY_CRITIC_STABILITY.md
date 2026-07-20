@@ -445,7 +445,7 @@ database, or any database whose safety cannot be proven.
 
 ## Not to be confused with: user-weight scenarios (Phase 6)
 
-The **가중치 실험실 (user-weight scenario lab)** lets a user temporarily re-weight the
+The **가중치 바꿔보기 (user-weight scenario lab)** lets a user temporarily re-weight the
 four component scores of a fixed run on read. It is **completely separate** from
 CRITIC and from stored stability:
 

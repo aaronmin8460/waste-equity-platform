@@ -23,6 +23,16 @@ import { downloadBlob, renderReportPng, type ReportBlock, type ReportModel } fro
 
 type PngState = { kind: "idle" } | { kind: "loading" } | { kind: "success" } | { kind: "error"; message: string };
 
+/**
+ * Compile-time exhaustiveness guard for `ReportBlock` (Phase 0 defect X8). Reached
+ * only if a new block kind is added without a render branch, which TypeScript
+ * rejects at build time. At runtime it deliberately does nothing: dropping an
+ * unknown block is safer than styling it as a disclaimer.
+ */
+function assertNoUnhandledBlock(block: never): void {
+  void block;
+}
+
 function Blocks({ blocks }: { blocks: ReportBlock[] }) {
   return (
     <>
@@ -95,15 +105,24 @@ function Blocks({ blocks }: { blocks: ReportBlock[] }) {
             </section>
           );
         }
-        // disclaimer
-        return (
-          <p
-            key={i}
-            className="mt-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs font-medium text-amber-800"
-          >
-            {block.text}
-          </p>
-        );
+        if (block.kind === "disclaimer") {
+          return (
+            <p
+              key={i}
+              className="mt-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs font-medium text-amber-800"
+            >
+              {block.text}
+            </p>
+          );
+        }
+        // Phase 0 defect X8: the amber disclaimer used to be the `switch` FALLBACK,
+        // so any unrecognised block kind silently rendered as a warning — inventing
+        // an analytical caveat the model never carried. Every kind in the
+        // `ReportBlock` union is now handled explicitly; `block` is therefore `never`
+        // here, so adding a kind without a branch is a compile error rather than a
+        // mislabelled runtime render.
+        assertNoUnhandledBlock(block);
+        return null;
       })}
     </>
   );
@@ -175,17 +194,25 @@ export default function ReportPreview({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/40 p-4"
       onClick={onClose}
       data-testid="report-preview"
     >
+      {/* Phase 0 defect X7: the panel was capped at `max-w-2xl` (672px) despite
+          holding 3- and 4-column report tables and a two-column `<dl>`. It is now
+          `max-w-5xl` (1024px) — materially wider on desktop — while `w-full` inside
+          the overlay's `p-4` keeps it viewport-safe at every width (min(100vw-2rem,
+          1024px)), so the modal never causes page-level horizontal overflow.
+          `.wep-modal-panel` owns the max-height (vh fallback before dvh, per
+          RESPONSIVE_LAYOUT.md) so the BODY scrolls locally rather than the panel
+          growing past the viewport. */}
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="report-title"
         tabIndex={-1}
-        className="my-8 w-full max-w-2xl rounded-lg bg-white shadow-xl outline-none"
+        className="wep-modal-panel my-8 flex w-full max-w-5xl flex-col rounded-lg bg-white shadow-xl outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Toolbar (never printed) */}
@@ -224,8 +251,12 @@ export default function ReportPreview({
           )}
         </div>
 
-        {/* The report itself (printed / captured) */}
-        <div className="wep-print p-4">
+        {/* The report itself (printed / captured). `min-h-0` is load-bearing in the
+            flex column — the default `min-height: auto` would let the content push
+            the panel past its max-height instead of scrolling here. The print rules
+            in globals.css already reset `max-height`/`overflow` on `.wep-print`, so
+            printing is unaffected and never clipped. */}
+        <div className="wep-print min-h-0 flex-1 overflow-y-auto p-4">
           <Blocks blocks={model.blocks} />
           <p className="mt-4 border-t border-slate-200 pt-2 text-[11px] text-slate-400">
             생성 시각: {model.generatedAt} · {model.mapExclusionNote}

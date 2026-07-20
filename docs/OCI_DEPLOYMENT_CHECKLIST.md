@@ -107,7 +107,7 @@ curl -fsS https://waste-161-33-2-143.sslip.io/api/v1/facility-cost/options   | h
 ```
 
 ### 7. Verify the website + mobile behavior
-- Load `https://waste-161-33-2-143.sslip.io`; exercise 형평성 · 적합성 점수 · **비용 렌즈** · 수도권매립지.
+- Load `https://waste-161-33-2-143.sslip.io`; exercise 형평성 · 후보지 점수 · **비용 살펴보기** · 수도권매립지.
 - In the cost lens: pick a service region, run a calculation, confirm the standard-cost
   result + completeness (unavailable components shown, never 0; no 총비용).
 - On a phone width: single-column controls, no horizontal scroll, map visible, charts + cost results readable.

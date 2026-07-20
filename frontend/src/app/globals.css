@@ -291,6 +291,23 @@
   }
 }
 
+/* Report preview panel (components/ReportPreview.tsx) — Phase 0 defect X7.
+   Owns ONLY the panel's max-height, for the same reason `.map-pane` owns the map's
+   height: a `vh` fallback must precede its `dvh` value, and Tailwind emits the
+   static utility AFTER the dynamic one, so two utility classes on the element would
+   let `vh` win on every engine (see frontend/RESPONSIVE_LAYOUT.md). As one class at
+   equal specificity the `@supports` rule cleanly wins where `dvh` is supported.
+   The width stays in the markup (`w-full max-w-5xl`) — it has no ordering hazard.
+   Print resets max-height/overflow on `.wep-print` below, so printing is unclipped. */
+.wep-modal-panel {
+  max-height: calc(100vh - 4rem); /* static fallback */
+}
+@supports (height: 100dvh) {
+  .wep-modal-panel {
+    max-height: calc(100dvh - 4rem);
+  }
+}
+
 /* Banner (components/ui/InfoBanner.tsx). Four semantic tones only — this replaces
    the ad-hoc seven-shade amber sprawl documented in the Phase 0 audit (G4). The
    tone word is rendered as TEXT by the component, so severity never depends on

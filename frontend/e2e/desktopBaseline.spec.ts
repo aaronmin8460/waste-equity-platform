@@ -30,15 +30,27 @@ import { mockBackend } from "./mockBackend";
  * Opt-in, so the normal e2e run is unaffected:
  *   CAPTURE_UI_BASELINE=1 npx playwright test e2e/desktopBaseline.spec.ts
  *
- * SUPERSEDED FOR THE COST VIEW as of Phase 2. Its two cost captures still drive the
- * `facility-cost-regions` multi-select, which that phase removed, so opting in now
- * fails on those steps. This file and docs/ui-baseline/desktop/* were deliberately
- * left untouched: they are the "before" record the redesign is measured against, and
- * re-pointing them at the new UI would overwrite the before-images with after-images.
- * Phase 7 re-captures the whole baseline in one reviewable commit and migrates these
- * steps to the combobox (see docs/UI_UX_DESKTOP_REDESIGN_PLAN.md §9 Phase 7). For
- * Phase 2 review shots, use e2e/phase2CostSetup.spec.ts, which writes to a gitignored
- * directory.
+ * ── STATUS: FROZEN PHASE 0 ARTIFACT — NOT MAINTAINED (settled in Phase 7) ───────
+ * This spec is kept for provenance only: it records HOW the before-redesign images
+ * in docs/ui-baseline/desktop/ were produced. It is not part of the current review
+ * workflow and is not expected to run green.
+ *
+ * It does not run today: its two cost captures still drive the `facility-cost-regions`
+ * multi-select that Phase 2 replaced with a searchable combobox, so opting in fails
+ * on those steps. That is left AS IS deliberately.
+ *
+ * Phase 7 considered the redesign plan's original §9 AC4 — "re-capture the baseline
+ * and replace the old set" — and did NOT do it. Overwriting these images would
+ * destroy the only before-state the whole redesign is measured against, leaving no
+ * comparison at all. The after-images live in a separate, gitignored location
+ * instead, so both sides still exist:
+ *
+ *   e2e/phase7FinalReview.spec.ts  (CAPTURE_PHASE7_REVIEW=1)
+ *     → frontend/test-results/phase-7-final-review/
+ *
+ * Do NOT migrate this file to the combobox, and do NOT run it to refresh the
+ * baseline. If a future phase genuinely needs a new before-state, capture it under a
+ * NEW directory rather than overwriting this one.
  */
 
 const OUT_DIR = join(process.cwd(), "..", "docs", "ui-baseline", "desktop");

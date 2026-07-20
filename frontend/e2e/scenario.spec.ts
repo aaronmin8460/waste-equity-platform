@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mockBackend } from "./mockBackend";
 
 /**
- * User-weight scenario lab (가중치 실험실) e2e — Phase 6.
+ * User-weight scenario lab (가중치 바꿔보기) e2e — Phase 6.
  *
  * Like the responsive spec, this intercepts every backend request (see
  * mockBackend), so it drives the REAL application UI — the scenario editor, the

@@ -8,7 +8,7 @@ share.
 
 Backend only (Phase 4): a versioned reference table + migration, a pure Decimal
 calculation engine, and a read-only GET API. The citizen-facing UI presents this
-response unchanged as a **full-width dashboard** (적합성 → 비용 렌즈, no map) —
+response unchanged as a **full-width dashboard** (적합성 → 비용 살펴보기, no map) —
 see [`FACILITY_COST_LENS_UI.md`](FACILITY_COST_LENS_UI.md). The model claims below are
 unchanged by that UI; the dashboard only re-lays-out the same response and enforces
 the same terminology guardrails.

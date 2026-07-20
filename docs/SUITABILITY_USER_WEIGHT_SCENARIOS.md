@@ -21,9 +21,9 @@ the operating-default baseline assumes?"* and immediately see how the analytical
 candidate ranking would shift — **without** creating an official run, mutating any
 stored data, or implying a legal/permitting/final-siting outcome.
 
-## 2. User-facing workflow (가중치 실험실)
+## 2. User-facing workflow (가중치 바꿔보기)
 
-Suitability → **가중치 실험실** sub-view (beside 적합성 점수 and 비용 렌즈):
+Suitability → **가중치 바꿔보기** sub-view (beside 후보지 점수 and 비용 살펴보기):
 
 1. Edit the four weights (0–100 % integer sliders + numeric inputs).
 2. The running total and its difference from 100 % are shown continuously; **시나리오

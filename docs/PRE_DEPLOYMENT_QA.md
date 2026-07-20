@@ -5,8 +5,8 @@ deployment and no production database migration were performed.**
 
 ## Functional regression (e2e, mocked backend)
 
-`e2e/integration.spec.ts` tours every mode/feature — 형평성 → 적합성 점수 → **비용
-렌즈** (with a real calculate) → 수도권매립지 → back — at all five required
+`e2e/integration.spec.ts` tours every mode/feature — 형평성 → 후보지 점수 → **비용
+살펴보기** (with a real calculate) → 수도권매립지 → back — at all five required
 viewports, asserting each mode renders and the document never scrolls horizontally:
 
 | Viewport | Result |

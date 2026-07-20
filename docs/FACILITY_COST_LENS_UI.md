@@ -1,8 +1,8 @@
 # Citizen facility cost lens (full-width dashboard UI)
 
 The citizen-facing front end for the facility cost backend. It is reached **inside
-the Suitability experience** as a sub-view — `[적합성 점수] [비용 렌즈]` — but the 비용
-렌즈 view now renders as a **full-width dashboard with no map**
+the Suitability experience** as a sub-view — `[후보지 점수] [비용 살펴보기]` — but the 비용
+살펴보기 view now renders as a **full-width dashboard with no map**
 (`components/FacilityCostDashboard.tsx`, wired in `app/page.tsx`), replacing the
 earlier narrow sidebar panel (`FacilityCostPanel.tsx`).
 
@@ -17,14 +17,14 @@ value from an imprecise float.
 
 ## Full-width routing (no map)
 
-Selecting 적합성 → 비용 렌즈 triggers a full-width early return in `app/page.tsx`. The
+Selecting 적합성 → 비용 살펴보기 triggers a full-width early return in `app/page.tsx`. The
 cost view mounts **no `MapView`, no map container, and no floating legend** — the V1
 cost model does not vary by map cell, so a map beside it would be dead weight (the
 same rationale and full-width shape as the 수도권매립지 flow dashboard). The main mode
-switch (형평성 / 적합성 / 수도권매립지) and the 적합성 점수 / 비용 렌즈 sub-view switch stay
+switch (형평성 / 적합성 / 수도권매립지) and the 후보지 점수 / 비용 살펴보기 sub-view switch stay
 reachable above the dashboard (both keep `aria-pressed` and keyboard navigation), and
 the selected suitability candidate is passed through so its context card still renders.
-Returning to 적합성 점수 restores the sidebar + map. This is asserted by
+Returning to 후보지 점수 restores the sidebar + map. This is asserted by
 `e2e/facilityCost.spec.ts` and `e2e/integration.spec.ts` (`map-container` count `0`
 in the cost view) and `app/accessibility.test.tsx`.
 

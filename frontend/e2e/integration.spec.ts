@@ -4,7 +4,7 @@ import { mockBackend } from "./mockBackend";
 /**
  * Pre-deployment integration regression (Phase 6).
  *
- * A full tour of every mode/feature — 형평성 → 적합성 점수 → 비용 렌즈 (with a real
+ * A full tour of every mode/feature — 형평성 → 후보지 점수 → 비용 살펴보기 (with a real
  * calculate) → 수도권매립지 — at the five required viewports (adding the 1024×768
  * landscape-tablet case the responsive spec did not cover), asserting each mode
  * renders and the document never scrolls horizontally. Uses mockBackend (with the
@@ -82,7 +82,7 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByRole("radio").first()).toBeVisible();
       await expectNoHorizontalOverflow(page);
 
-      // 적합성 점수 (suitability score) — map + summary + CRITIC/stability.
+      // 후보지 점수 (suitability score) — map + summary + CRITIC/stability.
       await page.getByTestId("mode-suitability").click();
       await expect(page.getByTestId("suitability-summary")).toBeVisible();
       await expect(page.getByTestId("map-container")).toBeVisible();
@@ -102,7 +102,7 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("stable-only-toggle")).toBeAttached();
       await expectNoHorizontalOverflow(page);
 
-      // 비용 렌즈 (cost lens) — a full-width dashboard, no map, calculate, results.
+      // 비용 살펴보기 (cost lens) — a full-width dashboard, no map, calculate, results.
       await page.getByTestId("suitability-view-cost").click();
       await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
       await expect(page.getByTestId("map-container")).toHaveCount(0);

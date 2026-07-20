@@ -13,6 +13,7 @@ import {
   formatLegendValue,
   formatQuantity,
   frequencyLabel,
+  frequencyCode,
   resolveActiveScale,
   scaleConfigForMetric,
   scaleMethodNote,
@@ -400,16 +401,41 @@ describe("per-capita metric definitions (Phase 5.1)", () => {
   });
 });
 
+// Phase 7 — REWRITTEN, not weakened.
+//
+// This block used to assert the opposite of the shipped citizen-language contract:
+// that the label CONTAINS the English word (`연간 (Annual)`) and that an unknown
+// code is "passed through instead of mislabeling it" — i.e. rendered raw. Both were
+// pre-Phase-4 behaviour that every other surface has since dropped, and the second
+// is the exact shape of Phase 0 defect X6 (`계산 불가 (SOMETHING_NEW)`).
+//
+// The rule the old test encoded — a code must never be DISCARDED — is real and is
+// kept: it is now asserted through `frequencyCode`, which still surfaces the raw
+// value for a diagnostic layer whenever it could not be translated.
 describe("frequencyLabel", () => {
-  it("labels the documented publication frequencies", () => {
-    expect(frequencyLabel("ANNUAL")).toContain("Annual");
-    expect(frequencyLabel("MONTHLY")).toContain("Monthly");
-    expect(frequencyLabel("REAL_TIME")).toContain("Real-time");
-    expect(frequencyLabel("STRUCTURAL")).toContain("Periodically");
+  it("labels the documented publication frequencies in plain Korean only", () => {
+    expect(frequencyLabel("ANNUAL")).toBe("연간");
+    expect(frequencyLabel("MONTHLY")).toBe("월간");
+    expect(frequencyLabel("REAL_TIME")).toBe("실시간");
+    expect(frequencyLabel("STRUCTURAL")).toBe("수시 갱신");
   });
 
-  it("passes through unknown values instead of mislabeling them", () => {
-    expect(frequencyLabel("WEEKLY")).toBe("WEEKLY");
+  it("carries no English parenthetical on a primary label", () => {
+    for (const code of ["ANNUAL", "MONTHLY", "REAL_TIME", "STRUCTURAL"]) {
+      expect(frequencyLabel(code)).not.toMatch(/[A-Za-z]/);
+    }
+  });
+
+  it("never renders an unrecognised code as the reader's whole explanation", () => {
+    expect(frequencyLabel("WEEKLY")).toBe("갱신 주기 정보 없음");
+    expect(frequencyLabel("")).toBe("갱신 주기 정보 없음");
+    // A frequency is never guessed from an unknown code.
+    expect(frequencyLabel("WEEKLY")).not.toContain("주간");
+  });
+
+  it("keeps an untranslatable code reachable, and does not echo a known one", () => {
+    expect(frequencyCode("WEEKLY")).toBe("WEEKLY");
+    expect(frequencyCode("ANNUAL")).toBeNull();
   });
 });
 
