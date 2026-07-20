@@ -129,7 +129,7 @@ Home.data.waste.items
 `resultCurrent` is the staleness gate: **any** input change (or a different map candidate) changes `currentSig`, so a result stops rendering until recalculated. `requestSeq` discards superseded in-flight responses. Both behaviors are tested and must survive the redesign.
 
 Render order inside the cost view ([FacilityCostBody:326](../frontend/src/components/FacilityCostDashboard.tsx#L326)):
-`FacilityCostNotice` → `FacilityCostFilters` → error/stale → `FacilityCostResults` → `CitizenConditions`.
+`FacilityCostNotice` → `FacilityCostFilters` → error/stale → `FacilityCostResults` → `CitizenConditions`. *(Phase 2 replaced `FacilityCostFilters` with `FacilityCostSetup` and removed `CitizenConditions`.)*
 `FacilityCostResults` ([683](../frontend/src/components/FacilityCostDashboard.tsx#L683)) then renders: KPI grid → funding breakdown → region table → candidate context → evidence.
 
 ### 2.6 Landfill dashboard data flow
@@ -212,7 +212,7 @@ Restored scenario weights are re-validated by the **preview API** before anythin
 ### 3.4 후보지 분석 → 비용 살펴보기 — full-width, no map ★ redesign target #1
 
 - **Main component:** `FacilityCostDashboard` ([164](../frontend/src/components/FacilityCostDashboard.tsx#L164)).
-- **Children in render order:** `FacilityCostHeader` → `FacilityCostNotice` (+`FacilityCostMissingComponents`) → `FacilityCostFilters` → error/stale → `FacilityCostResults` (`FacilityCostKpiGrid` + `KpiCard`/`PerCapitaCard` → `FacilityCostFundingBreakdown` → `FacilityCostRegionTable` → `FacilityCostCandidateContext` → `FacilityCostEvidence`) → `CitizenConditions`.
+- **Children in render order:** `FacilityCostHeader` → `FacilityCostNotice` (+`FacilityCostMissingComponents`) → `FacilityCostFilters` → error/stale → `FacilityCostResults` (`FacilityCostKpiGrid` + `KpiCard`/`PerCapitaCard` → `FacilityCostFundingBreakdown` → `FacilityCostRegionTable` → `FacilityCostCandidateContext` → `FacilityCostEvidence`) → `CitizenConditions`. *(Phase 2: `FacilityCostFilters` → `FacilityCostSetup` (+`FacilityTypeCards`, `FacilityCostSetupSummary`, `SearchableRegionPicker`); `CitizenConditions` removed.)*
 - **Main controls:** facility-type select; waste-stream select; processing-share number; **native `<select multiple size={6}>` for service regions**; `<details>` advanced settings (operating days, underground multiplier, subsidy scheme, cost version); calculate button.
 - **Main results:** 8 KPI cards; stacked funding bar; per-region official-input table; candidate context; sources & method.
 - **Warnings:** `PAGE_DISCLAIMER`; 8 fixed `COMPLETENESS_NOTICES`; backend `missing_components` with raw reason codes; `SUBSIDY_RATE_FORM_NOTE`; per-capita caveat; validation message; stale-input note; `result.disclaimer`.
@@ -276,7 +276,7 @@ Each claim was checked against the code and the captured 1440×900 baseline. Ver
 | # | Claim | Verdict | Evidence & effect |
 |---|---|---|---|
 | C1 | Current location among score/weights/cost is unclear | **Confirmed** | The subview switch is styled identically to the top nav (G1), and in cost mode the top nav + subnav stack as two visually identical rows at the very top of a full-width page (`facility-cost-results-1440x900-full.png`). |
-| C2 | Cost view puts setup, warnings, results, deliberation in one long vertical page | **Confirmed** | `FacilityCostBody` renders all five blocks unconditionally in one column. Full-page height at 1440 wide is **2,060px** with the minimal test fixture — production data (multiple regions, more missing components) is longer. |
+| C2 | Cost view puts setup, warnings, results, deliberation in one long vertical page (deliberation removed and setup rebuilt in Phase 2; results split follows in Phase 3) | **Confirmed** | `FacilityCostBody` renders all five blocks unconditionally in one column. Full-page height at 1440 wide is **2,060px** with the minimal test fixture — production data (multiple regions, more missing components) is longer. |
 | C3 | Service-region selector is a native multi-select needing Ctrl/Cmd | **Confirmed** | [FacilityCostDashboard.tsx:547–576](../frontend/src/components/FacilityCostDashboard.tsx#L547). `<select multiple size={6}>`. Multi-selection requires Ctrl/Cmd+click (or Shift for ranges) with **no on-screen instruction**; the helper text only says `계산 가능한 지역만 표시됩니다. 지역을 선택하세요.` Accidental plain clicks silently *replace* the whole selection. There is no search, so finding one of ~70 regions means scrolling a 6-row box. |
 | C4 | Internal region codes are unnecessarily prominent | **Confirmed** | Rendered twice: in every option — `{r.name} ({r.code})` → `종로구 (KR-SGIS-11110)` — and in the results table — `{region.region_name} <span>({region.region_code})</span>`. The code exists for a real reason (disambiguating 서울 중구 vs 인천 중구), so it must be *replaced by better disambiguation*, not simply deleted. |
 | C5 | Important results sit below large warnings and configuration | **Confirmed** | Measured from the baseline: at 1440×900 the amber notice block occupies roughly the first 270px; the setup card runs to ~860px; the first KPI value appears at ~y=950 — i.e. **below the fold** even after a successful calculation. |
@@ -439,7 +439,7 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Objective:** One persistent top navigation, a segmented subnav, and the `ui/` primitives everything else will build on. No area's content is redesigned.
 - **Files likely to change:** `app/page.tsx` (extract + hoist nav; remove `ModeSwitch`/`SuitabilityViewSwitch`), `app/globals.css` (add `.wep-segment`, `.wep-nav-tab`, an `Accordion` class distinct from `.mobile-collapsible`), `app/accessibility.test.tsx`, `app/terminology.audit.test.tsx`, `app/responsive.test.tsx`.
 - **New components:** `ui/TopNavigation.tsx`, `ui/SegmentedControl.tsx`, `ui/InfoBanner.tsx`, `ui/Accordion.tsx`, `ui/KpiCard.tsx`, `ui/Chip.tsx`, `ui/Skeleton.tsx`, `ui/EmptyState.tsx` (+ colocated tests).
-- **Non-goals:** no change to cost/landfill/transparency/equity *content*; no number-rounding; no region-picker replacement; no `CitizenConditions` removal.
+- **Non-goals:** no change to cost/landfill/transparency/equity *content*; no number-rounding; no region-picker replacement; no `CitizenConditions` removal *(both landed in Phase 2)*.
 - **Acceptance criteria:**
   1. Top nav renders in the same DOM position and at the same size in all four areas; it does **not** wrap at 1280 or 1440.
   2. `무엇을 볼까요?` is not visible; `mode-switch` still exposes `role="group"` + `aria-labelledby`, and the label text is still in the a11y tree.
@@ -459,16 +459,18 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Objective:** Turn setup into a focused single-purpose screen: searchable region picker, rationed warnings, one primary action.
 - **Files likely to change:** `components/FacilityCostDashboard.tsx` (`FacilityCostFilters`, `FacilityCostNotice`), `components/FacilityCostDashboard.test.tsx`, `e2e/facilityCost.spec.ts`.
 - **New components:** `ui/SearchableRegionPicker.tsx`.
-- **Non-goals:** results layout untouched; `CitizenConditions` still present; no display rounding.
+- **Non-goals:** results layout untouched; no display rounding.
+- **Scope change made during Phase 2:** `CitizenConditions` was removed here rather than in Phase 7 (§9.1 scope, executed early), and the `<h1>` was renamed 우리 지역에 시설이 생긴다면 → **시설 비용 살펴보기** so the heading matches the 비용 살펴보기 tab that leads to it. Both are documented in `docs/FACILITY_COST_LENS_UI.md`.
 - **Acceptance criteria:**
   1. `<select multiple>` is gone; region selection works with **plain clicks only** — no Ctrl/Cmd anywhere in the flow.
   2. Search filters by Korean name; results are keyboard-navigable (↑↓/Enter/Escape) and expose a correct ARIA combobox.
   3. Selected regions render as removable chips; each remove control has an accessible name including the region name.
   4. 서울 / 인천 / 경기 bulk-select and 전체 해제 exist and operate on the *currently calculable* set only.
   5. **No raw region code is visible in the default UI**; 서울 중구 and 인천 중구 are still unambiguously distinguishable (e.g. `중구 · 서울`). Codes remain in the DOM `value`, in exports, and in a detail layer.
-  6. At most one `tone="warning"` banner on the setup screen; the remaining exclusions live in a collapsed accordion whose summary states how many items it holds.
+  6. At most one `tone="warning"` banner on the setup screen; the remaining exclusions live in a collapsed accordion whose summary states how many items it holds. *(Delivered as **zero** warning banners: the standing notice is `tone="info"`, since it is a caveat rather than something gone wrong. `tone="error"`/`role="alert"` remains reserved for a genuine options or calculation failure.)*
   7. The `resultCurrent` staleness gate and `requestSeq` supersede logic are unchanged.
-  8. Calculate stays disabled with no region selected or with an invalid numeric input, and the validation message keeps `role="alert"`.
+  8. Calculate stays disabled with no region selected or with an invalid numeric input, and the validation message keeps `role="alert"`. *(Kept. Ordinary "not ready yet" guidance — no region chosen, options unavailable, request in flight — goes to a separate polite `role="status"` beside the button, which also mirrors the alert so a collapsed accordion is never the only home for an active validation error.)*
+  9. **Sticky deviation from §8.** §8 says "nothing else sticky" and caps a cost summary bar at 56px. Phase 2 instead makes the right-hand setup summary column sticky (`lg:sticky lg:top-6 lg:self-start`), which is taller. That cap was written for a horizontal bar in the results view; this is a two-column rail, and it is safe here because the cost branch is map-free — unlike the shell header it removes nothing from a height chain `.map-pane` depends on. It is still the only sticky element besides the top navigation.
 - **Automated tests:** `FacilityCostDashboard.test.tsx` extended (search, chips, bulk-select, clear, no visible code, disambiguation); `e2e/facilityCost.spec.ts` updated to drive the new picker; `e2e/citizenFlows.spec.ts` Task D green.
 - **Manual desktop checks:** 1440×900 — select 3 regions across two metros using only the mouse, then only the keyboard; confirm no horizontal overflow and that the setup screen fits within one viewport height.
 - **Dependencies:** Phase 1 (`Chip`, `InfoBanner`, `Accordion`).
@@ -561,13 +563,14 @@ Values chosen to match what the codebase already does where it is consistent, an
 **Branch:** `ui/phase-7-desktop-regression`
 
 - **Objective:** Consolidate, delete dead code, prove nothing regressed.
-- **Files likely to change:** `components/FacilityCostDashboard.tsx` (**remove `CitizenConditions`**), `components/FacilityCostDashboard.test.tsx`, `e2e/facilityCost.spec.ts`, `app/globals.css` (prune superseded utilities), `e2e/desktopBaseline.spec.ts` (re-capture), `docs/ui-baseline/desktop/*`, `frontend/RESPONSIVE_LAYOUT.md`, `docs/CITIZEN_LANGUAGE_AND_UX.md`, `docs/ACCESSIBILITY.md`.
+- **Files likely to change:** `app/globals.css` (prune superseded utilities), `e2e/desktopBaseline.spec.ts` (re-capture), `docs/ui-baseline/desktop/*`, `frontend/RESPONSIVE_LAYOUT.md`, `docs/CITIZEN_LANGUAGE_AND_UX.md`, `docs/ACCESSIBILITY.md`. (`CitizenConditions` removal moved forward to Phase 2 and is already done.)
 - **Non-goals:** no new visual features.
 - **Acceptance criteria:**
-  1. **`CitizenConditions` removed in full** — exact scope in §9.1 below.
+  1. ~~**`CitizenConditions` removed in full**~~ — done in Phase 2; §9.1 below records the executed scope.
   2. Zero remaining raw `amber-*` panels outside `InfoBanner`; `rounded` (0.25rem) no longer used for cards.
   3. Full suite green: lint, typecheck, 26+ Vitest files, all non-live e2e, production build.
   4. Post-redesign baseline re-captured into `docs/ui-baseline/desktop/` and the old set replaced in one reviewable commit.
+  5. `e2e/desktopBaseline.spec.ts` still drives the cost captures through the pre-Phase-2 `facility-cost-regions` multi-select, which no longer exists. It is opt-in (`CAPTURE_UI_BASELINE=1`) and skipped in every normal run, so it fails nothing today — but it must be migrated to the combobox as part of this re-capture. Phase 2 deliberately left it and `docs/ui-baseline/desktop/*` untouched so the "before" baseline stays intact.
   5. Keyboard-only pass over all four areas at 1440×900: skip link first, no trap, visible focus everywhere, all live regions still announcing.
   6. `1280×800` verified: no horizontal overflow, no clipped controls, no wrapped nav.
   7. Mobile has **not** regressed — the full `responsive.spec.ts` matrix (390/430/768/1054/1280/1440) is green and no mobile-specific redesign was introduced.
@@ -576,7 +579,9 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Dependencies:** Phases 1–6.
 - **Regression risks:** removing `CitizenConditions` touches an e2e assertion and a Vitest block that must be deleted in the same commit or the suite fails.
 
-#### 9.1 `CitizenConditions` removal scope (documented now, executed in Phase 7)
+#### 9.1 `CitizenConditions` removal scope (documented in Phase 0, **executed in Phase 2**)
+
+> **Status: done.** Everything below was removed on `ui/phase-2-cost-setup`, together with the `e2e/facilityCost.spec.ts` assertion. `docs/FACILITY_COST_LENS_UI.md` — the only doc that substantively described the section, and which this list originally omitted — was updated in the same commit.
 
 Confirmed client-only: no backend call, no persistence, no PII, no aggregation, no effect on any calculation, ranking, API request, URL state, export, or stored data. Its own copy says so: *"Client-only; nothing is stored, sent, or aggregated."*
 

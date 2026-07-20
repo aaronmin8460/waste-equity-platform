@@ -426,18 +426,30 @@ the per-capita caveat, and the no-regional-allocation rule are documented in
 [`../docs/FACILITY_COST_LENS_UI.md`](../docs/FACILITY_COST_LENS_UI.md).
 `components/FacilityCostDashboard.tsx` replaces the old `FacilityCostPanel.tsx`; it
 reuses the same calculation/validation/staleness logic and the same official
-`/facility-cost/calculate` response, re-laid-out as a header + warning notice +
-multi-column filter bar (advanced settings in a disclosure) + responsive KPI grid +
-funding breakdown + official-input region table + missing-components list + candidate
+`/facility-cost/calculate` response, re-laid-out as a header + a compact info banner +
+a collapsed exclusions accordion + the two-column setup workflow (setup steps left,
+sticky scenario summary right, advanced settings in a disclosure) + responsive KPI grid
++ funding breakdown + official-input region table + missing-components list + candidate
 context + provenance.
+
+Phase 2 of the desktop redesign changed the SETUP half only. Its two-column grid uses
+`lg:grid-cols-[minmax(0,1fr)_20rem]` and stacks below `lg`, and the summary column is
+`lg:sticky lg:top-6 lg:self-start` so the primary action stays on screen. This is the
+one sticky element outside the top navigation, and it is confined to the cost branch:
+that branch is map-free, so unlike the shell header it takes nothing out of a height
+chain `.map-pane` depends on. At stacked widths it returns to normal document flow.
+`e2e/facilityCost.spec.ts` verifies both behaviours, plus no horizontal overflow, at
+1440×900, 1280×800, and 390×844.
 
 ## Known limitations
 
 - The **suitability** sidebar panel (provenance, weights, reasons, method) is not
   collapsed on mobile; it is a long single-column scroll. It is overflow-free and
   fully usable — collapsing it further is a possible later refinement.
-- The service-region picker in the cost dashboard remains a native multi-select in
-  this phase; a searchable combobox is a later phase.
+- The service-region picker in the cost dashboard is a searchable ARIA combobox
+  (`ui/SearchableRegionPicker.tsx`) as of Phase 2; the native multi-select it replaced
+  is gone. Its popup overlays the 서울/인천/경기 bulk buttons beneath it while open —
+  ordinary combobox behaviour, dismissed with Escape or by clicking away.
 - The **live** e2e specs (`map`, `regressions`, `landfill`) still require
   `E2E_BACKEND_URL` and skip without it; only the self-mocked `responsive.spec.ts`
   runs unconditionally. In sandboxed environments the OSM basemap and vector tiles
