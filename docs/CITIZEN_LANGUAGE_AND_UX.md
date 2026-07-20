@@ -54,6 +54,22 @@ messages, accounting-basis names, a general term glossary, and
 | accounting basis | 집계 기준 | 발생지/시설 소재지/수도권 반입 기준 |
 | no data / official zero | 자료 없음 / 공식 값 0 | 값 미제공 / 실제 측정된 0 |
 | cost lens / scenario lab / transparency | 비용 살펴보기 / 가중치 바꿔보기 / 데이터·출처 | facility cost / weight scenario / data transparency |
+| OPERATING_COST / ACTUAL_TRANSPORT_COST / LAND_AND_COMPENSATION / REMAINING_LANDFILL_COST | 운영비 / 실제 운송비 / 토지·보상비 / 잔여 매립비용 | 미포함 비용 항목 코드 |
+| OFFICIAL_SOURCE_NOT_INTEGRATED | 이 항목의 공식 자료가 아직 이 분석에 연결되지 않았습니다. | 공식 자료 미연계 |
+| ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE | 실제 수집·운반 경로와 계약 단가 자료가 없어 계산할 수 없습니다. | 실 경로·계약 단가 미확보 |
+| PARCEL_SPECIFIC_COST_UNAVAILABLE | 부지가 정해져야 알 수 있는 필지별 비용 자료가 없어 계산할 수 없습니다. | 필지별 비용 미확보 |
+| FACILITY_MASS_BALANCE_NOT_ESTABLISHED | 시설에서 처리하고 남는 물질의 양이 확정되지 않아 계산할 수 없습니다. | 시설 물질수지 미확립 |
+| NO_OFFICIAL_SERVICE_POPULATION / NO_MATCHING_SAME_YEAR_POPULATION / INCOMPATIBLE_POPULATION_DEFINITION | 공식 인구가 제공되지 않아 / 같은 연도의 공식 인구 자료가 없어 / 집계 정의가 달라 1인당 값을 계산할 수 없습니다. | 1인당 지방비 미제공 사유 코드 |
+| (an unrecognised reason code) | 현재 공식 계산 자료가 제공되지 않습니다. | 원본 코드는 진단 레이어에 보존 |
+
+The facility-cost reason codes above are the Phase 3 addition. They follow the same rule
+as every other row: the code is **demoted, never deleted** — it stays in the API
+response, the TypeScript types, the tests, and a `data-diagnostic` disclosure. An
+unrecognised code falls back to the safe generic sentence rather than an invented claim
+about which specific dataset is missing. All eleven codes are in
+`FORBIDDEN_PRIMARY_TOKENS`, and the cost results surface is scanned against that list in
+`FacilityCostDashboard.test.tsx`. See
+[FACILITY_COST_LENS_UI.md](FACILITY_COST_LENS_UI.md) for the registries.
 
 ## Navigation model
 

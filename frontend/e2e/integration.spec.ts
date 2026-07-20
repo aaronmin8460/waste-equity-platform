@@ -113,8 +113,12 @@ for (const vp of VIEWPORTS) {
         .filter({ hasText: "서울 종로구" })
         .click();
       await page.getByTestId("facility-cost-calculate").click();
-      await expect(page.getByTestId("fc-standard-cost")).toContainText("120.75 억원");
-      await expect(page.getByTestId("facility-cost-completeness")).toContainText("운영비 미포함");
+      // Phase 3: the results view replaces the setup, leading with approximations.
+      await expect(page.getByTestId("facility-cost-results-view")).toBeVisible();
+      await expect(page.getByTestId("fc-standard-cost")).toHaveText("약 121억원");
+      await expect(page.getByTestId("facility-cost-exclusions-summary")).toContainText(
+        "포함되지 않은 비용",
+      );
       await expect(page.getByText("총비용")).toHaveCount(0);
       await expectNoHorizontalOverflow(page);
 

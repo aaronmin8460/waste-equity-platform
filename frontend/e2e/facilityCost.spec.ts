@@ -236,14 +236,31 @@ for (const vp of VIEWPORTS) {
       await expect(calculate).toBeEnabled();
       await calculate.click();
 
-      // Results with the exact fixture values, unchanged by the setup redesign.
+      // Phase 3: a successful calculation REPLACES the setup with the results view.
+      await expect(page.getByTestId("facility-cost-results-view")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-setup-view")).toHaveCount(0);
       await expect(page.getByTestId("facility-cost-results")).toBeVisible();
-      await expect(page.getByTestId("fc-standard-cost")).toContainText("120.75 억원");
-      await expect(page.getByTestId("fc-per-capita")).toContainText("42,262.5원");
 
-      // Completeness is still shown as explicitly unavailable, never a total.
-      await expect(page.getByTestId("facility-cost-completeness")).toContainText("운영비 미포함");
+      // Primary surfaces show the APPROXIMATION; the exact fixture strings live in
+      // the "정밀값과 계산 기준" section (asserted in phase3CostResults.spec.ts).
+      await expect(page.getByTestId("fc-standard-cost")).toHaveText("약 121억원");
+      await expect(page.getByTestId("fc-per-capita")).toHaveText("약 4만원");
+
+      // Exclusions are still shown as explicitly unavailable, never a total.
+      await expect(page.getByTestId("facility-cost-exclusions-summary")).toContainText(
+        "포함되지 않은 비용 5개",
+      );
       await expect(page.getByText("총비용")).toHaveCount(0);
+
+      // Still exactly one h1 and one skip target on the results screen.
+      await expect(page.locator("h1")).toHaveCount(1);
+      await expect(page.locator("#main-content")).toHaveCount(1);
+
+      // Returning to setup keeps the selection and issues no new calculation.
+      await page.getByTestId("facility-cost-edit-settings").click();
+      await expect(page.getByTestId("facility-cost-setup-view")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-region-chip")).toHaveCount(1);
+      await expect(page.getByTestId("facility-cost-results-view")).toHaveCount(0);
 
       await expectNoHorizontalOverflow(page);
 

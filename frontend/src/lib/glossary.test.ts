@@ -5,15 +5,22 @@ import {
   COMPONENT_META,
   COMPONENT_ORDER,
   GLOSSARY,
+  MISSING_COMPONENT_META,
+  MISSING_REASON_EXPLANATIONS,
   MODE_LABELS,
   MODE_ORIENTATION,
+  PER_CAPITA_UNAVAILABLE_EXPLANATIONS,
   PROFILE_META,
   STABILITY_META,
   STATUS_META,
   SUBVIEW_LABELS,
+  UNKNOWN_REASON_EXPLANATION,
   accountingBasisLabel,
   codeWithName,
   hasForbiddenPrimaryToken,
+  missingComponentLabel,
+  missingReasonExplanation,
+  perCapitaUnavailableExplanation,
   plainError,
   profileLabel,
   stabilitySentence,
@@ -33,6 +40,12 @@ function allPrimaryStrings(): string[] {
   for (const m of Object.values(STABILITY_META)) out.push(m.primary);
   for (const m of Object.values(GLOSSARY)) out.push(m.primary);
   out.push(...Object.values(ACCOUNTING_BASIS_LABELS));
+  // Facility-cost reason mappings: the component names, the short parentheticals,
+  // and every plain explanation are all rendered as primary text.
+  for (const m of Object.values(MISSING_COMPONENT_META)) out.push(m.primary, m.short, m.explanation);
+  out.push(...Object.values(MISSING_REASON_EXPLANATIONS));
+  out.push(...Object.values(PER_CAPITA_UNAVAILABLE_EXPLANATIONS));
+  out.push(UNKNOWN_REASON_EXPLANATION);
   return out;
 }
 
@@ -142,5 +155,91 @@ describe("glossary — plain error messages", () => {
     ]) {
       expect(hasForbiddenPrimaryToken(plainError(code).primary)).toBeNull();
     }
+  });
+});
+
+// --------------------------------------------------------------------------- //
+
+describe("glossary — facility-cost reason codes", () => {
+  it("covers every reason code the backend can emit for a missing component", () => {
+    // Mirrors backend/src/waste_equity_backend/analysis/facility_cost.py
+    // MISSING_COMPONENTS. A code added there without a mapping here would reach a
+    // citizen as an ALL-CAPS enum.
+    expect(Object.keys(MISSING_COMPONENT_META).sort()).toEqual([
+      "ACTUAL_TRANSPORT_COST",
+      "LAND_AND_COMPENSATION",
+      "OPERATING_COST",
+      "REMAINING_LANDFILL_COST",
+    ]);
+    expect(Object.keys(MISSING_REASON_EXPLANATIONS).sort()).toEqual([
+      "ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE",
+      "FACILITY_MASS_BALANCE_NOT_ESTABLISHED",
+      "OFFICIAL_SOURCE_NOT_INTEGRATED",
+      "PARCEL_SPECIFIC_COST_UNAVAILABLE",
+    ]);
+  });
+
+  it("covers every per-capita unavailability reason the route can emit", () => {
+    // api/routes/facility_cost.py sets the first two; the engine's
+    // MissingServicePopulationError supplies the third.
+    expect(Object.keys(PER_CAPITA_UNAVAILABLE_EXPLANATIONS).sort()).toEqual([
+      "INCOMPATIBLE_POPULATION_DEFINITION",
+      "NO_MATCHING_SAME_YEAR_POPULATION",
+      "NO_OFFICIAL_SERVICE_POPULATION",
+    ]);
+  });
+
+  it("never echoes the raw code back inside its own explanation", () => {
+    for (const [code, text] of Object.entries(MISSING_REASON_EXPLANATIONS)) {
+      expect(text, `${code} echoes its own code`).not.toContain(code);
+    }
+    for (const [code, text] of Object.entries(PER_CAPITA_UNAVAILABLE_EXPLANATIONS)) {
+      expect(text, `${code} echoes its own code`).not.toContain(code);
+    }
+  });
+
+  it("falls back to a safe generic sentence for an unknown code", () => {
+    // Never an invented claim about which specific dataset is missing.
+    expect(missingReasonExplanation("A_CODE_FROM_THE_FUTURE")).toBe(UNKNOWN_REASON_EXPLANATION);
+    expect(missingReasonExplanation(null)).toBe(UNKNOWN_REASON_EXPLANATION);
+    expect(missingReasonExplanation(undefined)).toBe(UNKNOWN_REASON_EXPLANATION);
+    expect(perCapitaUnavailableExplanation("A_CODE_FROM_THE_FUTURE")).toBe(
+      UNKNOWN_REASON_EXPLANATION,
+    );
+    expect(perCapitaUnavailableExplanation(null)).toBe(UNKNOWN_REASON_EXPLANATION);
+  });
+
+  it("keeps an unknown component code visible rather than blanking it", () => {
+    // The code is not citizen-facing, but discarding it would lose information the
+    // diagnostic layer needs.
+    expect(missingComponentLabel("SOME_FUTURE_COST")).toBe("SOME_FUTURE_COST");
+    expect(missingComponentLabel("OPERATING_COST")).toBe("운영비");
+  });
+
+  it("never says an unavailable component costs zero", () => {
+    const texts = [
+      ...Object.values(MISSING_REASON_EXPLANATIONS),
+      ...Object.values(PER_CAPITA_UNAVAILABLE_EXPLANATIONS),
+      UNKNOWN_REASON_EXPLANATION,
+    ];
+    for (const text of texts) {
+      expect(text).not.toMatch(/0원|영원|없음\s*\(0\)|비용이 0/);
+    }
+  });
+
+  it("preserves the transparency centre's existing wording", () => {
+    // docs/UI_UX_DESKTOP_REDESIGN_PLAN.md Phase 6 AC5 requires this text verbatim;
+    // holding it here means the two surfaces cannot drift into two translations.
+    const rendered = ["OPERATING_COST", "ACTUAL_TRANSPORT_COST", "LAND_AND_COMPENSATION"].map(
+      (code) => `${MISSING_COMPONENT_META[code].primary} (${MISSING_COMPONENT_META[code].short})`,
+    );
+    expect(rendered).toEqual([
+      "운영비 (공식 자료 미연계)",
+      "실제 운송비 (실 경로·계약 단가 미확보)",
+      "토지·보상비 (필지별 비용 미확보)",
+    ]);
+    expect(
+      `${MISSING_COMPONENT_META.REMAINING_LANDFILL_COST.primary} (${MISSING_COMPONENT_META.REMAINING_LANDFILL_COST.short})`,
+    ).toBe("잔여 매립비용 (시설 물질수지 미확립)");
   });
 });

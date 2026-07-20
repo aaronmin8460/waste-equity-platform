@@ -39,6 +39,8 @@ Dynamically changing result areas are announced without moving focus:
 | Landfill loading | `role="status"` `landfill-loading` | flow data is loading |
 | Cost service regions | `role="status"` `facility-cost-region-status` | a region is selected, removed, bulk-selected, or cleared |
 | Cost calculate readiness | `role="status"` `facility-cost-calculate-status` | the primary action becomes (un)available |
+| Cost calculation in flight | `role="status"` `facility-cost-calculating-status` | a calculation starts (the `Skeleton` beside it is `aria-hidden`) |
+| Cost results | `role="status"` `facility-cost-results` | a calculation succeeds and the results view opens |
 
 Announcements are kept concise (single short sentence) to avoid verbose or
 repetitive read-out; `role="status"`/`aria-live="polite"` never interrupts.
@@ -81,6 +83,14 @@ and visual scanning. No metric calculation is affected — `group` is metadata o
   `aria-pressed` (not a `radiogroup`, which would promise arrow-key roving focus
   the native buttons do not implement). Focus stays on the activated button after
   a mode change.
+- The cost lens's setup ↔ results split (Phase 3 of the desktop redesign) is the one
+  place focus is moved programmatically. Returning to setup via **← 설정 바꾸기** moves
+  focus to the first setup heading (`#fc-step-regions`, `tabIndex={-1}` — a
+  programmatic target only, never a Tab stop), so a keyboard or screen-reader user is
+  not dropped at the top of the document with no idea the view changed. Focus moves
+  only on a deliberate return, never on first paint. Opening the results view does not
+  move focus: the KPI block is a polite live region, which announces without stealing
+  it. Neither view manipulates browser history.
 - No keyboard trap: focus walks from the skip link through the sidebar controls
   and back out (asserted in `e2e/accessibility.spec.ts`).
 

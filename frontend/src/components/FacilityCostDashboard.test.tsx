@@ -1,28 +1,32 @@
 // @vitest-environment jsdom
 
 /**
- * Facility cost lens tests (full-width dashboard; setup workflow redesigned in the
- * desktop redesign's Phase 2).
+ * Facility cost lens tests (full-width dashboard).
  *
  * The api client is mocked with CONTROLLED CONTRACT FIXTURES (clearly a test
- * environment) so the dashboard renders without a backend. Asserts the setup
- * controls, validation (calculate disabled until a region is chosen), exact values
- * from the fixture (KPI grid), completeness rendered as explicitly unavailable
- * (never 0), the funding breakdown, the official-input region table, the missing
- * components (never a 0 cost line), the null per-capita path, candidate integration,
- * the citizen framing/disclaimer, and the aria-live result announcement.
+ * environment) so the dashboard renders without a backend.
  *
- * Phase 2 changed the SETUP interaction only: the native `<select multiple>` is gone
- * and regions are chosen through SearchableRegionPicker, so `selectRegion` below
- * drives the combobox. Every result assertion is deliberately unchanged — the served
- * values, their exact decimal strings, and the unavailable paths must survive the
- * setup redesign untouched.
+ * Phase 2 changed the SETUP interaction: the native `<select multiple>` is gone and
+ * regions are chosen through SearchableRegionPicker, so `selectRegion` below drives
+ * the combobox.
+ *
+ * Phase 3 splits setup from results. Two consequences run through this file:
+ *
+ *  1. A result is no longer visible beside the form — `calculate()` now navigates to
+ *     the results view, and `openSection()` expands the collapsed accordion a value
+ *     lives in. The setup assertions are deliberately unchanged.
+ *  2. Primary surfaces show APPROXIMATIONS ("약 121억원"). The exact-value
+ *     assertions are not weakened, they are re-pointed at the "정밀값과 계산 기준"
+ *     section, which must still carry the untouched backend decimal strings. The
+ *     same applies to the raw reason codes: they must be absent from the primary
+ *     surface and still present in the diagnostic disclosure.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CandidateDetail, FacilityCostCalculate } from "../lib/api";
+import { FORBIDDEN_PRIMARY_TOKENS } from "../lib/glossary";
 
 const OPTIONS = {
   derivation_version: "facility-cost-v1",
@@ -218,6 +222,35 @@ function selectedChipLabels(): string[] {
     .map((chip) => chip.querySelector("span")?.textContent ?? "");
 }
 
+/** Select a region, submit, and wait for the results view to replace the setup. */
+async function calculateToResults(code = "KR-SGIS-11110"): Promise<void> {
+  selectRegion(code);
+  fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+  await waitFor(() => expect(screen.getByTestId("facility-cost-results-view")).toBeDefined());
+}
+
+/** Expand one collapsed results accordion by its testId. */
+function openSection(testId: string): HTMLElement {
+  const details = screen.getByTestId(testId) as HTMLDetailsElement;
+  details.open = true;
+  return details;
+}
+
+/**
+ * The text a citizen can reach on the results screen WITHOUT opening a diagnostic
+ * disclosure. Diagnostic subtrees are removed rather than excluded by selector, so
+ * a code that moves into a new diagnostic block is still covered.
+ *
+ * Note this is stricter than what is visually rendered: jsdom's `textContent`
+ * includes the bodies of collapsed `<details>`, so an accordion cannot hide a leak
+ * from this check.
+ */
+function primaryResultsText(): string {
+  const view = screen.getByTestId("facility-cost-results-view").cloneNode(true) as HTMLElement;
+  for (const node of Array.from(view.querySelectorAll("[data-diagnostic]"))) node.remove();
+  return view.textContent ?? "";
+}
+
 describe("citizen framing", () => {
   it("shows the neutral title and the decision-support disclaimer", async () => {
     await renderPanel();
@@ -411,46 +444,229 @@ describe("setup workflow", () => {
   });
 });
 
-describe("results", () => {
-  it("shows the exact served values with an aria-live region", async () => {
+describe("setup → results transition", () => {
+  it("switches from the setup view to the results view on a successful calculation", async () => {
     await renderPanel();
-    selectRegion("KR-SGIS-11110");
-    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
-    await waitFor(() => expect(screen.getByTestId("facility-cost-results")).toBeDefined());
-    // aria-live announcement.
-    expect(screen.getByTestId("facility-cost-results").getAttribute("role")).toBe("status");
-    expect(screen.getByTestId("fc-capacity").textContent).toContain("35 톤/일");
-    expect(screen.getByTestId("fc-standard-cost").textContent).toContain("120.75 억원");
-    expect(screen.getByTestId("fc-annualized").textContent).toContain("8.05");
-    expect(screen.getByTestId("fc-subsidy").textContent).toContain("36.225 억원");
-    expect(screen.getByTestId("fc-local-share").textContent).toContain("84.525 억원");
-    expect(screen.getByTestId("fc-per-capita").textContent).toContain("42,262.5원");
-    // Source + version are shown.
-    expect(screen.getByTestId("fc-source").textContent).toContain("p.211");
-    expect(screen.getByTestId("fc-source").textContent).toContain("2022-12-01");
+    // Before calculating, setup is the screen and there is no results view.
+    expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined();
+    expect(screen.queryByTestId("facility-cost-results-view")).toBeNull();
+
+    await calculateToResults();
+
+    // After calculating, the results view replaces it — the setup form is no
+    // longer the main screen sitting above a result.
+    expect(screen.queryByTestId("facility-cost-setup-view")).toBeNull();
+    expect(screen.queryByTestId("facility-cost-form")).toBeNull();
+    expect(screen.queryByTestId("facility-cost-calculate")).toBeNull();
   });
 
-  it("renders completeness as explicitly unavailable, never a total or a 0", async () => {
+  it("keeps the results announcement region on the KPI block", async () => {
+    await renderPanel();
+    await calculateToResults();
+    // The live region holds the answer, NOT the collapsed accordions — a
+    // collapsed <details> must never be the only home for a role="status".
+    const results = screen.getByTestId("facility-cost-results");
+    expect(results.getAttribute("role")).toBe("status");
+    expect(within(results).getByTestId("facility-cost-hero")).toBeDefined();
+    expect(within(results).queryByTestId("facility-cost-exclusions")).toBeNull();
+  });
+
+  it("returns to setup via 설정 바꾸기, preserving every input and issuing no request", async () => {
+    await renderPanel();
+    // A non-default scenario, so "preserved" means something.
+    fireEvent.change(screen.getByTestId("facility-cost-processing-share"), {
+      target: { value: "60" },
+    });
+    fireEvent.change(screen.getByTestId("facility-cost-operating-days"), {
+      target: { value: "320" },
+    });
+    selectRegion("KR-SGIS-11140");
+    selectRegion("KR-SGIS-23010");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-results-view")).toBeDefined());
+    const callsAfterCalculate = h.calc.mock.calls.length;
+
+    fireEvent.click(screen.getByTestId("facility-cost-edit-settings"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined());
+
+    // Every selection survived the round trip.
+    expect(selectedChipLabels()).toEqual(["서울 중구", "인천 중구"]);
+    expect((screen.getByTestId("facility-cost-processing-share") as HTMLInputElement).value).toBe(
+      "60",
+    );
+    expect((screen.getByTestId("facility-cost-operating-days") as HTMLInputElement).value).toBe(
+      "320",
+    );
+    expect((screen.getByTestId("facility-cost-waste-stream") as HTMLSelectElement).value).toBe(
+      "HOUSEHOLD",
+    );
+    // Returning is pure view state: it must not re-submit the scenario.
+    expect(h.calc.mock.calls.length).toBe(callsAfterCalculate);
+    // …and it must not silently discard the result either.
+    expect(screen.queryByTestId("facility-cost-stale")).toBeNull();
+  });
+
+  it("moves focus to the setup heading when returning", async () => {
+    await renderPanel();
+    await calculateToResults();
+    fireEvent.click(screen.getByTestId("facility-cost-edit-settings"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined());
+    expect(document.activeElement?.id).toBe("fc-step-regions");
+  });
+
+  it("recalculates with the CHANGED inputs after returning to setup", async () => {
+    await renderPanel();
+    await calculateToResults();
+    fireEvent.click(screen.getByTestId("facility-cost-edit-settings"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined());
+
+    fireEvent.change(screen.getByTestId("facility-cost-processing-share"), {
+      target: { value: "50" },
+    });
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-results-view")).toBeDefined());
+
+    const last = h.calc.mock.calls[h.calc.mock.calls.length - 1][0];
+    expect(last.processingSharePercent).toBe("50");
+  });
+
+  it("stays on setup when the calculation fails, keeping the settings and allowing retry", async () => {
+    h.calc.mockRejectedValueOnce(new Error("boom"));
     await renderPanel();
     selectRegion("KR-SGIS-11110");
     fireEvent.click(screen.getByTestId("facility-cost-calculate"));
-    await waitFor(() => expect(screen.getByTestId("facility-cost-completeness")).toBeDefined());
-    const completeness = screen.getByTestId("facility-cost-completeness").textContent ?? "";
-    for (const notice of [
-      "운영비 미포함",
-      "실제 운송비 미포함",
-      "토지·보상비 미포함",
-      "실제 총사업비가 아님",
-      "실제 승인된 국고보조금이 아님",
-      "주민 개인의 실제 세금 청구액이 아님",
-    ]) {
-      expect(completeness).toContain(notice);
+    await waitFor(() => expect(screen.getByTestId("facility-cost-error")).toBeDefined());
+
+    // No results view opened, and the form is still there with its selection.
+    expect(screen.queryByTestId("facility-cost-results-view")).toBeNull();
+    expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined();
+    expect(selectedChipLabels()).toEqual(["서울 종로구"]);
+    // The error is a genuine, actionable one.
+    expect(screen.getByTestId("facility-cost-error").getAttribute("role")).toBe("alert");
+
+    // Retry succeeds and now navigates.
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-results-view")).toBeDefined());
+  });
+
+  it("announces progress and shows a skeleton while calculating, without leaving setup", async () => {
+    let resolve: (v: FacilityCostCalculate) => void = () => undefined;
+    h.calc.mockImplementationOnce(
+      () => new Promise<FacilityCostCalculate>((res) => (resolve = res)),
+    );
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+
+    await waitFor(() => expect(screen.getByTestId("facility-cost-calculating")).toBeDefined());
+    expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined();
+    expect(screen.queryByTestId("facility-cost-results-view")).toBeNull();
+    expect(
+      screen.getByTestId("facility-cost-calculating-status").getAttribute("role"),
+    ).toBe("status");
+    // Duplicate submission is prevented while in flight.
+    expect((screen.getByTestId("facility-cost-calculate") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    resolve(calcFixture());
+    await waitFor(() => expect(screen.getByTestId("facility-cost-results-view")).toBeDefined());
+  });
+
+  it("cannot be switched to results by a late response from superseded inputs", async () => {
+    let resolveFirst: (v: FacilityCostCalculate) => void = () => undefined;
+    // Only the first calculate is queued; the controls stay editable while pending.
+    h.calc.mockImplementationOnce(
+      () => new Promise<FacilityCostCalculate>((res) => (resolveFirst = res)),
+    );
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate")); // pending
+    // Add another service region while the request is in flight.
+    selectRegion("KR-SGIS-11140");
+    // The pending request resolves, but its inputs are now stale → it must neither
+    // render nor navigate.
+    resolveFirst(calcFixture());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByTestId("facility-cost-results-view")).toBeNull();
+    expect(screen.queryByTestId("facility-cost-results")).toBeNull();
+    expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined();
+  });
+
+  it("drops back to setup with the recalculate notice if the inputs change under a result", async () => {
+    await renderPanel();
+    await calculateToResults();
+    fireEvent.click(screen.getByTestId("facility-cost-edit-settings"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined());
+    // Change a control → the result no longer matches the live inputs, so it hides.
+    fireEvent.change(screen.getByTestId("facility-cost-processing-share"), {
+      target: { value: "50" },
+    });
+    await waitFor(() => expect(screen.getByTestId("facility-cost-stale")).toBeDefined());
+    expect(screen.queryByTestId("facility-cost-results")).toBeNull();
+  });
+});
+
+describe("results — hero and secondary KPIs", () => {
+  it("leads with ONE hero KPI: the per-capita local share, approximated", async () => {
+    await renderPanel();
+    await calculateToResults();
+    const hero = screen.getByTestId("facility-cost-hero");
+    expect(hero.textContent).toContain("주민 1인당 환산 지방비");
+    // 42,262.50원 → 4.226250만원 → 약 4만원.
+    expect(screen.getByTestId("fc-per-capita").textContent).toBe("약 4만원");
+    // Exactly one hero on the screen.
+    expect(screen.getAllByTestId("facility-cost-hero")).toHaveLength(1);
+  });
+
+  it("keeps the hero's not-a-bill caveat and never relabels it as a charge", async () => {
+    await renderPanel();
+    await calculateToResults();
+    const card = screen.getByTestId("facility-cost-hero");
+    const hero = card.textContent ?? "";
+    expect(hero).toContain("개인에게 실제로 청구되는 세금이나 부담금이 아닙니다");
+    expect(hero).toContain("개인의 실제 세금 청구액이 아닙니다");
+    // The prohibited terms are prohibited as AFFIRMATIVE LABELS. The honest caveats
+    // legitimately contain "…이 아닙니다" negations (which is why the served caveat
+    // above reads "실제 세금 청구액이 아닙니다"), so the label itself is what is
+    // checked here — it must stay the served term, never a relabelled charge.
+    const label = card.querySelector("dt")?.textContent ?? "";
+    expect(label).toBe("주민 1인당 환산 지방비");
+    for (const banned of ["주민 부담 청구액", "개인 부담금", "확정 주민 부담"]) {
+      expect(hero).not.toContain(banned);
     }
-    // Never a misleading total.
-    expect(document.body.textContent).not.toContain("총비용");
   });
 
-  it("shows the null per-capita as its served reason, never 0원", async () => {
+  it("shows exactly three secondary KPIs, all as approximations", async () => {
+    await renderPanel();
+    await calculateToResults();
+    // 120.750000 억원 → 약 121억원
+    expect(screen.getByTestId("fc-standard-cost").textContent).toBe("약 121억원");
+    // 35.000000 톤/일 is exact at this precision, so it carries no "약"
+    expect(screen.getByTestId("fc-capacity").textContent).toBe("35톤/일");
+    // 8.050000 억원/년 → 약 8억원/년
+    expect(screen.getByTestId("fc-annualized").textContent).toBe("약 8억원/년");
+    // The two funding figures are no longer top-level KPIs — they moved into the
+    // 국비·지방비 구성 accordion, so the secondary row holds exactly three cards.
+    const secondary = screen.getByTestId("facility-cost-results").querySelectorAll("dl");
+    // One <dl> for the hero, one for the three secondary cards.
+    expect(secondary).toHaveLength(2);
+    expect(secondary[1].querySelectorAll("dt")).toHaveLength(3);
+  });
+
+  it("keeps the honest concept names and never an affirmative total-cost label", async () => {
+    await renderPanel();
+    await calculateToResults();
+    const results = screen.getByTestId("facility-cost-results").textContent ?? "";
+    expect(results).toContain("표준공사비 기반 설치비 산정액");
+    expect(results).toContain("연간 환산 설치비");
+    expect(document.body.textContent).not.toContain("총비용");
+    for (const banned of ["총사업비 산정", "확정 사업비", "최종 사업비", "확정 보조금"]) {
+      expect(document.body.textContent).not.toContain(banned);
+    }
+  });
+
+  it("shows an unavailable per-capita as its plain reason, never 0원", async () => {
     h.calc.mockResolvedValue(
       calcFixture({
         per_capita: {
@@ -464,120 +680,102 @@ describe("results", () => {
       }),
     );
     await renderPanel();
-    selectRegion("KR-SGIS-11110");
-    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
-    await waitFor(() => expect(screen.getByTestId("facility-cost-results")).toBeDefined());
+    await calculateToResults();
+    // The hero keeps its position and states why, in Korean.
     const cell = screen.getByTestId("fc-per-capita-unavailable").textContent ?? "";
     expect(cell).toContain("계산 불가");
-    expect(cell).toContain("INCOMPATIBLE_POPULATION_DEFINITION");
+    expect(cell).toContain("집계 정의가 달라");
     expect(cell).not.toContain("0원");
-  });
-
-  it("shows the official waste and population sources, not just periods", async () => {
-    await renderPanel();
-    selectRegion("KR-SGIS-11110");
-    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
-    await waitFor(() => expect(screen.getByTestId("fc-waste-source")).toBeDefined());
-    const waste = screen.getByTestId("fc-waste-source").textContent ?? "";
-    expect(waste).toContain("RCIS 생활계");
-    expect(waste).toContain("waste_statistics");
-    expect(waste).toContain("2022");
-    const pop = screen.getByTestId("fc-population-source").textContent ?? "";
-    expect(pop).toContain("sgis");
-    expect(pop).toContain("SGIS_TOTAL_POPULATION");
-  });
-
-  it("hides a stale result when a scenario input changes", async () => {
-    await renderPanel();
-    selectRegion("KR-SGIS-11110");
-    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
-    await waitFor(() => expect(screen.getByTestId("facility-cost-results")).toBeDefined());
-    // Change a control → the result no longer matches the live inputs, so it hides.
-    fireEvent.change(screen.getByTestId("facility-cost-processing-share"), {
-      target: { value: "50" },
-    });
-    await waitFor(() => expect(screen.queryByTestId("facility-cost-results")).toBeNull());
-    expect(screen.getByTestId("facility-cost-stale")).toBeDefined();
-  });
-
-  it("hides a late response whose inputs changed while it was pending", async () => {
-    let resolveFirst: (v: FacilityCostCalculate) => void = () => undefined;
-    // Only the first calculate is queued; the controls stay editable while pending.
-    h.calc.mockImplementationOnce(
-      () => new Promise<FacilityCostCalculate>((res) => (resolveFirst = res)),
+    // The raw code is NOT on the primary surface…
+    expect(primaryResultsText()).not.toContain("INCOMPATIBLE_POPULATION_DEFINITION");
+    // …but it is still reachable diagnostically, never discarded.
+    openSection("facility-cost-exact-values");
+    expect(screen.getByTestId("facility-cost-diagnostics").textContent).toContain(
+      "INCOMPATIBLE_POPULATION_DEFINITION",
     );
-    await renderPanel();
-    selectRegion("KR-SGIS-11110");
-    fireEvent.click(screen.getByTestId("facility-cost-calculate")); // pending
-    // Add another service region while the request is in flight.
-    selectRegion("KR-SGIS-11140");
-    // The pending request resolves, but its inputs are now stale → it must not show.
-    resolveFirst(calcFixture());
-    await new Promise((r) => setTimeout(r, 0));
-    expect(screen.queryByTestId("facility-cost-results")).toBeNull();
-    expect(screen.getByTestId("facility-cost-stale")).toBeDefined();
-  });
-
-  it("shows an error state (no stale values) when the calculation fails", async () => {
-    h.calc.mockRejectedValue(new Error("boom"));
-    await renderPanel();
-    selectRegion("KR-SGIS-11110");
-    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
-    await waitFor(() => expect(screen.getByTestId("facility-cost-error")).toBeDefined());
-    expect(screen.queryByTestId("facility-cost-results")).toBeNull();
+    // And the exact-value section does not invent a number for it either.
+    const exact = screen.getByTestId("fc-exact-per-capita-unavailable").textContent ?? "";
+    expect(exact).toContain("계산 불가");
+    expect(exact).not.toContain("0원");
   });
 });
 
-describe("dashboard KPI grid, funding, region table, missing components", () => {
-  async function calculate() {
+describe("results — exact values are preserved unchanged", () => {
+  it("carries every exact backend decimal string in 정밀값과 계산 기준", async () => {
     await renderPanel();
-    selectRegion("KR-SGIS-11110");
-    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
-    await waitFor(() => expect(screen.getByTestId("facility-cost-kpi-grid")).toBeDefined());
-  }
-
-  it("renders the eight KPI concepts with their exact units and never a total-cost label", async () => {
-    await calculate();
-    // 1 official annual quantity, 2 scenario quantity, 3 required capacity, 4
-    // standard construction cost, 5 annualized, 6 subsidy, 7 local share, 8 per-capita.
+    await calculateToResults();
+    openSection("facility-cost-exact-values");
+    // These are the same literal strings the pre-Phase-3 KPI grid asserted; they
+    // moved to the exact-value section, they were not weakened.
     expect(screen.getByTestId("fc-official-quantity").textContent).toContain("10,500 톤/년");
     expect(screen.getByTestId("fc-scenario-quantity").textContent).toContain("10,500 톤/년");
-    expect(screen.getByTestId("fc-capacity").textContent).toContain("35 톤/일");
-    expect(screen.getByTestId("fc-standard-cost").textContent).toContain("120.75 억원");
-    expect(screen.getByTestId("fc-annualized").textContent).toContain("8.05 억원/년");
-    expect(screen.getByTestId("fc-subsidy").textContent).toContain("36.225 억원");
-    expect(screen.getByTestId("fc-local-share").textContent).toContain("84.525 억원");
-    expect(screen.getByTestId("fc-per-capita").textContent).toContain("42,262.5원");
-    // "총비용" never appears (the standard-cost value is not a total). The honest
-    // caveats DO say "…이 아닙니다" (e.g. "실제 총사업비가 아님"), which is required
-    // and must not be mistaken for a prohibited affirmative label — so only the
-    // never-honest "총비용" is banned outright here.
-    expect(document.body.textContent).not.toContain("총비용");
-    // The KPI labels themselves use the honest concept names, not an overstated
-    // "actual/approved/final" claim.
-    const grid = screen.getByTestId("facility-cost-kpi-grid").textContent ?? "";
-    expect(grid).toContain("표준공사비 기반 설치비 산정액");
-    expect(grid).toContain("명목 국고보조 추정액");
-    expect(grid).not.toContain("확정 보조금");
-    expect(grid).not.toContain("확정 사업비");
+    expect(screen.getByTestId("fc-exact-capacity").textContent).toContain("35 톤/일");
+    expect(screen.getByTestId("fc-exact-standard-cost").textContent).toContain("120.75 억원");
+    expect(screen.getByTestId("fc-exact-annualized").textContent).toContain("8.05 억원/년");
+    expect(screen.getByTestId("fc-exact-subsidy").textContent).toContain("36.225 억원");
+    expect(screen.getByTestId("fc-exact-local-share").textContent).toContain("84.525 억원");
+    expect(screen.getByTestId("fc-exact-per-capita").textContent).toContain("42,262.5원");
   });
 
-  it("shows a funding breakdown of subsidy + local share summing to the installation cost", async () => {
-    await calculate();
-    const funding = screen.getByTestId("facility-cost-funding");
-    expect(funding).toBeDefined();
-    // The exact served strings are shown as text (not reconstructed from floats).
+  it("never reconstructs an exact value from the approximation", async () => {
+    await renderPanel();
+    await calculateToResults();
+    openSection("facility-cost-exact-values");
+    // The approximate and exact renderings of the same field are different strings,
+    // and the exact one is the untouched backend value.
+    expect(screen.getByTestId("fc-standard-cost").textContent).toBe("약 121억원");
+    expect(screen.getByTestId("fc-exact-standard-cost").textContent).toBe("120.75 억원");
+    // 121 (the rounded display) must not appear as an exact figure.
+    expect(screen.getByTestId("fc-exact-standard-cost").textContent).not.toBe("121 억원");
+  });
+
+  it("labels the approximations as approximations", async () => {
+    await renderPanel();
+    await calculateToResults();
+    openSection("facility-cost-exact-values");
+    expect(screen.getByTestId("facility-cost-exact-values").textContent).toContain(
+      "반올림한 표시용 근삿값",
+    );
+  });
+});
+
+describe("results — detail accordions", () => {
+  it("collapses every detail section by default", async () => {
+    await renderPanel();
+    await calculateToResults();
+    for (const testId of [
+      "facility-cost-funding-section",
+      "facility-cost-region-section",
+      "facility-cost-assumptions",
+      "facility-cost-exclusions",
+      "facility-cost-methodology-section",
+      "facility-cost-exact-values",
+    ]) {
+      expect((screen.getByTestId(testId) as HTMLDetailsElement).open).toBe(false);
+    }
+  });
+
+  it("keeps the funding amounts exact and still refuses to imply approval", async () => {
+    await renderPanel();
+    await calculateToResults();
+    const funding = openSection("facility-cost-funding-section");
     expect(screen.getByTestId("fc-funding-subsidy").textContent).toContain("36.225 억원");
     expect(screen.getByTestId("fc-funding-local").textContent).toContain("84.525 억원");
     expect(screen.getByTestId("fc-funding-total").textContent).toContain("120.75 억원");
     // Conceptually subsidy + local == total (36.225 + 84.525 == 120.75).
     expect(36.225 + 84.525).toBeCloseTo(120.75, 3);
-    // Explicitly states it does NOT imply subsidy approval.
     expect(funding.textContent).toContain("승인을 의미하지 않");
+    // The rate and its basis travel with the amounts.
+    expect(screen.getByTestId("fc-funding-scheme").textContent).toContain("0.30");
+    expect(screen.getByTestId("fc-funding-rate-basis").textContent).toContain(
+      "실제 승인된 국고보조금이 아님",
+    );
   });
 
-  it("uses the official input for the region table without inventing a cost allocation", async () => {
-    await calculate();
+  it("keeps the official-input region rows unchanged and invents no allocation", async () => {
+    await renderPanel();
+    await calculateToResults();
+    openSection("facility-cost-region-section");
     const table = screen.getByTestId("facility-cost-region-table");
     const rows = within(table).getAllByTestId("fc-region-row");
     expect(rows.length).toBe(1);
@@ -591,7 +789,7 @@ describe("dashboard KPI grid, funding, region table, missing components", () => 
     expect(table.textContent).not.toContain("억원");
   });
 
-  it("shows the official population as unavailable text, never 0명, when absent", async () => {
+  it("shows an unavailable official population as text, never 0명", async () => {
     h.calc.mockResolvedValue(
       calcFixture({
         official_input: {
@@ -607,34 +805,297 @@ describe("dashboard KPI grid, funding, region table, missing components", () => 
         },
       }),
     );
-    await calculate();
+    await renderPanel();
+    await calculateToResults();
+    openSection("facility-cost-region-section");
     const cell = screen.getByTestId("fc-region-population-unavailable").textContent ?? "";
     expect(cell).toContain("공식 인구 미확정");
     const table = screen.getByTestId("facility-cost-region-table").textContent ?? "";
     expect(table).not.toContain("0명");
   });
 
-  it("lists backend missing components with Korean labels + reasons, never as a 0 cost", async () => {
-    await calculate();
-    const missing = screen.getByTestId("facility-cost-missing");
-    const rows = within(missing).getAllByTestId("facility-cost-missing-row");
-    // The fixture has OPERATING_COST + ACTUAL_TRANSPORT_COST.
-    expect(rows.length).toBe(2);
-    const text = missing.textContent ?? "";
-    expect(text).toContain("운영비");
-    expect(text).toContain("실제 운송비");
-    // The backend reason codes are retained, never discarded.
-    expect(text).toContain("OFFICIAL_SOURCE_NOT_INTEGRATED");
-    expect(text).toContain("ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE");
-    // Missing is never rendered as a zero cost.
-    expect(text).not.toContain("0 억원");
+  it("carries the calculation assumptions with Korean-first labels", async () => {
+    await renderPanel();
+    await calculateToResults();
+    const assumptions = openSection("facility-cost-assumptions");
+    const text = assumptions.textContent ?? "";
+    for (const label of [
+      "폐기물 종류",
+      "시설 종류",
+      "지역 처리 비율",
+      "연간 가동일수",
+      "지하화 배수",
+      "보조 시나리오",
+      "적용 표준공사비 구간",
+      "연간 환산 기준",
+    ]) {
+      expect(text, `계산 가정 is missing ${label}`).toContain(label);
+    }
+    // The served assumption sentences are all still rendered.
+    expect(within(assumptions).getByTestId("fc-assumption-list").children).toHaveLength(2);
   });
 
-  it("renders exactly one h1 with the neutral heading", async () => {
+  it("reflects the matched band's inclusivity flags, not a bare min–max", async () => {
+    await renderPanel();
+    await calculateToResults();
+    openSection("facility-cost-assumptions");
+    const band = screen.getByTestId("fc-matched-band").textContent ?? "";
+    // The (30, 40] band excludes exactly 30 → shown as "30 … 초과", "40 … 이하".
+    expect(band).toContain("초과");
+    expect(band).toContain("이하");
+    expect(band).not.toMatch(/30[–-]40/);
+  });
+
+  it("keeps the sources and reference periods reachable", async () => {
+    await renderPanel();
+    await calculateToResults();
+    openSection("facility-cost-methodology-section");
+    expect(screen.getByTestId("fc-source").textContent).toContain("p.211");
+    expect(screen.getByTestId("fc-source").textContent).toContain("2022-12-01");
+    const waste = screen.getByTestId("fc-waste-source").textContent ?? "";
+    expect(waste).toContain("RCIS 생활계");
+    expect(waste).toContain("waste_statistics");
+    expect(waste).toContain("2022");
+    // The accounting basis is named in plain Korean, not left as a raw enum.
+    expect(waste).toContain("발생지 기준");
+    const pop = screen.getByTestId("fc-population-source").textContent ?? "";
+    expect(pop).toContain("sgis");
+  });
+});
+
+describe("results — excluded cost components", () => {
+  it("moves the missing components into the exclusions accordion, counted in its summary", async () => {
+    await renderPanel();
+    await calculateToResults();
+    // The summary states how many items it holds, before anything is expanded.
+    expect(screen.getByTestId("facility-cost-exclusions-summary").textContent).toContain(
+      "포함되지 않은 비용 5개",
+    );
+    openSection("facility-cost-exclusions");
+    const missing = screen.getByTestId("facility-cost-missing");
+    const rows = within(missing).getAllByTestId("facility-cost-missing-row");
+    expect(rows).toHaveLength(5);
+    const text = missing.textContent ?? "";
+    for (const label of [
+      "운영비",
+      "실제 운송비",
+      "토지·보상비",
+      "잔여 매립비용",
+      "후보지별 토목조건",
+    ]) {
+      expect(text, `exclusions is missing ${label}`).toContain(label);
+    }
+    // Missing is never rendered as a zero cost.
+    expect(text).not.toContain("0 억원");
+    expect(text).toContain("비용이 0이라는 뜻이");
+  });
+
+  it("states each exclusion in plain Korean, not as a backend code", async () => {
+    await renderPanel();
+    await calculateToResults();
+    openSection("facility-cost-exclusions");
+    const text = screen.getByTestId("facility-cost-missing").textContent ?? "";
+    expect(text).toContain("공식 자료가 아직 이 분석에 연결되지 않았습니다");
+    expect(text).toContain("실제 수집·운반 경로와 계약 단가 자료가 없어");
+  });
+
+  it("retains the raw served codes in the diagnostic disclosure", async () => {
+    await renderPanel();
+    await calculateToResults();
+    openSection("facility-cost-exclusions");
+    // The fixture serves OPERATING_COST + ACTUAL_TRANSPORT_COST; both codes and
+    // both reasons survive, they are only demoted out of the primary surface.
+    const diagnostic = screen.getByTestId("facility-cost-missing-diagnostic").textContent ?? "";
+    expect(diagnostic).toContain("OPERATING_COST");
+    expect(diagnostic).toContain("OFFICIAL_SOURCE_NOT_INTEGRATED");
+    expect(diagnostic).toContain("ACTUAL_TRANSPORT_COST");
+    expect(diagnostic).toContain("ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE");
+  });
+
+  it("appends an unrecognised component instead of swallowing it", async () => {
+    h.calc.mockResolvedValue(
+      calcFixture({
+        completeness: {
+          is_partial: true,
+          included_components: ["STANDARD_CONSTRUCTION_COST"],
+          missing_components: [{ component: "SOME_FUTURE_COST", reason: "A_BRAND_NEW_REASON" }],
+        },
+      }),
+    );
+    await renderPanel();
+    await calculateToResults();
+    openSection("facility-cost-exclusions");
+    const rows = within(screen.getByTestId("facility-cost-missing")).getAllByTestId(
+      "facility-cost-missing-row",
+    );
+    // 4 standing components + the unknown one + 후보지별 토목조건.
+    expect(rows).toHaveLength(6);
+    const text = screen.getByTestId("facility-cost-missing").textContent ?? "";
+    // An unknown code gets the SAFE generic sentence, never an invented dataset.
+    expect(text).toContain("현재 공식 계산 자료가 제공되지 않습니다");
+    // The raw unknown code is still preserved diagnostically.
+    expect(screen.getByTestId("facility-cost-missing-diagnostic").textContent).toContain(
+      "A_BRAND_NEW_REASON",
+    );
+  });
+});
+
+describe("results — no raw codes on the primary surface", () => {
+  it("keeps every forbidden technical token out of the primary results surface", async () => {
+    h.calc.mockResolvedValue(
+      calcFixture({
+        candidate_context: {
+          candidate_id: 4242,
+          candidate_key: "capital-grid-500m-v1:10_20",
+          sido_region_name: "인천광역시",
+          sigungu_region_name: "강화군",
+          suitability_status: "ELIGIBLE",
+          run_id: 47,
+          profile: "baseline",
+          note: "현재 표준 설치비는 동일한 시설 규모라면 후보 셀별로 크게 달라지지 않습니다.",
+          suitability_disclaimer: "적합성 상태는 분석용 스크리닝 결과이며 법적 결정이 아닙니다.",
+        },
+        completeness: {
+          is_partial: true,
+          included_components: ["STANDARD_CONSTRUCTION_COST"],
+          missing_components: [
+            { component: "OPERATING_COST", reason: "OFFICIAL_SOURCE_NOT_INTEGRATED" },
+            {
+              component: "ACTUAL_TRANSPORT_COST",
+              reason: "ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE",
+            },
+            { component: "LAND_AND_COMPENSATION", reason: "PARCEL_SPECIFIC_COST_UNAVAILABLE" },
+            {
+              component: "REMAINING_LANDFILL_COST",
+              reason: "FACILITY_MASS_BALANCE_NOT_ESTABLISHED",
+            },
+          ],
+        },
+      }),
+    );
+    await renderPanel(CANDIDATE);
+    await calculateToResults();
+    const text = primaryResultsText();
+    for (const token of FORBIDDEN_PRIMARY_TOKENS) {
+      expect(text.includes(token), `cost results leak "${token}"`).toBe(false);
+    }
+  });
+
+  it("names the four documented reason codes in plain Korean instead", async () => {
+    h.calc.mockResolvedValue(
+      calcFixture({
+        completeness: {
+          is_partial: true,
+          included_components: ["STANDARD_CONSTRUCTION_COST"],
+          missing_components: [
+            { component: "OPERATING_COST", reason: "OFFICIAL_SOURCE_NOT_INTEGRATED" },
+            {
+              component: "ACTUAL_TRANSPORT_COST",
+              reason: "ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE",
+            },
+            { component: "LAND_AND_COMPENSATION", reason: "PARCEL_SPECIFIC_COST_UNAVAILABLE" },
+            {
+              component: "REMAINING_LANDFILL_COST",
+              reason: "FACILITY_MASS_BALANCE_NOT_ESTABLISHED",
+            },
+          ],
+        },
+      }),
+    );
+    await renderPanel();
+    await calculateToResults();
+    const primary = primaryResultsText();
+    for (const code of [
+      "OFFICIAL_SOURCE_NOT_INTEGRATED",
+      "ACTUAL_ROUTE_AND_CONTRACT_RATE_UNAVAILABLE",
+      "PARCEL_SPECIFIC_COST_UNAVAILABLE",
+      "FACILITY_MASS_BALANCE_NOT_ESTABLISHED",
+    ]) {
+      expect(primary.includes(code), `primary surface shows raw code ${code}`).toBe(false);
+      // …and each is still reachable in the diagnostic layer.
+      expect(screen.getByTestId("facility-cost-missing-diagnostic").textContent).toContain(code);
+    }
+    // The plain sentences that replaced them.
+    expect(primary).toContain("필지별 비용 자료가 없어");
+    expect(primary).toContain("남는 물질의 양이 확정되지 않아");
+  });
+});
+
+describe("results — scenario summary and page structure", () => {
+  it("summarises the scenario without listing every region or showing a code", async () => {
+    await renderPanel();
+    h.calc.mockResolvedValue(
+      calcFixture({
+        official_input: {
+          ...calcFixture().official_input,
+          regions: [
+            {
+              region_code: "KR-SGIS-11110",
+              region_name: "종로구",
+              generation_quantity_ton: "3500.000000",
+              population: 100000,
+            },
+            {
+              region_code: "KR-SGIS-11140",
+              region_name: "중구",
+              generation_quantity_ton: "3500.000000",
+              population: 50000,
+            },
+            {
+              region_code: "KR-SGIS-23010",
+              region_name: "중구",
+              generation_quantity_ton: "3500.000000",
+              population: 50000,
+            },
+          ],
+        },
+      }),
+    );
+    await calculateToResults();
+    const context = screen.getByTestId("facility-cost-results-context").textContent ?? "";
+    expect(context).toContain("선택한 3개 지역");
+    // A short summary, not the full list.
+    expect(context).toContain("외 1개");
+    expect(context).toContain("생활계 폐기물");
+    expect(context).toContain("처리 비율 100%");
+    expect(context).toContain("자동선별 재활용시설");
+    // Never a raw region code.
+    expect(context).not.toContain("KR-SGIS");
+  });
+
+  it("renders exactly one h1 on BOTH views, and mounts no map", async () => {
     const { container } = await renderPanel();
-    const h1s = container.querySelectorAll("h1");
-    expect(h1s).toHaveLength(1);
-    expect(h1s[0].textContent).toContain("시설 비용 살펴보기");
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(container.querySelector('[data-testid="map-container"]')).toBeNull();
+
+    await calculateToResults();
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(container.querySelectorAll("h1")[0].textContent).toContain("시설 비용 살펴보기");
+    expect(container.querySelector('[data-testid="map-container"]')).toBeNull();
+    expect(container.querySelector("canvas")).toBeNull();
+  });
+
+  it("uses no <aside> in the cost view, on either screen", async () => {
+    // e2e/desktopNavigation.spec.ts asserts the map-free pages have none, and
+    // terminology.audit.test.tsx identifies the equity sidebar by that landmark.
+    const { container } = await renderPanel();
+    expect(container.querySelector("aside")).toBeNull();
+    await calculateToResults();
+    expect(container.querySelector("aside")).toBeNull();
+  });
+
+  it("carries one compact standing disclaimer, never as an alert", async () => {
+    await renderPanel();
+    await calculateToResults();
+    const notice = screen.getByTestId("facility-cost-results-notice");
+    expect(notice.getAttribute("role")).toBeNull();
+    const text = notice.textContent ?? "";
+    expect(text).toContain("표준공사비");
+    expect(text).toContain("실제 총사업비가 아니며");
+    expect(text).toContain("승인되었다는 뜻도 아니고");
+    expect(text).toContain("주민 개인에게 청구되는 금액이 아닙니다");
+    // Exactly one banner above the numbers.
+    expect(screen.queryAllByTestId("facility-cost-notice")).toHaveLength(0);
   });
 });
 
@@ -648,7 +1109,7 @@ const CANDIDATE = {
 } as unknown as CandidateDetail;
 
 describe("candidate integration", () => {
-  it("shows the candidate context + provenance and never claims cheapest/approved", async () => {
+  async function withCandidate(): Promise<void> {
     h.calc.mockResolvedValue(
       calcFixture({
         candidate_context: {
@@ -665,33 +1126,37 @@ describe("candidate integration", () => {
       }),
     );
     await renderPanel(CANDIDATE);
-    selectRegion("KR-SGIS-11110");
-    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
-    await waitFor(() => expect(screen.getByTestId("facility-cost-candidate")).toBeDefined());
+    await calculateToResults();
+    openSection("facility-cost-candidate-section");
+  }
+
+  it("shows the candidate context + provenance and never claims cheapest/approved", async () => {
+    await withCandidate();
     const text = screen.getByTestId("facility-cost-candidate").textContent ?? "";
     expect(text).toContain("강화군");
     expect(text).toContain("후보 셀별로 크게 달라지지 않습니다");
+    expect(text).toContain("법적 결정이 아닙니다");
     expect(text).not.toContain("최저 비용");
     expect(text).not.toContain("승인된");
-    // The analytical status carries its reference year + derivation/policy version.
+    // The screening outcome reads as plain Korean, not as the raw enum.
+    expect(text).toContain("1차 분석 통과");
+    // The analytical status carries its reference year + derivation/policy version,
+    // now in the diagnostic disclosure rather than the primary line.
     const prov = screen.getByTestId("fc-candidate-provenance").textContent ?? "";
     expect(prov).toContain("2024");
     expect(prov).toContain("suitability-screening-v1");
     expect(prov).toContain("suitability-policy-v1");
+    expect(prov).toContain("capital-grid-500m-v1:10_20");
+    expect(prov).toContain("ELIGIBLE");
   });
-});
 
-describe("matched band endpoint semantics", () => {
-  it("reflects the inclusivity flags, not a bare min–max", async () => {
+  it("omits the candidate accordion entirely when no candidate was carried in", async () => {
+    // The base fixture has candidate_context: null — an empty accordion would
+    // imply there is something to open.
     await renderPanel();
-    selectRegion("KR-SGIS-11110");
-    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
-    await waitFor(() => expect(screen.getByTestId("fc-matched-band")).toBeDefined());
-    const band = screen.getByTestId("fc-matched-band").textContent ?? "";
-    // The (30, 40] band excludes exactly 30 → shown as "30 … 초과", "40 … 이하".
-    expect(band).toContain("초과");
-    expect(band).toContain("이하");
-    expect(band).not.toMatch(/30[–-]40/);
+    await calculateToResults();
+    expect(screen.queryByTestId("facility-cost-candidate-section")).toBeNull();
+    expect(screen.queryByTestId("facility-cost-candidate")).toBeNull();
   });
 });
 
@@ -739,6 +1204,10 @@ describe("citizen deliberation removal", () => {
       costVersion: "capex-standard-v2022dec",
       candidateId: null,
     });
-    expect(screen.getByTestId("fc-standard-cost").textContent).toContain("120.75 억원");
+    // The primary card shows the approximation; the exact served string is
+    // unchanged in the exact-value section.
+    expect(screen.getByTestId("fc-standard-cost").textContent).toBe("약 121억원");
+    openSection("facility-cost-exact-values");
+    expect(screen.getByTestId("fc-exact-standard-cost").textContent).toContain("120.75 억원");
   });
 });

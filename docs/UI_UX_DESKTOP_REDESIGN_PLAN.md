@@ -476,7 +476,7 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Dependencies:** Phase 1 (`Chip`, `InfoBanner`, `Accordion`).
 - **Regression risks:** `facilityCost.spec.ts` and `FacilityCostDashboard.test.tsx` currently call `selectOption` on `facility-cost-regions`; both must be migrated in the same commit. Losing the stream-change reset (`update("wasteStream")` clears `regionCodes`) would allow an uncalculable region to persist.
 
-### Phase 3 — Facility-cost results workflow
+### Phase 3 — Facility-cost results workflow ✅ delivered
 **Branch:** `ui/phase-3-cost-results`
 
 - **Objective:** Answer first. Hero result, three secondary KPIs, everything else collapsed. Hide reason codes; add display rounding.
@@ -499,6 +499,63 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Manual desktop checks:** 1440×900 — after calculating, the hero result is visible **without scrolling**; expanding every accordion causes no horizontal overflow.
 - **Dependencies:** Phases 1–2.
 - **Regression risks:** `facilityCost.spec.ts` asserts literal `"120.75 억원"` and `"42,262.5원"` — these change under display rounding and must be updated deliberately, keeping an assertion that the exact value is still reachable. Wrapping the results region in accordions must not remove the `role="status"` on `facility-cost-results`.
+
+**Delivery notes.**
+
+- **AC1 delivered as setup / calculating / results.** The in-flight state stays on the
+  SETUP view (a `Skeleton` plus a separate polite `facility-cost-calculating-status`
+  region) rather than rendering a skeleton results screen. Navigating on submit would
+  have meant showing a results view that holds no result, and the brief for this phase
+  required the citizen to remain on setup while calculating.
+- **AC2 delivered with one addition.** The order is exactly as specified, followed by a
+  seventh accordion, **정밀값과 계산 기준**, which is where the exact backend strings live
+  now that the primary cards are approximations. 선택한 후보지 정보 is omitted entirely
+  (not rendered empty) when no candidate was carried in.
+- **AC4/AC5 delivered, with the 톤/일 rule made explicit (open question O1).** 억원 and
+  원→만원 round to a grouped integer as recommended. 톤/일 could not: `279.479667` rounds
+  to `279` at integer precision, and the required example is `약 280톤/일`. The shipped
+  rule is **1톤/일 단위 below 100, 10톤/일 단위 at and above 100**, which satisfies both
+  that example and the existing `35.000000` → `35톤/일` fixture. Full precision table in
+  [FACILITY_COST_LENS_UI.md](FACILITY_COST_LENS_UI.md).
+- **`displayNumber.ts` uses no floating point at all.** Rounding is string/BigInt, so it
+  is correct beyond `Number.MAX_SAFE_INTEGER` and cannot be repurposed to reconstruct an
+  exact value. A unit test scans the source for `Number(`, `parseFloat`, `parseInt`,
+  `toFixed`, and `Math.`. Sub-unit values render "1억원 미만" rather than "약 0억원", since
+  displaying a real cost as `0` is the same failure as zero-filling a missing value.
+- **AC6 registry lifted, transparency call site deferred to Phase 6.** `glossary.ts` now
+  owns `MISSING_COMPONENT_META` (including the exact short parentheticals the
+  transparency centre renders, asserted by `glossary.test.ts`),
+  `MISSING_REASON_EXPLANATIONS`, and `PER_CAPITA_UNAVAILABLE_EXPLANATIONS`.
+  `TransparencyDashboard.tsx` was **not** modified: its wording is Phase 6's surface and
+  Phase 6 AC5 requires it verbatim, so Phase 3 establishes the shared registry and locks
+  the strings with a test instead of editing another phase's component.
+- **AC7 delivered, audit placed in the cost test.** Eleven codes were added to
+  `FORBIDDEN_PRIMARY_TOKENS` (the four missing-component reasons, the four component
+  codes, and the three per-capita reasons). The surface scan lives in
+  `FacilityCostDashboard.test.tsx`, not `terminology.audit.test.tsx`, because the
+  latter's `homeApiMock` rejects `fetchFacilityCostCalculate` — no result can be
+  rendered there. It clones the results view, removes every `[data-diagnostic]`
+  subtree, and asserts the remaining text contains no forbidden token.
+- **Two pre-existing leaks fixed in passing.** The candidate context rendered the raw
+  `ELIGIBLE` enum and the `capital-grid-500m-v1:…` / `suitability-policy-v1` identifiers
+  as primary text, and the methodology line rendered the raw `accounting_basis` enum.
+  These are all already in `FORBIDDEN_PRIMARY_TOKENS`, so the AC7 scan could not pass
+  while they remained. They now use `statusLabel` / `profileLabel` /
+  `accountingBasisLabel`, with every raw identifier kept in the diagnostic disclosure
+  (`fc-candidate-provenance` still carries the reference year and all three versions).
+- **AC7's ⚠️ honoured.** The "codes are retained, never discarded" assertion was
+  rewritten, not deleted: the plain Korean is asserted on the primary surface AND every
+  raw code is asserted present in `facility-cost-missing-diagnostic`.
+- **Region codes removed from the results table too.** The region table showed
+  "종로구 (KR-SGIS-11110)"; it now shows the metro-prefixed display name and keeps the
+  codes in a diagnostic disclosure, matching the Phase 2 setup rule.
+- **Exclusions count is 5, not the served `missing_components` length.** The accordion
+  merges the four backend components with the standing 후보지별 토목조건 exclusion, so an
+  item the endpoint does not enumerate is still disclosed. A component the backend adds
+  later that the registry does not know is appended with the safe generic explanation
+  rather than swallowed (asserted).
+- **Not done in this phase:** results are still absent from URL state, and no CSV/report
+  export was touched — display rounding is presentation-only and never reaches them.
 
 ### Phase 4 — Regional burden map desktop improvements
 **Branch:** `ui/phase-4-equity-map`
