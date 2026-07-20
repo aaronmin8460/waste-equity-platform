@@ -88,6 +88,8 @@ import type {
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
+import type { LandfillUnavailableState } from "../lib/landfill";
+import { landfillUnavailableFromAll } from "../lib/landfill";
 import DashboardShell from "../components/DashboardShell";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import MapLegendOverlay from "../components/MapLegendOverlay";
@@ -234,8 +236,42 @@ export default function Home() {
   const [flowMonth, setFlowMonth] = useState<number | null>(null); // null = annual
   const [flowOrigin, setFlowOrigin] = useState<LandfillOrigin | null>(null);
   const [flowWaste, setFlowWaste] = useState<string | null>(null);
-  const [flowData, setFlowData] = useState<LandfillDashboardData | null>(null);
-  const [flowError, setFlowError] = useState<string | null>(null);
+  /**
+   * The landfill outcome, TAGGED with the filter combination it describes.
+   *
+   * Phase 5: results are keyed rather than cleared. Values only ever render when
+   * their key matches the current filters, so a selection change makes the previous
+   * period's KPIs, table and trends disappear in the SAME render that requests the
+   * new ones — no window in which official data sits under filter controls it does
+   * not describe, and no second render pass to arrange it. It also makes a late
+   * response from an abandoned filter state unrenderable on its own terms, not only
+   * because the effect's `cancelled` flag suppressed it.
+   *
+   * `unavailable` distinguishes "the backend holds no official record for these
+   * filters" from "the request failed"; both are still scoped to their key.
+   */
+  const [flowResult, setFlowResult] = useState<{
+    key: string;
+    data: LandfillDashboardData | null;
+    unavailable: LandfillUnavailableState | null;
+  } | null>(null);
+  // Filter OPTIONS are held separately from the results so the four controls stay
+  // usable while a request is in flight and after one comes back empty. Deriving
+  // them from the results alone emptied the year <select> exactly when the no-data
+  // panel was telling the reader to pick a different year.
+  const [flowYears, setFlowYears] = useState<number[]>([]);
+  const [flowWasteOptions, setFlowWasteOptions] = useState<string[]>([]);
+  // The 기간 bound, held alongside the other options so a partial year's month list
+  // does not widen back to 12 while a request is in flight.
+  const [flowMaxMonth, setFlowMaxMonth] = useState<number>(12);
+  // The identity of the current filter combination. Everything the landfill view
+  // renders is scoped to it. JSON rather than a delimiter-joined string: the waste
+  // name is free text served by the backend, so any separator character could in
+  // principle appear inside it and let two different filter states produce one key.
+  const flowKey = JSON.stringify([flowYear, flowMonth, flowOrigin, flowWaste]);
+  const flowMatchesFilters = flowResult?.key === flowKey;
+  const flowData = flowMatchesFilters ? flowResult.data : null;
+  const flowUnavailable = flowMatchesFilters ? flowResult.unavailable : null;
   const [suit, setSuit] = useState<SuitabilityMeta | null>(null);
   const [suitError, setSuitError] = useState<string | null>(null);
   const [selected, setSelected] = useState<CandidateDetail | null>(null);
@@ -399,7 +435,16 @@ export default function Home() {
             wasteName: flowWaste,
           }
         : { origin: flowOrigin, wasteName: flowWaste };
-    Promise.all([
+    // The previous selection's values stop rendering the moment `flowKey` changes
+    // (they are keyed, see `flowResult`), so nothing needs clearing here — and the
+    // loading state therefore covers every filter transition, not just first load.
+    // The filter OPTIONS deliberately survive (see `flowYears`/`flowWasteOptions`).
+    //
+    // `allSettled`, not `all`: `all` reports whichever request rejected FIRST, which
+    // is not necessarily the most serious. A fast 404 from /composition alongside a
+    // slow 500 from /summary would otherwise be reported as "no official record"
+    // while the server is actually broken.
+    Promise.allSettled([
       fetchLandfillSummary({
         year: flowYear,
         month: flowMonth,
@@ -408,28 +453,65 @@ export default function Home() {
       }),
       fetchLandfillTrends(trendsQuery),
       fetchLandfillComposition({ year: flowYear, origin: flowOrigin }),
-    ])
-      .then(([summary, trends, composition]) => {
-        if (cancelled) return;
-        setFlowData({ summary, trends, composition });
-        setFlowError(null);
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        // Drop the previous filter selection's values: leaving them on screen
-        // under the new filters would misattribute official data to a period or
-        // region it does not describe.
-        setFlowData(null);
-        setFlowError(
-          cause instanceof ApiError
-            ? cause.message
-            : "수도권매립지 데이터를 불러올 수 없습니다 (landfill data unavailable).",
+    ]).then(([summaryResult, trendsResult, compositionResult]) => {
+      if (cancelled) return;
+      // Data is accepted only when ALL THREE responses arrived: a partial set would
+      // leave the KPIs describing one scope and the trends another. Destructuring the
+      // settled tuple (rather than casting a mapped array) keeps each `.value`
+      // correctly typed with no assertion.
+      if (
+        summaryResult.status === "fulfilled" &&
+        trendsResult.status === "fulfilled" &&
+        compositionResult.status === "fulfilled"
+      ) {
+        const summary = summaryResult.value;
+        const composition = compositionResult.value;
+        setFlowResult({
+          key: flowKey,
+          data: { summary, trends: trendsResult.value, composition },
+          unavailable: null,
+        });
+        setFlowYears(summary.period.available_years);
+        setFlowWasteOptions(composition.waste_types.map((waste) => waste.waste_name));
+        // A complete year covers all twelve months; a partial one only through the
+        // month the dataset actually reaches.
+        setFlowMaxMonth(
+          summary.period.is_complete_year || summary.period.available_through_month == null
+            ? 12
+            : Number(summary.period.available_through_month.slice(5, 7)),
         );
-      });
+        return;
+      }
+      // Phase 5 AC4: routed through `plainError` like the equity and suitability
+      // paths, so the raw `NO_DATA_AVAILABLE: No landfill inbound data has been
+      // ingested.` never reaches a citizen. The code survives in the state's
+      // `detail` for the diagnostic line.
+      const settled = [summaryResult, trendsResult, compositionResult];
+      const unavailable = landfillUnavailableFromAll(
+        settled
+          .filter((result) => result.status === "rejected")
+          .map((result) => (result as PromiseRejectedResult).reason),
+        // Passing the request count lets a PARTIAL failure be reported as a failure
+        // rather than as "no official record exists" — some endpoints served data.
+        settled.length,
+      );
+      setFlowResult({ key: flowKey, data: null, unavailable });
+      // Years the backend named as available are kept, so the reader can act on the
+      // "다른 연도를 선택해 주세요" the empty state shows them. Only from a genuine
+      // no-data answer: an error body's year list describes nothing reliable, and
+      // letting it overwrite a list built from a successful load would narrow the
+      // control on the strength of a failed request.
+      if (unavailable.kind === "no-data" && unavailable.availableYears.length > 0) {
+        setFlowYears(unavailable.availableYears);
+      }
+    });
     return () => {
       cancelled = true;
     };
-  }, [mode, flowYear, flowMonth, flowOrigin, flowWaste]);
+    // `flowKey` is derived from the four filters listed alongside it, so including it
+    // does not change how often this runs — it only keeps the tag written into
+    // `flowResult` in step with the request that produced it.
+  }, [mode, flowKey, flowYear, flowMonth, flowOrigin, flowWaste]);
 
   const retry = useCallback(() => {
     setError(null);
@@ -1117,7 +1199,7 @@ export default function Home() {
           // place the orientation strip sits in the other three areas.
           orientation={<ModeOrientation mode={mode} />}
           data={flowData}
-          error={flowError}
+          unavailable={flowUnavailable}
           year={flowYear}
           setYear={setFlowYear}
           month={flowMonth}
@@ -1126,6 +1208,9 @@ export default function Home() {
           setOrigin={setFlowOrigin}
           waste={flowWaste}
           setWaste={setFlowWaste}
+          availableYears={flowYears}
+          wasteOptions={flowWasteOptions}
+          maxMonth={flowMaxMonth}
         />
       </DashboardShell>
     );

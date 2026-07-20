@@ -94,6 +94,41 @@ Nothing technical was deleted — the same rule as every other row applies:
 The active metric is now the first thing the column says — its plain-Korean name, then
 its unit, then its source and reference period — so the answer precedes the controls.
 
+**Phase 5 (매립지 현황).** The last cluster of bilingual primary labels — the four
+landfill filters — is gone: `연도 (Year)` → `연도`, `월/연간 (Month / annual)` → `기간`,
+`출발 광역지자체 (Origin)` → `출발 지역`, `폐기물 종류 (Waste type)` → `폐기물 종류`,
+`전체 (all)` → `전체`, `최신 완결연도 (latest complete)` → `최신 완결연도`, and the origin
+options `서울시 (Seoul)` / `인천시 (Incheon)` / `경기도 (Gyeonggi)` → the Korean names
+alone. The section headings lost theirs too (`지역별 반입 현황 (by metropolitan origin)`,
+`출발지 비교 (origin comparison)`, `월별 반입량 (monthly inbound quantity)`,
+`근거 (Evidence)` → `근거와 한계`).
+
+Two raw-enum leaks on that surface were closed rather than merely renamed:
+
+- the evidence panel printed `공식 보고값 (OFFICIAL_REPORTED_VALUE)` and
+  `공식자료 기반 계산 (OFFICIAL_INPUTS_DERIVED_VALUE)` as headings, and the accounting
+  basis as a bare `VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW`. The headings are
+  now plain Korean, the basis renders through the existing `accountingBasisLabel`
+  (`수도권 반입 기준(매립지로 들어온 양)`), and every code moved to a `data-diagnostic`
+  line. The three accounting bases stay segregated and individually identifiable;
+- `perCapitaUnavailableLabel` printed an unrecognised backend code verbatim as
+  `계산 불가 (SOMETHING_NEW)` — a raw enum as the citizen's entire explanation. Unknown
+  codes now degrade to `계산 불가`, with the code recoverable from a diagnostic line via
+  the new `perCapitaUnavailableCode`. The five known landfill reason codes were added to
+  `FORBIDDEN_PRIMARY_TOKENS`.
+
+The citizen-facing error text was also fixed: the flow path rendered
+`cause.message` directly, so a Korean reader saw
+`NO_DATA_AVAILABLE: No landfill inbound data has been ingested.` It now goes through
+`plainError` like every other area. Because the backend *distinguishes* "no official
+record for these filters" from a genuine failure, those are now two different screens —
+a neutral `EmptyState` that offers the years the backend says it holds, and a
+`role="alert"` error. Neither ever substitutes a `0`.
+
+Nothing technical was deleted. `LandfillDashboard.test.tsx` scans the whole landfill
+surface against `FORBIDDEN_PRIMARY_TOKENS` with `[data-diagnostic]` subtrees stripped,
+and `e2e/phase5LandfillDashboard.spec.ts` repeats that scan in a real browser.
+
 ## Navigation model
 
 Four citizen-facing top-level areas (no English in the primary nav):

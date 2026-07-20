@@ -348,6 +348,53 @@ The frontend never calls government APIs; all requests go to the platform backen
 asserting no request leaves for a non-allowlisted host is unchanged in strictness
 and now also asserts the absence of `.maplibregl-canvas` in this mode.
 
+### 7.1 Presentation refresh (desktop UI/UX redesign, Phase 5)
+
+`docs/UI_UX_DESKTOP_REDESIGN_PLAN.md` §9 Phase 5 reorganised how this dashboard reads.
+**No API route, query parameter, response field, request scoping rule, denominator
+selection, period or partial-year rule, comparability rule, official-zero handling, or
+served value changed** — §5.1's denominator contract and §6's evidence meanings are
+untouched, and the sections above still describe the data exactly. What changed:
+
+- **The limitation notice is now one compact `tone="info"` banner**, not a full-bleed
+  amber block above the values. Its sentence is preserved verbatim; the fuller caveat
+  list moved into a 한계와 주의사항 disclosure. It carries no `role`, so a permanent
+  disclaimer no longer interrupts assistive technology on every render.
+- **Filters** are Korean-only (`연도` / `기간` / `출발 지역` / `폐기물 종류`, options
+  `최신 완결연도` / `연간` / `전체`, origins `서울시` / `인천시` / `경기도`) and grade
+  `1 / 2 / 4` columns at `base / sm / lg`. They are the same four native `<select>`s
+  sending the same query parameters.
+- **KPI hierarchy** uses the shared `KpiCard`: value dominant, label secondary,
+  explanation a muted caption. The fourth KPI still shows its served reason and never
+  `0원`, and the fee caveat is now visible on the fee card rather than only at the
+  page bottom.
+- **No-data is separated from error.** The backend's 404 `NO_DATA_AVAILABLE` /
+  `NO_DATA_FOR_PERIOD` is an *answer*, so it renders a neutral empty state that offers
+  the `available_years` the response carries; only a genuine failure renders a
+  `role="alert"`. Both paths still clear the previous filter's values, keep the four
+  filters operable, and substitute no zeros. Citizen text is resolved through
+  `plainError`, so the raw code no longer reaches the reader — it is retained in a
+  `data-diagnostic` line.
+- **Comparison bars** on 출발지 비교 / 폐기물 구성 and under the table's 반입량 figure
+  are redundant `aria-hidden` encodings of values already printed exactly. They are
+  normalised only against the maximum of the rows on screen, produce no new analytical
+  output, and a row with no positive maximum to normalise against draws no bar rather
+  than an empty one that would read as an official zero.
+- **Trends** keep their axis units, endpoint labels, and lossless exact-value tables
+  (now inside a collapsed disclosure). Unserved months remain absent — never zero bars.
+- **Evidence** is unchanged in content and split across four disclosures
+  (자료와 기준 기간 / 비교 가능성 / 계산 방법 / 한계와 주의사항). Raw identifiers —
+  `VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW`, the derivation versions, the
+  evidence statuses — are retained in `data-diagnostic` lines beside their plain-Korean
+  names.
+
+*Note on §6/§10/§12.6 below:* those sections still describe the **v1** per-capita
+derivation (SGIS annual, `NO_MATCHING_POPULATION_YEAR`, "동일 연도"), while §5.1 and the
+shipped frontend implement **v2** (MOIS monthly, `NO_MATCHING_POPULATION_PERIOD`,
+"동일 기간"). The UI renders the backend-served `caveat` string rather than hardcoding
+either wording, so it is correct either way; the stale prose is flagged here rather than
+rewritten, since correcting it is a data-documentation change and not a UI phase.
+
 ---
 
 ## 8. Geographic limitations

@@ -10,6 +10,114 @@
  * straight-line flow has been removed rather than implying one exists.
  */
 
+import { ApiError } from "./api";
+import { plainError } from "./glossary";
+
+/**
+ * Why the dashboard has no data to show.
+ *
+ * `"no-data"` means the request REACHED the backend and the backend answered that
+ * it holds no official record for these filters (its 404 `NO_DATA_AVAILABLE` /
+ * `NO_DATA_FOR_PERIOD` path). That is an answer, not a failure, and it must never
+ * be presented as a broken system — nor as zero quantities.
+ *
+ * `"error"` is a genuine request/network/server failure the reader may retry.
+ *
+ * `message` is always plain Korean resolved through `plainError`; the raw backend
+ * code survives in `detail` for the diagnostic line (redesign plan §5 rule 12).
+ */
+export interface LandfillUnavailableState {
+  kind: "no-data" | "error";
+  message: string;
+  detail: string | null;
+  /** Years the backend reports it does hold, when it serves them. Never invented. */
+  availableYears: number[];
+}
+
+/** Backend codes that mean "asked and answered: no official record", not "broken". */
+const NO_DATA_CODES = new Set(["NO_DATA_AVAILABLE", "NO_DATA_FOR_PERIOD"]);
+
+/**
+ * Classify a failed landfill request.
+ *
+ * Phase 5 AC4 (redesign plan §9): the flow path used to render `cause.message`
+ * directly, so a citizen read the raw
+ * `NO_DATA_AVAILABLE: No landfill inbound data has been ingested.` This routes every
+ * case through `plainError` like the equity and suitability paths already did.
+ */
+export function landfillUnavailableFrom(cause: unknown): LandfillUnavailableState {
+  if (cause instanceof ApiError) {
+    const plain = plainError(cause.message);
+    const code = cause.detail?.error ?? plain.code;
+    return {
+      kind: cause.status === 404 && NO_DATA_CODES.has(code) ? "no-data" : "error",
+      message: plain.primary,
+      // The BARE technical string. `plainError`'s own `detail` already carries a
+      // `기술 정보:` / `기술 코드:` prefix, and the components add that prefix
+      // themselves — reusing it here produced `기술 정보: 기술 정보: …` on any
+      // response without a structured JSON body (a proxy 502, say).
+      detail: cause.detail ? `${cause.detail.error}: ${cause.detail.detail}` : cause.message,
+      availableYears: cause.detail?.available_years ?? [],
+    };
+  }
+  return {
+    kind: "error",
+    message: "수도권매립지 자료를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    detail: null,
+    availableYears: [],
+  };
+}
+
+/**
+ * Classify a set of failures from the three parallel landfill requests.
+ *
+ * Severity wins over arrival order. `Promise.all` surfaces whichever request
+ * rejected FIRST, which is not necessarily the most serious: if `/summary` fails
+ * with a 500 while `/composition` returns a fast 404 `NO_DATA_AVAILABLE`, treating
+ * the dashboard as "no official record" would tell the reader the data does not
+ * exist when in fact the server is broken. So a genuine error anywhere outranks any
+ * number of no-data answers, and only an all-no-data set is reported as no-data.
+ *
+ * Among no-data answers the one that actually carries `available_years` is
+ * preferred, so the reader is offered the periods the backend does hold.
+ *
+ * A PARTIAL failure — some endpoints served data, others did not — is reported as an
+ * error too, never as absence: the backend clearly holds records for these filters,
+ * so the honest statement is that the request did not complete.
+ */
+export function landfillUnavailableFromAll(
+  causes: unknown[],
+  /** How many requests were made. Defaults to "every one of them failed". */
+  requestCount: number = causes.length,
+): LandfillUnavailableState {
+  const states = causes.map(landfillUnavailableFrom);
+  const firstError = states.find((state) => state.kind === "error");
+  if (firstError) return firstError;
+  if (states.length === 0) {
+    // Defensive: no caller reaches this today (the success branch returns first),
+    // but the return type promises a state, so never hand back `undefined`.
+    return {
+      kind: "error",
+      message: "수도권매립지 자료를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      detail: null,
+      availableYears: [],
+    };
+  }
+  // A PARTIAL failure is not an answer of absence. If some endpoints served data and
+  // others 404'd, the backend demonstrably HAS records for these filters — saying
+  // "선택한 조건의 공식 반입 자료가 없습니다" would be a false claim about the data
+  // rather than about the request. Only an all-no-data set is an answer of absence.
+  if (states.length < requestCount) {
+    return {
+      kind: "error",
+      message: "수도권매립지 자료의 일부를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      detail: states.map((state) => state.detail).filter(Boolean).join(" · ") || null,
+      availableYears: [],
+    };
+  }
+  return states.find((state) => state.availableYears.length > 0) ?? states[0];
+}
+
 export function kgToTons(kg: string | number): number {
   const value = typeof kg === "string" ? Number(kg) : kg;
   return value / 1000;
@@ -76,8 +184,9 @@ export function formatKrwPerPerson(fee: string | null): string {
  * User-facing Korean for a served per-capita unavailability reason.
  *
  * The vocabulary is defined by the backend derivation (landfill-fee-per-capita-v2);
- * an unrecognised code degrades to an honest "계산 불가" that still surfaces the
- * raw code, rather than being hidden or shown as a number.
+ * an unrecognised code degrades to an honest "계산 불가" rather than being hidden or
+ * shown as a number. The raw code is not lost — it moves to
+ * {@link perCapitaUnavailableCode}, which callers render in a diagnostic line.
  */
 const PER_CAPITA_REASON_LABELS: Record<string, string> = {
   // v2 is month-aligned: a missing denominator is a missing *period*, not a year.
@@ -90,5 +199,23 @@ const PER_CAPITA_REASON_LABELS: Record<string, string> = {
 
 export function perCapitaUnavailableLabel(reason: string | null): string {
   if (reason == null) return "계산 불가";
-  return PER_CAPITA_REASON_LABELS[reason] ?? `계산 불가 (${reason})`;
+  // Phase 5 (redesign plan §4 defect X6): an unrecognised code used to be printed
+  // verbatim — `계산 불가 (SOMETHING_NEW)` — which put a raw backend enum into
+  // primary citizen text. The code is NOT discarded: callers render it through
+  // {@link perCapitaUnavailableCode} in a `data-diagnostic` detail line, so the
+  // reason code stays in the system (redesign plan §5 rule 12) without becoming
+  // the citizen-facing explanation.
+  return PER_CAPITA_REASON_LABELS[reason] ?? "계산 불가";
+}
+
+/**
+ * The raw served reason code, for a DIAGNOSTIC detail line only.
+ *
+ * Returns the code only when {@link perCapitaUnavailableLabel} could not translate
+ * it — a known reason is already fully described in plain Korean, so repeating its
+ * code beside the label would be the English/enum duplication Phase 5 removes.
+ */
+export function perCapitaUnavailableCode(reason: string | null): string | null {
+  if (reason == null) return null;
+  return reason in PER_CAPITA_REASON_LABELS ? null : reason;
 }

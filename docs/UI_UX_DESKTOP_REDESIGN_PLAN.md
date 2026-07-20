@@ -1,8 +1,8 @@
 # Desktop UI/UX Redesign — Phase 0 Baseline and Phased Plan
 
-**Status:** Phases 0–4 complete. Phase 0 was audit + plan only; Phases 1–4 shipped
-(global foundation, facility-cost setup, facility-cost results, regional burden map).
-Phases 5–7 not started.
+**Status:** Phases 0–5 complete. Phase 0 was audit + plan only; Phases 1–5 shipped
+(global foundation, facility-cost setup, facility-cost results, regional burden map,
+landfill dashboard). Phases 6–7 not started.
 **Branch:** `docs/phase-0-desktop-ui-ux-baseline`
 **Date:** 2026-07-20
 **Scope of this document:** the frontend at `frontend/src`. No backend, API, calculation, or infrastructure change is proposed or made.
@@ -656,7 +656,7 @@ Values chosen to match what the codebase already does where it is consistent, an
   count, no-data color, geography, scope routing, URL-state field, encoding, or restoration
   behaviour changed; no backend, API, cost, landfill, transparency, or suitability change.
 
-### Phase 5 — Landfill dashboard desktop improvements
+### Phase 5 — Landfill dashboard desktop improvements ✅ delivered
 **Branch:** `ui/phase-5-landfill-dashboard`
 
 - **Objective:** Values first, caveats rationed, and fix the raw-error-code defect.
@@ -675,6 +675,145 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Manual desktop checks:** with a live backend, 1440×900 — change each filter and confirm every displayed value/period updates together with no stale mixing.
 - **Dependencies:** Phase 1.
 - **Regression risks:** `landfill.spec.ts` is live-backend-only and will not run in a Docker-less environment — a code regression here is invisible to the offline suite. `LandfillDashboard.test.tsx` is the real safety net and must be extended, not merely kept green.
+
+**Delivery notes.**
+
+- **AC1 — met.** The full-bleed amber block is gone. `components/ui/InfoBanner.tsx` with
+  `tone="info"` now carries the metropolitan-only sentence **verbatim**
+  (`광역지자체 단위 자료이며 시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다.`)
+  plus one short line covering the three things a reader needs before any number:
+  periods are only those the dataset holds, some are partial, and an unavailable value
+  is `자료 없음` rather than `0`. `data-testid="landfill-limitation"` is unchanged; the
+  banner carries **no** `role`, so a standing disclaimer never interrupts a screen
+  reader. At 1440×900 it measures shorter than the KPI row it precedes (asserted in
+  `e2e/phase5LandfillDashboard.spec.ts`), and exactly one `.wep-banner` exists on the
+  screen — the detailed caveats moved into the 한계와 주의사항 disclosure rather than a
+  second coloured panel.
+- **AC2 — met.** All four KPIs are now the shared `KpiCard`: value `text-xl`
+  semibold `tabular-nums`, label `text-xs`, explanation a `text-xs` caption beneath.
+  Both a DOM-class assertion (Vitest) and a **computed-font-size** assertion
+  (Playwright: value > caption and value > label) guard it, so the hierarchy cannot
+  silently invert. The per-capita card still shows its served reason instead of a
+  value, so no zero-ish placeholder can reach the value slot.
+- **AC3 — partially met, deliberately.** The exact-value fallback tables moved into
+  collapsed `Accordion`s and keep **full lossless precision** (`formatDecimalExact` on
+  the served string, never the chart formatter) — the existing precision tests are
+  unchanged and still green.
+  - *Deviation:* the two trend **charts themselves** stayed visible rather than moving
+    into collapsed accordions. Collapsing the primary content of a values page works
+    against the phase objective ("values first"), and `e2e/landfill.spec.ts` asserts
+    `landfill-trend-quantity` / `landfill-trend-fee` are **visible** against the live
+    backend — collapsing them would have required weakening a live data assertion to
+    make a presentation change pass, which §5 forbids. The charts instead got the
+    card/typography treatment (`.wep-card`, `h2 text-base`, axis caption as `text-xs`).
+    The four long prose blocks that genuinely warranted progressive disclosure —
+    자료와 기준 기간 / 비교 가능성 / 계산 방법 / 한계와 주의사항 — are the ones now
+    collapsed.
+- **AC4 — met.** `app/page.tsx` no longer renders `cause.message`. A new pure helper
+  `landfillUnavailableFrom` (`lib/landfill.ts`) routes every failure through
+  `plainError`, so `NO_DATA_AVAILABLE: No landfill inbound data has been ingested.`
+  never reaches a citizen; they read `현재 조건에 맞는 공식 자료가 없습니다.` The raw
+  code survives in a `data-diagnostic` line (§5 rule 12).
+- **AC4 extended — no-data is now a distinct state (not in the ACs).** The AC only
+  asked for plain wording, but the backend already *distinguishes* "no official record
+  for these filters" (404 `NO_DATA_AVAILABLE` / `NO_DATA_FOR_PERIOD`) from a genuine
+  failure, and rendering both through one red `role="alert"` panel told the reader the
+  system was broken when it had simply answered. There are now two states: an
+  `EmptyState` (`landfill-no-data`, no `role`, lists the served `available_years` when
+  the backend provides them, never a zero) and the error alert (`landfill-error`,
+  `role="alert"`). `e2e/integration.spec.ts` and `e2e/responsive.spec.ts` were updated
+  to expect the no-data state, since the shared mock's deliberate 404 now lands there.
+- **AC5 — met, and strengthened after self-review.** The first implementation only
+  cleared `flowData` on *failure*, so a **successful** filter change left the previous
+  period's KPIs, table, and trends on screen for the whole request — and the loading
+  skeleton could only ever appear on first load, never on a transition. The outcome is
+  now **keyed** by the filter combination it describes (`flowResult.key`) and rendered
+  only when that key matches the current filters. Stale values therefore stop
+  rendering in the same commit that requests the new ones — no clearing step, no
+  second render pass, and a late response from an abandoned filter state is
+  unrenderable on its own terms rather than only being suppressed by the effect's
+  `cancelled` flag. (A synchronous reset inside the effect was the first attempt and
+  was rejected: it tripped `react-hooks/set-state-in-effect`, which is the lint rule
+  pointing at exactly this derive-don't-reset refactor.) In all non-success states the
+  four filters remain mounted, visible, and enabled (asserted at every viewport).
+- **Three further defects found by self-review and fixed before commit.** Each was
+  invisible to the offline suite at the time:
+  1. **A genuine failure could be reported as "no official record".** The three
+     landfill requests ran under `Promise.all`, which surfaces whichever rejected
+     FIRST — so a fast 404 from `/composition` alongside a slow 500 from `/summary`
+     rendered the neutral empty state while the server was actually broken. Now
+     `Promise.allSettled` + `landfillUnavailableFromAll`, where any genuine error
+     outranks any number of no-data answers, and results are accepted only when all
+     three responses arrived.
+  2. **The empty state advertised years the control could not offer.** Filter options
+     were derived from `data`, which the failure path nulls — so the panel said
+     "자료가 있는 연도: 2023, 2024 · 다른 연도를 선택해 주세요" while the 연도 select
+     had collapsed to its default, and a selected-but-absent year rendered the native
+     select *blank*. Options are now owned by the page (`flowYears` /
+     `flowWasteOptions`), survive an empty or failed response, absorb the
+     `available_years` the 404 body carries, and always include the reader's own
+     selection so the control never blanks.
+  3. **The no-data state announced nothing.** It correctly stopped being an alert, but
+     that left a screen-reader user in silence when a filter change swapped a
+     populated dashboard for an empty one. It now carries its own polite
+     `role="status"` line; the visible panel is still not an alert.
+  Plus three smaller ones: `barRatio` returned `NaN` when a malformed row made the
+  maximum non-finite (emitting `width: NaN%`, which the CSSOM drops — painting *every*
+  bar full-width); the diagnostic line could render `기술 정보: 기술 정보: …` because
+  both the helper and the component added the prefix; and an untranslatable row-level
+  reason code was dropped from the regional table entirely rather than demoted to a
+  diagnostic line.
+- **Two test-quality defects fixed in the same pass.** `e2e/phase5Fixtures.ts` ignored
+  the `origin` and `waste_name` query parameters, so the spec's "selecting Seoul"
+  assertion expected the same three rows before and after and would have passed with
+  the select inert; the fixture now scopes rows the way the backend does and the specs
+  assert 3 → 1. And two layout assertions compared exact Korean text heights, which a
+  font substitution on another machine could flip; they are now ordering,
+  proportion, and `toBeInViewport` checks.
+- **AC6 — met, unchanged.** `fee_per_capita_krw === null` still renders
+  `perCapitaUnavailableLabel(...)`, never `0원`; both reference periods, the population
+  source/definition/admin code, the derivation formula, the comparability notice, and
+  the fee caveat all still render. `landfill-fee-caveat` moved onto the fee KPI's
+  caption, where it is now **visible** rather than sitting at the page bottom.
+- **AC7 — not taken.** The four landfill filters are still not URL-encoded. It was
+  explicitly optional, and adding fields to `AppUrlState` is a shared-contract change
+  whose round-trip/whitelist tests belong with a phase that owns `lib/urlState.ts`.
+  Defect **L5 therefore remains open** and is carried forward.
+- **Defect X6 fixed (§4).** `perCapitaUnavailableLabel` no longer prints an unmapped
+  code as `계산 불가 (SOMETHING_NEW)`. Unknown codes degrade to `계산 불가`, and a new
+  `perCapitaUnavailableCode` surfaces the raw code **only** when it could not be
+  translated — so a known reason is not echoed beside its own translation. The five
+  landfill reason codes were added to `FORBIDDEN_PRIMARY_TOKENS`, and a new test scans
+  the whole landfill surface (with `[data-diagnostic]` stripped) against that list.
+- **Defect X5 fixed (§4).** `MiniBars` had `preserveAspectRatio="none"` with no height,
+  so the SVG's rendered height tracked the card width and the chart ballooned on a wide
+  desktop card. It now has a fixed `h-20`. Bars encode value by height alone, so a
+  wider card rescales bar *width* only and distorts no value.
+- **Comparison bars (AC-adjacent).** 출발지 비교 and 폐기물 구성 keep the exact served
+  text and unit on every row; the bar is a redundant second encoding, `aria-hidden`,
+  normalised **only** against the maximum of the rows currently displayed. `Number()` is
+  used for the width and nothing else — no displayed figure is ever reconstructed from
+  it (§5 rule 10). A row with no positive maximum to normalise against draws **no bar
+  at all** rather than an empty track that would read as an official zero. The regional
+  table gained the same rule under its 반입량 figure.
+- **Korean-only primary labels.** The G3 duplications are gone from the filter row and
+  the section headings (`연도 (Year)` → `연도`, `출발 광역지자체 (Origin)` → `출발 지역`,
+  `서울시 (Seoul)` → `서울시`, `근거 (Evidence)` → `근거와 한계`, and the raw
+  `공식 보고값 (OFFICIAL_REPORTED_VALUE)` pair → plain Korean headings with the enum
+  demoted to a diagnostic line). The accounting basis now reads
+  `수도권 반입 기준(매립지로 들어온 양)` via the existing `accountingBasisLabel`, with
+  `VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW` kept in diagnostics — the three
+  bases stay segregated and identifiable (§5 rule 11).
+- **Known redundancy accepted.** The header now shows both the Phase 5 scope sentence
+  and the shared `MODE_ORIENTATION.flow` strip, which overlap slightly. Dropping the
+  shared strip in one area only would break the Phase 1 cross-area pattern, so both
+  were kept; consolidating the orientation copy belongs to Phase 7.
+- **Not done in this phase:** no landfill API route, query parameter, response
+  interface, request scoping, denominator selection, period/partial-year rule,
+  comparability rule, official-zero handling, sorting, or served value changed; no
+  backend, database, ingestion, Docker, or OCI change; no dependency added; no chart
+  library; no map, arrow, node, or coordinate reintroduced; `docs/ui-baseline/desktop/`
+  untouched.
 
 ### Phase 6 — Data and sources desktop improvements
 **Branch:** `ui/phase-6-data-sources`
@@ -818,6 +957,11 @@ Only genuinely unresolved items. Anything answerable by reading the repository h
 **Why unresolved:** `e2e/landfill.spec.ts` (10 tests) is live-backend-only and self-skips without `E2E_BACKEND_URL`; the Docker daemon was down during Phase 0, so those 10 tests have not run against the current code in this environment. Phase 5 changes that component *and* its error path.
 **Recommendation:** treat `LandfillDashboard.test.tsx` (27 Vitest tests, jsdom, no backend) as the binding safety net for Phase 5 and extend it with the new error-path case; run `landfill.spec.ts` against a live backend once before merging Phase 5. Do not weaken the live spec's skip guard, and do not add a synthetic landfill fixture to make it run offline — the fixture's 404 is deliberate.
 **Blocks Phase 1?** No.
+**Resolved in Phase 5:** `LandfillDashboard.test.tsx` was extended from 27 to 47 tests and is the binding safety net, as recommended. The offline gap was additionally closed at the browser level by `e2e/phase5LandfillDashboard.spec.ts` (33 tests across 390/768/1024/1280/1440), which drives the real component through `e2e/phase5Fixtures.ts`.
+
+The "no synthetic landfill fixture" instruction was followed **where it was aimed**: `e2e/mockBackend.ts` still serves the genuine 404 for all three landfill endpoints, and `e2e/landfill.spec.ts` keeps its `E2E_BACKEND_URL` skip guard untouched — neither was altered to make anything run offline. `phase5Fixtures.ts` is a **separate, spec-scoped** override that exists because a redesign of KPI hierarchy, comparison bars, and a regional table cannot be verified against a permanently empty screen. It follows the Phase 4 `phase4Fixtures.ts` precedent and goes further: every free-text field it serves that the UI renders (dataset names, `caveats`, the comparability note) carries `분석용 합성 픽스처 — 공식 자료 아님`, and no assertion in the spec claims any value is correct. It is never installed by the shared mock, so no other spec's behaviour changed.
+
+**Still open:** `landfill.spec.ts` has not been run against a live backend on this branch (no `E2E_BACKEND_URL` configured in this environment), so its 10 tests remain unexecuted here — the same condition Phase 0 recorded.
 
 ### O4 — Does the top navigation belong inside the equity sidebar or above it?
 **Why unresolved:** hoisting the nav to a full-width header is the right IA, but the map layout is a full-height `md:h-dvh` flex row whose child `.map-pane` resolves `height: 100%` against it. Adding a sticky header above that row reduces the available row height and interacts with the documented `vh`-before-`dvh` fallback and the `@supports` overrides — the exact area of a previously-fixed layout bug.

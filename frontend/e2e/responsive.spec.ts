@@ -95,8 +95,11 @@ for (const vp of VIEWPORTS) {
       await page.getByTestId("mode-flow").click();
       await expect(page.getByTestId("landfill-dashboard")).toBeVisible();
       await expect(page.getByTestId("map-container")).toHaveCount(0);
-      // The unavailable state shows its notice; the filter controls stay usable.
-      await expect(page.getByTestId("landfill-error")).toBeVisible();
+      // Phase 5: that 404 is the backend ANSWERING "no official record", so it
+      // renders the no-data state — not the red `role="alert"` error panel that
+      // used to absorb both cases. The filter controls stay usable either way.
+      await expect(page.getByTestId("landfill-no-data")).toBeVisible();
+      await expect(page.getByTestId("landfill-error")).toHaveCount(0);
       await expect(page.getByTestId("landfill-filters")).toBeVisible();
       // Regression guard: this synthetic layout fixture is NOT displayed as
       // official public data. The KPI and evidence blocks (which carry the
