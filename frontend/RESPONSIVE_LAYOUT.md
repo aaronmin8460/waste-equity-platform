@@ -546,6 +546,49 @@ information hierarchy inside it, not the shell.
   ordering and its `@supports` overrides, the `md:w-96` sidebar width, the single `md`
   shell breakpoint, and `color-scheme: light`.
 
+## Data-and-sources dashboard (desktop redesign, Phase 6)
+
+데이터와 출처 stays a full-width, map-free `variant="page"` branch. Phase 6 moved the
+`<h1>` and the orientation strip out of `app/page.tsx` and into
+`TransparencyDashboard` (matching the Phase 5 landfill pattern) and replaced the two
+dense tables with a searchable source catalog. The shell is untouched.
+
+- **Page frame.** `w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8` wrapping a
+  `mx-auto max-w-screen-2xl flex-col gap-5` column — the same frame the landfill
+  dashboard uses, so the two map-free pages now measure identically.
+- **Overview.** `grid-cols-2 xl:grid-cols-4`. Two-up on mobile and tablet, four-up
+  from 1280. Four cards read comfortably two-up at 768 and 1024.
+- **Control row.** `flex-col lg:flex-row lg:items-end`: the search field grows
+  (`flex-1`) and the two native `<select>`s sit at the end of the same row from `lg`
+  (1024 px). Below `lg` they stack; the two selects themselves go side-by-side from
+  `sm`. Nothing scrolls sideways.
+- **Source catalog.** `grid-cols-1 md:grid-cols-2 xl:grid-cols-3` — one column on
+  mobile, two from 768, three from 1280. Card metadata is a `<dl>` of
+  `flex gap-2` rows with a `min-w-[4.5rem]` term column, so the labels align without a
+  fixed-width grid that could clip a longer Korean term.
+- **Long identifiers.** Every identifier cell in a card's technical disclosure, and
+  every version identifier in the 기술 정보 accordion, carries `break-all`. (The
+  accordion's 분석 실행 and 후보 구역 수 values are short numerics and deliberately do
+  not.) A `source_id`, endpoint, or version string is unbreakable text and would
+  otherwise set the grid track's minimum width and push the page wider.
+- **Tables.** 자료별 기준 기간과 표시 개수 (`min-w-[560px]`), 시설 종류별 지도 표시
+  현황 (`min-w-[420px]`), and 지도에 표시하지 못한 시설 (`min-w-[680px]`) each sit in
+  their own `overflow-x-auto`, so at 390 the table scrolls and the page body does not.
+- **`transparency-sources` must stay a full-width top-level section.**
+  `e2e/desktopNavigation.spec.ts` asserts its bounding box exceeds 90% of the viewport
+  width in the map-free-pages test. A two-column shell or a sticky `<aside>` rail
+  around it would fail that assertion — and the same spec asserts this view contains
+  **zero** `<aside>` elements.
+- **Verified viewports.** `e2e/phase6DataSourcesDashboard.spec.ts` asserts no
+  page-level horizontal overflow, a full-width dashboard, and a usable catalog at
+  390×844, 430×932, 768×1024, 1024×768, 1280×800, and 1440×900 — and, at the two
+  desktop targets, that the search and both filters share one row, that at least two
+  cards share a row, and that the heading, banner, overview, controls, result count,
+  and the first catalog card all fit within the first viewport.
+- **Unchanged:** `.map-pane` (this branch mounts no map), the `vh`-before-`dvh`
+  ordering and its `@supports` overrides, the `md:w-96` sidebar width, the single `md`
+  shell breakpoint, and `color-scheme: light`.
+
 ## 가중치 실험실 (weight scenario lab) sub-view
 
 The scenario lab lives in the suitability sidebar beside the shared MapView (it is
