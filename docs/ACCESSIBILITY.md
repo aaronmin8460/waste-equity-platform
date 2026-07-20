@@ -30,7 +30,7 @@ Dynamically changing result areas are announced without moving focus:
 
 | Area | Mechanism | Announced when |
 | --- | --- | --- |
-| Initial data load | `role="status"` on the loading text | load starts / resolves |
+| Initial data load | `role="status"` `loading` on the loading text (the Phase 4 structural `Skeleton` beside it is `aria-hidden`) | load starts / resolves |
 | Genuine load error | `role="alert"` on the error panel | a fetch fails |
 | Selected metric | `role="status"` `selected-metric-summary` | the metric radio changes |
 | Suitability profile / candidate counts | `role="status"` `suitability-live` | profile or summary updates |
@@ -57,6 +57,27 @@ The 11 metric radios are grouped into three semantic `<fieldset>`s, each with a
 All radios share `name="metric"`, so they remain one logical radio group (arrow
 keys move across every option); the fieldsets only add accessible sub-grouping
 and visual scanning. No metric calculation is affected — `group` is metadata only.
+
+**This structure is a hard contract, re-asserted in Phase 4.** The desktop redesign
+restyled the metric controls (one card per family, tighter rows, a selected row
+emphasised by border + weight as well as the native radio) but changed nothing
+structural: still exactly 3 `<fieldset>`s, 3 `<legend>`s, and 11
+`input[type=radio][name="metric"]`, with the same values and the same `onChange`.
+Native radios were **not** replaced by a select, combobox, segmented control, tabs,
+or custom div-based controls, and no metric family is hidden behind a closed
+disclosure — all eleven options stay visible and reachable on desktop. The group
+legends are the Korean-only `총량 지표` / `1인당 형평성 지표` / `시설 부담 지표`
+strings from `lib/metrics.ts`.
+
+Phase 4 also made the **active** metric the visually dominant element of the control
+column: its plain-Korean name renders at `text-base font-semibold` with the unit as
+muted secondary text and the source/reference period as a caption. That block *is*
+the existing `role="status"` `selected-metric-summary` live region — the live region
+wraps only the name and unit so the announcement stays one short phrase, with the
+provenance caption deliberately outside it.
+
+The equity control column remains an `<aside>`, which both the terminology audit and
+`page.phase4.test.tsx` depend on.
 
 ## Keyboard & focus
 
@@ -137,6 +158,16 @@ recolor.
 - `e2e/accessibility.spec.ts` — `lang="ko"`, skip link focus behaviour, keyboard
   focus ring, map region label, fieldsets, live regions, keyboard walk (no trap),
   at mobile (390×844) and desktop (1440×900).
+- `src/app/page.phase4.test.tsx` — the Phase 4 equity contracts: 3 fieldsets / 3
+  legends / 11 shared-name radios, Korean-only group legends, no metric family behind
+  a closed disclosure, the active-metric live region and its typographic hierarchy,
+  the native `region-select`, map-click ↔ select ↔ panel synchronisation through one
+  `selectedRegionCode`, missing-never-zero, the `aria-hidden` loading skeleton beside
+  the `role="status"` announcement, one `<h1>`, one map, and a token-free `<aside>`.
+- `e2e/phase4EquityMap.spec.ts` — the same contracts at real viewports (390×844,
+  768×1024, 1054×800, 1280×800, 1440×900): single nav/main/map/h1, legend geometry
+  inside the map and clear of the attribution, no horizontal overflow, no empty strip
+  below the map, keyboard focus visible, and no keyboard trap.
 
 No axe/large a11y dependency was added (the repo did not already use one); the
 existing vitest + Playwright tooling covers the foundation.

@@ -194,13 +194,16 @@ describe("floating control", () => {
     renderEquity();
     const summary = screen.getByTestId("map-legend-summary");
     expect(summary.tagName).toBe("SUMMARY");
-    expect(summary.textContent).toContain("범례 (Legend)");
+    // Phase 4: the primary label is Korean-only — the English gloss is gone, but the
+    // control is still labelled text, never an icon on its own.
+    expect(summary.textContent).toContain("범례");
+    expect(summary.textContent).not.toContain("(Legend)");
   });
 
   it("keeps long content in a bounded, internally-scrollable container", () => {
     renderEquity();
     const details = screen.getByTestId("map-legend");
-    const body = within(details).getByText("범례 (Legend) — persons").closest(".map-legend-body");
+    const body = within(details).getByText("범례 — persons").closest(".map-legend-body");
     expect(body).not.toBeNull();
     const cls = body?.getAttribute("class") ?? "";
     expect(cls).toContain("overflow-y-auto");

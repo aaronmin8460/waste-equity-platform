@@ -188,8 +188,10 @@ describe("selected-region identity across metric changes", () => {
     expect(value.textContent).toContain("데이터 없음");
     // Never a zero-filled value.
     expect(value.textContent).not.toMatch(/(^|\D)0(\D|$)/);
-    // Unavailability is conveyed by the text itself (and amber), not by color alone.
-    expect(value.className).toContain("text-amber-700");
+    // Unavailability is conveyed by the text itself (and the warn tone), not by color
+    // alone. Phase 4 moved this to the shared `--color-warn` token; the value is the
+    // same amber-700 the raw utility produced.
+    expect(value.className).toContain("text-warn");
   });
 
   it("shares one selection state between a map region click and the accessible dropdown", async () => {

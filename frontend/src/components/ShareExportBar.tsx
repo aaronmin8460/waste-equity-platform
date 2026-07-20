@@ -57,8 +57,16 @@ export default function ShareExportBar({
   }
 
   return (
-    <section aria-label="공유 및 내보내기" data-testid="share-export" className="text-xs">
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">공유 · 내보내기</h2>
+    // Phase 4: the Phase 1 shared card language. Labels, test IDs, the copied URL,
+    // the CSV data, and the report content are all unchanged — only the container
+    // and the action weighting move (링크 복사 is now the one primary action in this
+    // card, per the single-accent rule; the rest stay quiet).
+    <section
+      aria-label="공유 및 내보내기"
+      data-testid="share-export"
+      className="wep-card p-4 text-xs"
+    >
+      <h2 className="mb-1 text-sm font-semibold text-ink">공유 · 내보내기</h2>
 
       {/* Always-present live region so a restored-link warning is announced even
           when it is injected after mount. */}
@@ -79,7 +87,12 @@ export default function ShareExportBar({
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        <button type="button" className="wep-btn-quiet" onClick={copyLink} data-testid="share-copy">
+        <button
+          type="button"
+          className="wep-btn-primary"
+          onClick={copyLink}
+          data-testid="share-copy"
+        >
           링크 복사
         </button>
         <button
@@ -119,7 +132,7 @@ export default function ShareExportBar({
         )}
       </div>
 
-      <p className="mt-1 text-[11px] text-slate-400">
+      <p className="mt-1 text-[11px] text-ink-subtle">
         보고서 이미지에는 지도가 포함되지 않습니다.
       </p>
     </section>

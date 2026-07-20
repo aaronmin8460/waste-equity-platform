@@ -474,8 +474,8 @@ body {
 /* Floating map legend (Phase 2/3 UX cleanup).
    The equity legend and the suitability status/score legend render as a floating
    <details> card over the map (components/MapLegendOverlay.tsx), not in the sidebar.
-   Mobile: a real disclosure — collapsed by default behind a labelled "범례 (Legend)"
-   summary, so it never covers most of the map; the body scrolls internally.
+   Mobile: a real disclosure — collapsed by default behind a labelled "범례" summary,
+   so it never covers most of the map; the body scrolls internally.
    md+ (tablet-landscape/desktop): the summary is hidden and the body is forced open
    so the legend reads as an always-expanded floating card. This is the SAME
    force-open technique as the sidebar `.mobile-collapsible` (both <details> UA

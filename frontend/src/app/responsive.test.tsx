@@ -181,8 +181,10 @@ describe("mobile control collapsing", () => {
     const floating = container.querySelectorAll("details.map-legend");
     expect(floating.length).toBe(1);
     expect(screen.getByTestId("legend")).toBeDefined();
-    // Its collapse control is labelled text ("범례 (Legend)"), not icon-only.
-    expect(screen.getByTestId("map-legend-summary").textContent).toContain("범례 (Legend)");
+    // Its collapse control is labelled text ("범례"), not icon-only. Phase 4 removed
+    // the English duplication from the primary label.
+    expect(screen.getByTestId("map-legend-summary").textContent).toContain("범례");
+    expect(screen.getByTestId("map-legend-summary").textContent).not.toContain("(Legend)");
     // The legend is NOT one of the sidebar mobile-collapsible disclosures.
     const sidebarLegend = container.querySelector(
       "details.mobile-collapsible [data-testid='legend']",
