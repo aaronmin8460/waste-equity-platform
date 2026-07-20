@@ -1180,13 +1180,11 @@ export default function Home() {
   if (mode === "transparency") {
     return (
       <DashboardShell mode={mode} onModeChange={changeMode} variant="page">
-        <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-3 px-4 py-6 sm:px-6 lg:px-8">
-          <header>
-            <h1 className="text-lg font-bold text-slate-900">데이터·출처</h1>
-            <ModeOrientation mode={mode} />
-          </header>
-          <TransparencyDashboard data={data} />
-        </div>
+        {/* Phase 6: the heading and the orientation strip moved INTO the dashboard,
+            matching the Phase 5 landfill pattern. The strip still renders directly
+            below the single <h1> (asserted by shell.test.tsx's document-order check)
+            and the view still has exactly one <h1>. */}
+        <TransparencyDashboard data={data} orientation={<ModeOrientation mode={mode} />} />
       </DashboardShell>
     );
   }

@@ -61,6 +61,33 @@ messages, accounting-basis names, a general term glossary, and
 | FACILITY_MASS_BALANCE_NOT_ESTABLISHED | 시설에서 처리하고 남는 물질의 양이 확정되지 않아 계산할 수 없습니다. | 시설 물질수지 미확립 |
 | NO_OFFICIAL_SERVICE_POPULATION / NO_MATCHING_SAME_YEAR_POPULATION / INCOMPATIBLE_POPULATION_DEFINITION | 공식 인구가 제공되지 않아 / 같은 연도의 공식 인구 자료가 없어 / 집계 정의가 달라 1인당 값을 계산할 수 없습니다. | 1인당 지방비 미제공 사유 코드 |
 | (an unrecognised reason code) | 현재 공식 계산 자료가 제공되지 않습니다. | 원본 코드는 진단 레이어에 보존 |
+| ANNUAL / MONTHLY / REAL_TIME / STRUCTURAL | 연간 / 월간 / 실시간 / 수시 갱신 | `publication_frequency` (원본 코드는 출처 카드의 진단 레이어) |
+| (an unrecognised frequency code) | 갱신 주기 정보 없음 | 원본 코드는 진단 레이어에 보존 — 주기를 추측하지 않음 |
+| `freshness_status` (실제로는 `FRESH` 또는 기본값 `UNKNOWN`만 기록됨) | (primary에 노출 안 함) | 마지막 수집 실행의 결과 코드. **`FRESH`를 `최신`으로 표시하지 않음** — 아래 설명 참조 |
+| `latest_reference_period` | 기준 기간 | 미제공 시 `기준 기간 정보 없음` (0도 아니고 `없음`도 아님) |
+| `last_success_at` | 수집 시점 `YYYY-MM-DD (세계표준시)` | 마지막 수집 성공 시각. 자료 자체가 최신이라는 뜻이 아님. UTC로 기록·제공되므로 KST와 하루 어긋날 수 있어 한국어 시간대 표기를 반드시 붙임(변환하지 않음). 미제공 시 `수집 기록 없음` |
+| directly reported vs derived | 직접 보고값 / 공식 자료 기반 계산값 | 기관이 보고한 값 / 공식 투입값으로 이 서비스가 계산한 값 |
+| a registry row with no Korean rendering | (등록된 원문 이름 그대로) · 분야 정보 없음 | 알 수 없는 `source_id`는 한국어 이름을 지어내지 않고 원문을 그대로 보여줌 |
+
+**Phase 6 — why `최신` is banned on the 데이터와 출처 surface.** `DatasetFreshness.freshness_status`
+is written as `FRESH` by an ingestion job at the moment it succeeds, and nothing in this
+repository ever demotes it (`STALE` appears only in a model comment). It therefore records
+"the last collection run succeeded", not "this dataset is current". Rendering it as `최신`
+asserted a currency the served metadata cannot establish, so the primary surface shows the
+served `기준 기간` and `수집 시점` instead, and the raw status stays in the per-source
+`data-diagnostic` disclosure. `app/terminology.audit.test.tsx` asserts `최신` does not
+appear on that surface.
+
+**Phase 6 — Korean renderings of the source registry.** Most registry rows carry English or
+bilingual `source_name` / `dataset_name` written for engineers (`Statistics Korea SGIS`,
+`Cadastral, zoning, and structural spatial layers`). `frontend/src/lib/dataSources.ts` maps
+each **exact `source_id`** this repository seeds to a Korean rendering of that row's own
+served string — a translation, never an addition (`vworld` → `브이월드 국가공간정보`, not
+`국토교통부 브이월드`, because the registry never names the ministry). Two rules keep it
+honest: the served strings are always preserved on the record and rendered in the card's
+technical disclosure, and an **unknown `source_id` falls back to the served text verbatim**
+with the `분야 정보 없음` subject. The `자료 분야` label describes what a dataset is *about*,
+read off its own `dataset_name`; it makes no claim about which dashboard consumes it.
 
 The facility-cost reason codes above are the Phase 3 addition. They follow the same rule
 as every other row: the code is **demoted, never deleted** — it stays in the API
@@ -235,10 +262,24 @@ exact layout, icon set, color palette, wording, or trade dress is copied.
 
 - `lib/glossary.test.ts` — registries are plain and self-consistent; error mapping.
 - `app/terminology.audit.test.tsx` — primary nav/status/sub-view are plain; the
-  equity view carries no forbidden token.
+  equity view carries no forbidden token; and (Phase 6) the 데이터와 출처 surface is
+  entered with a populated registry and scanned with `[data-diagnostic]` and the
+  technical accordion stripped — it must carry no forbidden token, no served English
+  dataset string, no raw cadence/ingestion enum, and no `최신`.
+- `lib/dataSources.test.ts` — ordering, filtering, and search over the served
+  registry; the untranslated fallback for an unknown `source_id`; URL validation
+  (never repaired, never constructed); and that an absent reference period stays
+  `null` rather than becoming a default.
 - `app/page.equity.test.tsx` — ranking, comparison, share/report, URL restore.
-- `components/TransparencyDashboard.test.tsx` — sources, counts, recorded vs
+- `components/TransparencyDashboard.test.tsx` — the source catalog (search, both
+  filters, deterministic ordering, the polite result count), the five distinct
+  outcomes (loading / catalog / registry-empty / search-empty / genuine failure),
+  direct-report vs derived labels, an official zero staying distinct from an
+  unavailable value, links only from served URLs, and recorded reason vs
   "실패 사유 기록 없음".
+- `e2e/phase6DataSourcesDashboard.spec.ts` — the same behaviour at 390/430/768/1024/
+  1280/1440, plus map-free/full-width/no-overflow and keyboard operability. Its
+  fixtures (`e2e/phase6Fixtures.ts`) are synthetic and labelled as such.
 - `e2e/citizenFlows.spec.ts` — the five first-time flows via visible Korean labels.
 - `app/page.phase4.test.tsx` — Korean-only metric group legends and legend heading, the
   active-metric hierarchy, and a forbidden-token scan of the equity `<aside>`.

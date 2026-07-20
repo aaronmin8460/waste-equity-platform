@@ -43,6 +43,20 @@ Dynamically changing result areas are announced without moving focus:
 | Cost calculate readiness | `role="status"` `facility-cost-calculate-status` | the primary action becomes (un)available |
 | Cost calculation in flight | `role="status"` `facility-cost-calculating-status` | a calculation starts (the `Skeleton` beside it is `aria-hidden`) |
 | Cost results | `role="status"` `facility-cost-results` | a calculation succeeds and the results view opens |
+| Source catalog result count | `role="status"` `transparency-result-count` | the search text or either filter changes |
+| Source reference periods | `role="status"` `transparency-freshness-status` (`sr-only`, persistent) | the freshness request starts, succeeds, or fails — the node stays mounted and its TEXT changes, because a live region that already holds its content when inserted is generally not announced, and removing one announces nothing |
+| Facility-mapping loading | `role="status"` `transparency-mapping-loading` | the mapping panel is loading (the Phase 6 `Skeleton` beside it is `aria-hidden`) |
+| Facility-mapping request failure | `role="alert"` `transparency-mapping-error` | the mapping fetch genuinely fails |
+
+On the 데이터와 출처 surface the alert role is reserved for that one genuine failure.
+The standing `transparency-notice` banner, the registry-served-no-records state
+(`transparency-sources-empty`), the local search-matched-nothing state
+(`transparency-empty-results`), and the freshness-request-failed note
+(`transparency-freshness-error`) all carry **no** role — none of them is something the
+reader must act on, and a standing disclaimer that interrupted on every render would
+train people to ignore the real alerts. Every live region on that page is rendered
+outside the accordions, so none can be trapped inside a collapsed `<details>`
+(asserted).
 
 Announcements are kept concise (single short sentence) to avoid verbose or
 repetitive read-out; `role="status"`/`aria-live="polite"` never interrupts.
@@ -189,6 +203,24 @@ recolor.
   scrolling locally, a keyboard walk across the filter row with a visible focus outline
   and no trap, and the loading / data / no-data / partial / error states each asserted
   distinctly.
+- `src/components/TransparencyDashboard.test.tsx` — the Phase 6 데이터와 출처
+  contracts: one `<h1>` and no map/nav/main/aside of its own, the orientation strip
+  following the heading, the standing banner carrying **no** `role`, the visible
+  `<label>` bound to the native search input, the polite `transparency-result-count`
+  rendered outside every disclosure, the `aria-hidden` skeleton beside the
+  `role="status"` loading line, the `role="alert"` genuine failure kept distinct from
+  both empty states and from a failed freshness request, every disclosure being a
+  native `<details>` with a non-empty `<summary>`, no live region inside a collapsed
+  disclosure, long identifiers wrapping via `break-all`, and a forbidden-token scan of
+  the primary surface.
+- `e2e/phase6DataSourcesDashboard.spec.ts` — the same contracts at real viewports
+  (390×844, 430×932, 768×1024, 1024×768, 1280×800, 1440×900): single nav/main/h1 with
+  no map, canvas, sidebar, or segmented control; the search and both filters sharing
+  one desktop row; a multi-column catalog; the orientation content inside the first
+  viewport at both desktop widths; no page-level horizontal overflow with tables
+  scrolling locally; a keyboard walk from the search field across the clear control
+  and both selects with a visible focus outline and no trap; and the five states each
+  asserted distinctly.
 
 No axe/large a11y dependency was added (the repo did not already use one); the
 existing vitest + Playwright tooling covers the foundation.

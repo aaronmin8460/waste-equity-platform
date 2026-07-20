@@ -1,8 +1,8 @@
 # Desktop UI/UX Redesign — Phase 0 Baseline and Phased Plan
 
-**Status:** Phases 0–5 complete. Phase 0 was audit + plan only; Phases 1–5 shipped
+**Status:** Phases 0–6 complete. Phase 0 was audit + plan only; Phases 1–6 shipped
 (global foundation, facility-cost setup, facility-cost results, regional burden map,
-landfill dashboard). Phases 6–7 not started.
+landfill dashboard, data-and-sources dashboard). Phase 7 not started.
 **Branch:** `docs/phase-0-desktop-ui-ux-baseline`
 **Date:** 2026-07-20
 **Scope of this document:** the frontend at `frontend/src`. No backend, API, calculation, or infrastructure change is proposed or made.
@@ -815,8 +815,9 @@ Values chosen to match what the codebase already does where it is consistent, an
   library; no map, arrow, node, or coordinate reintroduced; `docs/ui-baseline/desktop/`
   untouched.
 
-### Phase 6 — Data and sources desktop improvements
-**Branch:** `ui/phase-6-data-sources`
+### Phase 6 — Data and sources desktop improvements ✅ delivered
+**Branch:** `ui/phase-6-data-sources-dashboard` *(the plan proposed
+`ui/phase-6-data-sources`; the delivered branch carries the longer name)*
 
 - **Objective:** Lead with what is missing; give dataset status real hierarchy.
 - **Files likely to change:** `components/TransparencyDashboard.tsx`, `components/TransparencyDashboard.test.tsx`, `e2e/citizenFlows.spec.ts` (Task E).
@@ -833,6 +834,178 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Manual desktop checks:** 1440×900 with a live backend and the full source registry — confirm no horizontal overflow and that "what's missing" is legible without scrolling.
 - **Dependencies:** Phase 1.
 - **Regression risks:** `citizenFlows.spec.ts` drives this area by **visible Korean label text**, not testids — any heading rename breaks it.
+
+**Delivery notes.**
+
+- **Information architecture.** The area is now: `<h1>데이터와 출처</h1>` + scope
+  sentence + the shared `MODE_ORIENTATION.transparency` strip → one `tone="info"`
+  `InfoBanner` (`transparency-notice`) → a four-card overview
+  (`transparency-overview`) → the searchable **source catalog**
+  (`transparency-sources`) → 자료별 기준 기간과 표시 개수 (`transparency-datasets`) →
+  현재 제공되지 않는 자료 (`transparency-gaps`, containing `transparency-cost`) →
+  시설 지도 표시 현황 (`transparency-facility-mapping`) → 계산 방법과 기술 정보
+  (`transparency-methodology`), whose three `Accordion`s hold the interpretation
+  limits, the scenario non-persistence note (`transparency-scenario`), and the
+  version identifiers (`transparency-technical`). The `<h1>` and the orientation
+  strip moved from `app/page.tsx` **into** `TransparencyDashboard`, matching the
+  Phase 5 landfill pattern; the view still has exactly one `<h1>`, one `<main>`, one
+  `#main-content`, no `<aside>`, and no map.
+- **AC1 — met, with a deliberate wording change.** The plan asked for "how many
+  datasets are complete vs incomplete". That was **not** implemented as written: the
+  registry carries no completeness field, so any complete/incomplete split would have
+  been a fabricated grade (§5 rule 1, and the phase's own "no completeness score"
+  non-goal). What ships instead is honest and answers the same question: four counts
+  of served records (`등록된 공식 자료`, `자료 분야`, `기준 기간이 표시된 자료`,
+  `원문 링크가 있는 자료`) plus a dedicated 현재 제공되지 않는 자료 section, above the
+  listing the four cost components and the served count of facilities with no map
+  location. The overview cards carry no percentage, freshness score, or
+  red/amber/green grade (asserted against the overview element). *Deviation from the
+  AC's wording:* the 현재 제공되지 않는 자료 section sits BELOW the source catalog, not
+  above the fold — the four overview counts and the banner carry the orientation, and
+  putting a second gap block above a nine-to-eleven-card catalog would have pushed the
+  catalog itself off the first screen. What is above the fold at both desktop widths
+  is asserted: heading, banner, overview, controls, result count, first catalog card.
+- **AC2 — met, reframed.** Dataset `상태` is no longer a bare table cell. It is also
+  no longer `freshness_status`: that column was rendering `FRESH` → `최신`, and
+  **nothing in this repository ever demotes a source from `FRESH`** (verified by
+  grep — `STALE` appears only in a model comment; every ingestion writes `FRESH` on
+  success). `최신` therefore asserted a currency the metadata cannot establish. The
+  primary surface now shows the served `기준 기간`, the served collection date, and
+  `사용 중`/`사용 안 함`; the raw `freshness_status` is kept in the per-card
+  `data-diagnostic` disclosure. A test asserts `최신` does not appear on the primary
+  surface.
+- **AC3 — met.** All three remaining tables (자료별 기준 기간, 시설 종류별 지도 표시
+  현황, 지도에 표시하지 못한 시설) sit in their own `overflow-x-auto` wrapper, and the
+  page body never scrolls horizontally at 390, 430, 768, 1024, 1280, or 1440. Most
+  Phase 6 tests assert `expectNoHorizontalOverflow` at every viewport; one test also
+  measures that the overflow is genuinely LOCAL — each wrapper's computed
+  `overflow-x` is `auto`, and below each table's min-width (560px / 680px) the
+  wrapper's `scrollWidth` is asserted strictly greater than its `clientWidth`, so the
+  scroll is real rather than nominal. A page-level check alone cannot distinguish
+  "scrolls inside its wrapper" from "clipped and unreachable".
+- **AC4 — met.** `suitability-policy-v2`, `suitability-screening-v3`,
+  `capital-grid-500m-v1`, and `capex-standard-v2022dec` moved into the
+  `기술 정보 (분석 버전과 식별자)` accordion. The three suitability identifiers each
+  sit beside their `GLOSSARY` name (분석 규칙 버전 / 계산 방식 버전 / 분석 구역 버전);
+  the cost version is labelled `표준공사비 기준 자료`, which is descriptive rather than
+  a `GLOSSARY` key. All four are marked `data-diagnostic`
+  with `break-all` so a long identifier wraps rather than widening the page.
+  **This closes a real leak:** all three version prefixes are in
+  `FORBIDDEN_PRIMARY_TOKENS`, and the terminology audit had never scanned this
+  surface — it only ever scanned the equity `<aside>`. The audit now enters
+  데이터와 출처 (with the registry populated) and scans it with `[data-diagnostic]`
+  and the technical accordion stripped.
+- **AC5 — met for the verbatim string, corrected for the list.**
+  `값이 없는 지역은 빈 칸으로 두며 0으로 채우지 않습니다.` is preserved verbatim. The
+  cost-exclusion list is now rendered **from `MISSING_COMPONENT_META`** rather than
+  four hardcoded `<li>`s, because those had already drifted from the glossary — the
+  page said `매립지 잔여 비용 (시설 물질수지 미확립)` while `glossary.test.ts` locks
+  `잔여 매립비용 (시설 물질수지 미확립)`, and no test caught it. Unifying on the
+  glossary changes **two** visible strings — the old list also read `실제 운반비`
+  where the glossary says `실제 운송비` — and adds each component's one-sentence
+  explanation, which the hardcoded `<li>`s never carried. Future drift is now
+  impossible.
+- **AC6 — met.** `.wep-card` usage is retained and extended; the surface uses only
+  `InfoBanner`, `KpiCard`, `Accordion`, `EmptyState`, `Skeleton`, and the semantic
+  tokens. No dependency, chart library, table library, or icon set was added.
+- **Component deviation from §7/§9.** The plan named `Chip` as the Phase 6 dataset
+  status badge. The delivered 값 구분 badge is an inline pill instead, because it needs
+  two visually distinct variants (직접 보고값 / 공식 자료 기반 계산값) and `Chip` is a
+  single-style removable selection token. `Chip` is unused on this surface.
+- **Beyond the ACs — the source catalog.** The registry's `source_name` /
+  `dataset_name` are, for most rows, English or bilingual strings written for
+  engineers (`Statistics Korea SGIS`, `Cadastral, zoning, and structural spatial
+  layers`). Rendering those as a citizen's primary label is the same failure as a raw
+  enum. `frontend/src/lib/dataSources.ts` holds a Korean rendering **keyed by exact
+  `source_id`**, for the nine rows this repository seeds (alembic 0001/0006/0013 plus
+  the MOIS ingestion contract). Two rules keep it honest: the served strings are
+  always preserved on the record and shown in the per-card disclosure, and an
+  **unknown `source_id` falls back to the served text verbatim** with the
+  `분야 정보 없음` subject — a future source can never acquire an invented Korean name,
+  owner, or subject. Nothing is added that the served string does not already name
+  (e.g. `vworld` → `브이월드 국가공간정보`, never `국토교통부 브이월드`).
+- **`자료 분야` is descriptive, not an analytical claim.** The subject label reads off
+  the row's own `dataset_name`. It deliberately does NOT claim which dashboard
+  consumes a dataset or that a dataset feeds any analytical value — the registry
+  carries no such field, so asserting it would be inference dressed as metadata.
+- **Search and filtering.** Client-side only, no new endpoint, no third-party
+  combobox, and **no URL parameter** (deliberately deferred). A native `<input
+  type="search">` with a visible `<label>` matches the Korean name, the organisation,
+  the `source_id`, the subject, the cadence, and the served English strings — so a
+  reader who arrived with a dataset ID still finds the record, without the ID ever
+  becoming the card's title. Two native `<select>`s filter by subject and cadence,
+  and **both option lists are generated from the served records only**, so a filter
+  can never offer a category that would always return nothing. Ordering is fixed by
+  `buildDisplaySources` (subject → Korean name → `source_id`) and `filterDisplaySources`
+  preserves it, so applying or clearing a filter never reshuffles the catalog.
+  `transparency-result-count` is a `role="status"` line rendered directly in the
+  section — never inside a disclosure.
+- **Five outcomes, one alert.** Loading (`role="status"` + an `aria-hidden`
+  `Skeleton`), the populated catalog, the registry answering with **no records**
+  (`EmptyState`, no role), a **local search matching nothing** (`EmptyState`, no
+  role, with a clear-filters action), and a **genuine request failure**
+  (`InfoBanner tone="error" role="alert"` with the backend code in a
+  `data-diagnostic` line). A sixth state was added during implementation: the
+  freshness request itself failing. Previously `fetchDataFreshness().catch(() =>
+  setFreshness([]))` turned a failed request into "no source has a reference period"
+  — an unfetched period reported as an absent one. It now renders
+  `기준 기간을 불러오지 못했습니다` per card and a non-alert note, distinct from
+  `기준 기간 정보 없음`.
+- **Direct-report vs derived.** The dataset table gained a 값 구분 column:
+  `직접 보고값` for population / waste / facilities, `공식 자료 기반 계산값` for
+  1인당 발생량, with an inline note in the row's name cell stating it is waste ÷
+  official population and not a reported figure. This is grounded in the served response, which carries both input
+  source ids and both reference periods. The badge's meaning is in its text; the tint
+  is secondary only.
+- **Unchanged.** No backend, API route, response field, schema, ingestion, Docker, or
+  OCI change. No served count, reference period, coverage string, snapshot, official
+  zero, or availability rule changed. `docs/ui-baseline/desktop/` untouched. The
+  frozen navigation labels are byte-for-byte unchanged and still asserted with
+  `.toBe`. Preserved testids: `transparency-sources`, `transparency-datasets`,
+  `transparency-suitability`, `transparency-cost`, `transparency-facility-mapping`,
+  `transparency-scenario`, `facility-mapping-counts`, `unmapped-facility-table`.
+- **Source attribution kept, per §5 rule 9.** The old dataset rows were labelled
+  `인구 (SGIS)` / `폐기물 발생량 (RCIS)`. Dropping those parentheticals in favour of
+  plain Korean would have deleted the metric's source, which AGENTS.md and §5 rule 9
+  both forbid — and the two population series in this schema are explicitly not
+  interchangeable, so an unattributed 인구 row is genuinely ambiguous. The table
+  therefore gained an 출처 column populated from each response's **own** `source_id`
+  (rather than a hardcoded string), rendered through the same Korean organisation
+  names as the catalog. The derived 1인당 발생량 row names BOTH inputs. A response that
+  carried no `source_id` renders `자료 출처 미표기` — never a borrowed or guessed one.
+- **Pagination correctness, found by the second review pass.** Two defects in the
+  unmapped-facility pager, both pre-existing in shape and both now fixed:
+  1. **One page's facilities under another page's label.** `page` changes
+     synchronously on click while the refetch is in flight, so the previous page's
+     rows rendered beneath the new page's label. The rows are now gated on the
+     SERVED `unmapped.page` matching the requested one (`rowsAreCurrent`) — the same
+     "never render an outcome that describes a different request" rule Phase 5
+     applied to the landfill filters. While they disagree, a `role="status"` line
+     says the page is loading; no stale row is shown.
+  2. **A failed page request stranded the reader.** The pager lived inside the
+     `mapping` branch, so a failure on page 2 unmounted the controls along with the
+     table and left `page` stuck at 2 with no way back. The last served
+     `unmapped.total` is now kept in its own state, so the pager renders in the
+     error branch too and 이전 stays operable. No stale rows or counts survive the
+     failure.
+- **Timezone qualifier on 수집 시점.** `last_success_at` is written as
+  `datetime.now(tz=UTC)` by every ingestion and served unconverted, so its date
+  component is a UTC date — a run at 08:45 KST is stored as the previous day 23:45
+  UTC. The value is therefore rendered as `YYYY-MM-DD (세계표준시)`. It is not
+  converted, because converting would require assuming a display timezone the
+  backend never stated; and the qualifier is Korean rather than a bare "(UTC)"
+  because this is a citizen primary surface.
+- **Known limitation — row attribution reads `items[0]`.** The 출처 column takes each
+  dataset's source from the first served item. `/population` is query-scoped to a
+  single `source_id`, but `/facilities` and the reporting endpoints are not — they
+  are single-sourced only because the current ingestion writers share one constant.
+  If a second facility or waste-statistics source were ever ingested, those rows
+  would attribute every record to whichever item is first. This is recorded rather
+  than fixed: correcting it properly means the READ path declaring its sources, which
+  is a backend change and outside Phase 6.
+- **Defect X7 not taken.** `ReportPreview`'s `max-w-2xl` cap was listed as "Phase 6
+  or 7"; it belongs to the report modal, which Phase 6 does not touch. It carries
+  forward to Phase 7.
 
 ### Phase 7 — Desktop regression, accessibility, and cleanup
 **Branch:** `ui/phase-7-desktop-regression`
