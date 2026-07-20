@@ -37,6 +37,8 @@ Dynamically changing result areas are announced without moving focus:
 | Selected region (accessible alt.) | `role="status"` inside `selected-region-summary` | a map region is clicked |
 | Landfill results | `role="status"` `landfill-live` | a filter loads new official values |
 | Landfill loading | `role="status"` `landfill-loading` | flow data is loading |
+| Cost service regions | `role="status"` `facility-cost-region-status` | a region is selected, removed, bulk-selected, or cleared |
+| Cost calculate readiness | `role="status"` `facility-cost-calculate-status` | the primary action becomes (un)available |
 
 Announcements are kept concise (single short sentence) to avoid verbose or
 repetitive read-out; `role="status"`/`aria-live="polite"` never interrupts.
@@ -63,6 +65,18 @@ and visual scanning. No metric calculation is affected — `group` is metadata o
 - All controls are native (buttons, radios, checkboxes, selects, `<details>`,
   links) and keyboard-operable; no custom key handlers were added where a native
   control already suffices.
+- The one exception is the cost lens's service-region picker
+  (`ui/SearchableRegionPicker.tsx`), where no native control provides
+  type-to-filter multi-selection. It implements the standard ARIA 1.2 combobox:
+  `role="combobox"` + `aria-expanded` / `aria-controls` / `aria-autocomplete="list"`
+  on the input, a `role="listbox"` of `role="option"` elements with `aria-selected`,
+  and `aria-activedescendant` for the keyboard-active option — so DOM focus never
+  leaves the input, Tab always walks straight out, and there is no keyboard trap.
+  ArrowDown/ArrowUp move the active option, Enter selects, Escape closes. Selection
+  is conveyed by `aria-selected` **and** a visible 선택됨 word, never by color alone.
+  Everything around it stays native: the facility-type cards are `<input
+  type="radio">` in a `<fieldset>`/`<legend>`, and 고급 설정 is a `<details>`
+  disclosure.
 - The mode switch is a labelled `role="group"` of toggle buttons with
   `aria-pressed` (not a `radiogroup`, which would promise arrow-key roving focus
   the native buttons do not implement). Focus stays on the activated button after

@@ -28,14 +28,27 @@ import {
   type FacilityCostOptions,
 } from "../lib/api";
 import { formatQuantity } from "../lib/metrics";
+import { regionDisplayName } from "../lib/regionDisplay";
 import { stabilityBadgeLabel } from "../lib/suitability";
+import Accordion from "./ui/Accordion";
+import EmptyState from "./ui/EmptyState";
+import InfoBanner from "./ui/InfoBanner";
+import SearchableRegionPicker from "./ui/SearchableRegionPicker";
 
+// Primary labels are plain Korean only — the parenthesised English that used to
+// follow each one ("생활계 폐기물 (Household)") is the G3 duplication the redesign
+// plan removes from primary labels. The backend enum is unchanged; it is still the
+// option VALUE and still what the calculation payload carries.
 const WASTE_STREAMS: { value: string; label: string }[] = [
-  { value: "HOUSEHOLD", label: "생활계 폐기물 (Household)" },
-  { value: "BUSINESS_NON_FACILITY", label: "사업장 비배출시설계 (Business non-facility)" },
-  { value: "INDUSTRIAL_FACILITY", label: "사업장 배출시설계 (Industrial facility)" },
-  { value: "CONSTRUCTION", label: "건설 폐기물 (Construction)" },
+  { value: "HOUSEHOLD", label: "생활계 폐기물" },
+  { value: "BUSINESS_NON_FACILITY", label: "사업장 비배출시설계" },
+  { value: "INDUSTRIAL_FACILITY", label: "사업장 배출시설계" },
+  { value: "CONSTRUCTION", label: "건설 폐기물" },
 ];
+
+function wasteStreamLabel(value: string): string {
+  return WASTE_STREAMS.find((s) => s.value === value)?.label ?? value;
+}
 
 // The fixed minimum list of unavailable / non-claims the warning panel must always
 // show, regardless of the backend's structured missing_components. These are the
@@ -60,33 +73,21 @@ const MISSING_COMPONENT_LABELS: Record<string, string> = {
   REMAINING_LANDFILL_COST: "잔여 매립비용",
 };
 
-const CITIZEN_CONDITIONS = [
-  "실시간 배출정보 공개",
-  "주민 감시 또는 협의체",
-  "주거지 완충구역",
-  "폐기물 차량 운행경로 관리",
-  "악취·소음 상시 측정",
-  "건강영향 조사",
-  "기준 초과 시 가동중단 절차",
-  "주민편익시설",
-  "지원기금 공개",
-  "사고 즉시 통보",
-  "정기적인 재정·운영 정보 공개",
-];
-
-const CITIZEN_RESPONSES = [
-  "현재 정보만으로도 검토 가능",
-  "위 조건이 충족되면 검토 가능",
-  "추가 정보가 필요함",
-  "시설 설치에 반대함",
-];
-
 const PAGE_DISCLAIMER =
   "이 페이지는 시설 설치를 권고하거나 반대를 설득하기 위한 페이지가 아닙니다. 공식 데이터로 필요성, " +
   "비용, 입지 조건과 불확실성을 함께 검토하기 위한 시민 의사결정 지원 도구입니다.";
 
 const HEADER_SUBTITLE =
-  "선택한 지역의 공식 폐기물 발생량을 바탕으로 필요한 시설 규모와 정부 표준공사비 기준 설치비를 분석합니다.";
+  "선택한 지역의 공식 폐기물 자료를 기준으로 필요한 시설 규모와 표준공사비 기반 설치비를 계산합니다.";
+
+// The three non-claims that must be readable BEFORE anything is expanded. The full
+// eight-item exclusion list stays in the collapsed accordion below (redesign plan
+// §9 Phase 2 AC 6: at most one banner on the setup screen, remaining exclusions in
+// an accordion whose summary states how many items it holds). Nothing is deleted —
+// this is a change of prominence, not of content.
+const SETUP_NON_CLAIMS =
+  "표준공사비를 기준으로 한 참고용 추정치입니다. 실제 총사업비가 아니며, 주민 개인에게 청구되는 " +
+  "금액이나 세금 고지액도 아닙니다.";
 
 // Source + reference period for the subsidy rates shown in the scenario selector,
 // so their provenance is visible in every state (not only after a calculation).
@@ -161,6 +162,21 @@ interface ScenarioState {
   costVersion: string;
 }
 
+/** The advanced inputs only, used to tell the summary whether defaults still hold. */
+type AdvancedDefaults = Pick<
+  ScenarioState,
+  "subsidyScheme" | "operatingDays" | "undergroundMultiplier" | "costVersion"
+>;
+
+function advancedChanged(s: ScenarioState, defaults: AdvancedDefaults): boolean {
+  return (
+    s.subsidyScheme !== defaults.subsidyScheme ||
+    s.operatingDays !== defaults.operatingDays ||
+    s.undergroundMultiplier !== defaults.undergroundMultiplier ||
+    s.costVersion !== defaults.costVersion
+  );
+}
+
 export default function FacilityCostDashboard({
   wasteRegions,
   selectedCandidate,
@@ -168,6 +184,9 @@ export default function FacilityCostDashboard({
   const [options, setOptions] = useState<FacilityCostOptions | null>(null);
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const [scenario, setScenario] = useState<ScenarioState | null>(null);
+  // The advanced values as served, captured once, so the summary can say whether
+  // the citizen has moved any of them off the API-provided default.
+  const [advancedDefaults, setAdvancedDefaults] = useState<AdvancedDefaults | null>(null);
   const [result, setResult] = useState<FacilityCostCalculate | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [calculating, setCalculating] = useState(false);
@@ -193,7 +212,9 @@ export default function FacilityCostDashboard({
       .then((opts) => {
         if (cancelled) return;
         setOptions(opts);
-        setScenario({
+        // Defaults are unchanged from the previous implementation — the redesign
+        // moves these controls, it does not re-seed them.
+        const seeded: ScenarioState = {
           facilityType: opts.facility_types[0]?.value ?? "sorting_auto",
           wasteStream: WASTE_STREAMS[0].value,
           subsidyScheme: opts.subsidy_schemes[0]?.value ?? "city_or_county",
@@ -202,6 +223,13 @@ export default function FacilityCostDashboard({
           operatingDays: opts.default_operating_days,
           undergroundMultiplier: opts.underground_multiplier.default,
           costVersion: opts.active_cost_version,
+        };
+        setScenario(seeded);
+        setAdvancedDefaults({
+          subsidyScheme: seeded.subsidyScheme,
+          operatingDays: seeded.operatingDays,
+          undergroundMultiplier: seeded.undergroundMultiplier,
+          costVersion: seeded.costVersion,
         });
       })
       .catch((cause: unknown) => {
@@ -228,15 +256,16 @@ export default function FacilityCostDashboard({
     [],
   );
 
-  // The calculable regions for the SELECTED stream, deduped by code and sorted by
-  // name. Only these are offered, so a chosen code always has official waste data.
+  // The calculable regions for the SELECTED stream, deduped by code. Only these are
+  // offered, so a chosen code always has official waste data. Ordering is applied by
+  // SearchableRegionPicker (서울 → 인천 → 경기 → name), which is also what orders the
+  // selected chips, so options and chips can never disagree.
   const regionOptions = useMemo(() => {
     const stream = scenario?.wasteStream;
     const seen = new Set<string>();
     return wasteRegions
       .filter((r) => r.stream === stream && !seen.has(r.code) && seen.add(r.code))
-      .map((r) => ({ code: r.code, name: r.name }))
-      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+      .map((r) => ({ code: r.code, name: r.name }));
   }, [wasteRegions, scenario?.wasteStream]);
 
   const calculate = useCallback(() => {
@@ -287,25 +316,27 @@ export default function FacilityCostDashboard({
       <FacilityCostHeader />
 
       {optionsError ? (
-        <section
-          className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-slate-700"
-          data-testid="facility-cost-options-error"
-          role="alert"
-        >
-          <p>{optionsError}</p>
-        </section>
-      ) : !options || !scenario ? (
-        <p
-          className="mt-4 text-sm text-slate-600"
-          data-testid="facility-cost-loading"
-          role="status"
-        >
-          비용 옵션을 불러오는 중… (Loading cost options…)
+        // A genuine, actionable failure — the one place role="alert" is warranted
+        // for the setup screen.
+        <div className="mt-4">
+          <InfoBanner
+            tone="error"
+            title="비용 옵션을 불러오지 못했습니다"
+            role="alert"
+            testId="facility-cost-options-error"
+          >
+            <p>{optionsError}</p>
+          </InfoBanner>
+        </div>
+      ) : !options || !scenario || !advancedDefaults ? (
+        <p className="mt-4 text-sm text-ink-muted" data-testid="facility-cost-loading" role="status">
+          비용 옵션을 불러오는 중…
         </p>
       ) : (
         <FacilityCostBody
           options={options}
           scenario={scenario}
+          advancedDefaults={advancedDefaults}
           regionOptions={regionOptions}
           update={update}
           calculate={calculate}
@@ -326,6 +357,7 @@ export default function FacilityCostDashboard({
 function FacilityCostBody({
   options,
   scenario,
+  advancedDefaults,
   regionOptions,
   update,
   calculate,
@@ -338,6 +370,7 @@ function FacilityCostBody({
 }: {
   options: FacilityCostOptions;
   scenario: ScenarioState;
+  advancedDefaults: AdvancedDefaults;
   regionOptions: { code: string; name: string }[];
   update: <K extends keyof ScenarioState>(key: K, value: ScenarioState[K]) => void;
   calculate: () => void;
@@ -351,44 +384,46 @@ function FacilityCostBody({
   const validationMessage = validateScenario(scenario, options);
   return (
     <div className="mt-4 flex flex-col gap-5">
-      <FacilityCostNotice result={resultCurrent ? result : null} />
-
-      <FacilityCostFilters
+      <FacilityCostSetup
         options={options}
-        regionOptions={regionOptions}
         scenario={scenario}
+        advancedDefaults={advancedDefaults}
+        regionOptions={regionOptions}
         update={update}
         onCalculate={calculate}
         calculating={calculating}
         validationMessage={validationMessage}
+        result={resultCurrent ? result : null}
       />
 
       {/* Results/errors are shown ONLY while they still match the live inputs. A
           control change (or a new map candidate) changes currentSig, so an
-          out-of-date output disappears until the user recalculates. */}
+          out-of-date output disappears until the user recalculates.
+
+          Phase 2 deliberately leaves this results block untouched below the
+          redesigned setup workflow; splitting setup from results is Phase 3. */}
       {errorCurrent && (
-        <section
-          className="rounded border border-red-300 bg-red-50 p-3 text-sm text-slate-800"
+        <InfoBanner
+          tone="error"
+          title="계산할 수 없습니다"
           role="alert"
-          data-testid="facility-cost-error"
+          testId="facility-cost-error"
         >
-          <p className="font-semibold text-red-800">{calcError}</p>
-          <p className="mt-1 text-xs text-slate-600">
+          <p className="font-semibold">{calcError}</p>
+          <p className="mt-1 text-xs">
             공식 데이터를 계산할 수 없으면 값을 표시하지 않습니다. 대체 데이터는 사용하지 않습니다.
           </p>
-        </section>
+        </InfoBanner>
       )}
       {result && !resultCurrent && !calculating && (
-        <p className="text-xs text-amber-700" role="status" data-testid="facility-cost-stale">
-          입력이 변경되었습니다. 다시 계산하세요. (Inputs changed — recalculate.)
+        <p className="text-xs text-warn" role="status" data-testid="facility-cost-stale">
+          입력이 변경되었습니다. 다시 계산하세요.
         </p>
       )}
 
       {resultCurrent && result && (
         <FacilityCostResults result={result} selectedCandidate={selectedCandidate} />
       )}
-
-      <CitizenConditions />
     </div>
   );
 }
@@ -398,8 +433,11 @@ function FacilityCostBody({
 function FacilityCostHeader() {
   return (
     <header data-testid="facility-cost-header">
-      <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">우리 지역에 시설이 생긴다면</h1>
-      <p className="mt-1 max-w-3xl text-sm text-slate-600">{HEADER_SUBTITLE}</p>
+      {/* The one h1 for this view. It now names the task in the same vocabulary as
+          the 비용 살펴보기 sub-view tab that leads here, instead of the previous
+          scenario framing ("우리 지역에 시설이 생긴다면"). */}
+      <h1 className="text-2xl font-bold text-ink">시설 비용 살펴보기</h1>
+      <p className="mt-1 max-w-3xl text-sm text-ink-muted">{HEADER_SUBTITLE}</p>
     </header>
   );
 }
@@ -407,53 +445,74 @@ function FacilityCostHeader() {
 // --------------------------------------------------------------------------- //
 
 /**
- * The prominent warning panel (Task 10): what this analysis is NOT. Always visible,
- * so the partial nature is clear before and after any calculation. When a result is
- * present it also lists the backend's structured missing components with their
- * reasons — never as a zero cost line.
+ * What this analysis is NOT, rationed into two layers.
+ *
+ * BEFORE: one large amber panel carried the page disclaimer, all eight non-claims,
+ * and the backend's missing components, above every setup control. The Phase 0
+ * audit found warning styling so pervasive (60 hand-rolled amber utilities across 8
+ * components) that the mandatory caveats had stopped being read.
+ *
+ * AFTER: a single compact neutral banner states the three claims a citizen must not
+ * misread (reference estimate / not total project cost / not a personal bill), and
+ * the full eight-item list plus the served missing components live in a COLLAPSED
+ * accordion whose summary states how many items it holds. Nothing is removed and no
+ * wording is softened — only its prominence changes (redesign plan §9 Phase 2 AC 6).
+ *
+ * `facility-cost-completeness` stays on the element that holds the full list, so its
+ * test contract is unchanged.
  */
 function FacilityCostNotice({ result }: { result: FacilityCostCalculate | null }) {
+  const missing = result?.completeness.missing_components ?? [];
   return (
-    <section
-      aria-label="분석 범위와 한계"
-      className="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-slate-700"
-      data-testid="facility-cost-completeness"
-    >
-      <p
-        className="rounded border border-amber-300 bg-white/70 p-2 font-medium text-amber-900"
-        data-testid="facility-cost-disclaimer"
-      >
-        {PAGE_DISCLAIMER}
-      </p>
-      <p className="mt-3 font-semibold text-amber-900">
-        현재 결과는 표준공사비 기반 설치비 분석입니다. 아래 항목은 포함되지 않았습니다:
-      </p>
-      <ul className="mt-2 grid list-disc grid-cols-1 gap-x-6 gap-y-1 pl-5 sm:grid-cols-2">
-        {COMPLETENESS_NOTICES.map((notice) => (
-          <li key={notice}>{notice}</li>
-        ))}
-      </ul>
-      {result && <FacilityCostMissingComponents result={result} />}
-    </section>
+    <>
+      {/* Standing disclaimer: informational, never role="alert" — it must not
+          interrupt a screen reader on every render. */}
+      <InfoBanner tone="info" testId="facility-cost-notice">
+        <p data-testid="facility-cost-disclaimer">{PAGE_DISCLAIMER}</p>
+        <p className="mt-2 font-medium">{SETUP_NON_CLAIMS}</p>
+      </InfoBanner>
+
+      <div className="mt-3">
+        <Accordion
+          label={`분석에 포함되지 않은 항목 ${COMPLETENESS_NOTICES.length}가지`}
+          testId="facility-cost-completeness"
+        >
+          <p className="text-sm text-ink-muted">
+            현재 결과는 표준공사비 기반 설치비 분석입니다. 아래 항목은 포함되지 않았습니다.
+          </p>
+          <ul className="mt-2 grid list-disc grid-cols-1 gap-x-6 gap-y-1 pl-5 text-sm text-ink-muted sm:grid-cols-2">
+            {COMPLETENESS_NOTICES.map((notice) => (
+              <li key={notice}>{notice}</li>
+            ))}
+          </ul>
+          {missing.length > 0 && <FacilityCostMissingComponents missing={missing} />}
+        </Accordion>
+      </div>
+    </>
   );
 }
 
 /** Backend structured missing components with Korean labels + retained reason codes. */
-function FacilityCostMissingComponents({ result }: { result: FacilityCostCalculate }) {
-  const missing = result.completeness.missing_components;
-  if (missing.length === 0) return null;
+function FacilityCostMissingComponents({
+  missing,
+}: {
+  missing: FacilityCostCalculate["completeness"]["missing_components"];
+}) {
   return (
-    <div className="mt-3 rounded border border-amber-200 bg-white/60 p-3" data-testid="facility-cost-missing">
-      <p className="text-xs font-semibold text-slate-700">
+    <div
+      className="mt-3 rounded-card border border-hairline bg-surface-muted p-3"
+      data-testid="facility-cost-missing"
+    >
+      <p className="text-xs font-semibold text-ink-muted">
         서버가 명시한 미포함 비용 항목 (missing — never counted as 0):
       </p>
       <ul className="mt-1 flex flex-col gap-1">
         {missing.map((m) => (
-          <li key={m.component} className="text-xs text-slate-600" data-testid="facility-cost-missing-row">
-            <span className="font-medium text-slate-800">
+          <li key={m.component} className="text-xs text-ink-muted" data-testid="facility-cost-missing-row">
+            <span className="font-medium text-ink">
               {MISSING_COMPONENT_LABELS[m.component] ?? m.component}
             </span>{" "}
-            <span className="text-amber-700">미포함</span> — {m.reason}
+            <span className="text-warn">미포함</span> — {m.reason}
           </li>
         ))}
       </ul>
@@ -463,217 +522,443 @@ function FacilityCostMissingComponents({ result }: { result: FacilityCostCalcula
 
 // --------------------------------------------------------------------------- //
 
-const selectClass =
-  "mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800";
-const labelClass = "text-xs font-medium text-slate-600";
+const fieldClass =
+  "mt-1 w-full rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm text-ink";
+const labelClass = "block text-sm font-medium text-ink";
+const captionClass = "mt-1 block text-xs font-normal text-ink-subtle";
 
-function FacilityCostFilters({
+/**
+ * The redesigned setup workflow (Phase 2).
+ *
+ * Desktop layout: a constrained centred container holding a two-column grid — setup
+ * controls on the left, a compact scenario summary on the right that sticks while
+ * the left column scrolls, so the primary action is reachable without scrolling to
+ * the bottom of a long form. Below `lg` the columns stack and the summary returns to
+ * normal document flow. Sticky is safe here specifically because the cost branch is
+ * map-free: it mounts no `.map-pane`, so nothing depends on this subtree's height
+ * (frontend/RESPONSIVE_LAYOUT.md "Sticky positioning").
+ */
+function FacilityCostSetup({
   options,
-  regionOptions,
   scenario,
+  advancedDefaults,
+  regionOptions,
   update,
   onCalculate,
   calculating,
   validationMessage,
+  result,
 }: {
   options: FacilityCostOptions;
-  regionOptions: { code: string; name: string }[];
   scenario: ScenarioState;
+  advancedDefaults: AdvancedDefaults;
+  regionOptions: { code: string; name: string }[];
   update: <K extends keyof ScenarioState>(key: K, value: ScenarioState[K]) => void;
   onCalculate: () => void;
   calculating: boolean;
   validationMessage: string | null;
+  result: FacilityCostCalculate | null;
 }) {
   const noRegions = scenario.regionCodes.length === 0;
+  const noFacilityTypes = options.facility_types.length === 0;
+  const disabled = noRegions || noFacilityTypes || calculating || validationMessage !== null;
+
+  // Why the primary action is unavailable, in plain Korean. This is ordinary
+  // guidance rather than an error, so it goes to a POLITE status region — the
+  // numeric out-of-range message below keeps role="alert", because an input the
+  // user has actually put out of bounds is a genuine actionable error.
+  const blockedReason = noFacilityTypes
+    ? "시설 종류를 불러오지 못해 계산할 수 없습니다."
+    : noRegions
+      ? "처리할 지역을 한 곳 이상 선택하면 계산할 수 있습니다."
+      : calculating
+        ? "계산 중입니다."
+        : validationMessage !== null
+          ? "고급 설정에 입력한 값을 확인해 주세요."
+          : "";
+
   return (
-    <section
-      aria-label="시나리오 설정"
-      className="rounded border border-slate-200 bg-white p-4"
-      data-testid="facility-cost-form"
-    >
-      <h2 className="mb-3 text-sm font-semibold text-slate-800">시나리오 설정 (Scenario)</h2>
+    <div className="mx-auto w-full max-w-6xl" data-testid="facility-cost-form">
+      <FacilityCostNotice result={result} />
 
-      {/* Primary inputs: multi-column on wide desktop, two columns on tablet, one
-          column on mobile — no horizontal overflow at any width. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <label className={labelClass}>
-          시설 종류 (Facility type)
-          <select
-            className={selectClass}
-            data-testid="facility-cost-facility-type"
-            value={scenario.facilityType}
-            onChange={(e) => update("facilityType", e.target.value)}
+      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        {/* ── Left column: the setup controls ─────────────────────────────── */}
+        <div className="flex flex-col gap-4">
+          <section className="wep-card p-4" aria-labelledby="fc-step-regions">
+            <h2 id="fc-step-regions" className="text-base font-semibold text-ink">
+              1. 처리할 지역
+            </h2>
+            <p className="mt-1 text-sm text-ink-muted">
+              공식 폐기물 자료가 있는 지역만 선택할 수 있습니다.
+            </p>
+            <div className="mt-3">
+              {regionOptions.length === 0 ? (
+                <EmptyState
+                  title="이 폐기물 종류로 계산 가능한 지역이 없습니다."
+                  description="공식 폐기물 자료가 있는 지역이 없어 계산할 수 없습니다. 폐기물 종류를 바꿔 보세요."
+                  testId="facility-cost-regions-empty"
+                />
+              ) : (
+                <SearchableRegionPicker
+                  label="지역 이름 검색"
+                  hint="이름을 입력하거나 아래 버튼으로 광역시·도 전체를 선택할 수 있습니다."
+                  regions={regionOptions}
+                  selectedCodes={scenario.regionCodes}
+                  onChange={(codes) => update("regionCodes", codes)}
+                />
+              )}
+            </div>
+          </section>
+
+          <section className="wep-card p-4" aria-labelledby="fc-step-conditions">
+            <h2 id="fc-step-conditions" className="text-base font-semibold text-ink">
+              2. 처리 조건
+            </h2>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className={labelClass}>
+                폐기물 종류
+                <select
+                  className={fieldClass}
+                  data-testid="facility-cost-waste-stream"
+                  value={scenario.wasteStream}
+                  onChange={(e) => update("wasteStream", e.target.value)}
+                >
+                  {WASTE_STREAMS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <span className={captionClass}>
+                  종류를 바꾸면 계산 가능한 지역이 달라져 선택한 지역이 초기화됩니다.
+                </span>
+              </label>
+
+              <label className={labelClass}>
+                지역 처리 비율 (%)
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  className={fieldClass}
+                  data-testid="facility-cost-processing-share"
+                  value={scenario.processingSharePercent}
+                  onChange={(e) => update("processingSharePercent", e.target.value)}
+                />
+                <span className={captionClass}>
+                  선택한 지역의 발생량 중 이 시설에서 처리할 비율입니다.
+                </span>
+              </label>
+            </div>
+
+            <div className="mt-4">
+              <FacilityTypeCards
+                facilityTypes={options.facility_types}
+                value={scenario.facilityType}
+                onChange={(value) => update("facilityType", value)}
+              />
+            </div>
+          </section>
+
+          {/* Advanced settings collapse by default. They open automatically when a
+              value inside is out of range, so an invalid input is never hidden — and
+              the summary card repeats the reason next to the calculate button. */}
+          <Accordion
+            label="고급 설정"
+            defaultOpen={validationMessage !== null}
+            testId="facility-cost-advanced-settings"
           >
-            {options.facility_types.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className={labelClass}>
+                연간 가동일수
+                <input
+                  type="number"
+                  min={1}
+                  max={366}
+                  step={1}
+                  className={fieldClass}
+                  data-testid="facility-cost-operating-days"
+                  value={scenario.operatingDays}
+                  onChange={(e) => update("operatingDays", Number(e.target.value))}
+                />
+              </label>
 
-        <label className={labelClass}>
-          폐기물 종류 (Waste stream)
-          <select
-            className={selectClass}
-            data-testid="facility-cost-waste-stream"
-            value={scenario.wasteStream}
-            onChange={(e) => update("wasteStream", e.target.value)}
-          >
-            {WASTE_STREAMS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+              <label className={labelClass}>
+                지하화 배수 ({options.underground_multiplier.min}–
+                {options.underground_multiplier.max})
+                <input
+                  type="number"
+                  min={Number(options.underground_multiplier.min)}
+                  max={Number(options.underground_multiplier.max)}
+                  step={0.05}
+                  className={fieldClass}
+                  data-testid="facility-cost-underground"
+                  value={scenario.undergroundMultiplier}
+                  onChange={(e) => update("undergroundMultiplier", e.target.value)}
+                />
+                <span className={captionClass}>{options.underground_multiplier.note}</span>
+              </label>
 
-        <label className={labelClass}>
-          지역 처리 비율 (Processing share, %)
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step={1}
-            className={selectClass}
-            data-testid="facility-cost-processing-share"
-            value={scenario.processingSharePercent}
-            onChange={(e) => update("processingSharePercent", e.target.value)}
-          />
-        </label>
+              <label className={labelClass}>
+                보조 시나리오
+                <select
+                  className={fieldClass}
+                  data-testid="facility-cost-subsidy-scheme"
+                  value={scenario.subsidyScheme}
+                  onChange={(e) => update("subsidyScheme", e.target.value)}
+                >
+                  {options.subsidy_schemes.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                {/* The subsidy rate's source + reference period, kept immediately
+                    beside its selector in every state (docs/FACILITY_COST_LENS_UI.md).
+                    It moves with the control; it is never separated from it. */}
+                <span className={captionClass} data-testid="facility-cost-subsidy-note">
+                  {SUBSIDY_RATE_FORM_NOTE}
+                </span>
+              </label>
 
-        {/* The service-region multi-select spans the full grid row so long Korean
-            names never clip; it stays a native multi-select in this phase. */}
-        <label className={`${labelClass} sm:col-span-2 lg:col-span-3`}>
-          서비스 지역 (Service regions) — 하나 이상 선택
-          <select
-            multiple
-            size={6}
-            className={`${selectClass} h-auto`}
-            data-testid="facility-cost-regions"
-            value={scenario.regionCodes}
-            onChange={(e) =>
-              update(
-                "regionCodes",
-                Array.from(e.target.selectedOptions, (opt) => opt.value),
-              )
-            }
-          >
-            {regionOptions.map((r) => (
-              // The code disambiguates duplicate names (e.g. 서울 중구 vs 인천 중구).
-              <option key={r.code} value={r.code}>
-                {r.name} ({r.code})
-              </option>
-            ))}
-          </select>
-          <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
-            {regionOptions.length === 0
-              ? "이 폐기물 종류로 계산 가능한 지역이 없습니다."
-              : noRegions
-                ? "계산 가능한 지역만 표시됩니다. 지역을 선택하세요."
-                : `선택: ${scenario.regionCodes.length}개`}
-          </span>
-        </label>
-      </div>
+              {options.cost_versions.length > 1 ? (
+                <label className={labelClass}>
+                  공사비 버전
+                  <select
+                    className={fieldClass}
+                    data-testid="facility-cost-version"
+                    value={scenario.costVersion}
+                    onChange={(e) => update("costVersion", e.target.value)}
+                  >
+                    {options.cost_versions.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                // Exactly one version exists, so the API exposes no choice. It is
+                // shown read-only rather than as a one-option select that pretends
+                // to be editable.
+                <div className={labelClass}>
+                  공사비 버전
+                  <p className="mt-1 text-sm text-ink-muted" data-testid="facility-cost-version-fixed">
+                    {scenario.costVersion}
+                  </p>
+                  <span className={captionClass}>현재 적용 중인 기준 한 가지만 제공됩니다.</span>
+                </div>
+              )}
+            </div>
 
-      {/* Advanced settings in an accessible disclosure. Kept open on none-of-the
-          screens by default so a keystroke never triggers a request; the explicit
-          calculate button below is the only submit path. */}
-      <details className="mt-3 rounded border border-slate-200 bg-slate-50 p-2">
-        <summary className="cursor-pointer text-xs font-semibold text-slate-600">
-          고급 설정 (Advanced settings)
-        </summary>
-        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className={labelClass}>
-            연간 가동일수 (Operating days)
-            <input
-              type="number"
-              min={1}
-              max={366}
-              step={1}
-              className={selectClass}
-              data-testid="facility-cost-operating-days"
-              value={scenario.operatingDays}
-              onChange={(e) => update("operatingDays", Number(e.target.value))}
-            />
-          </label>
-
-          <label className={labelClass}>
-            지하화 배수 (Underground multiplier {options.underground_multiplier.min}–
-            {options.underground_multiplier.max})
-            <input
-              type="number"
-              min={Number(options.underground_multiplier.min)}
-              max={Number(options.underground_multiplier.max)}
-              step={0.05}
-              className={selectClass}
-              data-testid="facility-cost-underground"
-              value={scenario.undergroundMultiplier}
-              onChange={(e) => update("undergroundMultiplier", e.target.value)}
-            />
-            <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
-              {options.underground_multiplier.note}
-            </span>
-          </label>
-
-          <label className={labelClass}>
-            보조 시나리오 (Subsidy scheme)
-            <select
-              className={selectClass}
-              data-testid="facility-cost-subsidy-scheme"
-              value={scenario.subsidyScheme}
-              onChange={(e) => update("subsidyScheme", e.target.value)}
-            >
-              {options.subsidy_schemes.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <span
-              className="mt-0.5 block text-[11px] font-normal text-slate-400"
-              data-testid="facility-cost-subsidy-note"
-            >
-              {SUBSIDY_RATE_FORM_NOTE}
-            </span>
-          </label>
-
-          {options.cost_versions.length > 1 && (
-            <label className={labelClass}>
-              공사비 버전 (Cost version)
-              <select
-                className={selectClass}
-                data-testid="facility-cost-version"
-                value={scenario.costVersion}
-                onChange={(e) => update("costVersion", e.target.value)}
-              >
-                {options.cost_versions.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+            {/* Validation stays inside the accordion beside the field it refers to,
+                AND is summarised next to the calculate button, so a closed accordion
+                never becomes the only home for an active error. */}
+            {validationMessage && (
+              <p className="mt-3 text-sm text-warn" role="alert" data-testid="facility-cost-validation">
+                {validationMessage}
+              </p>
+            )}
+          </Accordion>
         </div>
-      </details>
 
-      {/* Validation is announced accessibly, and the button is disabled while an
-          input is out of range or a request is active (no duplicate submit). */}
-      {validationMessage && (
-        <p className="mt-3 text-xs text-amber-700" role="alert" data-testid="facility-cost-validation">
-          {validationMessage}
+        {/* ── Right column: the scenario summary + primary action ─────────── */}
+        <FacilityCostSetupSummary
+          options={options}
+          scenario={scenario}
+          advancedDefaults={advancedDefaults}
+          regionOptions={regionOptions}
+          onCalculate={onCalculate}
+          calculating={calculating}
+          disabled={disabled}
+          blockedReason={blockedReason}
+          validationMessage={validationMessage}
+        />
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+
+/**
+ * Facility type as selection cards instead of a dropdown.
+ *
+ * Native `<input type="radio">` inside a `<fieldset>`/`<legend>`, one per option
+ * SERVED BY THE API — the count is never assumed, so a third facility type would
+ * lay out correctly with no code change. The visible text is exactly the served
+ * label: no capacity, cost, approval, or engineering description is invented here,
+ * because the options endpoint does not provide one.
+ *
+ * Selection is signalled by the native radio dot, a border change, AND a heavier
+ * font weight — three signals, so it never depends on color alone.
+ */
+function FacilityTypeCards({
+  facilityTypes,
+  value,
+  onChange,
+}: {
+  facilityTypes: { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (facilityTypes.length === 0) {
+    return (
+      <EmptyState
+        title="시설 종류를 불러오지 못했습니다."
+        description="서버가 시설 종류를 제공하지 않아 계산할 수 없습니다."
+        testId="facility-cost-facility-type-empty"
+      />
+    );
+  }
+  return (
+    <fieldset data-testid="facility-cost-facility-type">
+      <legend className="text-sm font-medium text-ink">시설 종류</legend>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {facilityTypes.map((option) => {
+          const selected = option.value === value;
+          return (
+            <label
+              key={option.value}
+              data-testid="facility-cost-facility-type-card"
+              data-selected={selected || undefined}
+              className={`flex cursor-pointer items-start gap-2 rounded-card border p-3 text-sm ${
+                selected
+                  ? "border-primary bg-primary-soft font-semibold text-ink"
+                  : "border-hairline bg-surface text-ink-muted"
+              }`}
+            >
+              <input
+                type="radio"
+                name="facility-cost-facility-type"
+                className="mt-0.5"
+                value={option.value}
+                checked={selected}
+                onChange={() => onChange(option.value)}
+              />
+              <span>{option.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+
+/** "서울 중구, 인천 중구 외 8개" — never the full list, and never a region code. */
+function summariseRegions(labels: string[], head = 2): string {
+  if (labels.length === 0) return "선택 안 함";
+  if (labels.length <= head) return labels.join(", ");
+  return `${labels.slice(0, head).join(", ")} 외 ${labels.length - head}개`;
+}
+
+/**
+ * The compact scenario summary. Sticky at `lg`+ so the primary action stays on
+ * screen; a plain block below that, where the columns stack.
+ */
+function FacilityCostSetupSummary({
+  options,
+  scenario,
+  advancedDefaults,
+  regionOptions,
+  onCalculate,
+  calculating,
+  disabled,
+  blockedReason,
+  validationMessage,
+}: {
+  options: FacilityCostOptions;
+  scenario: ScenarioState;
+  advancedDefaults: AdvancedDefaults;
+  regionOptions: { code: string; name: string }[];
+  onCalculate: () => void;
+  calculating: boolean;
+  disabled: boolean;
+  blockedReason: string;
+  validationMessage: string | null;
+}) {
+  const selectedLabels = useMemo(() => {
+    const byCode = new Map(regionOptions.map((r) => [r.code, r]));
+    return scenario.regionCodes
+      .map((code) => {
+        const region = byCode.get(code);
+        return region ? regionDisplayName(region.code, region.name) : null;
+      })
+      .filter((label): label is string => label !== null);
+  }, [regionOptions, scenario.regionCodes]);
+
+  const facilityLabel =
+    options.facility_types.find((f) => f.value === scenario.facilityType)?.label ?? "선택 안 함";
+  const changed = advancedChanged(scenario, advancedDefaults);
+
+  return (
+    // Deliberately a <section>, not an <aside>: in this codebase `<aside>` marks the
+    // equity map sidebar specifically (e2e/desktopNavigation.spec.ts asserts the
+    // map-free pages have none, and terminology.audit.test.tsx queries for it), so a
+    // second one here would blur a landmark that other checks rely on.
+    <section
+      aria-labelledby="fc-summary-heading"
+      className="lg:sticky lg:top-6 lg:self-start"
+      data-testid="facility-cost-setup-summary"
+    >
+      <div className="wep-card p-4">
+        <h2 id="fc-summary-heading" className="text-base font-semibold text-ink">
+          현재 설정
+        </h2>
+        <dl className="mt-3 flex flex-col gap-2 text-sm">
+          <div>
+            <dt className="text-xs text-ink-subtle">선택 지역</dt>
+            <dd className="text-ink" data-testid="facility-cost-summary-regions">
+              {scenario.regionCodes.length}개 · {summariseRegions(selectedLabels)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-ink-subtle">폐기물</dt>
+            <dd className="text-ink">{wasteStreamLabel(scenario.wasteStream)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-ink-subtle">처리 비율</dt>
+            <dd className="text-ink">
+              {scenario.processingSharePercent === "" ? "미입력" : `${scenario.processingSharePercent}%`}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-ink-subtle">시설 종류</dt>
+            <dd className="text-ink">{facilityLabel}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-ink-subtle">고급 설정</dt>
+            <dd className="text-ink" data-testid="facility-cost-summary-advanced">
+              {changed ? "기본값에서 변경됨" : "기본값"}
+            </dd>
+          </div>
+        </dl>
+
+        <button
+          type="button"
+          onClick={onCalculate}
+          disabled={disabled}
+          className="wep-btn-primary mt-4 w-full"
+          data-testid="facility-cost-calculate"
+        >
+          {calculating ? "계산 중…" : "비용 계산하기"}
+        </button>
+
+        {/* Polite guidance for the ordinary "not ready yet" states. An out-of-range
+            advanced input is ALSO surfaced here, so a collapsed accordion can never
+            be the only place an active validation error is stated. */}
+        <p
+          className="mt-2 text-xs text-ink-muted"
+          role="status"
+          data-testid="facility-cost-calculate-status"
+        >
+          {validationMessage ?? blockedReason}
         </p>
-      )}
-      <button
-        type="button"
-        onClick={onCalculate}
-        disabled={noRegions || calculating || validationMessage !== null}
-        className="mt-3 rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-        data-testid="facility-cost-calculate"
-      >
-        {calculating ? "계산 중…" : "표준공사비 기반 설치비 계산"}
-      </button>
+      </div>
     </section>
   );
 }
@@ -1073,75 +1358,6 @@ function FacilityCostEvidence({ result }: { result: FacilityCostCalculate }) {
         </ul>
       </details>
       <p className="mt-2 font-medium text-amber-800">{result.disclaimer}</p>
-    </section>
-  );
-}
-
-// --------------------------------------------------------------------------- //
-// Citizen deliberation — client-only, NON-persistent (no backend, no PII, no
-// aggregate opinion). The selections live only in this component's state.
-// --------------------------------------------------------------------------- //
-
-function CitizenConditions() {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [response, setResponse] = useState<string | null>(null);
-  const toggle = (condition: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(condition)) next.delete(condition);
-      else next.add(condition);
-      return next;
-    });
-  return (
-    <section
-      aria-label="시민 검토 조건"
-      className="rounded border border-slate-200 bg-white p-4 text-xs text-slate-700"
-      data-testid="facility-cost-conditions"
-    >
-      <h2 className="text-sm font-semibold text-slate-900">시민 검토 조건 (Deliberation)</h2>
-      <p className="mt-1 text-[11px] text-slate-500">
-        아래 선택은 이 화면에만 저장되며 서버로 전송되거나 집계되지 않습니다. 개인정보를 수집하지
-        않습니다. (Client-only; nothing is stored, sent, or aggregated.)
-      </p>
-      <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <fieldset>
-          <legend className="text-[11px] font-semibold text-slate-500">
-            검토에 필요한 조건 (select conditions)
-          </legend>
-          <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-1">
-            {CITIZEN_CONDITIONS.map((condition) => (
-              <label key={condition} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={selected.has(condition)}
-                  onChange={() => toggle(condition)}
-                  data-testid="facility-cost-condition"
-                />
-                <span>{condition}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <fieldset>
-          <legend className="text-[11px] font-semibold text-slate-500">
-            현재 나의 검토 상태 (my current stance)
-          </legend>
-          <div className="mt-1 flex flex-col gap-1">
-            {CITIZEN_RESPONSES.map((option) => (
-              <label key={option} className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="facility-cost-response"
-                  checked={response === option}
-                  onChange={() => setResponse(option)}
-                  data-testid="facility-cost-response"
-                />
-                <span>{option}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      </div>
     </section>
   );
 }

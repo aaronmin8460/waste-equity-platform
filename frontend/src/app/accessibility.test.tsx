@@ -334,7 +334,7 @@ describe("suitability accessible alternatives", () => {
     // The full-width cost dashboard mounts no map.
     expect(screen.queryByTestId("map-container")).toBeNull();
     // The neutral citizen framing + disclaimer are present.
-    expect(screen.getByText("우리 지역에 시설이 생긴다면")).toBeDefined();
+    expect(screen.getByText("시설 비용 살펴보기")).toBeDefined();
     // Back to the score view restores the screening panel (and the map).
     fireEvent.click(screen.getByTestId("suitability-view-score"));
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());

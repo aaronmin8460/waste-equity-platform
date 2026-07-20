@@ -106,7 +106,12 @@ for (const vp of VIEWPORTS) {
       await page.getByTestId("suitability-view-cost").click();
       await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
       await expect(page.getByTestId("map-container")).toHaveCount(0);
-      await page.getByTestId("facility-cost-regions").selectOption("KR-SGIS-11110");
+      // The region picker is the Phase 2 searchable combobox, not a multi-select.
+      await page.getByTestId("facility-cost-region-search").click();
+      await page
+        .getByTestId("facility-cost-region-option")
+        .filter({ hasText: "서울 종로구" })
+        .click();
       await page.getByTestId("facility-cost-calculate").click();
       await expect(page.getByTestId("fc-standard-cost")).toContainText("120.75 억원");
       await expect(page.getByTestId("facility-cost-completeness")).toContainText("운영비 미포함");

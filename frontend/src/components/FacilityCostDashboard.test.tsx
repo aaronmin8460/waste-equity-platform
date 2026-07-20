@@ -1,16 +1,22 @@
 // @vitest-environment jsdom
 
 /**
- * Facility cost lens tests (Phase 2/3 full-width dashboard).
+ * Facility cost lens tests (full-width dashboard; setup workflow redesigned in the
+ * desktop redesign's Phase 2).
  *
  * The api client is mocked with CONTROLLED CONTRACT FIXTURES (clearly a test
- * environment) so the dashboard renders without a backend. Asserts the scenario
+ * environment) so the dashboard renders without a backend. Asserts the setup
  * controls, validation (calculate disabled until a region is chosen), exact values
  * from the fixture (KPI grid), completeness rendered as explicitly unavailable
  * (never 0), the funding breakdown, the official-input region table, the missing
  * components (never a 0 cost line), the null per-capita path, candidate integration,
- * the citizen framing/disclaimer, the client-only conditions section, and the
- * aria-live result announcement.
+ * the citizen framing/disclaimer, and the aria-live result announcement.
+ *
+ * Phase 2 changed the SETUP interaction only: the native `<select multiple>` is gone
+ * and regions are chosen through SearchableRegionPicker, so `selectRegion` below
+ * drives the combobox. Every result assertion is deliberately unchanged — the served
+ * values, their exact decimal strings, and the unavailable paths must survive the
+ * setup redesign untouched.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -163,12 +169,15 @@ vi.mock("../lib/api", async (importOriginal) => {
 
 import FacilityCostDashboard from "./FacilityCostDashboard";
 
-// Calculable regions tagged with their waste stream. HOUSEHOLD has three (incl.
-// two 중구 that differ only by code — Seoul vs Incheon); CONSTRUCTION has one.
+// Calculable regions tagged with their waste stream. HOUSEHOLD spans all three
+// metropolitan areas and includes the two 중구 that share a name and differ only by
+// code (Seoul KR-SGIS-11140 vs Incheon KR-SGIS-23010 — the real SGIS sido digits,
+// 11/23/31, that lib/ranking.ts classifies); CONSTRUCTION has one.
 const WASTE_REGIONS = [
   { code: "KR-SGIS-11110", name: "종로구", stream: "HOUSEHOLD" },
   { code: "KR-SGIS-11140", name: "중구", stream: "HOUSEHOLD" },
-  { code: "KR-SGIS-28110", name: "중구", stream: "HOUSEHOLD" },
+  { code: "KR-SGIS-23010", name: "중구", stream: "HOUSEHOLD" },
+  { code: "KR-SGIS-31011", name: "수원시 장안구", stream: "HOUSEHOLD" },
   { code: "KR-SGIS-11110", name: "종로구", stream: "CONSTRUCTION" },
 ];
 
@@ -189,72 +198,169 @@ async function renderPanel(candidate: CandidateDetail | null = null) {
   return utils;
 }
 
+/**
+ * Choose a service region through the redesigned picker. The visible option text is
+ * a plain name ("서울 중구"), so the option is located by its `data-region-code`
+ * TEST hook — the code is intentionally not visible text any more.
+ */
 function selectRegion(code: string): void {
-  const select = screen.getByTestId("facility-cost-regions") as HTMLSelectElement;
-  for (const option of Array.from(select.options)) {
-    if (option.value === code) option.selected = true;
-  }
-  fireEvent.change(select);
+  fireEvent.focus(screen.getByTestId("facility-cost-region-search"));
+  const option = screen
+    .getAllByTestId("facility-cost-region-option")
+    .find((o) => o.getAttribute("data-region-code") === code);
+  if (!option) throw new Error(`no region option offered for ${code}`);
+  fireEvent.click(option);
+}
+
+function selectedChipLabels(): string[] {
+  return screen
+    .queryAllByTestId("facility-cost-region-chip")
+    .map((chip) => chip.querySelector("span")?.textContent ?? "");
 }
 
 describe("citizen framing", () => {
   it("shows the neutral title and the decision-support disclaimer", async () => {
     await renderPanel();
-    expect(screen.getByText("우리 지역에 시설이 생긴다면")).toBeDefined();
+    expect(screen.getByText("시설 비용 살펴보기")).toBeDefined();
     const disclaimer = screen.getByTestId("facility-cost-disclaimer").textContent ?? "";
     expect(disclaimer).toContain("권고하거나 반대를 설득하기 위한 페이지가 아닙니다");
     expect(disclaimer).toContain("시민 의사결정 지원 도구");
   });
+
+  it("keeps the non-claims readable without expanding anything", async () => {
+    await renderPanel();
+    // The compact banner carries the three claims a citizen must not misread…
+    const banner = screen.getByTestId("facility-cost-notice").textContent ?? "";
+    expect(banner).toContain("표준공사비");
+    expect(banner).toContain("실제 총사업비가 아니며");
+    expect(banner).toContain("세금 고지액도 아닙니다");
+    // …and the full eight-item exclusion list is still present, in an accordion
+    // whose summary states how many items it holds.
+    const summary = screen.getByTestId("facility-cost-completeness-summary").textContent ?? "";
+    expect(summary).toContain("8가지");
+  });
 });
 
-describe("scenario form", () => {
-  it("renders the accessible scenario controls", async () => {
+describe("setup workflow", () => {
+  it("renders the accessible setup controls", async () => {
     await renderPanel();
     for (const testId of [
       "facility-cost-facility-type",
       "facility-cost-waste-stream",
-      "facility-cost-regions",
+      "facility-cost-region-search",
       "facility-cost-processing-share",
       "facility-cost-operating-days",
       "facility-cost-underground",
       "facility-cost-subsidy-scheme",
+      "facility-cost-setup-summary",
+      "facility-cost-advanced-settings",
     ]) {
       expect(screen.getByTestId(testId)).toBeDefined();
     }
-    // Default operating days come from the options.
+    // Default operating days come from the options — the redesign moved this
+    // control into the accordion, it did not re-seed it.
     expect((screen.getByTestId("facility-cost-operating-days") as HTMLInputElement).value).toBe(
       "300",
     );
   });
 
-  it("disables calculate until at least one region is selected", async () => {
+  it("has no native multiple-select left in the setup", async () => {
+    const { container } = await renderPanel();
+    expect(container.querySelector("select[multiple]")).toBeNull();
+    expect(screen.queryByTestId("facility-cost-regions")).toBeNull();
+  });
+
+  it("disables calculate until at least one region is selected, and says why", async () => {
     await renderPanel();
     const button = screen.getByTestId("facility-cost-calculate") as HTMLButtonElement;
     expect(button.disabled).toBe(true);
+    // The reason is stated politely, not as an alert.
+    const status = screen.getByTestId("facility-cost-calculate-status");
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.textContent).toContain("지역을 한 곳 이상 선택");
     selectRegion("KR-SGIS-11110");
     await waitFor(() => expect(button.disabled).toBe(false));
   });
 
-  it("offers only calculable regions for the selected stream, disambiguated by code", async () => {
+  it("offers only calculable regions, disambiguated by metro prefix and never by code", async () => {
     await renderPanel();
-    const select = screen.getByTestId("facility-cost-regions") as HTMLSelectElement;
-    // HOUSEHOLD (default) → three calculable regions, with the code in each label
-    // so the two 중구 (Seoul vs Incheon) are distinguishable.
-    const labels = Array.from(select.options).map((o) => o.textContent ?? "");
-    expect(labels.length).toBe(3);
-    expect(labels).toContain("중구 (KR-SGIS-11140)");
-    expect(labels).toContain("중구 (KR-SGIS-28110)");
+    fireEvent.focus(screen.getByTestId("facility-cost-region-search"));
+    const labels = screen
+      .getAllByTestId("facility-cost-region-option")
+      .map((o) => o.textContent ?? "");
+    // HOUSEHOLD (default) → four calculable regions, deterministically ordered
+    // 서울 → 인천 → 경기, then by name.
+    expect(labels).toEqual(["서울 종로구", "서울 중구", "인천 중구", "경기 수원시 장안구"]);
+    // The two 중구 are distinguishable WITHOUT any raw region code being visible.
+    expect(screen.getByTestId("facility-cost-region-options").textContent).not.toContain("KR-SGIS");
     // Switching to a stream with narrower coverage narrows the choices — a citizen
     // can never pick a region the endpoint cannot calculate.
     fireEvent.change(screen.getByTestId("facility-cost-waste-stream"), {
       target: { value: "CONSTRUCTION" },
     });
-    await waitFor(() =>
-      expect((screen.getByTestId("facility-cost-regions") as HTMLSelectElement).options).toHaveLength(
-        1,
-      ),
+    await waitFor(() => {
+      fireEvent.focus(screen.getByTestId("facility-cost-region-search"));
+      expect(screen.getAllByTestId("facility-cost-region-option")).toHaveLength(1);
+    });
+    expect(screen.getByTestId("facility-cost-region-options").textContent).toContain("서울 종로구");
+  });
+
+  it("shows selected regions as chips and sends their codes unchanged", async () => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11140");
+    selectRegion("KR-SGIS-23010");
+    await waitFor(() => expect(selectedChipLabels()).toEqual(["서울 중구", "인천 중구"]));
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(h.calc).toHaveBeenCalled());
+    // The payload carries the internal codes, unchanged and undecorated.
+    expect(h.calc.mock.calls[0][0].regionCodes).toEqual(["KR-SGIS-11140", "KR-SGIS-23010"]);
+  });
+
+  it("renders a facility-type card per API option, with native radio semantics", async () => {
+    const { container } = await renderPanel();
+    const cards = screen.getAllByTestId("facility-cost-facility-type-card");
+    // Driven by the options fixture, not by a hardcoded count.
+    expect(cards).toHaveLength(OPTIONS.facility_types.length);
+    expect(cards.map((c) => c.textContent)).toEqual(OPTIONS.facility_types.map((f) => f.label));
+    const radios = container.querySelectorAll<HTMLInputElement>(
+      'input[type="radio"][name="facility-cost-facility-type"]',
     );
-    expect(screen.getByTestId("facility-cost-regions").textContent).toContain("종로구");
+    expect(radios).toHaveLength(OPTIONS.facility_types.length);
+    expect(radios[0].checked).toBe(true);
+    // Selecting through the card updates the scenario and the summary.
+    fireEvent.click(radios[1]);
+    await waitFor(() => expect(radios[1].checked).toBe(true));
+    expect(screen.getByTestId("facility-cost-setup-summary").textContent).toContain(
+      OPTIONS.facility_types[1].label,
+    );
+    // Selection is not signalled by color alone.
+    expect(cards[1].getAttribute("data-selected")).toBe("true");
+  });
+
+  it("keeps the advanced defaults and reports whether they were changed", async () => {
+    await renderPanel();
+    const summary = () => screen.getByTestId("facility-cost-summary-advanced").textContent;
+    expect(summary()).toBe("기본값");
+    expect((screen.getByTestId("facility-cost-underground") as HTMLInputElement).value).toBe("1.00");
+    expect((screen.getByTestId("facility-cost-subsidy-scheme") as HTMLSelectElement).value).toBe(
+      "city_or_county",
+    );
+    fireEvent.change(screen.getByTestId("facility-cost-operating-days"), {
+      target: { value: "320" },
+    });
+    await waitFor(() => expect(summary()).toBe("기본값에서 변경됨"));
+  });
+
+  it("summarises many selected regions without listing them all or showing a code", async () => {
+    await renderPanel();
+    fireEvent.click(screen.getByTestId("facility-cost-regions-seoul"));
+    fireEvent.click(screen.getByTestId("facility-cost-regions-incheon"));
+    await waitFor(() =>
+      expect(screen.getByTestId("facility-cost-summary-regions").textContent).toContain("3개"),
+    );
+    const text = screen.getByTestId("facility-cost-summary-regions").textContent ?? "";
+    expect(text).toContain("외 1개");
+    expect(text).not.toContain("KR-SGIS");
   });
 
   it("shows the subsidy-rate source in the form, before any calculation", async () => {
@@ -528,7 +634,7 @@ describe("dashboard KPI grid, funding, region table, missing components", () => 
     const { container } = await renderPanel();
     const h1s = container.querySelectorAll("h1");
     expect(h1s).toHaveLength(1);
-    expect(h1s[0].textContent).toContain("우리 지역에 시설이 생긴다면");
+    expect(h1s[0].textContent).toContain("시설 비용 살펴보기");
   });
 });
 
@@ -589,18 +695,50 @@ describe("matched band endpoint semantics", () => {
   });
 });
 
-describe("citizen conditions (client-only)", () => {
-  it("renders a non-persistent deliberation section with conditions and a stance", async () => {
+describe("citizen deliberation removal", () => {
+  it("no longer renders the client-only conditions/stance section at all", async () => {
     await renderPanel();
-    const section = screen.getByTestId("facility-cost-conditions");
-    expect(section.textContent).toContain("서버로 전송되거나 집계되지 않습니다");
-    const conditions = within(section).getAllByTestId("facility-cost-condition");
-    expect(conditions.length).toBeGreaterThanOrEqual(11);
-    const stances = within(section).getAllByTestId("facility-cost-response");
-    expect(stances).toHaveLength(4);
-    // Selecting is local state only (no api call).
-    fireEvent.click(conditions[0]);
-    expect((conditions[0] as HTMLInputElement).checked).toBe(true);
-    expect(h.calc).not.toHaveBeenCalled();
+    for (const testId of [
+      "facility-cost-conditions",
+      "facility-cost-condition",
+      "facility-cost-response",
+    ]) {
+      expect(screen.queryAllByTestId(testId)).toHaveLength(0);
+    }
+    // None of its copy reaches the page — neither the CITIZEN_CONDITIONS strings
+    // nor the CITIZEN_RESPONSES stances nor the section's own framing.
+    const text = document.body.textContent ?? "";
+    for (const copy of [
+      "시민 검토 조건",
+      "서버로 전송되거나 집계되지 않습니다",
+      "실시간 배출정보 공개",
+      "주민 감시 또는 협의체",
+      "기준 초과 시 가동중단 절차",
+      "현재 정보만으로도 검토 가능",
+      "시설 설치에 반대함",
+    ]) {
+      expect(text).not.toContain(copy);
+    }
+    expect(document.body.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+
+  it("does not affect the calculation request or its result values", async () => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-results")).toBeDefined());
+    // The payload is exactly the scenario — the removed section contributed no field.
+    expect(h.calc.mock.calls[0][0]).toEqual({
+      facilityType: "sorting_auto",
+      wasteStream: "HOUSEHOLD",
+      subsidyScheme: "city_or_county",
+      regionCodes: ["KR-SGIS-11110"],
+      processingSharePercent: "100",
+      operatingDays: 300,
+      undergroundMultiplier: "1.00",
+      costVersion: "capex-standard-v2022dec",
+      candidateId: null,
+    });
+    expect(screen.getByTestId("fc-standard-cost").textContent).toContain("120.75 억원");
   });
 });

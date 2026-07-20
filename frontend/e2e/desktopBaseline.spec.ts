@@ -29,6 +29,16 @@ import { mockBackend } from "./mockBackend";
  *
  * Opt-in, so the normal e2e run is unaffected:
  *   CAPTURE_UI_BASELINE=1 npx playwright test e2e/desktopBaseline.spec.ts
+ *
+ * SUPERSEDED FOR THE COST VIEW as of Phase 2. Its two cost captures still drive the
+ * `facility-cost-regions` multi-select, which that phase removed, so opting in now
+ * fails on those steps. This file and docs/ui-baseline/desktop/* were deliberately
+ * left untouched: they are the "before" record the redesign is measured against, and
+ * re-pointing them at the new UI would overwrite the before-images with after-images.
+ * Phase 7 re-captures the whole baseline in one reviewable commit and migrates these
+ * steps to the combobox (see docs/UI_UX_DESKTOP_REDESIGN_PLAN.md §9 Phase 7). For
+ * Phase 2 review shots, use e2e/phase2CostSetup.spec.ts, which writes to a gitignored
+ * directory.
  */
 
 const OUT_DIR = join(process.cwd(), "..", "docs", "ui-baseline", "desktop");
