@@ -77,7 +77,7 @@ layout (a 384 px sidebar beside a 384 px map), which is intentional and overflow
   metric selection) are never collapsed. The map legend is **no longer** a sidebar
   disclosure: it floats over the map (see
   [Floating map legend](#floating-map-legend-phase-23)) and is collapsed by default
-  on mobile behind a labelled "범례 (Legend)" summary.
+  on mobile behind a labelled "범례" summary.
 - The landfill (수도권매립지) dashboard is already single-column responsive; its
   table scrolls inside its own `overflow-x-auto` container and long ASCII
   identifiers wrap (`break-words`), so the page never scrolls horizontally.
@@ -338,7 +338,7 @@ force-expanded with no toggles, and that the floating equity legend sits within 
 map bounds, anchored to the left edge and above the OpenStreetMap attribution.
 **Mobile** asserts a definite, useful map height (~40–85 % of the viewport, stacked
 below the sidebar), that any visible loading overlay is contained within the map box,
-and that collapsed panels — including the floating "범례 (Legend)" — open/toggle with
+and that collapsed panels — including the floating "범례" — open/toggle with
 radios reachable. `e2e/facilityCost.spec.ts` and `e2e/integration.spec.ts` additionally
 assert the cost lens mounts **zero** map containers at their viewports. `app/responsive.test.tsx` adds a jsdom structural guard for the
 responsive classes, including that the map wrapper carries the dedicated `.map-pane`
@@ -396,7 +396,7 @@ duplicated legend and keeps one legend per map mode.
   bottom-right OpenStreetMap attribution, even when the map (and thus the legend's
   share of it) is narrow.
 - **Responsive collapse.** A native `<details>` with its own `.map-legend` class:
-  collapsed by default on mobile behind a labelled "범례 (Legend)" `<summary>` (never
+  collapsed by default on mobile behind a labelled "범례" `<summary>` (never
   icon-only), with the body scrolling internally (`max-h-[40vh] overflow-y-auto`) so
   it never covers most of the map. At `md+` the summary is hidden and the body is
   force-expanded — the same `<details>` force-open technique as the sidebar
@@ -411,6 +411,52 @@ duplicated legend and keeps one legend per map mode.
   conveyed by native checkbox labels and swatches (review = amber dashed sample), never
   by color alone; the eligible score classes (0–100) and the analytical-screening
   disclaimer are shown alongside.
+
+## Equity control column and legend (desktop redesign, Phase 4)
+
+Phase 4 reduced the density of the 지역 부담 control column and made the active metric
+dominant. **It changed no layout primitive that the height chain depends on.**
+
+Unchanged, and asserted by `responsive.test.tsx` / `e2e/responsive.spec.ts` /
+`e2e/phase4EquityMap.spec.ts`:
+
+- the shell root still owns the viewport height, with the `vh`-before-`dvh` fallback
+  ordering and the `@supports` overrides intact;
+- `<main>` is still `md:flex-1 md:min-h-0 md:flex-row`;
+- the `<aside>` is still `w-full md:w-96 md:flex-none` — the sidebar **width did not
+  change**; the map gained room from a shorter control column, not a narrower one;
+- the map wrapper is still `.map-pane relative min-w-0`, `.map-pane` is still the sole
+  owner of the map's responsive height in `globals.css`, and `map-container`'s
+  `parentElement` is still that wrapper (no element was inserted between them);
+- exactly one `MapView` is mounted, and the `ResizeObserver` → `map.resize()` handling
+  in `MapView` is untouched;
+- nothing new is `position: sticky` or `fixed`.
+
+What did change:
+
+- **The control column is a sunken surface.** The `<aside>` moved to
+  `--color-surface-sunken` with `gap-3` / `p-4`, so each section reads as a distinct
+  `.wep-card` (the Phase 1 §8 "page = sunken, cards = surface" rule). `CollapsibleSection`
+  became a `.wep-card` for the same reason; it kept its `.mobile-collapsible` class, so the
+  desktop force-open CSS still applies, and its body carries `md:pt-4` because at `md+` the
+  summary that otherwise supplies that padding is hidden.
+- **The active metric leads.** A card at the top of the column shows the metric name at
+  `text-base font-semibold`, the unit as muted `text-xs`, and the source + reference period
+  as a caption. It is the existing `role="status"` `selected-metric-summary` live region.
+- **The metric groups are tighter, not fewer.** Still 3 fieldsets and 11 radios sharing
+  `name="metric"`, all visible on desktop; the density came from card spacing and row
+  gaps only.
+- **The initial load is a structural skeleton.** The cold start renders an `aria-hidden`
+  skeleton of the control column beside a skeleton map surface (shared
+  `components/ui/Skeleton.tsx`), with the single `role="status"` `loading` announcement
+  retained. It renders neutral bars only — no numbers or names that could read as data.
+- **The legend heading is Korean-only** (`범례` / `범례 — {unit}`). Its placement, width,
+  mobile disclosure, desktop force-open behaviour, in-map bounds, and attribution
+  clearance are unchanged, as are every class row and the no-data row.
+
+Verified at 390×844, 768×1024, 1054×800, 1280×800, and 1440×900: no horizontal page
+overflow, and no empty or black strip below the map (the desktop map still reaches the
+viewport bottom within rounding tolerance and exceeds 75% of viewport height).
 
 ## Full-width facility-cost dashboard (Phase 2/3)
 

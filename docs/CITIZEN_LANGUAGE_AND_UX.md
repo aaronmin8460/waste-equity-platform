@@ -71,6 +71,29 @@ about which specific dataset is missing. All eleven codes are in
 `FacilityCostDashboard.test.tsx`. See
 [FACILITY_COST_LENS_UI.md](FACILITY_COST_LENS_UI.md) for the registries.
 
+**Phase 4 (지역 부담 map).** The remaining English duplications on the equity surface were
+removed from primary labels: `범례 (Legend)` → `범례` (and `범례 (Legend) — persons` →
+`범례 — persons`), `파생 지표 (Derived indicator)` → `파생 지표`, and
+`지표 출처 (Metric source)` → `지표 출처`. The metric group legends
+(`총량 지표` / `1인당 형평성 지표` / `시설 부담 지표`) were already Korean-only in
+`lib/metrics.ts` and are unchanged.
+
+Nothing technical was deleted — the same rule as every other row applies:
+
+- the classification method note under the legend heading still carries the technical
+  description (including its English phrasing), and the class rows, class numbers,
+  ranges, unit, and the explicit `데이터 없음 (no served value)` row are untouched. That
+  parenthetical is the analytical **no-data wording**, not a gloss on a primary label,
+  so it is deliberately kept;
+- the derivation version, formula, assumptions, source ids, and reference periods all
+  still render in the 출처와 계산 방법 disclosure beneath the renamed headings;
+- the equity control column remains an `<aside>`, and `terminology.audit.test.tsx` plus
+  the new `app/page.phase4.test.tsx` both scan its full text against
+  `FORBIDDEN_PRIMARY_TOKENS`.
+
+The active metric is now the first thing the column says — its plain-Korean name, then
+its unit, then its source and reference period — so the answer precedes the controls.
+
 ## Navigation model
 
 Four citizen-facing top-level areas (no English in the primary nav):
@@ -182,4 +205,8 @@ exact layout, icon set, color palette, wording, or trade dress is copied.
 - `components/TransparencyDashboard.test.tsx` — sources, counts, recorded vs
   "실패 사유 기록 없음".
 - `e2e/citizenFlows.spec.ts` — the five first-time flows via visible Korean labels.
+- `app/page.phase4.test.tsx` — Korean-only metric group legends and legend heading, the
+  active-metric hierarchy, and a forbidden-token scan of the equity `<aside>`.
+- `e2e/phase4EquityMap.spec.ts` — the same Korean-only headings at real desktop and
+  mobile viewports.
 - Existing `page` / `accessibility` / `responsive` tests updated in lockstep.

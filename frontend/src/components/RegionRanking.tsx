@@ -53,9 +53,10 @@ function RankList({
 }) {
   return (
     <div className="min-w-0 flex-1">
-      <h3 className="mb-1 text-xs font-semibold text-slate-600">{title}</h3>
+      <h3 className="mb-1 text-xs font-semibold text-ink-muted">{title}</h3>
       {rows.length === 0 ? (
-        <p className="text-xs text-slate-400">표시할 지역이 없습니다.</p>
+        // An empty list stays explicitly empty — never padded with sample rows.
+        <p className="text-xs text-ink-subtle">표시할 지역이 없습니다.</p>
       ) : (
         <ol className="flex flex-col gap-0.5" data-testid={testId}>
           {rows.map((row) => {
@@ -66,19 +67,21 @@ function RankList({
                   type="button"
                   onClick={() => onSelectRegion(row.code)}
                   aria-current={isSelected ? "true" : undefined}
-                  className={`flex w-full items-baseline justify-between gap-2 rounded px-2 py-1 text-left text-xs ${
-                    isSelected ? "bg-sky-100 ring-2 ring-sky-500" : "hover:bg-slate-100"
+                  className={`flex min-h-[32px] w-full items-baseline justify-between gap-2 rounded-control px-2 py-1 text-left text-xs ${
+                    // Selection is conveyed by aria-current, the ✓ glyph, and the
+                    // border/weight change — never by the tint alone.
+                    isSelected
+                      ? "border border-primary bg-primary-soft font-semibold text-ink"
+                      : "border border-transparent hover:bg-surface-muted"
                   }`}
                   data-testid="rank-row"
                 >
                   <span className="min-w-0 truncate">
-                    <span className="mr-1 tabular-nums text-slate-400">{row.rank}.</span>
-                    {isSelected && <span className="mr-1 font-semibold text-sky-700">✓</span>}
+                    <span className="mr-1 tabular-nums text-ink-subtle">{row.rank}.</span>
+                    {isSelected && <span className="mr-1 font-semibold text-primary">✓</span>}
                     {row.name}
                   </span>
-                  <span className="shrink-0 tabular-nums font-medium text-slate-800">
-                    {row.display}
-                  </span>
+                  <span className="shrink-0 tabular-nums font-medium text-ink">{row.display}</span>
                 </button>
               </li>
             );
@@ -103,9 +106,16 @@ export default function RegionRanking({
   const result = rankRegions(regions, scope, topN);
 
   return (
-    <section aria-label="지역 순위" data-testid="region-ranking" className="text-xs text-slate-700">
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">값이 높은·낮은 지역</h2>
-      <p className="mb-2 text-[11px] text-slate-500">
+    // Phase 4: the same section in the Phase 1 shared card language (`.wep-card`,
+    // standard padding, standard header scale). Ranking algorithm, scope grouping,
+    // order, tie behaviour, and the excluded-count reporting are untouched.
+    <section
+      aria-label="지역 순위"
+      data-testid="region-ranking"
+      className="wep-card p-4 text-xs text-ink-muted"
+    >
+      <h2 className="mb-1 text-sm font-semibold text-ink">값이 높은·낮은 지역</h2>
+      <p className="mb-2 text-[11px] text-ink-subtle">
         {metricLabel} 기준{unit ? ` · 단위 ${unit}` : ""}. 지역을 누르면 지도와 요약이 함께
         움직입니다.
       </p>
@@ -118,8 +128,10 @@ export default function RegionRanking({
             type="button"
             aria-pressed={scope === s}
             onClick={() => setScope(s)}
-            className={`min-h-[32px] rounded px-2 py-1 text-xs ${
-              scope === s ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"
+            className={`min-h-[32px] rounded-pill px-3 py-1 text-xs ${
+              scope === s
+                ? "bg-primary font-semibold text-primary-ink"
+                : "bg-surface-sunken text-ink-muted hover:bg-surface-muted"
             }`}
             data-testid={`rank-scope-${s}`}
           >
@@ -130,12 +142,12 @@ export default function RegionRanking({
 
       {/* Top-N selector */}
       <div className="mb-2 flex items-center gap-2">
-        <label className="text-[11px] text-slate-500" htmlFor="rank-topn">
+        <label className="text-[11px] text-ink-subtle" htmlFor="rank-topn">
           표시 개수
         </label>
         <select
           id="rank-topn"
-          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+          className="min-h-[32px] rounded-control border border-hairline-strong bg-surface px-2 py-1 text-xs"
           value={topN}
           onChange={(e) => setTopN(Number(e.target.value))}
           data-testid="rank-topn"
@@ -165,7 +177,7 @@ export default function RegionRanking({
         />
       </div>
 
-      <p className="mt-2 text-[11px] text-slate-400" data-testid="rank-excluded">
+      <p className="mt-2 text-[11px] text-ink-subtle" data-testid="rank-excluded">
         순위 대상 {formatCount(result.rankedCount)}개 지역. 값이 없어 제외한 지역{" "}
         {formatCount(result.excludedCount)}개(0으로 채우지 않음).
       </p>

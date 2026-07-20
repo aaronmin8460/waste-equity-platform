@@ -1,6 +1,8 @@
 # Desktop UI/UX Redesign — Phase 0 Baseline and Phased Plan
 
-**Status:** Phase 0 complete (audit + plan only — no production UI was redesigned).
+**Status:** Phases 0–4 complete. Phase 0 was audit + plan only; Phases 1–4 shipped
+(global foundation, facility-cost setup, facility-cost results, regional burden map).
+Phases 5–7 not started.
 **Branch:** `docs/phase-0-desktop-ui-ux-baseline`
 **Date:** 2026-07-20
 **Scope of this document:** the frontend at `frontend/src`. No backend, API, calculation, or infrastructure change is proposed or made.
@@ -557,7 +559,7 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Not done in this phase:** results are still absent from URL state, and no CSV/report
   export was touched — display rounding is presentation-only and never reaches them.
 
-### Phase 4 — Regional burden map desktop improvements
+### Phase 4 — Regional burden map desktop improvements ✅ delivered
 **Branch:** `ui/phase-4-equity-map`
 
 - **Objective:** Make the active metric obvious, shorten the control column, give the map more room.
@@ -576,6 +578,83 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Manual desktop checks:** 1440×900 and 1280×800 — switch metrics across native↔reporting geography; confirm the selection survives or clears correctly and the map fills to the viewport bottom with no strip below.
 - **Dependencies:** Phase 1.
 - **Regression risks:** the 3-fieldset/11-radio and `<select>` tagName assertions; `responsive.spec.ts` legend bounding-box math; `.map-pane` must not be replaced with utilities.
+
+**Delivery notes.**
+
+- **AC1 — met.** The active metric is now its own `.wep-card` at the top of the control
+  column: `선택한 지표` eyebrow, the plain-Korean metric name at `text-base font-semibold`,
+  the unit as muted `text-xs`, and the metric source + reference period as a caption
+  under a hairline rule. `role="status"` and `data-testid="selected-metric-summary"` are
+  unchanged, and the live region wraps **only** the name + unit so the announcement stays
+  one short phrase — the provenance caption sits deliberately outside it, since it would
+  otherwise be re-read on every metric change.
+  - *Deviation:* AC1 also asks for "a concise plain-Korean description when already
+    available". No such per-metric description exists in the data model — the only
+    available prose is `MetricDefinition.caveat`, which is long and is already rendered
+    in the 출처와 계산 방법 disclosure. Duplicating it into the summary card would have
+    worked against the density goal, so it was left where it is. Adding real one-line
+    metric descriptions is a `lib/metrics.ts` change and therefore out of this phase.
+- **AC2 — met, structure untouched.** Still exactly 3 `<fieldset>`s, 3 `<legend>`s, and 11
+  `input[type=radio][name="metric"]` sharing one name. Density came from presentation
+  only: one `.wep-card` per family instead of a nested bordered box, `gap-0.5` rows, and a
+  selected row emphasised by border + background + font weight **in addition to** the
+  native radio. `lib/metrics.ts` is byte-for-byte unchanged.
+  - *Deviation from the O2 recommendation:* the two non-active groups are **not**
+    collapsed. All 11 options stay visible and reachable on desktop — collapsing them
+    would have hidden metric families behind a closed disclosure, and the density target
+    was met without it. O2 is closed on that basis: keep the 11 radios, keep them visible.
+- **AC3 — met.** The cold start renders a structural skeleton of the control column (header,
+  metric summary, three group cards, a selection card) beside a skeleton map surface, built
+  from the shared `components/ui/Skeleton.tsx`. The skeletons are `aria-hidden`; the single
+  `role="status"` `data-testid="loading"` announcement is retained and is not inside an
+  aria-hidden subtree. The skeleton renders neutral bars only — no digits, region names,
+  ranking rows, or legend classes that could be mistaken for official data.
+- **AC4 — met.** `범례 (Legend)` → `범례` in both the `<summary>` and the equity `<h2>`; the
+  unit still rides on the heading (`범례 — persons`). Every class row, row order, class
+  number, numeric range, unit, method note, and the explicit no-data row and **wording**
+  (`데이터 없음 (no served value)`) are preserved — that parenthetical is analytical no-data
+  wording, not an English duplicate of a primary label, and is deliberately kept. Placement,
+  collapse behaviour, and the attribution clearance are unchanged.
+- **AC5 — met.** `RegionRanking`, `RegionComparison`, and `ShareExportBar` adopt `.wep-card`
+  + `p-4` + the standard `h2`/`h3` scale, `min-h-[32px]` controls, and the semantic tokens.
+  Per Phase 0 defect X9, `링크 복사` is now the single `.wep-btn-primary` in the share card;
+  the other three stay `.wep-btn-quiet`. No algorithm, ordering, tie behaviour, comparison
+  maximum, CSV column, or report field changed.
+- **AC6 / AC7 — met and re-asserted.** `selectedRegionCode` remains the one selection state;
+  new e2e coverage drives ranking → panel → `<select>` and back. `region-select` is still a
+  native `<select>`; the Phase 2 `SearchableRegionPicker` was **not** substituted.
+- **Selected-region card moved above the metric list (not in the ACs).** The 1440×900 review
+  capture showed the flow defect the phase objective names: clicking a region on the map
+  landed on a panel *below the fold*, so the reader had to scroll to see what they had just
+  clicked. The column now reads 선택한 지표 → 선택한 지역 → 지역 지표 선택 → 순위 → 비교 →
+  공유: the two "answer" cards first, the controls after. Only the JSX order changed — the
+  state, the test IDs, the native `<select>`, and the props are identical. Verified in the
+  re-captured 1440×900 review set: region name, metric label, and the value with its unit are
+  all above the fold, with provenance beneath.
+- **Sidebar surface change (not in the ACs).** The control column moved to
+  `--color-surface-sunken` so each section reads as a `.wep-card`, per the §8 "page = sunken,
+  cards = surface" rule. `w-full`, `md:w-96`, and `md:flex-none` are unchanged, so the
+  responsive contract and the `.map-pane` height chain are untouched. `CollapsibleSection`
+  became a `.wep-card` for the same reason — it kept its `.mobile-collapsible` class, so the
+  desktop force-open CSS still applies.
+- **Pre-existing e2e fixture gap found and worked around.** `e2e/mockBackend.ts` serves the
+  derived endpoints (`equity/waste-per-capita`, `waste-reporting/per-capita`,
+  `equity/facility-burden`) as a bare empty envelope missing `indicator`,
+  `derivation_version`, `derivation_formula`, and `assumptions`, which the real backend always
+  returns. No previous spec selected a per-capita or facility-burden metric, so the gap was
+  never exercised; doing so crashes the derivation panel on `assumptions.map`. Phase 4 supplies
+  contract-complete (still genuinely empty) envelopes in `e2e/phase4Fixtures.ts` rather than
+  editing the shared mock, so no other spec's behaviour changes. **The shared mock is still
+  wrong and should be fixed in a later phase.**
+- **Known defects deliberately NOT fixed here.** Phase 0 tagged X1 (facility popups accumulate)
+  and X2 (the map error banner at `inset-x-2 bottom-2` collides with the legend at
+  `bottom-8 left-2`) as Phase 4 items. Both live in `components/MapView.tsx`, which this phase
+  did not otherwise touch; fixing them means changing map behaviour rather than the control
+  column, so they are carried forward. The `ShareExportBar` copy-state `setTimeout` is likewise
+  still not cleared on unmount.
+- **Not done in this phase:** no metric definition, unit, palette, break, scale type, class
+  count, no-data color, geography, scope routing, URL-state field, encoding, or restoration
+  behaviour changed; no backend, API, cost, landfill, transparency, or suitability change.
 
 ### Phase 5 — Landfill dashboard desktop improvements
 **Branch:** `ui/phase-5-landfill-dashboard`
@@ -733,6 +812,7 @@ Only genuinely unresolved items. Anything answerable by reading the repository h
 **Why unresolved:** `accessibility.test.tsx` hard-asserts exactly 3 `<fieldset>`s and exactly 11 `input[type=radio][name="metric"]`, and that assertion encodes a deliberate a11y decision (one logical radio group, arrow-key traversal across all metrics). Replacing it with a searchable dropdown would improve density but is a real accessibility trade-off, not a styling change.
 **Recommendation:** keep the 11 radios in Phase 4; solve density by making the *selected* metric dominant and letting the two non-active groups collapse, rather than by changing the control. Revisit only with a dedicated a11y review.
 **Blocks Phase 1?** No.
+**Resolved in Phase 4:** keep the 11 radios, and keep all three groups **expanded**. Making the selected metric dominant plus tighter card/row spacing met the density goal on its own, so the "collapse the two non-active groups" half of the recommendation was not needed — and collapsing them would have hidden metric families behind a closed disclosure. The 3-fieldset / 11-radio / shared-`name` structure is now asserted in `app/page.phase4.test.tsx` as well as `accessibility.test.tsx`.
 
 ### O3 — How is the landfill dashboard regression-tested without Docker?
 **Why unresolved:** `e2e/landfill.spec.ts` (10 tests) is live-backend-only and self-skips without `E2E_BACKEND_URL`; the Docker daemon was down during Phase 0, so those 10 tests have not run against the current code in this environment. Phase 5 changes that component *and* its error path.

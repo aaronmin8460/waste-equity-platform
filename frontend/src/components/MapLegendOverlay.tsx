@@ -13,8 +13,8 @@
  * never silently diverge.
  *
  * Responsive behaviour is a native <details> disclosure:
- *  - mobile: collapsed by default behind a labelled "범례 (Legend)" summary, so it
- *    never covers most of the map; the body scrolls internally when long;
+ *  - mobile: collapsed by default behind a labelled "범례" summary, so it never
+ *    covers most of the map; the body scrolls internally when long;
  *  - md+ (tablet-landscape/desktop): the summary is hidden and the body is forced
  *    open by CSS (see `.map-legend` in globals.css), so the legend reads as an
  *    always-expanded floating card. No sidebar-specific disclosure behaviour is
@@ -106,15 +106,17 @@ export default function MapLegendOverlay(props: MapLegendOverlayProps) {
     // small card overlays the map, so the rest of the map stays interactive — no
     // full-container wrapper blocks pointer events.
     <details
-      className="map-legend absolute bottom-8 left-2 z-10 w-[min(86vw,288px)] rounded-lg border border-slate-300 bg-white/90 text-slate-700 shadow-lg backdrop-blur-sm md:left-3"
+      className="map-legend absolute bottom-8 left-2 z-10 w-[min(86vw,288px)] rounded-card border border-hairline-strong bg-white/90 text-ink-muted shadow-float backdrop-blur-sm md:left-3"
       data-testid="map-legend"
     >
       <summary
-        className="flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800"
+        className="flex cursor-pointer items-center justify-between gap-2 rounded-card px-3 py-2 text-sm font-semibold text-ink"
         data-testid="map-legend-summary"
       >
-        <span>범례 (Legend)</span>
-        <span aria-hidden className="map-legend-chevron text-xs text-slate-500">
+        {/* Korean-only primary label (Phase 4). The English gloss is not lost — the
+            scale method note below still carries the technical description. */}
+        <span>범례</span>
+        <span aria-hidden className="map-legend-chevron text-xs text-ink-subtle">
           ▾
         </span>
       </summary>
@@ -132,28 +134,33 @@ export default function MapLegendOverlay(props: MapLegendOverlayProps) {
 function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: EquityLegendProps) {
   return (
     <section aria-label="범례" data-testid="legend">
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">
-        범례 (Legend){unit ? ` — ${unit}` : ""}
+      {/* Korean-only primary heading (Phase 4). Every analytical element below is
+          unchanged: the same class rows in the same order, the same class numbers,
+          the same numeric ranges from the active scale breaks, the same unit, the
+          same method note, and the same explicit no-data row and wording. The
+          palette and the break values still come solely from lib/metrics.ts. */}
+      <h2 className="mb-1 text-sm font-semibold text-ink">
+        범례{unit ? ` — ${unit}` : ""}
       </h2>
-      <p className="mb-2 text-[11px] text-slate-500" data-testid="legend-metric-label">
+      <p className="mb-1 text-[11px] text-ink-subtle" data-testid="legend-metric-label">
         {metricLabel}
       </p>
-      <p className="mb-2 text-[11px] text-slate-500" data-testid="choropleth-scale-method">
+      <p className="mb-2 text-[11px] text-ink-subtle" data-testid="choropleth-scale-method">
         {methodNote}
       </p>
       <ul className="flex flex-col gap-1" data-testid="choropleth-legend">
         {rows.map((row) => (
           <li
             key={row.color}
-            className="flex items-center gap-2 text-xs text-slate-600"
+            className="flex items-center gap-2 text-xs text-ink-muted"
             data-testid="choropleth-legend-row"
           >
             <span
-              className="inline-block h-4 w-6 shrink-0 rounded-sm border border-slate-300"
+              className="inline-block h-4 w-6 shrink-0 rounded-sm border border-hairline-strong"
               style={{ backgroundColor: row.color }}
             />
             {/* Class number so the class is identifiable without color. */}
-            <span className="w-8 shrink-0 font-medium tabular-nums text-slate-500">
+            <span className="w-8 shrink-0 font-medium tabular-nums text-ink-subtle">
               {row.classNumber}급
             </span>
             <span className="tabular-nums">
@@ -162,16 +169,18 @@ function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: Equi
             </span>
           </li>
         ))}
-        {/* Explicit no-data category (never rendered as a 0 class). */}
+        {/* Explicit no-data category (never rendered as a 0 class). The parenthetical
+            here is the analytical no-data WORDING, not an English duplicate of the
+            heading, and is deliberately preserved. */}
         <li
-          className="flex items-center gap-2 text-xs text-slate-600"
+          className="flex items-center gap-2 text-xs text-ink-muted"
           data-testid="choropleth-legend-nodata"
         >
           <span
-            className="inline-block h-4 w-6 shrink-0 rounded-sm border border-slate-300"
+            className="inline-block h-4 w-6 shrink-0 rounded-sm border border-hairline-strong"
             style={{ backgroundColor: noDataColor }}
           />
-          <span className="w-8 shrink-0 font-medium text-slate-500">—</span>
+          <span className="w-8 shrink-0 font-medium text-ink-subtle">—</span>
           <span>데이터 없음 (no served value)</span>
         </li>
       </ul>

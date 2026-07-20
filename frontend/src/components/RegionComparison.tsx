@@ -120,9 +120,16 @@ export default function RegionComparison({
   }
 
   return (
-    <section aria-label="지역 비교" data-testid="region-comparison" className="text-xs text-slate-700">
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">지역 비교</h2>
-      <p className="mb-2 text-[11px] text-slate-500">
+    // Phase 4: the Phase 1 shared card language. The combobox behaviour, the
+    // comparison maximum, the computed values, and the CSV/report inputs are all
+    // untouched — this is presentation only.
+    <section
+      aria-label="지역 비교"
+      data-testid="region-comparison"
+      className="wep-card p-4 text-xs text-ink-muted"
+    >
+      <h2 className="mb-1 text-sm font-semibold text-ink">지역 비교</h2>
+      <p className="mb-2 text-[11px] text-ink-subtle">
         최대 {maxCompare}개 지역을 골라 {metricLabel} 값을 나란히 비교합니다.
       </p>
 
@@ -153,7 +160,7 @@ export default function RegionComparison({
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 120)}
           onKeyDown={onKeyDown}
-          className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+          className="min-h-[32px] w-full rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm disabled:bg-surface-sunken disabled:text-ink-subtle"
           data-testid="comparison-search"
         />
         {open && matches.length > 0 && !atMax && (

@@ -225,7 +225,7 @@ for (const vp of VIEWPORTS) {
         const legendRow = page.getByTestId("choropleth-legend-row").first();
         await expect(legendRow).toBeHidden();
 
-        // …until its labelled "범례 (Legend)" disclosure is opened.
+        // …until its labelled "범례" disclosure is opened.
         await page.getByTestId("map-legend-summary").click();
         await expect(legendRow).toBeVisible();
         await expectNoHorizontalOverflow(page);

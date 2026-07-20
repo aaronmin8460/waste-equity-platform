@@ -97,6 +97,7 @@ import RegionRanking from "../components/RegionRanking";
 import RegionComparison, { type ComparisonValue } from "../components/RegionComparison";
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
+import Skeleton from "../components/ui/Skeleton";
 import {
   rankRegions,
   type RankableRegion,
@@ -1035,14 +1036,56 @@ export default function Home() {
 
   if (data === null) {
     return (
+      // Phase 4: the cold start is a structured skeleton that previews the real
+      // layout (control column + map pane) instead of one centred sentence, so the
+      // page does not appear broken while the requests are in flight.
+      //
+      // ACCESSIBILITY: the skeleton is DECORATIVE and `aria-hidden`; the single
+      // concise announcement below stays the only thing assistive tech reads, and
+      // it keeps `data-testid="loading"` + `role="status"` unchanged.
+      //
+      // DATA INTEGRITY: the placeholders are neutral bars only — no numbers, no
+      // region names, no ranking rows, no legend classes. Nothing here can be read
+      // as official public data (repo AGENTS.md).
       <main
         id="main-content"
         tabIndex={-1}
-        className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100"
+        className="relative flex min-h-screen min-h-dvh flex-col bg-slate-100 md:flex-row"
       >
-        {/* role="status" (an implicit polite live region) so assistive tech
-            announces the loading state and its resolution. */}
-        <p className="text-sm text-slate-600" data-testid="loading" role="status">
+        <div
+          aria-hidden
+          className="flex w-full flex-col gap-4 border-b border-slate-200 bg-white p-5 md:w-96 md:flex-none md:border-r md:border-b-0"
+          data-testid="loading-skeleton-sidebar"
+        >
+          {/* Header block */}
+          <Skeleton lines={2} />
+          {/* Active-metric summary block */}
+          <div className="wep-card p-4">
+            <Skeleton lines={2} />
+          </div>
+          {/* The three metric group cards */}
+          {[0, 1, 2].map((group) => (
+            <div key={group} className="wep-card p-4">
+              <Skeleton lines={4} />
+            </div>
+          ))}
+          {/* Selected-region / ranking blocks */}
+          <div className="wep-card p-4">
+            <Skeleton lines={3} />
+          </div>
+        </div>
+        <div
+          aria-hidden
+          className="wep-skeleton min-h-[240px] flex-1 rounded-none md:min-h-0"
+          data-testid="loading-skeleton-map"
+        />
+        {/* The ONE announcement. role="status" is an implicit polite live region, so
+            assistive tech reads the loading state and its resolution. */}
+        <p
+          className="pointer-events-none absolute inset-x-0 top-1/2 mx-auto w-fit -translate-y-1/2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-sm"
+          data-testid="loading"
+          role="status"
+        >
           공공자료를 불러오는 중…
         </p>
       </main>
@@ -1155,73 +1198,61 @@ export default function Home() {
       suitabilityView={suitabilityView}
       onSuitabilityViewChange={changeSuitabilityView}
     >
-      <aside className="flex w-full flex-col gap-4 border-b border-slate-200 bg-white p-5 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
+      {/* Phase 4: the control column is a SUNKEN surface so each section reads as a
+          distinct `.wep-card` (Phase 1 §8: page = surface-sunken, cards = surface).
+          The layout classes the responsive contract asserts — w-full, md:w-96,
+          md:flex-none — are unchanged; only the background and inner spacing move. */}
+      <aside className="flex w-full flex-col gap-3 border-b border-hairline bg-surface-sunken p-4 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
         <header>
-          <h1 className="text-lg font-bold text-slate-900">우리 동네 폐기물 지도</h1>
-          <p className="text-xs text-slate-500">서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지</p>
+          <h1 className="text-lg font-bold text-ink">우리 동네 폐기물 지도</h1>
+          <p className="text-xs text-ink-subtle">서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지</p>
         </header>
 
         <ModeOrientation mode={mode} />
 
         {mode === "equity" && (
           <>
-            <section aria-label="지표 선택">
-              <h2 className="mb-2 text-sm font-semibold text-slate-800">
-                지역 지표
-              </h2>
-              {/* Selected-metric summary. role="status" is an implicit polite live
-                  region, so a screen reader announces each metric change, and it
-                  doubles as an always-visible reminder of the active metric. */}
-              <p
-                className="mb-2 rounded bg-slate-50 px-2 py-1 text-xs text-slate-600"
-                role="status"
-                data-testid="selected-metric-summary"
-              >
-                선택한 지표: <span className="font-medium text-slate-800">{metric.label}</span>
-                {unit ? ` · 단위 ${unit}` : ""}
-              </p>
-              {/* The 11 metrics are grouped into semantic <fieldset>s with a
-                  <legend> each. All radios share name="metric", so they stay ONE
-                  logical radio group (arrow keys move across every option); the
-                  fieldsets only provide accessible sub-grouping and visual
-                  scanning — no metric calculation changes. */}
-              <div className="flex flex-col gap-3">
-                {METRIC_GROUPS.map((group) => (
-                  // A light card per group so the three metric families are easy
-                  // to scan; the <fieldset>/<legend> semantics from Phase 2 are
-                  // unchanged (still one radio group via shared name="metric").
-                  <fieldset
-                    key={group.key}
-                    className="m-0 rounded-md border border-slate-200 p-2"
-                    data-testid={`metric-group-${group.key}`}
-                  >
-                    <legend className="px-1 text-xs font-semibold text-slate-600">
-                      {group.legend}
-                    </legend>
-                    <div className="flex flex-col gap-1">
-                      {METRICS.filter((candidate) => candidate.group === group.key).map(
-                        (candidate) => (
-                          <label
-                            key={candidate.key}
-                            className="flex items-start gap-2 text-sm text-slate-700"
-                          >
-                            <input
-                              type="radio"
-                              name="metric"
-                              className="mt-1"
-                              checked={metricKey === candidate.key}
-                              onChange={() => selectMetric(candidate.key)}
-                            />
-                            <span>{candidate.label}</span>
-                          </label>
-                        ),
-                      )}
-                    </div>
-                  </fieldset>
-                ))}
+            {/* ACTIVE-METRIC SUMMARY (Phase 4 AC1).
+                The selected metric is the answer-first element of this column: its
+                plain-Korean name is the largest text here (text-base font-semibold),
+                the unit is muted secondary text, and the source + reference period
+                sit below as caption text so the metric's provenance is reachable
+                without opening a disclosure (repo AGENTS.md).
+
+                role="status" is unchanged — an implicit polite live region, so every
+                radio change is announced. It wraps ONLY the name + unit so the
+                announcement stays one short phrase; the provenance caption is
+                deliberately outside the live region (it would otherwise be re-read
+                on every metric change). There is no second metric state: this reads
+                the same `metric`/`unit` the map fill and legend read. */}
+            <section aria-label="지표 선택" className="wep-card p-4">
+              <div role="status" data-testid="selected-metric-summary">
+                <p className="text-xs font-medium text-ink-subtle">선택한 지표</p>
+                <p className="mt-0.5 text-base font-semibold leading-tight text-ink">
+                  {metric.label}
+                </p>
+                {unit ? <p className="mt-0.5 text-xs text-ink-subtle">단위 {unit}</p> : null}
               </div>
+              {metricProvenance.length > 0 && (
+                <dl className="mt-2 border-t border-hairline pt-2 text-xs text-ink-subtle">
+                  {metricProvenance.map((entry) => (
+                    <div key={entry.label}>
+                      <dt className="inline font-medium">{entry.label}: </dt>
+                      <dd className="inline">{entry.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
             </section>
 
+            {/* SELECTED REGION.
+                Ordered directly after the active-metric card so the column answers
+                before it asks: "which metric am I looking at" then "which region did
+                I pick", with the controls below. Phase 4 moved it above the metric
+                list because a map click otherwise landed on a panel below the fold at
+                1440×900 — the reader had to scroll to see what they had just clicked.
+                Only the DOM order changed; the state, the testids, and the native
+                <select> are untouched. */}
             <RegionSummary
               selected={selectedRegion}
               clear={() => setSelectedRegionCode(null)}
@@ -1229,6 +1260,53 @@ export default function Home() {
               onSelectRegion={(code) => setSelectedRegionCode(code)}
               metricProvenance={metricProvenance}
             />
+
+            {/* METRIC GROUPS (Phase 4 AC2 — structure deliberately unchanged).
+                Still exactly 3 <fieldset>s / 3 <legend>s / 11
+                input[type=radio][name="metric"] in ONE logical radio group, with the
+                same values and the same onChange, so native arrow-key behaviour and
+                every metric definition are untouched. Phase 4 only reduces density:
+                one card per family instead of a nested bordered box, tighter rows,
+                and a selected row that is emphasised by border + text weight in
+                addition to the native radio — never by color alone. */}
+            <section aria-label="지표 목록" className="wep-card p-4">
+              <h2 className="mb-2 text-sm font-semibold text-ink">지역 지표 선택</h2>
+              <div className="flex flex-col gap-3">
+                {METRIC_GROUPS.map((group) => (
+                  <fieldset key={group.key} className="m-0" data-testid={`metric-group-${group.key}`}>
+                    <legend className="mb-1 p-0 text-xs font-semibold text-ink-muted">
+                      {group.legend}
+                    </legend>
+                    <div className="flex flex-col gap-0.5">
+                      {METRICS.filter((candidate) => candidate.group === group.key).map(
+                        (candidate) => {
+                          const isActive = metricKey === candidate.key;
+                          return (
+                            <label
+                              key={candidate.key}
+                              className={`flex items-start gap-2 rounded-control border px-2 py-1.5 text-sm ${
+                                isActive
+                                  ? "border-primary bg-primary-soft font-semibold text-ink"
+                                  : "border-transparent text-ink-muted hover:bg-surface-muted"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="metric"
+                                className="mt-0.5"
+                                checked={isActive}
+                                onChange={() => selectMetric(candidate.key)}
+                              />
+                              <span>{candidate.label}</span>
+                            </label>
+                          );
+                        },
+                      )}
+                    </div>
+                  </fieldset>
+                ))}
+              </div>
+            </section>
 
             {/* Regional ranking + comparison + share/export. All read the active
                 metric's served values, so they follow the metric automatically, and
@@ -1503,14 +1581,21 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <details className="mobile-collapsible" open={defaultOpen}>
-      <summary className="flex items-center justify-between gap-2 rounded bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-800">
+    // Phase 4: the sidebar is now a sunken surface, so the disclosure reads as a card
+    // (surface + hairline) instead of the old slate-100 fill, which would otherwise be
+    // invisible against the new background. The <details> element, the
+    // `.mobile-collapsible` class that the desktop force-open CSS keys on, and the
+    // labelled (never icon-only) summary are all unchanged.
+    <details className="mobile-collapsible wep-card" open={defaultOpen}>
+      <summary className="flex cursor-pointer items-center justify-between gap-2 rounded-card px-4 py-3 text-sm font-semibold text-ink">
         <span>{label}</span>
-        <span aria-hidden className="mobile-collapsible-chevron text-xs text-slate-500">
+        <span aria-hidden className="mobile-collapsible-chevron text-xs text-ink-subtle">
           ▾
         </span>
       </summary>
-      <div className="mobile-collapsible-body flex flex-col gap-4">{children}</div>
+      {/* At md+ the summary is hidden by CSS, so the body supplies its own top
+          padding there; on mobile the visible summary already provides it. */}
+      <div className="mobile-collapsible-body flex flex-col gap-4 px-4 pb-4 md:pt-4">{children}</div>
     </details>
   );
 }
@@ -1544,16 +1629,16 @@ function RegionSummary({
   return (
     <section
       aria-label="선택한 지역 요약"
-      className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"
+      className="wep-card p-4 text-xs text-ink-muted"
       data-testid="selected-region-summary"
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-800">선택한 지역</h2>
+        <h2 className="text-sm font-semibold text-ink">선택한 지역</h2>
         {selected && (
           <button
             type="button"
             onClick={clear}
-            className="text-slate-400 hover:text-slate-700"
+            className="text-ink-subtle hover:text-ink"
             data-testid="selected-region-clear"
           >
             지우기 ✕
@@ -1562,11 +1647,13 @@ function RegionSummary({
       </div>
       {/* Keyboard/screen-reader selection path: a native <select> of every region
           on the active geometry. Selecting one populates the same summary as a map
-          click, so pointer input is not required. */}
-      <label className="mt-1 block font-medium text-slate-600">
+          click, so pointer input is not required. Phase 4 restyles it and leaves the
+          element type, testid, and onChange contract untouched — it stays a native
+          <select> and is NOT replaced by the Phase 2 SearchableRegionPicker. */}
+      <label className="mt-2 block font-medium text-ink-muted">
         지역 선택
         <select
-          className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800"
+          className="mt-1 w-full rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm text-ink"
           data-testid="region-select"
           value={selected?.regionCode ?? ""}
           onChange={(event) => onSelectRegion(event.target.value === "" ? null : event.target.value)}
@@ -1583,32 +1670,33 @@ function RegionSummary({
           announced, while clearing it (e.g. on a metric change) does not read out
           the empty prompt. */}
       {selected === null ? (
-        <p className="mt-2 text-slate-500" data-testid="selected-region-empty">
+        <p className="mt-2 text-ink-subtle" data-testid="selected-region-empty">
           지도에서 지역을 누르거나 위 목록에서 지역을 선택하면 이름과 값이 여기에 표시됩니다.
         </p>
       ) : (
-        <div role="status" className="mt-2">
-          <dl className="space-y-0.5">
-            <div>
-              <dt className="inline font-medium">지역: </dt>
-              <dd className="inline" data-testid="selected-region-name">
-                {selected.regionName}
-              </dd>
-            </div>
-            <div>
-              <dt className="inline font-medium">{selected.metricLabel}: </dt>
-              {/* hasValue ⇒ served value; otherwise the availability text carried
-                  on the feature (e.g. "데이터 없음 — …"), never a fabricated 0.
-                  Availability is conveyed by the text itself, not by color. */}
-              <dd
-                className={`inline ${
-                  selected.hasValue ? "font-semibold text-slate-900" : "text-amber-700"
-                }`}
-                data-testid="selected-region-value"
-              >
-                {selected.metricDisplay}
-              </dd>
-            </div>
+        // Phase 4 hierarchy: region name → value + unit → availability → provenance.
+        // The name and the value lead; every supporting line is de-emphasised caption
+        // text. No analytical content was removed.
+        <div role="status" className="mt-3">
+          <p className="text-base font-semibold leading-tight text-ink" data-testid="selected-region-name">
+            {selected.regionName}
+          </p>
+          <p className="mt-1 text-xs text-ink-subtle">{selected.metricLabel}</p>
+          {/* hasValue ⇒ served value (with its unit); otherwise the availability text
+              carried on the feature (e.g. "데이터 없음 — …"), never a fabricated 0.
+              Availability is conveyed by the TEXT itself, not by color — the smaller
+              warn-toned treatment is redundant emphasis, not the signal. */}
+          <p
+            className={
+              selected.hasValue
+                ? "mt-0.5 text-xl font-semibold tabular-nums text-ink"
+                : "mt-0.5 text-sm font-medium text-warn"
+            }
+            data-testid="selected-region-value"
+          >
+            {selected.metricDisplay}
+          </p>
+          <dl className="mt-2 space-y-0.5 border-t border-hairline pt-2 text-xs text-ink-subtle">
             {/* Metric source + reference period(s) for the displayed value — for
                 derived metrics both inputs (AGENTS.md). Distinct from the boundary
                 provenance below. */}
@@ -1624,13 +1712,13 @@ function RegionSummary({
                 {selected.sourceId} ({selected.boundaryReferencePeriod})
               </dd>
             </div>
-            {selected.geometryKind === "DERIVED" && selected.childRegionNames.length > 0 && (
-              <p className="mt-1 text-slate-500" data-testid="selected-region-derived-note">
-                통계 보고 단위: 시 · 경계는 {selected.childRegionNames.join("·")} 자치구 경계의
-                파생 합집합입니다. 구별 공식 폐기물 값은 제공되지 않습니다.
-              </p>
-            )}
           </dl>
+          {selected.geometryKind === "DERIVED" && selected.childRegionNames.length > 0 && (
+            <p className="mt-1 text-xs text-ink-subtle" data-testid="selected-region-derived-note">
+              통계 보고 단위: 시 · 경계는 {selected.childRegionNames.join("·")} 자치구 경계의 파생
+              합집합입니다. 구별 공식 폐기물 값은 제공되지 않습니다.
+            </p>
+          )}
         </div>
       )}
     </section>
@@ -2348,7 +2436,9 @@ function DerivedPanel({ info, caveat }: { info: DerivedInfo; caveat?: string }) 
       className="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-slate-700"
       data-testid="derived-metric-metadata"
     >
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">파생 지표 (Derived indicator)</h2>
+      {/* Korean-only primary heading (Phase 4). The technical framing stays in the
+          method/derivation detail rendered below — nothing was removed. */}
+      <h2 className="mb-1 text-sm font-semibold text-ink">파생 지표</h2>
       <p className="mb-2 text-xs text-slate-600">
         백엔드에서 공식 데이터 2종으로 산출: {info.formula} · 단위 {info.unit} · 산출 버전{" "}
         {info.derivationVersion}
@@ -2474,7 +2564,9 @@ function SourcePanel({
       className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"
       data-testid="metric-metadata"
     >
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">지표 출처 (Metric source)</h2>
+      {/* Korean-only primary heading (Phase 4). The source id, reference period, and
+          update frequency continue to be rendered in full below. */}
+      <h2 className="mb-1 text-sm font-semibold text-ink">지표 출처</h2>
       <dl className="space-y-1">
         <div>
           <dt className="inline font-medium">출처: </dt>

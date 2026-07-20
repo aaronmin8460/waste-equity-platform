@@ -18,13 +18,42 @@ fabricated 0.
   provenance, and the derived-city reporting note where relevant.
 - The map talks only to the backend; no government API is called from the browser.
 
-## Legend (`app/page.tsx`)
+## Legend (`app/page.tsx`, `components/MapLegendOverlay.tsx`)
 
 Each choropleth class row shows a **class number (…급)**, the numeric
 **lower–upper range** (from the active metric-scale breaks — never invented
 thresholds), and the **unit**, plus an explicit **no-data category** (`—` /
 데이터 없음). Combined with the exact-value tooltip, a region's class is readable
 without relying on color.
+
+**Phase 4 (desktop redesign).** The legend's primary heading is Korean-only —
+`범례`, or `범례 — {unit}` when the metric has a unit. The former `범례 (Legend)`
+duplication is gone from both the mobile `<summary>` and the equity `<h2>`.
+Nothing analytical moved with it: the class rows, their order, the class numbers,
+the numeric ranges, the unit, the scale-method note, and the explicit no-data row
+including its `데이터 없음 (no served value)` wording are all unchanged. That
+parenthetical is the no-data *wording*, not an English gloss on a primary label,
+so it stays.
+
+The palette, break values, class count, scale type, and no-data color remain the
+single source of truth in `lib/metrics.ts`, which Phase 4 did not touch. The
+legend is still a pure presentation component that receives already-computed rows
+from the page, so map fill and legend can never diverge. Placement (floating
+bottom-left inside the map, clear of the OSM attribution), the mobile disclosure,
+and the desktop force-open behaviour are unchanged.
+
+## Metric scanning (`app/page.tsx`)
+
+The three metric fieldsets (`총량 지표` / `1인당 형평성 지표` / `시설 부담 지표`)
+remain one logical radio group with a shared `name="metric"`, so arrow keys still
+traverse all eleven options. Phase 4 put the **active** metric first: a card at the
+top of the control column shows its plain-Korean name at `text-base font-semibold`,
+its unit as muted secondary text, and its source and reference period as a caption.
+That card is the existing `role="status"` `selected-metric-summary` live region, so
+each metric change is still announced — and it reads the same `metric`/`unit` the
+map fill and the legend read, so no second metric state was introduced. All eleven
+radios stay visible on desktop; no metric family is hidden behind a closed
+disclosure.
 
 ## Landfill charts (`components/LandfillDashboard.tsx`)
 
