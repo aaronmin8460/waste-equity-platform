@@ -1,5 +1,5 @@
 /**
- * Pure helpers for the user-weight scenario lab (가중치 실험실), extracted so the
+ * Pure helpers for the user-weight scenario lab (가중치 바꿔보기), extracted so the
  * weight math, normalization, rank-movement text, and session persistence are
  * unit-testable independently of the React tree (which Playwright exercises).
  *

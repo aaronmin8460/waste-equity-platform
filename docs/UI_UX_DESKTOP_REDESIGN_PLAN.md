@@ -1,8 +1,10 @@
 # Desktop UI/UX Redesign — Phase 0 Baseline and Phased Plan
 
-**Status:** Phases 0–6 complete. Phase 0 was audit + plan only; Phases 1–6 shipped
+**Status:** Phases 0–7 complete. Phase 0 was audit + plan only; Phases 1–6 shipped
 (global foundation, facility-cost setup, facility-cost results, regional burden map,
-landfill dashboard, data-and-sources dashboard). Phase 7 not started.
+landfill dashboard, data-and-sources dashboard) and **Phase 7 shipped** the final
+regression, accessibility, terminology, and release-readiness pass. Nothing has been
+deployed.
 **Branch:** `docs/phase-0-desktop-ui-ux-baseline`
 **Date:** 2026-07-20
 **Scope of this document:** the frontend at `frontend/src`. No backend, API, calculation, or infrastructure change is proposed or made.
@@ -146,7 +148,8 @@ Purely derived: `TransparencyDashboard` receives the already-loaded `LoadedData`
 
 `lib/urlState.ts` — pure, no `window` access, version-gated on `v=1`.
 
-- **Fields:** `mode, metric, region, cmp[], scope, top, view, profile, statusOn[], stableOnly, weights{z,r,e,d}, cmpProfile, candidate`.
+- **Fields:** `mode, metric, region, cmp[], scope, top, view, profile, statusOn[], stableOnly, weights{z,r,e,d}, cmpProfile, candidate` — plus, as of Phase 7, the four 매립지 현황 filters `landfillYear, landfillMonth, landfillOrigin, landfillWaste` (query parameters `year`, `month`, `origin`, `waste`).
+- **Landfill filters (Phase 7, defect L5).** Written only in `mode=flow`, exactly as the suitability-only fields are written only in `mode=suitability`. `null` is a meaningful value for all four (최신 완결연도 / 연간 / 전체 출발 지역 / 전체 폐기물 종류) **and** the product default, so a default filter writes no parameter and an absent parameter restores the default — links written before Phase 7 stay fully valid. `year` is a four-digit calendar year, `month` an unpadded 1–12, `origin` one of the three capital-region SGIS codes (`11`/`28`/`41`). `waste` is the only field that is not a closed set — `waste_name` is free Korean text served by the backend — so it is shape-screened only (≤60 chars, no control characters); a closed enum would be wrong and the region-code regex would reject legitimate Korean names. Availability is never decided here: an unheld period/origin/category is passed to the backend like any picked value and answered with the ordinary 자료 없음 state, never a zero. Invalid values are dropped with a plain-Korean warning and then **canonicalised out of the address bar** by the mirror.
 - **Decode** ([94](../frontend/src/lib/urlState.ts#L94)): every field enum/bounds/regex checked; invalid fields dropped with a plain-Korean warning, never fatal; unknown `v` ignores everything. Region codes format-screened (`/^[A-Za-z0-9-]{1,30}$/`); existence validated by the caller against loaded geography. `cmp` capped at `MAX_COMPARE = 3` and deduped. Status has an explicit `none` sentinel so "all hidden" round-trips.
 - **Encode** ([232](../frontend/src/lib/urlState.ts#L232)): defaults omitted; suitability-only fields written only in suitability mode; weights only in the scenario subview.
 - **Restore** ([922](../frontend/src/app/page.tsx#L922)): once, after `data` loads, guarded by `urlRestored` ref.
@@ -231,7 +234,7 @@ Restored scenario weights are re-validated by the **preview API** before anythin
 - **Results:** 4 KPI cards; 4-column regional table; 4 charts + accessible exact-value table fallback; per-capita fee with both reference periods; MOIS source + v2 derivation.
 - **Warnings:** full-width amber block `광역지자체 단위 자료이며 시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다.`; per-capita fee caveat; partial-year label; population-definition-change disclosure.
 - **Loading:** `landfill-loading`, `role="status"`. **Error:** red panel.
-- **URL params:** `v, mode=flow` only — **the four filters are not URL-encoded** (a real sharing gap).
+- **URL params:** `v, mode=flow` at audit time — **the four filters were not URL-encoded** (a real sharing gap). *Closed in Phase 7:* they are now `year`, `month`, `origin`, `waste` on the same versioned state (§2.8).
 - **Tests:** `LandfillDashboard.test.tsx` (27 tests), `landfill.test.ts`, e2e `landfill.spec.ts` (live-only, 10 tests).
 
 ### 3.6 데이터·출처 — full-width, no map
@@ -291,7 +294,7 @@ Each claim was checked against the code and the captured 1440×900 baseline. Ver
 | L2 | Filters, KPIs, explanations, tables create excessive density | **Partially confirmed** | Filters are a clean 4-across grid and are fine. The density claim applies to the results region (4 KPIs + 4-column table + 4 charts + an exact-value fallback table + source/derivation notes). **Could not be visually confirmed at 1440×900** — the deterministic fixture serves the genuine 404 NO_DATA, so the populated layout did not render (see §"Baseline gaps"). Verdict rests on code reading, not on a screenshot. |
 | L3 | KPI explanations too prominent vs KPI values | **Partially confirmed** | Same limitation as L2 — asserted from code, not from a captured populated view. |
 | L4 | *(new finding)* Raw backend error code shown to citizens | **Confirmed — concrete defect** | [page.tsx:425](../frontend/src/app/page.tsx#L425) uses `cause.message` directly, while the equity ([323](../frontend/src/app/page.tsx#L323)) and suitability ([355](../frontend/src/app/page.tsx#L355)) paths both use `plainError(...)`. Result, visible in the baseline: **`NO_DATA_AVAILABLE: No landfill inbound data has been ingested.`** — a raw enum plus an English sentence — is shown to a Korean citizen. `plainError` already has a `NO_DATA_AVAILABLE` entry (`현재 조건에 맞는 공식 자료가 없습니다.`) that is simply not being used here. |
-| L5 | *(new finding)* Landfill filters are not shareable | **Confirmed** | `flowYear/Month/Origin/Waste` are absent from `AppUrlState`. A user cannot share "2023 · 서울 · 생활폐기물". |
+| L5 | *(new finding)* Landfill filters are not shareable | **Confirmed — fixed in Phase 7** | `flowYear/Month/Origin/Waste` were absent from `AppUrlState`. A user could not share "2023 · 서울 · 생활폐기물". They are now the `year`/`month`/`origin`/`waste` fields of the same versioned state. |
 
 ### 데이터·출처
 
@@ -314,8 +317,8 @@ Not in the original problem list, but verified in code and worth fixing in the p
 | X4 | **Desktop touch targets *shrink*.** `SuitabilityScenarioLab` buttons carry `min-h-[36px]`/`min-h-[38px]`/`min-h-[44px]` **plus `md:min-h-0`**, so on desktop the min-height is removed entirely and the control collapses to padding (~24–30px). This is backwards for a desktop-first redesign. | `SuitabilityScenarioLab.tsx` (preset/normalize/apply buttons) | 1 (sizing rule), applied in 4 |
 | X5 | **Charts distort horizontally on desktop.** `MiniBars` uses `viewBox="0 0 240 64"` with `preserveAspectRatio="none"`, so bars stretch as the card widens. | `LandfillDashboard.tsx` ~603 | 5 |
 | X6 | **`perCapitaUnavailableLabel` prints unmapped codes verbatim** — falls through to `` `계산 불가 (${reason})` ``. | `lib/landfill.ts:91–94`, rendered at `LandfillDashboard.tsx` ~428 and ~515 | 5 |
-| X7 | **Report modal capped at `max-w-2xl` (672px)** for a document containing multi-column tables. | `ReportPreview.tsx:182` | 6 or 7 |
-| X8 | **Amber disclaimer is the `switch` fallback branch** in `Blocks`, so an unrecognised block kind silently renders as a warning box. | `ReportPreview.tsx:98–107` | 7 |
+| X7 | **Report modal capped at `max-w-2xl` (672px)** for a document containing multi-column tables. | `ReportPreview.tsx` (line 182 at audit time; 188 by Phase 6) | 6 or 7 — **fixed in 7** |
+| X8 | **Amber disclaimer is the `switch` fallback branch** in `Blocks`, so an unrecognised block kind silently renders as a warning box. | `ReportPreview.tsx:98–107` | 7 — **fixed** |
 | X9 | **`ShareExportBar` has no primary action** — all four buttons are `.wep-btn-quiet`, so 링크 복사 / CSV / 보고서 have identical weight. Its copy-state `setTimeout` is also not cleared on unmount. | `ShareExportBar.tsx` | 4 |
 
 ### Baseline gaps (screenshots that could not show a populated state)
@@ -775,10 +778,12 @@ Values chosen to match what the codebase already does where it is consistent, an
   source/definition/admin code, the derivation formula, the comparability notice, and
   the fee caveat all still render. `landfill-fee-caveat` moved onto the fee KPI's
   caption, where it is now **visible** rather than sitting at the page bottom.
-- **AC7 — not taken.** The four landfill filters are still not URL-encoded. It was
+- **AC7 — not taken in Phase 5; DONE in Phase 7.** The four landfill filters were
+  still not URL-encoded at the end of Phase 5. It was
   explicitly optional, and adding fields to `AppUrlState` is a shared-contract change
   whose round-trip/whitelist tests belong with a phase that owns `lib/urlState.ts`.
-  Defect **L5 therefore remains open** and is carried forward.
+  Defect **L5 therefore remained open** and was carried forward — and is now closed
+  by Phase 7, which owns `lib/urlState.ts` for exactly the reason given here.
 - **Defect X6 fixed (§4).** `perCapitaUnavailableLabel` no longer prints an unmapped
   code as `계산 불가 (SOMETHING_NEW)`. Unknown codes degrade to `계산 불가`, and a new
   `perCapitaUnavailableCode` surfaces the raw code **only** when it could not be
@@ -1007,7 +1012,7 @@ Values chosen to match what the codebase already does where it is consistent, an
   or 7"; it belongs to the report modal, which Phase 6 does not touch. It carries
   forward to Phase 7.
 
-### Phase 7 — Desktop regression, accessibility, and cleanup
+### Phase 7 — Desktop regression, accessibility, and cleanup ✅ delivered
 **Branch:** `ui/phase-7-desktop-regression`
 
 - **Objective:** Consolidate, delete dead code, prove nothing regressed.
@@ -1026,6 +1031,134 @@ Values chosen to match what the codebase already does where it is consistent, an
 - **Manual desktop checks:** side-by-side before/after baseline review at 1440×900.
 - **Dependencies:** Phases 1–6.
 - **Regression risks:** removing `CitizenConditions` touches an e2e assertion and a Vitest block that must be deleted in the same commit or the suite fails.
+
+**Delivery notes.**
+
+- **AC4 deliberately NOT executed — the Phase 0 baseline is preserved.** The AC asked
+  for `docs/ui-baseline/desktop/` to be re-captured and "the old set replaced in one
+  reviewable commit". That was rejected: those eleven PNGs are the only record of the
+  before-state the entire redesign is measured against, and replacing them would
+  delete the comparison rather than complete it. The after-images are captured to a
+  **separate, gitignored** location instead, so both sides exist:
+  `frontend/e2e/phase7FinalReview.spec.ts` (opt-in `CAPTURE_PHASE7_REVIEW=1`) writes
+  13 images to `frontend/test-results/phase-7-final-review/`. No generated screenshot
+  is committed.
+- **`desktopBaseline.spec.ts` is documented as a frozen artifact, not migrated.** Its
+  header previously promised the Phase 7 re-capture and combobox migration. It now
+  states plainly that the file is a Phase 0 provenance record, is not maintained, is
+  not expected to run green (its cost captures still drive the removed
+  `facility-cost-regions` multi-select), and must not be run to refresh the baseline.
+- **Every review image carries a visible synthetic watermark.** `stampSynthetic()` in
+  the review spec injects `분석용 합성 픽스처 — 공식 자료 아님` as a fixed bottom banner
+  and **asserts it is visible** before any capture, so a marker that silently failed
+  to render cannot produce official-looking images of invented values. It is injected
+  from the spec only — no production component was touched. It sits at the bottom
+  because at the top it covered the persistent navigation the captures exist to show.
+- **X7 fixed.** `ReportPreview`'s panel went from `max-w-2xl` (672px) to `max-w-5xl`
+  (1024px) — it holds 3- and 4-column tables and a two-column `<dl>`. `w-full` inside
+  the overlay's `p-4` keeps it viewport-safe at every width, and a new
+  `.wep-modal-panel` class owns the max-height with the documented `vh`-before-`dvh`
+  `@supports` ordering (the same technique as `.map-pane`, and for the same reason:
+  two utility classes would let the static `vh` win on every engine). The report BODY
+  scrolls locally (`min-h-0 flex-1 overflow-y-auto`); the print rules already reset
+  `max-height`/`overflow` on `.wep-print`, so printing is unclipped. The overlay gained
+  `overscroll-contain` so modal scrolling never chains to the page behind. Report
+  content, ordering, units, values, exports, Escape/backdrop close, focus return, and
+  the dialog's accessible name are all unchanged.
+- **X8 fixed.** The amber disclaimer was the `switch` FALLBACK in `Blocks`, so any
+  unrecognised block kind silently rendered as a warning — inventing an analytical
+  caveat the model never carried. Every `ReportBlock` kind is now handled explicitly
+  and an exhaustiveness guard makes a future unhandled kind a **compile error**
+  instead of a mislabelled render.
+- **L5 fixed — landfill filters are shareable.** `year` / `month` / `origin` / `waste`
+  joined the existing versioned `AppUrlState`; no second URL parser was created. They
+  follow the established conventions exactly: area-scoped (written only in
+  `mode=flow`, like the suitability-only fields), defaults omitted, every value
+  whitelisted or bounds-checked on decode, invalid values dropped with a plain-Korean
+  warning rather than being fatal. `null` is a MEANINGFUL value for all four
+  (최신 완결연도 / 연간 / 전체 / 전체) and is also the product default, so an absent
+  parameter restores the default.
+  - `origin` is whitelisted against the three capital-region SGIS codes.
+  - `waste` is the one field that is **not** a closed set — `waste_name` is free
+    Korean text served by the backend — so it is shape-screened only (length bound +
+    control-character rejection). A closed enum would have been wrong, and
+    `REGION_CODE_RE` would have rejected legitimate Korean names.
+  - Restoration writes the filters in the **same batch** as `mode`, so the landfill
+    effect issues exactly one request set for the restored state, never one for the
+    default followed by one for the restored values (asserted).
+  - The four filters were added to `currentUrlState`'s dependency array as well as its
+    return value — without that the mirror keeps its identity and a filter change
+    never reaches the URL. That is the single most likely silent failure here, so it
+    has its own test.
+  - Changes go through `history.replaceState`: two filter changes add **zero** history
+    entries (asserted by comparing `history.length`), and Back still leaves the app.
+  - An invalid value never blanks a native `<select>`: the existing option builders
+    already fold the current selection into the list, and the mirror then
+    **canonicalises** the rejected parameter out of the address bar.
+  - No unavailable period is fabricated: the 연도 control still offers only years the
+    backend served, so a URL cannot conjure a selectable year for a period that does
+    not exist (asserted).
+- **Three genuine terminology leaks found and fixed on surfaces no audit had ever
+  scanned.** The terminology audit covered the equity `<aside>`, the cost results, the
+  landfill page, and 데이터와 출처 — never the suitability legend or the weight lab.
+  That gap is exactly why these survived Phases 3–6:
+  1. `MapLegendOverlay` rendered `상태 (Status) · 점수 범례` — the English gloss Phase 4
+     removed from the equity legend but not this one. Now `상태 · 점수 범례`.
+  2. `SuitabilityScenarioLab` rendered `순위 산정 대상 (ELIGIBLE)` — a raw enum from
+     `FORBIDDEN_PRIMARY_TOKENS` as a primary `<dt>` — and `분석 실행 (run)`. Both are
+     now plain Korean, with the enum demoted (never deleted) to a `data-diagnostic`
+     line and asserted present there.
+  3. `page.tsx` rendered the raw `ELIGIBLE` enum in two citizen sentences
+     (the CRITIC method note and the stability-not-applicable line), while the line
+     directly above one of them already said `통과 후보`. Both now use `1차 분석 통과`.
+  New forbidden-token scans cover the scenario lab (Vitest) and all five primary
+  surfaces in a real browser (Playwright), so these surfaces can no longer drift.
+- **A duplicated label map was removed (dead-code cleanup).** `lib/metrics.ts` held a
+  SECOND copy of the publication-frequency mapping that Phase 6 had already built
+  correctly in `lib/dataSources.ts`. The stale copy returned Korean/English pairs
+  (`연간 (Annual)`) and fell through to the **raw served code** for anything it did not
+  recognise — the same failure shape as Phase 0 defect X6. Worse, `page.tsx` printed a
+  hardcoded literal `UNKNOWN` as the citizen-facing 갱신 주기 whenever no registry row
+  existed, contradicting the documented `갱신 주기 정보 없음` contract. `frequencyLabel`
+  now delegates to the single implementation, a new `frequencyCode` keeps an
+  untranslatable code reachable for diagnostics (and returns `null` for a known one,
+  so a code is never echoed beside its own translation), and all four call sites use
+  the shared constant.
+  - `metrics.test.ts` asserted the OLD contract (`toContain("Annual")`, and that an
+    unknown code is returned raw). It was **rewritten, not deleted** — following the
+    Phase 3 precedent: the rule it encoded (a code must never be *discarded*) is kept
+    and now asserted through `frequencyCode`.
+- **X9's remaining half fixed.** `ShareExportBar`'s copy-state `setTimeout` is now
+  cleared on unmount and replaced on a rapid second copy, so leaving 지역 부담 within
+  4s of a copy no longer schedules a setState on an unmounted component.
+- **Not changed, deliberately.** `CRITIC` remains visible as a named method in its own
+  methodology note (`CRITIC 데이터 기반 가중치`) and as the `scenario.ts` profile label.
+  The token is on `FORBIDDEN_PRIMARY_TOKENS` to stop a bare enum appearing as a
+  profile VALUE, but naming the method in its own note is a deliberate, **tested**
+  product decision (`app/accessibility.test.tsx`). The Phase 7 browser scan documents
+  this exclusion explicitly rather than omitting the token silently. Its raw
+  method-VERSION identifier was demoted to a `data-diagnostic` span.
+- **Phase 6's `items[0]` source-attribution limitation is UNCHANGED and still
+  disclosed.** It is a backend read-path/data-contract issue: `/facilities` and the
+  reporting endpoints are not query-scoped by `source_id`, so a future second ingested
+  source could be misattributed. Fixing it properly means the read path declaring its
+  sources, which is a backend change outside this phase's authorisation. Current
+  production data is single-sourced, so no incorrect attribution is being displayed
+  today. **It was not solved in Phase 7.**
+- **Known limitation (new, disclosed).** `urlWarnings` is surfaced only in 지역 부담,
+  because `ShareExportBar` — where sharing is initiated — is the component that renders
+  them. A landfill link carrying an invalid filter therefore falls back to the default
+  and is canonicalised out of the URL **without a visible notice**. Surfacing warnings
+  on the Phase 5 landfill surface was judged scope expansion for this phase; the
+  fallback itself is safe, tested, and never blanks a control.
+- **Unchanged.** No analytical metric definition, formula, facility-cost/funding/
+  per-capita/landfill calculation, map palette, class break, scale type, region
+  boundary, candidate score or classification, source record, reference period,
+  snapshot date, exact backend decimal string, API response shape or endpoint
+  semantic, database schema, ingestion behaviour, source identifier, accounting basis,
+  official-zero rule, or missing-value rule was touched. No dependency was added. No
+  Docker, OCI, secret, environment, or production-data change. **Nothing was
+  deployed.**
 
 #### 9.1 `CitizenConditions` removal scope (documented in Phase 0, **executed in Phase 2**)
 

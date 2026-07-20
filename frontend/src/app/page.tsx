@@ -74,6 +74,7 @@ import {
   formatLegendValue,
   formatQuantity,
   frequencyLabel,
+  UNKNOWN_FREQUENCY_LABEL,
   resolveActiveScale,
   scaleConfigForMetric,
   scaleMethodNote,
@@ -220,7 +221,7 @@ export default function Home() {
 
   const [mode, setMode] = useState<DashboardMode>("equity");
   const [profile, setProfile] = useState<SuitabilityProfile>("baseline");
-  // Sub-view inside suitability mode: 적합성 점수 (score) or 비용 렌즈 (cost).
+  // Sub-view inside suitability mode: 후보지 점수 (score) or 비용 살펴보기 (cost).
   const [suitabilityView, setSuitabilityView] = useState<SuitabilityView>("score");
 
   // The persistent identity of the selected region is its region CODE, not a
@@ -284,7 +285,7 @@ export default function Home() {
   // so it never alters the status filters or reclassifies review/excluded cells.
   const [stableOnly, setStableOnly] = useState(false);
 
-  // 가중치 실험실 (user-weight scenario lab). The lab owns the editor workflow; the
+  // 가중치 바꿔보기 (user-weight scenario lab). The lab owns the editor workflow; the
   // page owns the APPLIED scenario (so the single MapView can render custom tiles)
   // and the scenario-selected candidate detail (so the map coordinates highlight +
   // fly-to). Both are null until an explicit apply / candidate selection.
@@ -977,6 +978,12 @@ export default function Home() {
       weights: appliedScenario?.weights ?? restoredScenario?.weights ?? null,
       cmpProfile: appliedScenario?.compareProfile ?? restoredScenario?.compareProfile ?? "baseline",
       candidate: selected?.candidate_id ?? scenarioSelected?.candidate_id ?? restoredCandidate ?? null,
+      // 매립지 현황 filters — the canonical state already lives here, so the URL
+      // mirror reads it directly rather than introducing a second copy.
+      landfillYear: flowYear,
+      landfillMonth: flowMonth,
+      landfillOrigin: flowOrigin,
+      landfillWaste: flowWaste,
     }),
     [
       mode,
@@ -994,6 +1001,12 @@ export default function Home() {
       selected,
       scenarioSelected,
       restoredCandidate,
+      // Load-bearing: without these four the mirror effect keeps its identity and
+      // a filter change would never reach the URL.
+      flowYear,
+      flowMonth,
+      flowOrigin,
+      flowWaste,
     ],
   );
 
@@ -1041,6 +1054,15 @@ export default function Home() {
       });
     }
     if (state.candidate) setRestoredCandidate(state.candidate);
+    // 매립지 현황 filters. `undefined` means "not in the link" (keep the default);
+    // every value that survives here was already shape-screened by the decoder.
+    // These are set in the SAME batch as `mode`, so the landfill effect below sees
+    // the fully restored filter set on its first run and issues one request set,
+    // not one for the default and another for the restored state.
+    if (state.landfillYear !== undefined) setFlowYear(state.landfillYear);
+    if (state.landfillMonth !== undefined) setFlowMonth(state.landfillMonth);
+    if (state.landfillOrigin !== undefined) setFlowOrigin(state.landfillOrigin);
+    if (state.landfillWaste !== undefined) setFlowWaste(state.landfillWaste);
     setUrlWarnings(warnings);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data]);
@@ -1214,7 +1236,7 @@ export default function Home() {
     );
   }
 
-  // 적합성 → 비용 렌즈: a full-width facility-cost dashboard with NO map. The cost
+  // 적합성 → 비용 살펴보기: a full-width facility-cost dashboard with NO map. The cost
   // model does not vary by map cell in V1, so a map beside it would be dead weight;
   // this early return mounts no MapView, no map container, and no floating legend.
   // The main mode switch and the suitability sub-view switch stay reachable above it,
@@ -1856,8 +1878,16 @@ function CriticMethodNote({ run }: { run: SuitabilityRun }) {
     >
       <p className="font-medium text-slate-700">CRITIC 데이터 기반 가중치</p>
       <p className="mt-0.5">
-        방법: CRITIC{methodVersion ? ` (${String(methodVersion)})` : ""} · 대상 후보{" "}
-        {pop != null ? formatCount(Number(pop)) : "-"}개 (자료가 완전한 통과 후보)
+        방법: CRITIC · 대상 후보 {pop != null ? formatCount(Number(pop)) : "-"}개 (자료가 완전한
+        1차 분석 통과 후보)
+        {/* Phase 7: the raw method-version identifier is demoted out of the visible
+            sentence, matching how Phase 6 moved the analysis version strings into a
+            technical layer. The value itself is unchanged and still rendered. */}
+        {methodVersion ? (
+          <span className="ml-1 break-all text-slate-400" data-diagnostic>
+            (방법 버전 {String(methodVersion)})
+          </span>
+        ) : null}
       </p>
       <p className="mt-0.5 tabular-nums">
         가중치: Z {w.zoning} · R {w.road} · E {w.equity} · D {w.demand}
@@ -1868,7 +1898,7 @@ function CriticMethodNote({ run }: { run: SuitabilityRun }) {
         </p>
       )}
       <p className="mt-0.5">
-        가중치는 이 실행의 완전한 ELIGIBLE 후보 점수의 분산·상관관계로 계산되며, 조닝/도로/형평성/수요의
+        가중치는 이 실행의 완전한 1차 분석 통과 후보 점수의 분산·상관관계로 계산되며, 조닝/도로/형평성/수요의
         규범적 중요도가 아닌 선택된 데이터·분석 범위의 구조를 나타냅니다. 전문가 판단·법적 우선순위·보편적
         정책 중요도가 아닙니다.
       </p>
@@ -2393,7 +2423,7 @@ function CandidateDetailPanel({
             </div>
           ) : (
             <p className="mt-2 text-[11px] text-slate-500" data-testid="candidate-stability-na">
-              안정성 평가 대상 아님 (ELIGIBLE 후보만 평가)
+              안정성 평가 대상 아님 (1차 분석 통과 후보만 평가)
             </p>
           )}
         </>
@@ -2437,12 +2467,12 @@ function useDerivedInfo(
     const populationRegistry = data.sources.find((source) => source.source_id === "sgis");
     const numeratorFrequency = wasteRegistry
       ? frequencyLabel(wasteRegistry.publication_frequency)
-      : "UNKNOWN";
+      : UNKNOWN_FREQUENCY_LABEL;
     const populationCommon = {
       populationSourceName: populationRegistry?.source_name ?? "sgis",
       populationFrequency: populationRegistry
         ? frequencyLabel(populationRegistry.publication_frequency)
-        : "UNKNOWN",
+        : UNKNOWN_FREQUENCY_LABEL,
     };
     if (metric.dataset === "facility-burden") {
       const burden = data.facilityBurden;
@@ -2613,7 +2643,7 @@ function useSourceInfo(
     return {
       sourceId,
       sourceName: registry?.source_name ?? sourceId,
-      frequency: registry ? frequencyLabel(registry.publication_frequency) : "UNKNOWN",
+      frequency: registry ? frequencyLabel(registry.publication_frequency) : UNKNOWN_FREQUENCY_LABEL,
       referencePeriod:
         metric.dataset === "population"
           ? (data.population.items[0]?.reference_period ?? String(data.population.reference_year))
@@ -2724,7 +2754,7 @@ function useFacilitySummary(data: LoadedData | null): FacilitySummary | null {
       referencePeriod:
         data.facilities.items[0]?.reference_period ?? String(data.facilities.reference_year),
       accountingBasis: data.facilities.items[0]?.accounting_basis ?? "",
-      frequency: registry ? frequencyLabel(registry.publication_frequency) : "UNKNOWN",
+      frequency: registry ? frequencyLabel(registry.publication_frequency) : UNKNOWN_FREQUENCY_LABEL,
     };
   }, [data]);
 }

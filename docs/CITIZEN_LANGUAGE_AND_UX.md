@@ -1,8 +1,15 @@
 # Citizen Language & UX
 
 This document describes the plain-language, citizen-facing redesign of the Waste
-Equity Platform dashboard (Phase 7). It is the reference for how public-facing text
-and UX decisions are made, and the contract that the terminology-audit tests enforce.
+Equity Platform dashboard. It is the reference for how public-facing text and UX
+decisions are made, and the contract that the terminology-audit tests enforce.
+
+> **Note on "Phase 7".** The number is overloaded in this repository. The *product*
+> roadmap's Phase 7 was the plain-Korean citizen redesign this document originally
+> recorded. The *desktop redesign* has its own Phase 0–7 sequence in
+> [UI_UX_DESKTOP_REDESIGN_PLAN.md](UI_UX_DESKTOP_REDESIGN_PLAN.md), whose Phase 7 was
+> the final regression and release-readiness pass. Where this document says
+> "desktop redesign Phase N", it means the latter.
 
 ## Target public users
 
@@ -155,6 +162,32 @@ a neutral `EmptyState` that offers the years the backend says it holds, and a
 Nothing technical was deleted. `LandfillDashboard.test.tsx` scans the whole landfill
 surface against `FORBIDDEN_PRIMARY_TOKENS` with `[data-diagnostic]` subtrees stripped,
 and `e2e/phase5LandfillDashboard.spec.ts` repeats that scan in a real browser.
+
+**Desktop redesign Phase 7 (final terminology sweep).** Three leaks survived Phases
+3–6 because no audit scanned the surfaces they lived on — the suitability floating
+legend and the 가중치 바꿔보기 lab. All three are closed, and both surfaces are now
+scanned (Vitest for the lab, Playwright across all five primary surfaces):
+
+- `상태 (Status) · 점수 범례` → `상태 · 점수 범례` (the English gloss Phase 4 removed
+  from the equity legend but not from this one);
+- `순위 산정 대상 (ELIGIBLE)` → `순위 산정 대상` and `분석 실행 (run)` → `분석 실행`, with
+  the raw enum demoted to a `data-diagnostic` line — never deleted;
+- the raw `ELIGIBLE` enum in two citizen sentences in `app/page.tsx` → `1차 분석 통과`.
+
+A **duplicated label map** was also removed. `lib/metrics.ts` held a second copy of the
+publication-frequency mapping Phase 6 had already built in `lib/dataSources.ts`. The
+stale copy returned Korean/English pairs (`연간 (Annual)`) and fell through to the raw
+served code for anything unrecognised — the shape of defect X6 — while `page.tsx`
+printed a hardcoded literal `UNKNOWN` as the citizen-facing 갱신 주기 when no registry
+row existed. Both now resolve through the single implementation, so an unrecognised
+code renders `갱신 주기 정보 없음` (per the table above) and the raw code stays reachable
+via the new `frequencyCode` for a diagnostic layer.
+
+`CRITIC` is deliberately still visible as a named method in its own methodology note
+(`CRITIC 데이터 기반 가중치`) and as the `scenario.ts` profile label. It is on
+`FORBIDDEN_PRIMARY_TOKENS` to stop a bare enum appearing as a profile *value*; naming
+the method in its own note is a separate, tested product decision. Its raw
+method-*version* identifier was demoted to a diagnostic span in Phase 7.
 
 ## Navigation model
 

@@ -463,11 +463,11 @@ viewport bottom within rounding tolerance and exceeds 75% of viewport height).
 
 ## Full-width facility-cost dashboard (Phase 2/3)
 
-Selecting 적합성 (Suitability) → 비용 렌즈 now renders a **full-width dashboard** with
+Selecting 적합성 (Suitability) → 비용 살펴보기 now renders a **full-width dashboard** with
 **no map**, instead of a narrow panel beside a mostly-irrelevant map (the cost model
 does not vary by map cell in V1). `app/page.tsx` early-returns this view — it mounts
 no `MapView`, no map container, and no floating legend, mirroring the 수도권매립지
-(flow) full-width pattern. The main mode switch and the 적합성 점수 / 비용 렌즈 sub-view
+(flow) full-width pattern. The main mode switch and the 후보지 점수 / 비용 살펴보기 sub-view
 switch stay reachable above the dashboard, and the selected suitability candidate is
 passed through for the candidate-context card. Full information architecture,
 KPI definitions, permitted/prohibited terminology, funding-breakdown interpretation,
@@ -589,7 +589,51 @@ dense tables with a searchable source catalog. The shell is untouched.
   ordering and its `@supports` overrides, the `md:w-96` sidebar width, the single `md`
   shell breakpoint, and `color-scheme: light`.
 
-## 가중치 실험실 (weight scenario lab) sub-view
+## Report preview modal (desktop redesign, Phase 7 — defect X7)
+
+The 보고서 미리보기 dialog was capped at `max-w-2xl` (672px) while holding 3- and
+4-column report tables and a two-column `<dl>`. Phase 7 widened it without letting it
+escape the viewport at any size.
+
+- **Width.** `w-full max-w-5xl` (1024px) inside the overlay's `p-4`, so the panel is
+  `min(100vw − 2rem, 1024px)`. Materially wider on desktop; still viewport-safe at
+  390 and 768, and it can never cause page-level horizontal overflow.
+- **Height.** A dedicated `.wep-modal-panel` class in `globals.css` owns
+  `max-height: calc(100vh − 4rem)` with the `dvh` value re-asserted under
+  `@supports (height: 100dvh)`. This is the **same technique and the same reason** as
+  `.map-pane`: a `vh` fallback must precede its `dvh` value, and Tailwind emits the
+  static utility *after* the dynamic one, so two utility classes on the element would
+  let `vh` win on every engine. As one class at equal specificity the `@supports` rule
+  cleanly wins where `dvh` is supported.
+- **Scrolling.** The panel is a flex column; the report body (`.wep-print`) is
+  `min-h-0 flex-1 overflow-y-auto`, so long reports scroll *inside* the modal. `min-h-0`
+  is load-bearing — the default `min-height: auto` would let content push the panel
+  past its max-height instead of scrolling. The overlay carries `overscroll-contain`
+  so that scroll never chains to the page behind it.
+- **Print is unaffected.** The existing `@media print` rules already reset
+  `max-height: none` and `overflow: visible` on `.wep-print`, so the printout is never
+  clipped by the new bounded height.
+- **Unchanged:** report content, ordering, units, values, exports, the `role="dialog"`
+  semantics and accessible name, Escape and backdrop close, the focus trap, and focus
+  return to the trigger.
+- **Verified** at 1440×900, 1280×800, 768×1024, and 390×844 by
+  `e2e/phase7FinalRegression.spec.ts`, which asserts the real bounding box (wider than
+  the old 672px cap, inside the viewport with margins on both sides) rather than a
+  class name — so restoring the narrow cap fails whatever class expresses it.
+
+## Phase 7 final responsive verification
+
+`e2e/phase7FinalRegression.spec.ts` re-verifies the whole product together — all four
+areas plus the three candidate sub-views — at **390×844, 430×932, 768×1024, 1024×768,
+1054×800, 1280×800, and 1440×900**: no page-level horizontal overflow anywhere,
+exactly one `<h1>` per view, exactly one map in map views and zero in map-free views,
+`.map-pane` still the sole height owner, and the desktop map still reaching the
+viewport bottom (>75% of viewport height) with no empty or black strip below it. No
+layout primitive changed in Phase 7 — the shell, `.map-pane`, the `vh`-before-`dvh`
+ordering and its `@supports` overrides, the `md:w-96` sidebar, the single `md`
+breakpoint, and `color-scheme: light` are all untouched.
+
+## 가중치 바꿔보기 (weight scenario lab) sub-view
 
 The scenario lab lives in the suitability sidebar beside the shared MapView (it is
 NOT a full-width early-return like the cost lens — it keeps the map). At `< md` the

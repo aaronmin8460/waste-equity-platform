@@ -1,3 +1,5 @@
+import { frequencyLabelKo, UNKNOWN_FREQUENCY_LABEL } from "./dataSources";
+
 /**
  * Choropleth metric definitions, legend breaks, and display formatting.
  *
@@ -405,20 +407,34 @@ export function formatLegendValue(value: number): string {
   return fraction ? `${grouped}.${fraction}` : grouped;
 }
 
-/** Human label for a source registry publication frequency. */
+/**
+ * Human label for a source registry publication frequency.
+ *
+ * Phase 7: this held a SECOND, drifting copy of the mapping Phase 6 established in
+ * `lib/dataSources.ts`. The old copy returned Korean/English pairs
+ * (`연간 (Annual)`) — the G3 duplication every other surface dropped — and fell
+ * through to the RAW SERVED CODE for anything it did not recognise, which is the
+ * same failure `perCapitaUnavailableLabel` had as Phase 0 defect X6. It now
+ * delegates to the single implementation, so the two can no longer disagree.
+ *
+ * The served code is demoted, never deleted: `frequencyCode` below returns it for a
+ * diagnostic layer, and only when it could not be translated (so a known code is
+ * never echoed beside its own translation).
+ */
 export function frequencyLabel(publicationFrequency: string): string {
-  switch (publicationFrequency) {
-    case "ANNUAL":
-      return "연간 (Annual)";
-    case "MONTHLY":
-      return "월간 (Monthly)";
-    case "REAL_TIME":
-      return "실시간 (Real-time)";
-    case "STRUCTURAL":
-      return "수시 갱신 (Periodically updated)";
-    default:
-      return publicationFrequency;
-  }
+  return frequencyLabelKo(publicationFrequency) ?? UNKNOWN_FREQUENCY_LABEL;
+}
+
+/**
+ * Re-exported so the one caller that needs the "no registry row at all" wording
+ * takes it from the same place as the label itself — a registry-less source has no
+ * frequency to translate, and must not print a literal `UNKNOWN`.
+ */
+export { UNKNOWN_FREQUENCY_LABEL };
+
+/** The raw served frequency code, but ONLY when no Korean rendering exists. */
+export function frequencyCode(publicationFrequency: string): string | null {
+  return frequencyLabelKo(publicationFrequency) === null ? publicationFrequency : null;
 }
 
 export const FACILITY_CATEGORY_LABELS: Record<string, string> = {

@@ -13,7 +13,7 @@
  * fields that were safely ignored.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface ShareExportBarProps {
   getShareUrl: () => string;
@@ -31,6 +31,14 @@ export default function ShareExportBar({
   urlWarnings,
 }: ShareExportBarProps) {
   const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
+  // Phase 0 defect X9 (second half): the copy-state reset timer was never cleared,
+  // so leaving 지역 부담 within 4s of a copy left a pending setState on an unmounted
+  // component. Held in a ref so a rapid second copy also replaces the first timer
+  // rather than letting an older one clear the newer message early.
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (resetTimer.current !== null) clearTimeout(resetTimer.current);
+  }, []);
 
   async function copyLink() {
     const url = getShareUrl();
@@ -53,7 +61,8 @@ export default function ShareExportBar({
     } catch {
       setCopyState("fail");
     }
-    setTimeout(() => setCopyState("idle"), 4000);
+    if (resetTimer.current !== null) clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setCopyState("idle"), 4000);
   }
 
   return (

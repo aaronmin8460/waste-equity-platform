@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
+import { FORBIDDEN_PRIMARY_TOKENS } from "../lib/glossary";
 import type {
   SuitabilityRun,
   UserScenarioCandidateDetail,
@@ -332,5 +333,45 @@ describe("SuitabilityScenarioLab", () => {
     const sum = detail.contributions.reduce((a, c) => a + Number(c.weighted_contribution), 0);
     expect(sum).toBeCloseTo(76.75, 4);
     expect(panel).toHaveTextContent("사용자 시나리오의 안정성 평가가 아닙니다");
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// Phase 7 — forbidden-token scan of the scenario lab's primary surface.
+//
+// This surface was NEVER scanned before: the terminology audit covers the equity
+// <aside>, the cost results, the landfill page, and 데이터와 출처 — not the weight
+// lab. That gap is exactly how `순위 산정 대상 (ELIGIBLE)` survived Phases 3-6 as a
+// raw enum in a primary <dt>. As everywhere else, `[data-diagnostic]` subtrees are
+// the sanctioned home for a raw code and are stripped before scanning.
+// --------------------------------------------------------------------------- //
+
+describe("SuitabilityScenarioLab primary surface (Phase 7)", () => {
+  it("carries no forbidden technical token once diagnostics are stripped", async () => {
+    preview.mockResolvedValue(makePreview());
+    renderLab();
+    fireEvent.click(screen.getByTestId("scenario-apply"));
+    await waitFor(() => expect(screen.getByTestId("scenario-summary")).toBeInTheDocument());
+
+    const clone = screen.getByTestId("scenario-summary").cloneNode(true) as HTMLElement;
+    clone.querySelectorAll("[data-diagnostic]").forEach((node) => node.remove());
+    const text = clone.textContent ?? "";
+    for (const token of FORBIDDEN_PRIMARY_TOKENS) {
+      expect(text.includes(token), `scenario summary leaks "${token}"`).toBe(false);
+    }
+    // The plain labels are present...
+    expect(text).toContain("순위 산정 대상");
+    expect(text).toContain("분석 실행");
+    // ...and no Korean/English duplication came back with them.
+    expect(text).not.toContain("(run)");
+  });
+
+  it("keeps the raw screening enum reachable in the diagnostic layer", async () => {
+    preview.mockResolvedValue(makePreview());
+    renderLab();
+    fireEvent.click(screen.getByTestId("scenario-apply"));
+    await waitFor(() => expect(screen.getByTestId("scenario-summary")).toBeInTheDocument());
+    // Demoted, never deleted (redesign plan §5 rule 12).
+    expect(screen.getByTestId("scenario-summary-diagnostic")).toHaveTextContent("ELIGIBLE");
   });
 });

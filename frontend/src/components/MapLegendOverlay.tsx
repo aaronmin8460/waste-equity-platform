@@ -217,7 +217,9 @@ function SuitabilityLegend({
   };
   return (
     <section aria-label="상태 범례 및 필터" data-testid="suitability-legend">
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">상태 (Status) · 점수 범례</h2>
+      {/* Phase 7: Phase 4 removed `범례 (Legend)` from the equity legend but this
+          suitability heading kept its English gloss. Korean-only, per G3. */}
+      <h2 className="mb-1 text-sm font-semibold text-slate-800">상태 · 점수 범례</h2>
       {scenarioActive && (
         <div
           className="mb-2 rounded border border-indigo-200 bg-indigo-50 p-2 text-[11px] text-indigo-900"

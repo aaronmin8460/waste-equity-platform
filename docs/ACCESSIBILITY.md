@@ -66,9 +66,12 @@ repetitive read-out; `role="status"`/`aria-live="polite"` never interrupts.
 The 11 metric radios are grouped into three semantic `<fieldset>`s, each with a
 `<legend>` (`lib/metrics.ts` `METRIC_GROUPS`, rendered in `app/page.tsx`):
 
-- 총량 지표 (Total-quantity indicators) — population + the four waste-generation totals
-- 1인당 형평성 지표 (Per-capita equity indicators) — the four per-capita metrics
-- 시설 부담 지표 (Facility-burden indicators) — the two facility-throughput metrics
+- 총량 지표 — population + the four waste-generation totals
+- 1인당 형평성 지표 — the four per-capita metrics
+- 시설 부담 지표 — the two facility-throughput metrics
+
+(The rendered `<legend>`s are Korean-only, as stated below. The English glosses that
+used to appear here read as if the UI showed a bilingual label; it does not.)
 
 All radios share `name="metric"`, so they remain one logical radio group (arrow
 keys move across every option); the fieldsets only add accessible sub-grouping
@@ -221,6 +224,40 @@ recolor.
   scrolling locally; a keyboard walk from the search field across the clear control
   and both selects with a visible focus outline and no trap; and the five states each
   asserted distinctly.
+
+- `src/components/ReportPreview.test.tsx` — the Phase 7 report-dialog contracts: the
+  modal's `aria-modal` + accessible name resolving to real title text, focus moving
+  into the dialog on open, the 닫기 control having a meaningful name rather than a
+  bare glyph, Escape / backdrop / button close (and a panel click NOT closing), the
+  widened viewport-safe panel with a locally scrolling body, and that only a genuine
+  `disclaimer` block renders as a warning.
+- `e2e/phase7FinalRegression.spec.ts` — the Phase 7 cross-dashboard integration pass
+  in a real browser (36 tests): one shell / one `#main-content` / exactly one `<h1>`
+  in every one of the four areas and three sub-views, the frozen navigation and
+  sub-view labels, the segmented control existing only inside 후보지 분석, exactly one
+  map in map views and zero in map-free views with `.map-pane` still the height owner,
+  the desktop map reaching the viewport bottom at 1440×900 and 1280×800, landfill
+  filter URL round-tripping via `replaceState` with no history growth, the report
+  modal's real bounding box at both desktop targets plus mobile/tablet containment and
+  keyboard close, a forbidden-token scan of all five primary surfaces, a standing
+  disclaimer that is not an alert, no live region inside a collapsed `<details>`, and
+  no page-level horizontal overflow at 390 / 430 / 768 / 1024 / 1054 / 1280 / 1440.
+
+## Phase 7 accessibility findings
+
+Three genuine defects were found on surfaces no audit had previously scanned (the
+terminology audit covered the equity `<aside>`, cost results, landfill, and
+데이터와 출처 — never the suitability legend or the weight lab):
+
+- the suitability legend heading rendered `상태 (Status) · 점수 범례`; it is now Korean-only;
+- the weight lab rendered `순위 산정 대상 (ELIGIBLE)` and `분석 실행 (run)` as primary
+  `<dt>`s; both are plain Korean now, with the raw enum demoted to a `data-diagnostic`
+  line rather than deleted;
+- `page.tsx` used the raw `ELIGIBLE` enum in two citizen sentences.
+
+Separately, the weight lab's landmark `aria-label` still read `가중치 실험실` — the
+pre-Phase-1 name — so a screen-reader user heard a region name that no visible control
+used. It now matches the visible sub-view tab, `가중치 바꿔보기`.
 
 No axe/large a11y dependency was added (the repo did not already use one); the
 existing vitest + Playwright tooling covers the foundation.

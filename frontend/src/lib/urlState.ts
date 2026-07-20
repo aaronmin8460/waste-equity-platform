@@ -23,7 +23,7 @@ import type { MetricKey } from "./metrics";
 import { METRICS } from "./metrics";
 import type { DashboardArea, SuitabilitySubview } from "./glossary";
 import type { ScopeSelection } from "./ranking";
-import type { SuitabilityProfile, SuitabilityStatus } from "./api";
+import type { LandfillOrigin, SuitabilityProfile, SuitabilityStatus } from "./api";
 
 export const URL_STATE_VERSION = "1";
 
@@ -40,6 +40,8 @@ const STATUSES: readonly SuitabilityStatus[] = ["ELIGIBLE", "REVIEW_REQUIRED", "
 const SCOPES: readonly ScopeSelection[] = ["all", "11", "23", "31"];
 const TOP_NS: readonly number[] = [5, 10, 20];
 const METRIC_KEYS = new Set<string>(METRICS.map((m) => m.key));
+/** 매립지 현황 origin: the three capital-region SGIS sido codes (see api.ts). */
+const LANDFILL_ORIGINS: readonly LandfillOrigin[] = ["11", "28", "41"];
 
 /** Max comparison regions (a hard product bound, mirrored by the UI). */
 export const MAX_COMPARE = 3;
@@ -48,6 +50,18 @@ export const MAX_COMPARE = 3;
 const REGION_CODE_RE = /^[A-Za-z0-9-]{1,30}$/;
 /** A weight component: a plain decimal in [0,1], up to 8 fractional digits. */
 const WEIGHT_RE = /^(0(\.\d{1,8})?|1(\.0{1,8})?)$/;
+/** A four-digit calendar year. Availability is decided by the backend, not here. */
+const LANDFILL_YEAR_RE = /^(19|20|21)\d{2}$/;
+/** A calendar month, 1–12, unpadded (matching the `<select>` option values). */
+const LANDFILL_MONTH_RE = /^([1-9]|1[0-2])$/;
+/**
+ * A served waste-category name. Unlike every other field this is NOT a closed set:
+ * `waste_name` is free Korean text served by the backend (`api.ts`), so it can only
+ * be shape-screened — a length bound and a rejection of control characters. An
+ * unavailable name is not fabricated into the dataset: it is passed to the backend
+ * exactly as any picked value is, and answered with the ordinary no-data state.
+ */
+const WASTE_NAME_RE = /^[^\u0000-\u001F\u007F]{1,60}$/;
 
 export interface ScenarioWeights {
   zoning: string;
@@ -71,6 +85,16 @@ export interface AppUrlState {
   weights: ScenarioWeights | null;
   cmpProfile: SuitabilityProfile;
   candidate: number | null;
+  /**
+   * 매립지 현황 filters. `null` is a MEANINGFUL served value in each case — 최신
+   * 완결연도 / 연간 / 전체 출발 지역 / 전체 폐기물 종류 — and is also the product
+   * default, so a default filter writes no parameter (the existing "defaults are
+   * omitted" rule). Decoding an absent parameter therefore restores the default.
+   */
+  landfillYear: number | null;
+  landfillMonth: number | null;
+  landfillOrigin: LandfillOrigin | null;
+  landfillWaste: string | null;
 }
 
 export interface DecodedUrlState {
@@ -202,6 +226,34 @@ export function decodeUrlState(search: string): DecodedUrlState {
     else warnings.push("잘못된 후보 구역 설정은 무시했습니다.");
   }
 
+  // 매립지 현황 filters. Each is shape-screened only; whether the dataset actually
+  // holds the period/origin/category is the backend's answer, not this module's —
+  // an unheld combination renders the ordinary "자료 없음" state, never a zero.
+  const year = params.get("year");
+  if (year !== null) {
+    if (LANDFILL_YEAR_RE.test(year)) state.landfillYear = Number(year);
+    else warnings.push("잘못된 연도 설정은 무시했습니다.");
+  }
+
+  const month = params.get("month");
+  if (month !== null) {
+    if (LANDFILL_MONTH_RE.test(month)) state.landfillMonth = Number(month);
+    else warnings.push("잘못된 기간 설정은 무시했습니다.");
+  }
+
+  const origin = params.get("origin");
+  if (origin !== null) {
+    if ((LANDFILL_ORIGINS as readonly string[]).includes(origin))
+      state.landfillOrigin = origin as LandfillOrigin;
+    else warnings.push("알 수 없는 출발 지역 설정은 무시했습니다.");
+  }
+
+  const waste = params.get("waste");
+  if (waste !== null) {
+    if (WASTE_NAME_RE.test(waste)) state.landfillWaste = waste;
+    else warnings.push("잘못된 폐기물 종류 설정은 무시했습니다.");
+  }
+
   return { state, warnings };
 }
 
@@ -261,6 +313,17 @@ export function encodeUrlState(state: AppUrlState): string {
       if (state.cmpProfile !== "baseline") params.set("cmpProfile", state.cmpProfile);
     }
     if (state.candidate) params.set("cand", String(state.candidate));
+  }
+
+  // Landfill-only fields, written only in that area — the same rule the suitability
+  // block above follows. `null` is the product default for all four (최신 완결연도 /
+  // 연간 / 전체 / 전체), so a default filter adds no parameter and a shared link
+  // stays short.
+  if (state.mode === "flow") {
+    if (state.landfillYear !== null) params.set("year", String(state.landfillYear));
+    if (state.landfillMonth !== null) params.set("month", String(state.landfillMonth));
+    if (state.landfillOrigin !== null) params.set("origin", state.landfillOrigin);
+    if (state.landfillWaste !== null) params.set("waste", state.landfillWaste);
   }
 
   return `?${params.toString()}`;

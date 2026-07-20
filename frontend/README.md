@@ -87,7 +87,7 @@ The dashboard is mobile-usable: a vertical stacked layout with a full-width map
 and collapsible controls below `md` (768 px), and the original side-by-side
 sidebar/map layout at and above it. The map legends **float over the map** (a single
 source of truth shared with the map fill, collapsed by default on mobile), and the
-facility cost lens (적합성 → 비용 렌즈) renders as a **full-width dashboard with no
+facility cost lens (적합성 → 비용 살펴보기) renders as a **full-width dashboard with no
 map**. See [RESPONSIVE_LAYOUT.md](RESPONSIVE_LAYOUT.md) for the breakpoints, the
 floating-legend and full-width-cost-dashboard behavior, the map minimum-height and
 MapLibre resize strategy, the `vh`-before-`dvh` viewport-height fallbacks, and the
@@ -107,13 +107,13 @@ follow-up corrects two post-merge review findings (the `vh`/`dvh` fallback order
 and the test's non-official landfill fixture). It is **not deployed** to any
 environment, and Phase 2 (accessibility) has **not** been started.
 
-## Suitability sub-views: 적합성 점수 · 가중치 실험실 · 비용 렌즈
+## Suitability sub-views: 후보지 점수 · 가중치 바꿔보기 · 비용 살펴보기
 
 Suitability mode has three sub-views (one shared MapView; never a second map):
 
-- **적합성 점수** — the stored-profile candidate screening (baseline / equal /
+- **후보지 점수** — the stored-profile candidate screening (baseline / equal /
   equity_focused / access_focused / critic).
-- **가중치 실험실 (weight scenario lab)** — a temporary *user-assumption-based*
+- **가중치 바꿔보기 (weight scenario lab)** — a temporary *user-assumption-based*
   experiment (사용자 가정 기반 시나리오). The user edits the four Z/R/E/D weights (0–100 %
   sliders + numeric inputs, total must equal exactly 100 %; an explicit 100 %
   normalization action is provided). A slider edit never calls the API; the explicit
@@ -126,4 +126,4 @@ Suitability mode has three sub-views (one shared MapView; never a second map):
   **sessionStorage only** (versioned key, run-scoped, revalidated on restore). No
   official run/profile is created and nothing is persisted server-side. See
   `docs/SUITABILITY_USER_WEIGHT_SCENARIOS.md`.
-- **비용 렌즈** — the full-width, map-free facility-cost dashboard (unchanged).
+- **비용 살펴보기** — the full-width, map-free facility-cost dashboard (unchanged).

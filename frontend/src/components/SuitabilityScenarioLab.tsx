@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 가중치 실험실 (user-weight scenario lab) — Phase 6.
+ * 가중치 바꿔보기 (user-weight scenario lab) — Phase 6.
  *
  * A TEMPORARY decision-support experiment: the user edits the four Z/R/E/D weights
  * and the backend recombines ONE fixed run's frozen component scores on read. This
@@ -256,8 +256,11 @@ export default function SuitabilityScenarioLab({
 
   const appliedWeights = result?.canonical_weights ?? null;
 
+  // Phase 7: the accessible name now matches the visible sub-view tab
+  // (가중치 바꿔보기). It previously read 가중치 실험실, the pre-Phase-1 name, so a
+  // screen-reader user heard a region name that no visible control used.
   return (
-    <section aria-label="가중치 실험실" data-testid="scenario-lab" className="flex flex-col gap-4">
+    <section aria-label="가중치 바꿔보기" data-testid="scenario-lab" className="flex flex-col gap-4">
       <ScenarioWarning />
 
       <ScenarioPresetButtons presets={presets} onLoad={loadPreset} />
@@ -582,7 +585,7 @@ function ScenarioSummary({
     >
       <p className="text-sm font-semibold text-slate-900">사용자 가정 기반 시나리오</p>
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
-        <dt className="text-slate-500">분석 실행 (run)</dt>
+        <dt className="text-slate-500">분석 실행</dt>
         <dd>#{result.run_id}</dd>
         <dt className="text-slate-500">기준 연도</dt>
         <dd>{result.reference_year}</dd>
@@ -594,7 +597,7 @@ function ScenarioSummary({
         </dd>
         <dt className="text-slate-500">비교 프로파일</dt>
         <dd>{PROFILE_LABEL[result.compare_profile] ?? result.compare_profile}</dd>
-        <dt className="text-slate-500">순위 산정 대상 (ELIGIBLE)</dt>
+        <dt className="text-slate-500">순위 산정 대상</dt>
         <dd>{result.ranking_population.toLocaleString()}개</dd>
         <dt className="text-slate-500">적용 가중치 Z/R/E/D</dt>
         <dd>
@@ -608,6 +611,13 @@ function ScenarioSummary({
           {result.candidate_count_excluded.toLocaleString()}
         </dd>
       </dl>
+      {/* Phase 7: the primary <dt>s read `분석 실행` / `순위 산정 대상`; the raw
+          screening enum they used to carry inline is demoted here rather than
+          deleted — the same "codes are demoted, never deleted" rule Phases 3, 5,
+          and 6 applied on their own surfaces. */}
+      <p className="mt-2 text-[11px] text-slate-400" data-diagnostic data-testid="scenario-summary-diagnostic">
+        기술 정보: 순위 산정 대상 = 상태 ELIGIBLE 후보 구역 수
+      </p>
       {stale && <p className="mt-2 text-amber-700">{STALE_MESSAGE}</p>}
       <p className="mt-2 text-[11px] text-slate-500">{result.scenario_disclaimer}</p>
     </section>
