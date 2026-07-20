@@ -80,7 +80,10 @@ layout (a 384 px sidebar beside a 384 px map), which is intentional and overflow
   on mobile behind a labelled "범례" summary.
 - The landfill (수도권매립지) dashboard is already single-column responsive; its
   table scrolls inside its own `overflow-x-auto` container and long ASCII
-  identifiers wrap (`break-words`), so the page never scrolls horizontally.
+  identifiers wrap (`break-words`), so the page never scrolls horizontally. Phase 5
+  kept all of that and re-graded the filter row to `1 / 2 / 4` columns at
+  `base / sm / lg` (see
+  [Landfill dashboard (desktop redesign, Phase 5)](#landfill-dashboard-desktop-redesign-phase-5)).
 - No page-level horizontal overflow at any tested width.
 
 ## Desktop / tablet-landscape behavior (≥ 768 px)
@@ -513,6 +516,35 @@ chain `.map-pane` depends on. At stacked widths it returns to normal document fl
 - A full **dark theme** is intentionally out of scope. The app is pinned to a
   consistent light palette (`color-scheme: light`); the previous `prefers-color-scheme:
   dark` `<body>` override (which framed the light app in black) was removed.
+
+## Landfill dashboard (desktop redesign, Phase 5)
+
+매립지 현황 stays a full-width, map-free `variant="page"` branch — Phase 5 changed the
+information hierarchy inside it, not the shell.
+
+- **Filter row.** `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`. Previously the fourth
+  column only appeared at `xl` (1280 px), so the secondary desktop target sat one
+  breakpoint below a single row. `lg` (1024 px) puts all four native `<select>`s on one
+  row at 1024, 1280, and 1440, and they still stack cleanly at 768 and 390. The row
+  wraps; it never scrolls sideways.
+- **KPI grid.** Unchanged at `grid-cols-1 sm:grid-cols-2 xl:grid-cols-4` — four cards
+  read comfortably two-up at 1024 and four-up from 1280.
+- **Charts / comparisons.** Unchanged at `lg:grid-cols-2`. The trend `<svg>` now has an
+  explicit `h-20`: it had `preserveAspectRatio="none"` with no height, so its rendered
+  height tracked the card width and the chart ballooned as the viewport widened
+  (Phase 0 defect X5). Bars encode value by height only, so pinning the height rescales
+  bar *width* alone and distorts no value.
+- **Table.** Still `min-w-[36rem]` inside its own `overflow-x-auto`; the proportional
+  rule added under the 반입량 figure is a block inside the existing cell and adds no
+  width.
+- **Verified viewports.** `e2e/phase5LandfillDashboard.spec.ts` asserts no page-level
+  horizontal overflow, a full-width dashboard, and visible/usable filters at 390×844,
+  768×1024, 1024×768, 1280×800, and 1440×900 — and, at the two desktop targets, that
+  the four filters share one row and that the heading, banner, filter row, and KPI
+  values all fit within the first viewport.
+- **Unchanged:** `.map-pane` (this branch mounts no map), the `vh`-before-`dvh`
+  ordering and its `@supports` overrides, the `md:w-96` sidebar width, the single `md`
+  shell breakpoint, and `color-scheme: light`.
 
 ## 가중치 실험실 (weight scenario lab) sub-view
 

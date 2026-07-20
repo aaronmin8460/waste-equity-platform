@@ -36,7 +36,9 @@ Dynamically changing result areas are announced without moving focus:
 | Suitability profile / candidate counts | `role="status"` `suitability-live` | profile or summary updates |
 | Selected region (accessible alt.) | `role="status"` inside `selected-region-summary` | a map region is clicked |
 | Landfill results | `role="status"` `landfill-live` | a filter loads new official values |
-| Landfill loading | `role="status"` `landfill-loading` | flow data is loading |
+| Landfill loading | `role="status"` `landfill-loading` | flow data is loading (the Phase 5 `Skeleton` beside it is `aria-hidden`) |
+| Landfill no official record | `role="status"` `landfill-no-data-live` | a filter combination the backend holds no record for |
+| Landfill request failure | `role="alert"` `landfill-error` | a landfill fetch genuinely fails |
 | Cost service regions | `role="status"` `facility-cost-region-status` | a region is selected, removed, bulk-selected, or cleared |
 | Cost calculate readiness | `role="status"` `facility-cost-calculate-status` | the primary action becomes (un)available |
 | Cost calculation in flight | `role="status"` `facility-cost-calculating-status` | a calculation starts (the `Skeleton` beside it is `aria-hidden`) |
@@ -168,6 +170,25 @@ recolor.
   768×1024, 1054×800, 1280×800, 1440×900): single nav/main/map/h1, legend geometry
   inside the map and clear of the attribution, no horizontal overflow, no empty strip
   below the map, keyboard focus visible, and no keyboard trap.
+- `src/components/LandfillDashboard.test.tsx` — the Phase 5 landfill contracts: one
+  `<h1>` and no map/sidebar/second nav, the four native `<select>`s each wrapped by
+  their `<label>`, the `aria-hidden` loading skeleton beside the `role="status"`
+  announcement, the standing `tone="info"` banner carrying **no** `role`, the
+  `role="alert"` genuine error kept separate from the no-data state — which is not an
+  alert but is still announced politely by its own `role="status"` line, since the
+  whole results region is replaced when a filter empties it — the
+  `role="status"` `landfill-live` region never inside a collapsed `<details>`,
+  captioned table with `th[scope]` headers, `aria-hidden` comparison bars whose values
+  remain readable as text, filter controls that stay populated through a load and an
+  empty answer (a native `<select>` whose value matches no option renders blank), and
+  a forbidden-token scan of the primary surface.
+- `e2e/phase5LandfillDashboard.spec.ts` — the same contracts at real viewports
+  (390×844, 768×1024, 1024×768, 1280×800, 1440×900): single nav/main/h1 with no map,
+  the four filters on one desktop row, computed font sizes proving each KPI value
+  outranks its label and explanation, no page-level horizontal overflow with the table
+  scrolling locally, a keyboard walk across the filter row with a visible focus outline
+  and no trap, and the loading / data / no-data / partial / error states each asserted
+  distinctly.
 
 No axe/large a11y dependency was added (the repo did not already use one); the
 existing vitest + Playwright tooling covers the foundation.

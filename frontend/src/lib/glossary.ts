@@ -476,6 +476,15 @@ export const FORBIDDEN_PRIMARY_TOKENS: readonly string[] = [
   "NO_OFFICIAL_SERVICE_POPULATION",
   "NO_MATCHING_SAME_YEAR_POPULATION",
   "INCOMPATIBLE_POPULATION_DEFINITION",
+  // Landfill per-capita unavailability codes (redesign plan §9 Phase 5; §4 defect
+  // X6). `lib/landfill.ts` translates all five into plain Korean and no longer
+  // falls through to `계산 불가 (RAW_CODE)`. As with the cost codes above they stay
+  // legal inside a `data-diagnostic` detail line — the audit scans primary text.
+  "NO_MATCHING_POPULATION_PERIOD",
+  "NO_METROPOLITAN_POPULATION",
+  "ZERO_POPULATION",
+  "AMBIGUOUS_POPULATION_DEFINITION",
+  "INCOMPLETE_POPULATION_COVERAGE",
 ];
 
 /**

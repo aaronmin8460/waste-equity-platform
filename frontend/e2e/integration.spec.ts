@@ -126,7 +126,10 @@ for (const vp of VIEWPORTS) {
       await page.getByTestId("mode-flow").click();
       await expect(page.getByTestId("landfill-dashboard")).toBeVisible();
       await expect(page.getByTestId("map-container")).toHaveCount(0);
-      await expect(page.getByTestId("landfill-error")).toBeVisible();
+      // Phase 5: the mock's 404 NO_DATA_AVAILABLE is an answer, not a fault, so it
+      // renders the no-data state rather than the genuine-error alert.
+      await expect(page.getByTestId("landfill-no-data")).toBeVisible();
+      await expect(page.getByTestId("landfill-error")).toHaveCount(0);
       await expect(page.getByTestId("landfill-filters")).toBeVisible();
       await expectNoHorizontalOverflow(page);
 
