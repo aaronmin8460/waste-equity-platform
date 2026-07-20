@@ -128,6 +128,216 @@
 .wep-btn-quiet:hover {
   background: var(--color-surface-muted);
 }
+/* --------------------------------------------------------------------------
+   Global dashboard chrome (Phase 1 — desktop UI/UX redesign).
+
+   ONE persistent top navigation is rendered above every render branch
+   (components/DashboardShell.tsx), so the four areas no longer switch between a
+   sidebar-embedded nav and a full-width nav row. These classes only style that
+   shared chrome and the new components/ui/ primitives — no dashboard content is
+   restyled in this phase, and the analytical map/legend palette in lib/metrics.ts
+   stays untouched. Every value below comes from the existing @theme tokens; no
+   second token system is introduced.
+   -------------------------------------------------------------------------- */
+
+/* The top navigation bar and the optional sub-view bar beneath it. Both are
+   NORMAL document-flow blocks — deliberately NOT sticky/fixed. The map layout is
+   a fixed-height flex column whose <main> is `flex-1 min-h-0`; a fixed or sticky
+   header would be taken out of that height chain and reintroduce the empty strip
+   below the map that `.map-pane` exists to prevent. Revisit stickiness only with
+   the full map-height e2e matrix green (see docs/UI_UX_DESKTOP_REDESIGN_PLAN.md
+   §12 O4). */
+.wep-appbar {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-hairline);
+}
+.wep-subbar {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+/* A top-level navigation tab. The SELECTED tab is marked by three independent,
+   non-color signals — strong ink, a heavier weight, and a 2px bottom indicator
+   (a shape, present vs absent) — plus `aria-pressed`, so state is never conveyed
+   by color alone. Deliberately NOT a large filled dark rectangle.
+   `white-space: nowrap` keeps a Korean label from breaking mid-label; the track
+   itself still wraps between tabs at phone widths. The min-height is constant at
+   every breakpoint (no `md:min-h-0` reset), so the desktop target does not shrink
+   below the mobile one. */
+.wep-nav-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wep-nav-tab:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-muted);
+}
+.wep-nav-tab[aria-pressed="true"] {
+  color: var(--color-ink);
+  font-weight: 700;
+  border-bottom-color: var(--color-primary);
+}
+
+/* Segmented control — a restrained pill track with one raised active segment.
+   The active segment carries a white surface + card shadow + heavier weight
+   (non-color signals) in addition to the single accent color and aria-pressed. */
+.wep-segment-track {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+}
+.wep-segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0 0.875rem;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wep-segment:hover {
+  color: var(--color-ink);
+}
+.wep-segment[aria-pressed="true"] {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-weight: 700;
+  box-shadow: var(--shadow-card);
+}
+
+/* Accordion (components/ui/Accordion.tsx) — a native <details> disclosure.
+   IMPORTANT: this is a separate class from `.mobile-collapsible` on purpose. That
+   class force-opens its body at md+ (desktop must never hide an analytical
+   option behind a toggle). This one has NO md+ force-open rule: it genuinely
+   collapses at every width, which is the opposite contract, so the two must not
+   share a class. */
+.wep-accordion {
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+.wep-accordion > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-card);
+  color: var(--color-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.wep-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+.wep-accordion-chevron {
+  transition: transform 0.15s ease;
+}
+.wep-accordion[open] > summary .wep-accordion-chevron {
+  transform: rotate(180deg);
+}
+.wep-accordion-body {
+  padding: 0 0.75rem 0.75rem;
+}
+
+/* Decorative loading placeholder (components/ui/Skeleton.tsx). It is aria-hidden,
+   so the meaningful loading announcement must stay in a separate role="status"
+   element. The shimmer is disabled under prefers-reduced-motion. */
+.wep-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-sunken) 25%,
+    var(--color-surface-muted) 37%,
+    var(--color-surface-sunken) 63%
+  );
+  background-size: 400% 100%;
+  border-radius: var(--radius-control);
+  animation: wep-skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes wep-skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wep-skeleton {
+    animation: none;
+  }
+}
+
+/* Banner (components/ui/InfoBanner.tsx). Four semantic tones only — this replaces
+   the ad-hoc seven-shade amber sprawl documented in the Phase 0 audit (G4). The
+   tone word is rendered as TEXT by the component, so severity never depends on
+   color alone. */
+.wep-banner {
+  border: 1px solid;
+  border-radius: var(--radius-card);
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.wep-banner-info {
+  border-color: var(--color-info-border);
+  background: var(--color-info-surface);
+  color: var(--color-ink);
+}
+.wep-banner-warning {
+  border-color: var(--color-warn-border);
+  background: var(--color-warn-surface);
+  color: var(--color-ink);
+}
+.wep-banner-error {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-surface);
+  color: var(--color-ink);
+}
+.wep-banner-success {
+  border-color: var(--color-success-border);
+  background: var(--color-success-surface);
+  color: var(--color-ink);
+}
+.wep-banner-label {
+  font-weight: 700;
+}
+.wep-banner-info .wep-banner-label {
+  color: var(--color-info);
+}
+.wep-banner-warning .wep-banner-label {
+  color: var(--color-warn);
+}
+.wep-banner-error .wep-banner-label {
+  color: var(--color-danger);
+}
+.wep-banner-success .wep-banner-label {
+  color: var(--color-success);
+}
+
 /* Removable selected-region chip in the comparison combobox. */
 .wep-chip {
   display: inline-flex;

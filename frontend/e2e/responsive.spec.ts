@@ -184,10 +184,21 @@ for (const vp of VIEWPORTS) {
         await expect(map).toBeVisible();
         const box = (await map.boundingBox())!;
         expect(box).not.toBeNull();
-        // The map pane starts at the top of the full-height row…
-        expect(box.y).toBeLessThanOrEqual(4);
-        // …and reaches the bottom of the viewport within a small rounding tolerance,
-        // so no empty (previously black) strip is left below the canvas.
+        // Phase 1 put a global navigation header above the map row, so the pane no
+        // longer starts at y=0. The invariant that matters is unchanged and is now
+        // asserted directly: the map begins immediately BELOW the chrome, with no
+        // gap between them. (Previously this was `box.y <= 4`, which only held while
+        // the map row was the topmost element.)
+        const nav = page.getByTestId("top-navigation");
+        await expect(nav).toBeVisible();
+        const navBox = (await nav.boundingBox())!;
+        const chromeBottom = navBox.y + navBox.height;
+        expect(box.y).toBeGreaterThanOrEqual(chromeBottom - 2);
+        expect(box.y).toBeLessThanOrEqual(chromeBottom + 2);
+        // The chrome itself stays compact, so it never eats the map's height budget.
+        expect(chromeBottom).toBeLessThanOrEqual(vp.height * 0.12);
+        // …and the map reaches the bottom of the viewport within a small rounding
+        // tolerance, so no empty (previously black) strip is left below the canvas.
         expect(box.y + box.height).toBeGreaterThanOrEqual(vp.height - 6);
         expect(box.y + box.height).toBeLessThanOrEqual(vp.height + 6);
         // It is NOT the ~60% mobile height (the pre-fix desktop bug, where a

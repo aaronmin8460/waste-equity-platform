@@ -70,6 +70,14 @@ export interface LandfillDashboardProps {
   setOrigin: (o: LandfillOrigin | null) => void;
   waste: string | null;
   setWaste: (w: string | null) => void;
+  /**
+   * The area's one-line orientation strip, supplied by the page. It renders inside
+   * this view's header, directly BELOW the <h1> it supports — the same position it
+   * occupies in the other three areas. (Rendering it above the dashboard instead
+   * would leave a stray sentence between the global navigation and the page title,
+   * reading as a second navigation row.)
+   */
+  orientation?: React.ReactNode;
 }
 
 export default function LandfillDashboard({
@@ -83,6 +91,7 @@ export default function LandfillDashboard({
   setOrigin,
   waste,
   setWaste,
+  orientation,
 }: LandfillDashboardProps) {
   const period = data?.summary.period ?? null;
   const availableYears = period?.available_years ?? [];
@@ -95,13 +104,13 @@ export default function LandfillDashboard({
   const wasteOptions = data?.composition.waste_types.map((w) => w.waste_name) ?? [];
 
   return (
-    <main
-      // Skip-link target for this view (see layout.tsx / globals.css .skip-link).
-      id="main-content"
-      tabIndex={-1}
-      // min-h-screen precedes min-h-dvh as a static-viewport fallback: engines
-      // without dvh support drop the invalid min-height:100dvh and keep 100vh.
-      className="min-h-screen min-h-dvh w-full bg-slate-100 px-4 py-6 sm:px-6 lg:px-8"
+    // Phase 1: the shared chrome (components/DashboardShell.tsx) now owns the single
+    // <main id="main-content" tabIndex={-1}> skip-link target and the viewport-height
+    // fallbacks for every view, so this dashboard is a plain content block. Two
+    // <main> elements — or two id="main-content" targets — would be invalid and would
+    // make the skip link ambiguous.
+    <div
+      className="w-full px-4 py-6 sm:px-6 lg:px-8"
       data-testid="landfill-dashboard"
     >
       <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-5">
@@ -109,6 +118,7 @@ export default function LandfillDashboard({
         <header>
           <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">수도권매립지 반입 현황</h1>
           <p className="text-sm text-slate-500">서울 · 인천 · 경기 공식 반입자료</p>
+          {orientation}
         </header>
 
         <section
@@ -159,7 +169,7 @@ export default function LandfillDashboard({
 
         {data && <LandfillBody data={data} />}
       </div>
-    </main>
+    </div>
   );
 }
 

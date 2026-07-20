@@ -166,6 +166,50 @@ An explicit responsive `viewport` is exported from `app/layout.tsx`
 (`width=device-width, initialScale=1`), with pinch-zoom left enabled for
 accessibility.
 
+## Global navigation and the height chain (desktop redesign, Phase 1)
+
+The four dashboard areas now share one persistent top navigation, rendered exactly
+once by `components/DashboardShell.tsx` above every render branch. Previously the
+mode switch was rendered four separate times — inside the 384 px equity sidebar for
+the two map modes (where its four Korean labels wrapped onto two lines) and as a
+full-width row above each of the three map-free dashboards.
+
+That relocation touches the load-bearing map-height chain, so the ownership moved up
+one level rather than being rewritten:
+
+| Element | Before | After |
+| --- | --- | --- |
+| Viewport-height owner | `<main>` (`min-h-screen min-h-dvh md:h-screen md:h-dvh`) | the shell root `div[data-testid="app-shell"]`, same classes, same fallback-first order |
+| Full-height flex direction | `<main>` was the row | shell root is the **column**; `<main>` is the row (`md:flex-1 md:min-h-0 md:flex-row`) |
+| Skip-link target | `<main>` in 3 of 6 branches; **absent** in the cost and transparency branches | one `<main id="main-content" tabIndex={-1}>` in the shell, every branch |
+| `.map-pane` | unchanged | **unchanged** |
+
+Why this preserves the fix documented below:
+
+- The shell root keeps a **definite** height at md+ (`md:h-screen md:h-dvh`), so it is
+  still the element the `@supports` two-class overrides in `globals.css`
+  (`.min-h-screen.min-h-dvh`, `.md\:h-screen.md\:h-dvh`) match — the `vh`-before-`dvh`
+  ordering is unchanged and still asserted by `app/responsive.test.tsx`.
+- The header is an ordinary auto-height first child of that column. It is
+  deliberately **not** `position: sticky` or `fixed`: either would take it out of the
+  column's height accounting and re-open the empty-strip bug.
+- `<main>` is `md:flex-1 md:min-h-0`. Its used height is therefore definite, so the
+  `.map-pane` child's `height: 100%` still resolves. **`min-h-0` is load-bearing** —
+  the default `min-height: auto` would let content push the row past the viewport
+  bottom.
+- On mobile `<main>` stays a plain content-sized column, so the stacked
+  sidebar-above-map behaviour and the map's definite `60vh`/`60dvh` are untouched.
+
+`e2e/responsive.spec.ts` still asserts the map reaches the viewport bottom and
+exceeds 80 % of viewport height at 768/1054/1280/1440; its "map starts at the top"
+assertion became "the map starts immediately below the chrome, with no gap", which is
+the invariant that actually matters now. `e2e/desktopNavigation.spec.ts` adds the
+desktop acceptance matrix at 1440×900 and 1280×800: one unwrapped nav row, identical
+nav position across all six views, a bottom indicator plus a weight change on the
+active tab, the sub-view segmented control in one fixed position across 후보지 점수 /
+가중치 바꿔보기 / 비용 살펴보기, no duplicate chrome, and keyboard reach after the skip
+link.
+
 ## Map pane sizing (mobile 60%, desktop fill)
 
 MapLibre's container is `h-full` (100 % of its wrapper). A percentage height needs

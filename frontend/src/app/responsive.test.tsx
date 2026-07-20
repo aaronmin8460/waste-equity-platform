@@ -50,6 +50,42 @@ function classes(el: Element | null): string[] {
 }
 
 describe("responsive application shell", () => {
+  // Phase 1 moved the viewport-height ownership one level up: the shell root
+  // (components/DashboardShell.tsx) is now the fixed-height flex COLUMN that holds
+  // the global navigation plus <main>, and <main> is the row that holds the sidebar
+  // and the map. The invariants below are the same ones as before — the
+  // fallback-before-dvh ordering and the column→row switch — asserted on whichever
+  // element now owns each.
+  it("gives the shell root a definite viewport height with the vh fallback first", async () => {
+    const { container } = await renderLoaded();
+    const shell = container.querySelector('[data-testid="app-shell"]');
+    expect(shell).not.toBeNull();
+    const tokens = classes(shell);
+    // A flex column: the nav is an auto-height first child and <main> flexes into
+    // the remaining height, so `.map-pane`'s `height: 100%` still has a definite
+    // parent to resolve against.
+    expect(tokens).toContain("flex");
+    expect(tokens).toContain("flex-col");
+    // Dynamic-viewport height so mobile browser chrome never crops the app, and a
+    // fixed viewport height on desktop (no unintended document scroll).
+    expect(tokens).toContain("min-h-dvh");
+    expect(tokens).toContain("md:h-dvh");
+    // Each dvh utility is preceded by its static-viewport fallback, so an engine
+    // without `dvh` support keeps a valid full-viewport height instead of dropping
+    // the declaration entirely (which would leave the desktop column — and the map
+    // pane inside it — with no definite height).
+    expect(tokens).toContain("min-h-screen");
+    expect(tokens).toContain("md:h-screen");
+    // Ordering matters: the fallback must come BEFORE the dvh class so a
+    // dvh-supporting engine applies dvh (later rule, equal specificity). This is
+    // also what the `@supports` two-class overrides in globals.css key on.
+    expect(tokens.indexOf("min-h-screen")).toBeLessThan(tokens.indexOf("min-h-dvh"));
+    expect(tokens.indexOf("md:h-screen")).toBeLessThan(tokens.indexOf("md:h-dvh"));
+    // No bare, unconditional static `h-screen` (the pre-responsive full-height
+    // row) remains — the fallbacks above are the min-h-/md:h- prefixed forms.
+    expect(tokens).not.toContain("h-screen");
+  });
+
   it("stacks vertically on mobile and switches to a row at the md breakpoint", async () => {
     const { container } = await renderLoaded();
     const main = container.querySelector("main");
@@ -58,23 +94,25 @@ describe("responsive application shell", () => {
     expect(tokens).toContain("flex");
     expect(tokens).toContain("flex-col");
     expect(tokens).toContain("md:flex-row");
-    // Dynamic-viewport height so mobile browser chrome never crops the app, and a
-    // fixed viewport height on desktop (no unintended document scroll).
-    expect(tokens).toContain("min-h-dvh");
-    expect(tokens).toContain("md:h-dvh");
-    // Each dvh utility is preceded by its static-viewport fallback, so an engine
-    // without `dvh` support keeps a valid full-viewport height instead of dropping
-    // the declaration entirely (which would leave the desktop row — and its
-    // `md:flex-1` map — with no definite height).
-    expect(tokens).toContain("min-h-screen");
-    expect(tokens).toContain("md:h-screen");
-    // Ordering matters: the fallback must come BEFORE the dvh class so a
-    // dvh-supporting engine applies dvh (later rule, equal specificity).
-    expect(tokens.indexOf("min-h-screen")).toBeLessThan(tokens.indexOf("min-h-dvh"));
-    expect(tokens.indexOf("md:h-screen")).toBeLessThan(tokens.indexOf("md:h-dvh"));
-    // No bare, unconditional static `h-screen` (the pre-responsive full-height
-    // row) remains — the fallbacks above are the min-h-/md:h- prefixed forms.
-    expect(tokens).not.toContain("h-screen");
+    // At md+ <main> fills the shell column's remaining height. `min-h-0` is
+    // load-bearing: without it the default `min-height: auto` would let the content
+    // push the row past the viewport bottom, and the map would no longer end exactly
+    // at the viewport edge.
+    expect(tokens).toContain("md:flex-1");
+    expect(tokens).toContain("md:min-h-0");
+    // The height chain itself lives on the shell root, not here.
+    expect(tokens).not.toContain("min-h-dvh");
+  });
+
+  it("exposes exactly one skip-link target, owned by the shared shell", async () => {
+    const { container } = await renderLoaded();
+    const targets = container.querySelectorAll("#main-content");
+    expect(targets).toHaveLength(1);
+    expect(targets[0].tagName).toBe("MAIN");
+    // Focusable so the skip link can move focus into it.
+    expect(targets[0].getAttribute("tabindex")).toBe("-1");
+    // And exactly one <main> in the document.
+    expect(container.querySelectorAll("main")).toHaveLength(1);
   });
 
   it("makes the sidebar full-width on mobile and a fixed column on desktop", async () => {
