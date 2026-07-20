@@ -88,6 +88,7 @@ import type {
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
+import DashboardShell from "../components/DashboardShell";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import MapLegendOverlay from "../components/MapLegendOverlay";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
@@ -119,10 +120,8 @@ import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario
 import { classifyEquityRaw, stabilityBadgeLabel } from "../lib/suitability";
 import {
   COMPONENT_ORDER,
-  MODE_LABELS,
   MODE_ORIENTATION,
   PROFILE_META,
-  SUBVIEW_LABELS,
   accountingBasisLabel,
   codeWithName,
   plainError,
@@ -1055,27 +1054,25 @@ export default function Home() {
   // non-map mode cannot reach MapView.
   if (mode === "transparency") {
     return (
-      <div className="min-h-screen min-h-dvh bg-slate-100">
+      <DashboardShell mode={mode} onModeChange={changeMode} variant="page">
         <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-3 px-4 py-6 sm:px-6 lg:px-8">
           <header>
             <h1 className="text-lg font-bold text-slate-900">데이터·출처</h1>
+            <ModeOrientation mode={mode} />
           </header>
-          <ModeSwitch mode={mode} setMode={changeMode} />
-          <ModeOrientation mode={mode} />
           <TransparencyDashboard data={data} />
         </div>
-      </div>
+      </DashboardShell>
     );
   }
 
   if (mode === "flow") {
     return (
-      <div className="min-h-screen min-h-dvh bg-slate-100">
-        <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-3 px-4 pt-6 sm:px-6 lg:px-8">
-          <ModeSwitch mode={mode} setMode={changeMode} />
-          <ModeOrientation mode={mode} />
-        </div>
+      <DashboardShell mode={mode} onModeChange={changeMode} variant="page">
         <LandfillDashboard
+          // Rendered inside the dashboard's own header, below its <h1> — the same
+          // place the orientation strip sits in the other three areas.
+          orientation={<ModeOrientation mode={mode} />}
           data={flowData}
           error={flowError}
           year={flowYear}
@@ -1087,7 +1084,7 @@ export default function Home() {
           waste={flowWaste}
           setWaste={setFlowWaste}
         />
-      </div>
+      </DashboardShell>
     );
   }
 
@@ -1099,18 +1096,20 @@ export default function Home() {
   // below is thus only ever reached by the equity map and the suitability SCORE view.
   if (mode === "suitability" && suitabilityView === "cost") {
     return (
-      <div className="min-h-screen min-h-dvh bg-slate-100">
-        <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-3 px-4 pt-6 sm:px-6 lg:px-8">
-          <ModeSwitch mode={mode} setMode={changeMode} />
-          <SuitabilityViewSwitch view={suitabilityView} setView={changeSuitabilityView} />
-        </div>
-        <div className="mt-4">
+      <DashboardShell
+        mode={mode}
+        onModeChange={changeMode}
+        variant="page"
+        suitabilityView={suitabilityView}
+        onSuitabilityViewChange={changeSuitabilityView}
+      >
+        <div className="pt-6">
           <FacilityCostDashboard
             wasteRegions={facilityCostWasteRegions}
             selectedCandidate={selected}
           />
         </div>
-      </div>
+      </DashboardShell>
     );
   }
 
@@ -1142,18 +1141,19 @@ export default function Home() {
   });
 
   return (
-    // Mobile: a single vertical column (controls stacked above a full-width map).
-    // md+ (tablet-landscape/desktop): the original side-by-side layout — a fixed
-    // sidebar on the left, the map filling the rest. `min-h-dvh`/`md:h-dvh` uses
-    // the dynamic viewport so mobile browser chrome never crops the app; each is
-    // preceded by its static-viewport fallback (`min-h-screen`/`md:h-screen`) so
-    // engines without `dvh` support keep a valid full-viewport height instead of
-    // dropping the whole declaration (which would leave the desktop row — and its
-    // `md:flex-1` map — with no definite height).
-    <main
-      id="main-content"
-      tabIndex={-1}
-      className="flex min-h-screen min-h-dvh flex-col md:h-screen md:h-dvh md:flex-row"
+    // The shell owns the viewport-height chain (see components/DashboardShell.tsx):
+    // it is the fixed-height flex COLUMN at md+, the global nav is its auto-height
+    // first child, and <main> is `md:flex-1 md:min-h-0` — a definite-height flex
+    // item, so the `.map-pane` child's `height: 100%` still resolves and the map
+    // still reaches the viewport bottom with no empty strip below it.
+    // Inside <main>: mobile stacks the sidebar above a full-width map; md+ is the
+    // original side-by-side row.
+    <DashboardShell
+      mode={mode}
+      onModeChange={changeMode}
+      variant="map"
+      suitabilityView={suitabilityView}
+      onSuitabilityViewChange={changeSuitabilityView}
     >
       <aside className="flex w-full flex-col gap-4 border-b border-slate-200 bg-white p-5 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
         <header>
@@ -1161,7 +1161,6 @@ export default function Home() {
           <p className="text-xs text-slate-500">서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지</p>
         </header>
 
-        <ModeSwitch mode={mode} setMode={changeMode} />
         <ModeOrientation mode={mode} />
 
         {mode === "equity" && (
@@ -1316,12 +1315,14 @@ export default function Home() {
 
         {mode === "suitability" && (
           <>
-            {/* The 비용 렌즈 sub-view is handled by the full-width early return above,
-                so this sidebar branch always renders the score screening. The switch
-                stays here so the user can enter the cost dashboard. The suitability
-                status filter + score legend now float over the map (MapLegendOverlay
-                below), not in this panel. */}
-            <SuitabilityViewSwitch view={suitabilityView} setView={changeSuitabilityView} />
+            {/* The 비용 살펴보기 sub-view is handled by the full-width early return
+                above, so this sidebar branch always renders the score screening or
+                the weight lab. The sub-view switch itself is NOT here: it is part of
+                the shared chrome (components/DashboardShell.tsx), so it keeps one
+                position across all three sub-views instead of appearing in the
+                sidebar for two of them and above a full-width page for the third.
+                The suitability status filter + score legend float over the map
+                (MapLegendOverlay below), not in this panel. */}
             {suitabilityView === "scenario" ? (
               suit ? (
                 <SuitabilityScenarioLab
@@ -1454,118 +1455,29 @@ export default function Home() {
           onClose={() => setReportKind(null)}
         />
       )}
-    </main>
-  );
-}
-
-// --------------------------------------------------------------------------- //
-// Mode switch — rendered in the sidebar for the two map modes, and above the
-// full-width dashboard in 수도권매립지 mode, so it stays reachable everywhere.
-// --------------------------------------------------------------------------- //
-
-const MODE_BUTTONS: { key: DashboardMode; label: string; testId: string }[] = [
-  { key: "equity", label: MODE_LABELS.equity, testId: "mode-equity" },
-  { key: "suitability", label: MODE_LABELS.suitability, testId: "mode-suitability" },
-  { key: "flow", label: MODE_LABELS.flow, testId: "mode-flow" },
-  { key: "transparency", label: MODE_LABELS.transparency, testId: "mode-transparency" },
-];
-
-function ModeSwitch({
-  mode,
-  setMode,
-}: {
-  mode: DashboardMode;
-  setMode: (m: DashboardMode) => void;
-}) {
-  return (
-    <section aria-label="모드 선택">
-      {/* A non-heading label (not an <h2>): in 수도권매립지 mode the mode switch
-          renders above the dashboard's own <h1>, so a heading here would put an
-          h2 before the h1 and break the heading hierarchy. The group is named via
-          aria-labelledby instead. */}
-      <p id="mode-switch-label" className="mb-2 text-sm font-semibold text-slate-800">
-        무엇을 볼까요?
-      </p>
-      {/* Toggle buttons with aria-pressed, so role="group" (not radiogroup, which
-          would promise arrow-key roving focus these native buttons do not have).
-          flex-wrap keeps all three buttons on screen at 320–430px (they wrap
-          instead of overflowing). A larger tap height on mobile only, so the
-          desktop control stays the same size. */}
-      <div
-        className="flex flex-wrap gap-1.5"
-        role="group"
-        aria-labelledby="mode-switch-label"
-        data-testid="mode-switch"
-      >
-        {MODE_BUTTONS.map((button) => (
-          <button
-            key={button.key}
-            type="button"
-            aria-pressed={mode === button.key}
-            onClick={() => setMode(button.key)}
-            className={`min-h-[38px] rounded px-3 py-1 text-sm md:min-h-0 ${
-              mode === button.key ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"
-            }`}
-            data-testid={button.testId}
-          >
-            {button.label}
-          </button>
-        ))}
-      </div>
-    </section>
+    </DashboardShell>
   );
 }
 
 // --------------------------------------------------------------------------- //
 // One-line, task-oriented orientation shown at the top of each area, so a
 // first-time visitor understands what the area does before reading any control.
+//
+// Phase 1: this is now plain muted supporting text inside the active view's
+// content area. It previously carried a filled `bg-slate-50` strip, which — sitting
+// directly under the mode switch — read as a second navigation row. The text and
+// its `mode-orientation` testid are unchanged (the citizen-language guarantee in
+// docs/CITIZEN_LANGUAGE_AND_UX.md and terminology.audit.test.tsx).
+//
+// The global TopNavigation and the 후보지 분석 SegmentedControl now live in
+// components/DashboardShell.tsx, rendered once above every branch.
 // --------------------------------------------------------------------------- //
 
 function ModeOrientation({ mode }: { mode: DashboardMode }) {
   return (
-    <p className="wep-orient rounded-md bg-slate-50 px-3 py-2" data-testid="mode-orientation">
+    <p className="wep-orient" data-testid="mode-orientation">
       {MODE_ORIENTATION[mode as DashboardArea]}
     </p>
-  );
-}
-
-// --------------------------------------------------------------------------- //
-// Suitability sub-view switch — [후보지 점수] [가중치 바꿔보기] [비용 살펴보기].
-// A labelled group of aria-pressed toggle buttons (not a new top-level mode), so
-// the cost view lives inside the 후보지 분석 experience.
-// --------------------------------------------------------------------------- //
-
-function SuitabilityViewSwitch({
-  view,
-  setView,
-}: {
-  view: SuitabilityView;
-  setView: (v: SuitabilityView) => void;
-}) {
-  const buttons: { key: SuitabilityView; label: string; testId: string }[] = [
-    { key: "score", label: SUBVIEW_LABELS.score, testId: "suitability-view-score" },
-    { key: "scenario", label: SUBVIEW_LABELS.scenario, testId: "suitability-view-scenario" },
-    { key: "cost", label: SUBVIEW_LABELS.cost, testId: "suitability-view-cost" },
-  ];
-  return (
-    <section aria-label="적합성 하위 보기 선택">
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label="적합성 하위 보기">
-        {buttons.map((button) => (
-          <button
-            key={button.key}
-            type="button"
-            aria-pressed={view === button.key}
-            onClick={() => setView(button.key)}
-            className={`min-h-[38px] rounded px-3 py-1 text-sm md:min-h-0 ${
-              view === button.key ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"
-            }`}
-            data-testid={button.testId}
-          >
-            {button.label}
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }
 

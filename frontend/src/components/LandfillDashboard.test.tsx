@@ -578,12 +578,16 @@ describe("LandfillDashboard", () => {
     expect(screen.queryAllByTestId("landfill-region-row")).toHaveLength(0);
   });
 
-  it("is the skip-link target and announces loaded results via a status region", () => {
+  it("announces loaded results via a status region and claims no skip-link target", () => {
     renderDashboard();
-    // Skip-link target for the flow view.
-    const main = screen.getByTestId("landfill-dashboard");
-    expect(main.getAttribute("id")).toBe("main-content");
-    expect(main.getAttribute("tabindex")).toBe("-1");
+    // Phase 1: the shared chrome (components/DashboardShell.tsx) owns the single
+    // <main id="main-content" tabIndex={-1}> for EVERY view, so this dashboard must
+    // no longer declare one — two targets would make the skip link ambiguous and two
+    // <main> elements would be invalid. The flow view's skip-link target is asserted
+    // at the page level (src/app/page.test.tsx) and in e2e/accessibility.spec.ts.
+    const root = screen.getByTestId("landfill-dashboard");
+    expect(root.getAttribute("id")).toBeNull();
+    expect(root.tagName).not.toBe("MAIN");
     // A concise status live region announces the loaded period + total quantity.
     const live = screen.getByTestId("landfill-live");
     expect(live.getAttribute("role")).toBe("status");
