@@ -31,7 +31,7 @@ methodology note, or the developer documentation.
 2. The technical vocabulary is **kept**, not deleted — it moves to a `detail` string
    surfaced behind a disclosure, or to a diagnostic line.
 3. When a code genuinely helps (Z/R/E/D), it is shown **with** its Korean name via
-   `codeWithName` → `토지이용 조건(Z)`, never a bare `Z`.
+   `codeWithName` → `용도지역 호환성(Z)`, never a bare `Z`.
 4. **Analytical honesty is unchanged.** Renaming never converts a missing value to
    zero, softens a disclaimer, or claims legal / final / cost-complete status. An
    official measured `0` stays distinct from `자료 없음`.
@@ -48,12 +48,12 @@ messages, accounting-basis names, a general term glossary, and
 | Equity | 지역 부담 | 형평성(Equity) |
 | Suitability | 후보지 분석 | 적합성 스크리닝(Suitability screening) |
 | candidate | 분석 후보 구역 | 500m 후보 격자 |
-| ELIGIBLE | 1차 분석 통과 | 현재 규칙에서 자동 제외·추가검토 사유가 없는 구역 |
-| REVIEW_REQUIRED | 추가 확인 필요 | 자료 부족 또는 세부 확인 필요 |
-| EXCLUDED | 현재 기준에서 제외 | 1차 분석 제외 규칙 해당 |
+| ELIGIBLE | 스크리닝 통과 | 현재 규칙에서 자동 제외·추가검토 사유가 없는 구역 |
+| REVIEW_REQUIRED | 추가 검토 필요 | 자료 부족 또는 세부 확인 필요 |
+| EXCLUDED | 프로젝트 스크리닝 제외 | 프로젝트의 분석상 제외 규칙 해당 |
 | weight profile | 점수 반영 기준 | 항목별 가중치 조합 |
-| baseline / equal / equity_focused / access_focused / CRITIC | 기본 기준 / 모두 똑같이 반영 / 지역 부담을 더 크게 반영 / 도로 접근성을 더 크게 반영 / 데이터 분포 기준 | 운영 가정·전문가 AHP 아님 / 25%씩 / … / 값 분포로 자동 계산(CRITIC) |
-| Z / R / E / D | 토지이용 조건(Z) / 도로 접근성(R) / 기존 지역 부담(E) / 폐기물 처리 수요(D) | zoning / road / equity / demand |
+| baseline / equal / equity_focused / access_focused / CRITIC | 기본 기준 / 모두 똑같이 반영 / 지역 부담을 더 크게 반영 / 도로 근접성을 더 크게 반영 / 데이터 분포 기준 | 운영 가정·전문가 AHP 아님 / 25%씩 / … / 값 분포로 자동 계산(CRITIC) |
+| Z / R / E / D | 용도지역 호환성(Z) / 도로 근접성 대리지표(R) / 기존 지역 부담(E) / 폐기물 처리 수요(D) | zoning / road / equity / demand |
 | STABLE / CONDITIONALLY_STABLE / WEIGHT_SENSITIVE | 세 기준 모두 상위권 / 두 기준에서 상위권 / 기준에 따라 순위 변화 큼 | baseline·equal·critic 상위 10% 포함 여부 |
 | provisional score | 참고용 임시 점수 | 일부 항목 결측, 최종 점수 아님 |
 | run | 분석 실행 | 같은 자료·규칙으로 한 번 계산한 결과 묶음 |
@@ -228,18 +228,52 @@ Covered by `e2e/citizenFlows.spec.ts` (driven by visible Korean labels):
 
 ## Status wording
 
-The three screening statuses are always the plain labels (1차 분석 통과 / 추가 확인 필요 /
-현재 기준에서 제외), with the raw code available only in the detail layer. Stability is a
-short plain sentence (세 기준 모두 상위권 등) plus a text-first badge — never color alone.
+The three screening statuses are always the plain labels (스크리닝 통과 / 추가 검토 필요 /
+프로젝트 스크리닝 제외), with the raw code available only in the detail layer. Each status
+also carries a one-sentence citizen explanation from `STATUS_META[...].explanation`
+(`statusExplanation()`), shown in the score-view summary ("상태 설명 보기") and inline
+in the candidate detail panel. None of the explanations claim legal permission,
+construction feasibility, or a final legal prohibition. Stability is a short plain
+sentence (세 기준 모두 상위권 등) plus a text-first badge — never color alone.
+
+The Phase 0 rename replaced misleading component terms so the label matches what is
+actually measured: `토지이용 적합성` → **`용도지역 호환성`** (an administrative zoning
+context, not physical suitability) and `도로 접근성` → **`도로 근접성 대리지표`** (a
+distance proxy, not guaranteed vehicle access). The scoring, weights, ranks, and
+statuses are unchanged — only the words. See
+[SUITABILITY_PHASE_0_TRANSPARENCY.md](SUITABILITY_PHASE_0_TRANSPARENCY.md).
 
 ## Disclaimer hierarchy
 
-The primary disclaimer is short:
+The standing analytical-screening disclaimer heads **every** 후보지 분석 sub-view (score,
+scenario, cost) — a neutral `InfoBanner` (tone `info`, never `role="alert"`) rendered
+once in `DashboardShell`, from the single glossary string
+`SUITABILITY_SCREENING_DISCLAIMER`:
+> 본 화면은 공식 공간데이터를 이용한 광역 후보지 스크리닝입니다. 결과는 법적 허가, 환경영향평가,
+> 토질·지질 조사, 토지 확보 가능성 또는 최종 입지 선정을 의미하지 않습니다.
+
+Where space is limited (the map legend), the short persistent label
+`SUITABILITY_SCREENING_SHORT_LABEL` — `광역 분석 스크리닝 · 법적·공학적 적합 판정 아님` — is
+used instead. The score view additionally keeps the shorter inline caveat:
 > 이 결과는 공공자료를 이용한 1차 비교이며 실제 입지 결정이 아닙니다.
 
 Longer analytical disclaimers (legal non-eligibility, cost incompleteness, scenario
 non-persistence, missing-vs-zero) remain but are phrased plainly and, where verbose,
-expandable. No legally or analytically important disclaimer was removed.
+expandable. No legally or analytically important disclaimer was removed. The disclaimer
+appears **only** in 후보지 분석 mode, so it is never shown as a claim about the equity
+map's calculations.
+
+## What the screening does NOT model (Phase 0)
+
+The score view methodology and the candidate detail panel both carry a compact,
+collapsible "현재 분석에 포함되지 않은 항목" disclosure listing
+`UNMODELED_SUITABILITY_FACTORS` (경사·정밀 지형, 상세 지질·단층, 지하수위·수문지질,
+토지피복, 건축물 점유, 홍수·침수, 연속 부지 규모, 필지 소유권, 대형차량 진입, 현장조사·EIA)
+with the note that a missing value is never treated as `0점` or as a safe condition. It
+shows no fake value, placeholder score, or completion percentage. The same disclosure,
+the status meanings, the component definitions, and three scope statements (500m grid ≠
+parcel, road distance is a proximity proxy, ownership/usable area not evaluated) ride
+along in the suitability CSV and print/PNG exports.
 
 ## Accessibility behavior
 

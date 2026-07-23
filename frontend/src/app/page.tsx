@@ -100,6 +100,7 @@ import RegionRanking from "../components/RegionRanking";
 import RegionComparison, { type ComparisonValue } from "../components/RegionComparison";
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
+import InfoBanner from "../components/ui/InfoBanner";
 import Skeleton from "../components/ui/Skeleton";
 import {
   rankRegions,
@@ -123,13 +124,21 @@ import { buildComparisonReport, buildEquityReport, type ReportModel } from "../l
 import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario";
 import { classifyEquityRaw, stabilityBadgeLabel } from "../lib/suitability";
 import {
+  COMPONENT_META,
   COMPONENT_ORDER,
   MODE_ORIENTATION,
   PROFILE_META,
+  SUITABILITY_SCREENING_DISCLAIMER,
+  SUITABILITY_SCREENING_DISCLAIMER_TITLE,
+  SUITABILITY_SCREENING_SHORT_LABEL,
+  UNMODELED_SUITABILITY_FACTORS,
+  UNMODELED_SUITABILITY_NOTE,
+  UNMODELED_SUITABILITY_TITLE,
   accountingBasisLabel,
   codeWithName,
   plainError,
   profileLabel,
+  statusExplanation,
   statusLabel,
   type DashboardArea,
 } from "../lib/glossary";
@@ -186,7 +195,7 @@ function weightPercent(value: string | undefined): string {
 
 /**
  * The four Z/R/E/D weights rendered with their Korean names as percentages, e.g.
- * "토지이용 조건(Z) 40% · 도로 접근성(R) 30% · …" — never bare single-letter codes.
+ * "용도지역 호환성(Z) 40% · 도로 근접성 대리지표(R) 30% · …" — never bare single-letter codes.
  */
 function namedWeights(w: Record<string, string> | undefined): string {
   const weights = w ?? {};
@@ -1498,6 +1507,9 @@ export default function Home() {
 
         {mode === "suitability" && (
           <>
+            {/* Phase 0: the standing analytical-screening disclaimer heads the
+                suitability sidebar for both map sub-views (score + scenario). */}
+            <SuitabilityScreeningNotice />
             {/* The 비용 살펴보기 sub-view is handled by the full-width early return
                 above, so this sidebar branch always renders the score screening or
                 the weight lab. The sub-view switch itself is NOT here: it is part of
@@ -1586,7 +1598,7 @@ export default function Home() {
           ariaDescription={
             mode === "equity"
               ? "지역별 지표를 색으로 표시한 인터랙티브 지도입니다. 지역을 클릭하면 좌측 '선택한 지역' 요약에 이름과 값이 표시되며, 키보드·스크린리더 사용자는 그 요약으로 같은 정보를 확인할 수 있습니다."
-              : "500m 적합성 후보 격자를 표시한 인터랙티브 지도입니다. 상세 후보는 좌측 '상위 적합 후보' 목록과 '후보 상세' 패널에서 접근할 수 있습니다. 분석용 스크리닝이며 법적 입지 결정이 아닙니다."
+              : "500m 후보 격자를 표시한 인터랙티브 지도입니다. 상세 후보는 좌측 '상위 후보지' 목록과 '후보 상세' 패널에서 접근할 수 있습니다. 광역 분석 스크리닝이며 법적·공학적 적합 판정이 아닙니다."
           }
           onRegionClick={(code) => setSelectedRegionCode(code)}
         />
@@ -1621,7 +1633,7 @@ export default function Home() {
             disclaimer={
               scenarioActive
                 ? "사용자 가정 기반 임시 비교이며 공식 분석 실행·법적 입지 결정이 아닙니다."
-                : "분석용 스크리닝이며 법적 입지 결정이 아닙니다."
+                : SUITABILITY_SCREENING_SHORT_LABEL
             }
             scenarioActive={scenarioActive}
             scenarioWeights={appliedScenario?.weights ?? null}
@@ -1879,7 +1891,7 @@ function CriticMethodNote({ run }: { run: SuitabilityRun }) {
       <p className="font-medium text-slate-700">CRITIC 데이터 기반 가중치</p>
       <p className="mt-0.5">
         방법: CRITIC · 대상 후보 {pop != null ? formatCount(Number(pop)) : "-"}개 (자료가 완전한
-        1차 분석 통과 후보)
+        스크리닝 통과 후보)
         {/* Phase 7: the raw method-version identifier is demoted out of the visible
             sentence, matching how Phase 6 moved the analysis version strings into a
             technical layer. The value itself is unchanged and still rendered. */}
@@ -1898,7 +1910,7 @@ function CriticMethodNote({ run }: { run: SuitabilityRun }) {
         </p>
       )}
       <p className="mt-0.5">
-        가중치는 이 실행의 완전한 1차 분석 통과 후보 점수의 분산·상관관계로 계산되며, 조닝/도로/형평성/수요의
+        가중치는 이 실행의 완전한 스크리닝 통과 후보 점수의 분산·상관관계로 계산되며, 조닝/도로/형평성/수요의
         규범적 중요도가 아닌 선택된 데이터·분석 범위의 구조를 나타냅니다. 전문가 판단·법적 우선순위·보편적
         정책 중요도가 아닙니다.
       </p>
@@ -1946,6 +1958,61 @@ function StabilitySummary({ summary }: { summary: SuitabilitySummary }) {
         뜻이며 최종 입지, 허가 가능성 또는 법적 적격성을 의미하지 않습니다.
       </p>
     </section>
+  );
+}
+
+/**
+ * The Phase 0 standing analytical-screening disclaimer for the map sub-views (후보지
+ * 점수 / 가중치 바꿔보기). Rendered at the TOP of the suitability sidebar rather than as
+ * a full-width header row, because the map sub-views guarantee the map starts
+ * immediately below the sub-view bar and fills the viewport (e2e/desktopNavigation +
+ * responsive); a full-width band there would open a gap above the map and shrink it
+ * below its dominant height. In the sidebar it is visible near the top of the view on
+ * both desktop and mobile (the sidebar stacks above the map on mobile) without
+ * obstructing the map. It is a neutral `InfoBanner` (tone `info`, never
+ * `role="alert"`) with a text severity label, inside an aria-labelled landmark. The
+ * 비용 살펴보기 (cost) sub-view has no sidebar, so it renders the SAME shared string in
+ * its own top notice (FacilityCostDashboard). It never appears in the equity map.
+ */
+function SuitabilityScreeningNotice() {
+  return (
+    <section aria-label="후보지 분석 안내" data-testid="suitability-screening-notice">
+      <InfoBanner
+        tone="info"
+        title={SUITABILITY_SCREENING_DISCLAIMER_TITLE}
+        testId="suitability-screening-disclaimer"
+      >
+        <p>{SUITABILITY_SCREENING_DISCLAIMER}</p>
+      </InfoBanner>
+    </section>
+  );
+}
+
+/**
+ * "현재 분석에 포함되지 않은 항목" — the Phase 0 disclosure of the physical /
+ * environmental / legal conditions the current regional screening does NOT yet
+ * evaluate. A compact, collapsible native <details> (keyboard reachable); the title
+ * and the core limitation stay discoverable while collapsed. It lists the shared
+ * `UNMODELED_SUITABILITY_FACTORS` and states that a missing value is NEVER treated as
+ * 0 or as a safe condition — it shows no fake value, placeholder score, or completion
+ * percentage. Rendered in the score-view methodology AND the candidate detail panel.
+ */
+function UnmodeledFactorsDisclosure({ testId }: { testId: string }) {
+  return (
+    <details
+      className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"
+      data-testid={testId}
+    >
+      <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+        {UNMODELED_SUITABILITY_TITLE}
+      </summary>
+      <ul className="mt-2 list-disc space-y-0.5 pl-4" data-testid={`${testId}-list`}>
+        {UNMODELED_SUITABILITY_FACTORS.map((factor) => (
+          <li key={factor}>{factor}</li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-slate-500">{UNMODELED_SUITABILITY_NOTE}</p>
+    </details>
   );
 }
 
@@ -2019,6 +2086,20 @@ function SuitabilityPanel({
             </dd>
           </div>
         </dl>
+        {/* Phase 0: what each screening status means, from the shared glossary. A
+            compact <details> (keyboard reachable) so the meaning is one click away in
+            the same place the counts appear; the labels themselves are already plain. */}
+        <details className="mt-2" data-testid="status-explanations">
+          <summary className="cursor-pointer font-medium text-slate-600">상태 설명 보기</summary>
+          <dl className="mt-1 space-y-1 text-[11px] text-slate-600">
+            {(["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"] as SuitabilityStatus[]).map((st) => (
+              <div key={st} data-testid={`status-explanation-${st}`}>
+                <dt className="inline font-semibold">{statusLabel(st)}: </dt>
+                <dd className="inline">{statusExplanation(st)}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
         {/* Technical run/version provenance moved behind a disclosure (progressive
             disclosure) — the citizen sees the counts first; the analyst opens this. */}
         <details className="mt-2">
@@ -2071,7 +2152,7 @@ function SuitabilityPanel({
         </div>
         {/* Distinguish the fixed policy-assumption bases from the data-distribution one. */}
         <p className="mt-1 text-xs text-slate-500">
-          기본·모두 똑같이·지역 부담 중심·도로 접근성 중심은 <strong>운영 가정</strong>으로 정한 고정
+          기본·모두 똑같이·지역 부담 중심·도로 근접성 중심은 <strong>운영 가정</strong>으로 정한 고정
           비율이며 전문가 AHP 결과가 아닙니다. <strong>데이터 분포 기준</strong>은 이 분석 실행의 후보
           점수 분포에서 자동 계산된 비율입니다.
         </p>
@@ -2241,6 +2322,9 @@ function SuitabilityPanel({
           {s.disclaimer}
         </p>
       </section>
+
+      {/* Phase 0: what the current regional screening does NOT yet evaluate. */}
+      <UnmodeledFactorsDisclosure testId="suitability-unmodeled-factors" />
     </>
   );
 }
@@ -2287,6 +2371,11 @@ function CandidateDetailPanel({
       <p className="mt-1">
         <strong>{detail.sigungu_region_name ?? "(지역 미배정)"}</strong> · {statusLabel(detail.status)}
       </p>
+      {/* Phase 0: the plain meaning of this candidate's screening status, so the
+          reader is not left to infer it from the label alone. */}
+      <p className="mt-0.5 text-[11px] text-slate-500" data-testid="candidate-status-explanation">
+        {statusExplanation(detail.status)}
+      </p>
       <p className="mt-0.5 font-mono text-[11px] break-all text-slate-400">
         구역 식별키 {detail.candidate_key}
       </p>
@@ -2317,22 +2406,26 @@ function CandidateDetailPanel({
             선택 프로파일 <strong>{detail.profile}</strong> — 가중치 Z {detail.weights.zoning} · R{" "}
             {detail.weights.road} · E {detail.weights.equity} · D {detail.weights.demand}
           </p>
+          {/* Component labels are the Phase 0 citizen-facing terms from the central
+              glossary ("용도지역 호환성", "도로 근접성 대리지표", …); the raw scores
+              and their meaning are unchanged. */}
           <table className="mt-1 w-full text-left">
+            <caption className="sr-only">구성요소별 점수</caption>
             <tbody>
               <tr>
-                <td>토지이용 Zoning</td>
+                <td>{COMPONENT_META.zoning.primary}</td>
                 <td>{detail.zoning_score ?? "-"}</td>
               </tr>
               <tr>
-                <td>도로접근 Road</td>
+                <td>{COMPONENT_META.road.primary}</td>
                 <td>{detail.road_score ?? "-"}</td>
               </tr>
               <tr>
-                <td>형평성 Equity</td>
+                <td>{COMPONENT_META.equity.primary}</td>
                 <td>{detail.equity_score ?? "-"}</td>
               </tr>
               <tr>
-                <td>수요 Demand</td>
+                <td>{COMPONENT_META.demand.primary}</td>
                 <td>{detail.demand_score ?? "-"}</td>
               </tr>
             </tbody>
@@ -2344,7 +2437,7 @@ function CandidateDetailPanel({
           )}
           <p className="mt-1">
             최근접 도로: {detail.nearest_road_distance_m ?? "-"} m ·{" "}
-            {String(detail.nearest_road_provenance?.official_layer_code ?? "")} (접근성 프록시, 차량
+            {String(detail.nearest_road_provenance?.official_layer_code ?? "")} (근접성 대리지표, 차량
             진입 보장 아님)
           </p>
           {eq && (
@@ -2423,11 +2516,16 @@ function CandidateDetailPanel({
             </div>
           ) : (
             <p className="mt-2 text-[11px] text-slate-500" data-testid="candidate-stability-na">
-              안정성 평가 대상 아님 (1차 분석 통과 후보만 평가)
+              안정성 평가 대상 아님 (스크리닝 통과 후보만 평가)
             </p>
           )}
         </>
       )}
+      {/* Phase 0: the same "not yet included" disclosure, so a reader inspecting one
+          candidate sees the screening's limits without leaving the panel. */}
+      <div className="mt-2">
+        <UnmodeledFactorsDisclosure testId="candidate-unmodeled-factors" />
+      </div>
       <p className="mt-2 text-slate-500">{detail.disclaimer}</p>
     </section>
   );

@@ -64,6 +64,7 @@ import {
   perCapitaUnavailableExplanation,
   profileLabel,
   statusLabel,
+  SUITABILITY_SCREENING_DISCLAIMER,
 } from "../lib/glossary";
 import { formatQuantity } from "../lib/metrics";
 import { regionDisplayName } from "../lib/regionDisplay";
@@ -637,7 +638,13 @@ function FacilityCostNotice() {
       {/* Standing disclaimer: informational, never role="alert" — it must not
           interrupt a screen reader on every render. */}
       <InfoBanner tone="info" testId="facility-cost-notice">
-        <p data-testid="facility-cost-disclaimer">{PAGE_DISCLAIMER}</p>
+        {/* Phase 0: the shared regional-screening disclaimer heads the cost sub-view
+            too (the same string the score/scenario shell banner shows), so 후보지 분석
+            carries one consistent scope statement across all three sub-views. */}
+        <p className="font-medium" data-testid="suitability-screening-disclaimer">
+          {SUITABILITY_SCREENING_DISCLAIMER}
+        </p>
+        <p className="mt-2" data-testid="facility-cost-disclaimer">{PAGE_DISCLAIMER}</p>
         <p className="mt-2 font-medium">{SETUP_NON_CLAIMS}</p>
       </InfoBanner>
 

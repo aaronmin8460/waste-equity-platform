@@ -16,6 +16,17 @@
 > the additive CRITIC/stability method is documented in
 > [SUITABILITY_CRITIC_STABILITY.md](SUITABILITY_CRITIC_STABILITY.md).
 
+> **Presentation-only transparency pass (Phase 0).** A separate Phase 0 changed only
+> how this screening is *labelled and disclosed* to citizens — the disclaimer wording,
+> the component **display** names (`토지이용 적합성` → `용도지역 호환성`; `도로 접근성` →
+> `도로 근접성 대리지표`), the status **display** labels, and a "not yet modelled"
+> disclosure. **No calculation in this document changed**: the four static weight
+> profiles, the hard-exclusion and review rules, the component-score formulas, the
+> road-distance curve, every threshold, and the `ELIGIBLE` / `REVIEW_REQUIRED` /
+> `EXCLUDED` backend enum values are **byte-for-byte unchanged**, and no
+> `policy_version` / `derivation_version` was bumped for it. See
+> [SUITABILITY_PHASE_0_TRANSPARENCY.md](SUITABILITY_PHASE_0_TRANSPARENCY.md).
+
 This document is the **project-approved analytical screening policy** for the
 Phase 5.4 waste-facility suitability screen over the Seoul Metropolitan Area
 (Seoul / Incheon / Gyeonggi-do). It records every classification, exclusion,

@@ -295,9 +295,13 @@ test.describe("Task B — 후보지 분석 (suitability)", () => {
   }) => {
     await setup(page);
     await page.getByRole("button", { name: "후보지 분석" }).click();
-    await expect(page.getByTestId("candidate-counts")).toContainText("1차 분석 통과");
-    await expect(page.getByTestId("candidate-counts")).toContainText("추가 확인 필요");
-    await expect(page.getByTestId("candidate-counts")).toContainText("현재 기준에서 제외");
+    await expect(page.getByTestId("candidate-counts")).toContainText("스크리닝 통과");
+    await expect(page.getByTestId("candidate-counts")).toContainText("추가 검토 필요");
+    await expect(page.getByTestId("candidate-counts")).toContainText("프로젝트 스크리닝 제외");
+    // Phase 0: the analytical-screening disclaimer is visible near the top.
+    await expect(page.getByTestId("suitability-screening-disclaimer")).toContainText(
+      "광역 후보지 스크리닝",
+    );
     // Choose a scoring basis (점수 반영 기준) — plain labels.
     await expect(page.getByText("점수 반영 기준", { exact: true })).toBeVisible();
     // Inspect a candidate.
@@ -330,7 +334,7 @@ test.describe("Task C — 가중치 바꿔보기 (scenario)", () => {
     await expect(page.getByTestId("scenario-lab")).toBeVisible();
     // The shared weights seeded the editor (40/20/20/20) and the link is preserved
     // in the address bar (not self-stripped).
-    await expect(page.getByRole("spinbutton", { name: /토지이용/ })).toHaveValue("40");
+    await expect(page.getByRole("spinbutton", { name: /용도지역/ })).toHaveValue("40");
     expect(page.url()).toContain("wz=0.4");
     // One click applies, re-validated through the preview API → results appear.
     await page.getByTestId("scenario-apply").click();

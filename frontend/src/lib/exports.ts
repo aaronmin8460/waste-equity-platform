@@ -14,10 +14,24 @@
 
 import type { CsvValue } from "./csv";
 import { readableTimestamp } from "./csv";
-import { codeWithName, profileLabel, stabilitySentence } from "./glossary";
+import {
+  COMPONENT_META,
+  COMPONENT_ORDER,
+  SUITABILITY_SCOPE_STATEMENTS,
+  SUITABILITY_SCREENING_DISCLAIMER,
+  UNMODELED_SUITABILITY_FACTORS,
+  UNMODELED_SUITABILITY_NOTE,
+  UNMODELED_SUITABILITY_TITLE,
+  codeWithName,
+  componentExplanation,
+  profileLabel,
+  stabilitySentence,
+  statusExplanation,
+  statusLabel,
+} from "./glossary";
 import type { RankingResult, ScopeSelection } from "./ranking";
 import { SCOPE_LABELS } from "./ranking";
-import type { SuitabilityProfile } from "./api";
+import type { SuitabilityProfile, SuitabilityStatus } from "./api";
 
 const EQUITY_DISCLAIMER =
   "이 표는 공식 공공자료의 표시용 내보내기입니다. 값이 없는 지역은 빈 칸이며 0이 아닙니다.";
@@ -25,8 +39,38 @@ const EQUITY_DISCLAIMER =
 const SCENARIO_DISCLAIMER =
   "사용자 가정 기반 임시 비교이며 공식 분석 실행·법적 입지 결정이 아닙니다. 저장되지 않습니다.";
 
-const SCREENING_DISCLAIMER =
-  "후보지 분석은 공공자료 기반 1차 비교이며 실제 입지 결정·법적 허가가 아닙니다.";
+// The single citizen-facing screening disclaimer, from the central glossary so the
+// export and the on-screen banner can never carry two different wordings.
+const SCREENING_DISCLAIMER = SUITABILITY_SCREENING_DISCLAIMER;
+
+const SCREENING_STATUSES: readonly SuitabilityStatus[] = [
+  "ELIGIBLE",
+  "REVIEW_REQUIRED",
+  "EXCLUDED",
+];
+
+/**
+ * The Phase 0 "분석 범위와 한계" preamble rows shared by suitability exports: the
+ * revised status labels + their explanations, each component's current definition,
+ * the not-yet-modelled factors, and the three scope statements. Flat labelled rows,
+ * matching this module's existing metadata-preamble architecture.
+ */
+function suitabilityScopeRows(): CsvValue[][] {
+  const rows: CsvValue[][] = [["분석 범위와 한계"]];
+  for (const st of SCREENING_STATUSES) {
+    rows.push([`상태 · ${statusLabel(st)}`, statusExplanation(st)]);
+  }
+  for (const component of COMPONENT_ORDER) {
+    rows.push([`구성요소 · ${COMPONENT_META[component].primary}`, componentExplanation(component)]);
+  }
+  rows.push([UNMODELED_SUITABILITY_TITLE, UNMODELED_SUITABILITY_FACTORS.join(", ")]);
+  rows.push(["안내", UNMODELED_SUITABILITY_NOTE]);
+  for (const statement of SUITABILITY_SCOPE_STATEMENTS) {
+    rows.push(["안내", statement]);
+  }
+  rows.push([]); // blank separator before the data table
+  return rows;
+}
 
 interface MetaField {
   label: string;
@@ -202,6 +246,9 @@ export function buildScenarioCsv(input: ScenarioExportInput): CsvValue[][] {
     `${SCENARIO_DISCLAIMER} ${SCREENING_DISCLAIMER}`,
     input.when,
   );
+  // Phase 0: the analytical scope & limitations block (status meanings, component
+  // definitions, unmodelled factors, scope statements) travels with the export.
+  for (const row of suitabilityScopeRows()) rows.push(row);
   rows.push([
     "순위",
     "점수",

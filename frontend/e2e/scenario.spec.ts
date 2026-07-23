@@ -114,8 +114,8 @@ test.describe("weight scenario lab workflow", () => {
   test("accessible names + text-first rank movement", async ({ page }) => {
     await enterScenario(page);
     // sliders + numeric inputs carry accessible names.
-    await expect(page.getByRole("slider", { name: /Z · 토지이용/ })).toBeVisible();
-    await expect(page.getByLabel(/토지이용 가중치 퍼센트 입력/)).toBeVisible();
+    await expect(page.getByRole("slider", { name: /Z · 용도지역 호환성/ })).toBeVisible();
+    await expect(page.getByLabel(/용도지역 호환성 가중치 퍼센트 입력/)).toBeVisible();
     // comparison selector is labelled.
     await expect(page.getByLabel("비교 대상 저장 프로파일")).toBeVisible();
     // total status is a polite live region.

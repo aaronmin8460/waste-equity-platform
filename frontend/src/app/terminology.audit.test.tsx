@@ -242,9 +242,9 @@ describe("후보지 분석 uses plain status and sub-view labels", () => {
     fireEvent.click(screen.getByTestId("mode-suitability"));
     await waitFor(() => expect(screen.getByTestId("candidate-counts")).toBeDefined());
     const counts = screen.getByTestId("candidate-counts").textContent ?? "";
-    expect(counts).toContain(STATUS_META.ELIGIBLE.primary); // 1차 분석 통과
-    expect(counts).toContain(STATUS_META.REVIEW_REQUIRED.primary); // 추가 확인 필요
-    expect(counts).toContain(STATUS_META.EXCLUDED.primary); // 현재 기준에서 제외
+    expect(counts).toContain(STATUS_META.ELIGIBLE.primary); // 스크리닝 통과
+    expect(counts).toContain(STATUS_META.REVIEW_REQUIRED.primary); // 추가 검토 필요
+    expect(counts).toContain(STATUS_META.EXCLUDED.primary); // 프로젝트 스크리닝 제외
     expect(counts).not.toContain("ELIGIBLE");
     expect(counts).not.toContain("EXCLUDED");
   });

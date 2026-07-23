@@ -165,7 +165,7 @@ test("suitability mode screens candidates with provenance and no government API 
   const summary = page.getByTestId("suitability-summary");
   await expect(summary).toBeVisible({ timeout: 20_000 });
   await expect(summary).toContainText("suitability-policy-v1");
-  await expect(page.getByTestId("candidate-counts")).toContainText("적합");
+  await expect(page.getByTestId("candidate-counts")).toContainText("스크리닝 통과");
 
   // The analytical-screening disclaimer is prominent (never a legal claim).
   await expect(page.getByTestId("suitability-disclaimer")).toContainText("legal");
@@ -191,7 +191,7 @@ test("suitability mode screens candidates with provenance and no government API 
   await expect(page.getByTestId("coverage-warnings")).toContainText("COVERAGE_GAP");
 
   // Profile switching re-weights (updates the top-candidate list).
-  await page.getByRole("radio", { name: /접근성 중심/ }).check();
+  await page.getByRole("radio", { name: /근접성/ }).check();
   await expect(page.getByTestId("top-candidates")).toBeVisible();
 
   // Clicking a top candidate opens the evidence panel with component scores and
@@ -199,7 +199,7 @@ test("suitability mode screens candidates with provenance and no government API 
   await page.getByTestId("top-candidate-item").first().click();
   const detail = page.getByTestId("candidate-detail");
   await expect(detail).toBeVisible({ timeout: 15_000 });
-  await expect(detail).toContainText("토지이용 Zoning");
+  await expect(detail).toContainText("용도지역 호환성");
   await expect(detail).toContainText("FACILITY_LOCATION_BASED_THROUGHPUT");
   await expect(detail).toContainText("ORIGIN_BASED_TREATMENT_OUTCOME");
   await expect(page.getByTestId("candidate-sensitivity")).toBeVisible();

@@ -10,7 +10,7 @@
  *    (suitability-policy-v2), or an un-named single-letter code (Z/R/E/D).
  *  - The technical vocabulary is preserved, but demoted to a `detail` string that
  *    components render behind a disclosure. When a code genuinely helps (Z/R/E/D),
- *    it is shown WITH its Korean name via {@link codeWithName} — "토지이용 조건(Z)",
+ *    it is shown WITH its Korean name via {@link codeWithName} — "용도지역 호환성(Z)",
  *    never a bare "Z".
  *  - Analytical honesty is unchanged: this module only renames, it never converts a
  *    missing value to zero, softens a disclaimer, or claims legal/final status.
@@ -64,35 +64,76 @@ export const SUBVIEW_LABELS: Record<SuitabilitySubview, string> = {
 };
 
 // --------------------------------------------------------------------------- //
+// Suitability screening disclaimers (Phase 0 transparency).
+//
+// The suitability screen is a REGIONAL analytical screening built from official
+// spatial data (zoning compatibility, road-proximity proxy, existing-burden
+// avoidance, waste demand, and the existing protected/restricted screening layers).
+// It does NOT evaluate terrain slope, geology, groundwater, land cover, buildings,
+// flood risk, continuous usable area, parcel ownership, truck-route feasibility,
+// field investigation, engineering constructability, EIA, or legal permitting.
+//
+// These strings are the ONE citizen-facing wording for that limitation, reused by
+// every suitability subview banner, the map legend, and the exports, so the whole
+// app can never drift into two different disclaimers. Phase 0 only renames and
+// discloses — it never changes a score, weight, rank, status, or spatial rule.
+// --------------------------------------------------------------------------- //
+
+/** Full analytical-screening disclaimer shown near the top of every suitability subview. */
+export const SUITABILITY_SCREENING_DISCLAIMER =
+  "본 화면은 공식 공간데이터를 이용한 광역 후보지 스크리닝입니다. 결과는 법적 허가, 환경영향평가, " +
+  "토질·지질 조사, 토지 확보 가능성 또는 최종 입지 선정을 의미하지 않습니다.";
+
+/** Short persistent label for space-constrained surfaces (map legend, badges). */
+export const SUITABILITY_SCREENING_SHORT_LABEL = "광역 분석 스크리닝 · 법적·공학적 적합 판정 아님";
+
+/** Title for the standing disclaimer banner. */
+export const SUITABILITY_SCREENING_DISCLAIMER_TITLE = "광역 분석 스크리닝";
+
+// --------------------------------------------------------------------------- //
 // Candidate status — the three screening outcomes.
 // --------------------------------------------------------------------------- //
 
 export interface StatusMeta extends Described {
   /** The raw analytical status code, shown only in the detail layer. */
   code: SuitabilityStatus;
+  /** One plain-Korean sentence: what this screening outcome means to a citizen. */
+  explanation: string;
 }
 
 export const STATUS_META: Record<SuitabilityStatus, StatusMeta> = {
   ELIGIBLE: {
-    primary: "1차 분석 통과",
+    primary: "스크리닝 통과",
     code: "ELIGIBLE",
     detail: "현재 분석 규칙에서 자동 제외·추가 검토 사유가 없는 구역",
+    explanation:
+      "현재 분석정책과 확보된 데이터 기준으로 다음 단계 검토 대상으로 분류되었습니다. " +
+      "법적 허가 또는 실제 건설 가능성을 의미하지 않습니다.",
   },
   REVIEW_REQUIRED: {
-    primary: "추가 확인 필요",
+    primary: "추가 검토 필요",
     code: "REVIEW_REQUIRED",
     detail: "자료 부족 또는 세부 확인이 필요한 구역",
+    explanation:
+      "자료 누락, 분류 불확실성 또는 정책상 민감한 조건으로 인해 자동 판정할 수 없습니다.",
   },
   EXCLUDED: {
-    primary: "현재 기준에서 제외",
+    primary: "프로젝트 스크리닝 제외",
     code: "EXCLUDED",
-    detail: "프로젝트의 1차 분석 제외 규칙에 해당하는 구역",
+    detail: "프로젝트의 분석상 제외 규칙에 해당하는 구역",
+    explanation:
+      "프로젝트에서 정한 분석상 배제 조건과 교차합니다. 법률상 최종 금지 판정을 의미하지 않습니다.",
   },
 };
 
 /** Plain status label alone (primary). */
 export function statusLabel(status: SuitabilityStatus): string {
   return STATUS_META[status]?.primary ?? status;
+}
+
+/** One plain-Korean sentence explaining what a screening status means (citizen-facing). */
+export function statusExplanation(status: SuitabilityStatus): string {
+  return STATUS_META[status]?.explanation ?? "";
 }
 
 // --------------------------------------------------------------------------- //
@@ -113,8 +154,8 @@ export const PROFILE_META: Record<SuitabilityProfile, Described> = {
     detail: "기존 지역 부담 항목의 가중치를 높인 민감도 비교 가정입니다.",
   },
   access_focused: {
-    primary: "도로 접근성을 더 크게 반영",
-    detail: "도로 접근성 항목의 가중치를 높인 민감도 비교 가정입니다.",
+    primary: "도로 근접성을 더 크게 반영",
+    detail: "도로 근접성 대리지표 항목의 가중치를 높인 민감도 비교 가정입니다.",
   },
   critic: {
     primary: "데이터 분포 기준",
@@ -137,26 +178,110 @@ export type ScoreComponent = "zoning" | "road" | "equity" | "demand";
 export interface ComponentMeta extends Described {
   /** Single-letter analytical code — only rendered via {@link codeWithName}. */
   code: "Z" | "R" | "E" | "D";
+  /**
+   * One plain-Korean sentence: what the component actually measures AND what it does
+   * NOT (Phase 0). The wording is deliberately explicit that the score is an
+   * administrative/proxy context, not a physical or legal siting condition.
+   */
+  explanation: string;
 }
 
+// Primary labels are the Phase 0 citizen-facing terms: "용도지역 호환성" (not the
+// misleading "토지이용 적합성", which would imply the land is actually suitable) and
+// "도로 근접성 대리지표" (not "도로 접근성", which would imply guaranteed vehicle
+// access). The single-letter codes Z·R·E·D are unchanged; nothing about the scoring,
+// weights, or formulas changes — only the words shown to a reader.
 export const COMPONENT_META: Record<ScoreComponent, ComponentMeta> = {
-  zoning: { primary: "토지이용 조건", code: "Z", detail: "용도지역 등 토지이용 적합도" },
-  road: { primary: "도로 접근성", code: "R", detail: "가까운 도로까지의 거리 기반 접근성" },
-  equity: { primary: "기존 지역 부담", code: "E", detail: "이미 지고 있는 시설 부담(형평성)" },
-  demand: { primary: "폐기물 처리 수요", code: "D", detail: "1인당 폐기물 발생량 기반 수요" },
+  zoning: {
+    primary: "용도지역 호환성",
+    code: "Z",
+    detail: "법정 용도지역 대분류 기반 행정적 토지이용 맥락",
+    explanation:
+      "법정 용도지역 대분류를 이용한 행정적 토지이용 맥락 점수입니다. 현재 토지피복, 경사, 지질, " +
+      "지하수, 건축물 현황 또는 토지 소유권을 의미하지 않습니다.",
+  },
+  road: {
+    primary: "도로 근접성 대리지표",
+    code: "R",
+    detail: "후보 격자 중심점과 가장 가까운 도로 사이의 거리 기반 대리지표",
+    explanation:
+      "후보 격자 중심점과 가장 가까운 도로 사이의 거리 기반 점수입니다. 대형차량 진입, 도로 폭, " +
+      "중량 제한, 회전 가능성 또는 실제 운송 경로를 보장하지 않습니다.",
+  },
+  equity: {
+    primary: "기존 지역 부담",
+    code: "E",
+    detail: "이미 지고 있는 시설 부담(형평성)",
+    explanation:
+      "이미 폐기물 처리시설 부담을 지고 있는 지역을 피하기 위한 형평성 점수입니다. 그 자체로 " +
+      "환경적 입지 적합성을 의미하지는 않습니다.",
+  },
+  demand: {
+    primary: "폐기물 처리 수요",
+    code: "D",
+    detail: "1인당 폐기물 발생량 기반 수요",
+    explanation:
+      "1인당 폐기물 발생량 기반의 서비스 수요 맥락 점수이며, 물리적 입지 조건이 아닙니다.",
+  },
 };
 
 /** Order the four components are displayed in (matches Z·R·E·D). */
 export const COMPONENT_ORDER: readonly ScoreComponent[] = ["zoning", "road", "equity", "demand"];
 
+/** One plain sentence: what a score component measures and what it does not (citizen-facing). */
+export function componentExplanation(component: ScoreComponent): string {
+  return COMPONENT_META[component].explanation;
+}
+
 /**
  * A code shown together with its Korean name, per the citizen-language rule:
- * `codeWithName("zoning")` → `"토지이용 조건(Z)"`. Never expose a bare code.
+ * `codeWithName("zoning")` → `"용도지역 호환성(Z)"`. Never expose a bare code.
  */
 export function codeWithName(component: ScoreComponent): string {
   const meta = COMPONENT_META[component];
   return `${meta.primary}(${meta.code})`;
 }
+
+// --------------------------------------------------------------------------- //
+// "현재 분석에 포함되지 않은 항목" (not yet modelled) — Phase 0 disclosure.
+//
+// The physical / environmental / legal conditions the current regional screening
+// does NOT evaluate. Held here (not scattered) so the score view, the candidate
+// detail panel, and the exports list exactly the same items. This is a DISCLOSURE
+// of absence — it never displays a fake value, placeholder score, or completion
+// percentage, and the note is explicit that a missing value is NOT treated as 0 or
+// as a safe condition.
+// --------------------------------------------------------------------------- //
+
+export const UNMODELED_SUITABILITY_TITLE = "현재 분석에 포함되지 않은 항목";
+
+export const UNMODELED_SUITABILITY_FACTORS: readonly string[] = [
+  "경사 및 정밀 지형",
+  "상세 지질 및 단층",
+  "지하수위 및 수문지질",
+  "토지피복과 실제 토지 이용 상태",
+  "건축물 점유와 철거 필요성",
+  "홍수·침수 위험",
+  "연속 사용 가능 부지 규모",
+  "필지 소유권과 취득 가능성",
+  "대형차량의 실제 진입 가능성",
+  "현장조사 및 환경영향평가",
+];
+
+export const UNMODELED_SUITABILITY_NOTE =
+  "위 항목은 후속 단계에서 공식 데이터와 검증된 분석 기준을 확보한 뒤 추가할 예정입니다. " +
+  "현재 값이 없다는 이유로 0점 또는 안전한 조건으로 간주하지 않습니다.";
+
+/**
+ * Three plain statements the exports must carry (Phase 0 §8): the 500 m candidate
+ * grid is not a parcel, road distance is only a proximity proxy, and ownership /
+ * actual usable area are not evaluated.
+ */
+export const SUITABILITY_SCOPE_STATEMENTS: readonly string[] = [
+  "500m 후보 격자는 하나의 필지가 아닙니다.",
+  "도로까지의 거리는 근접성 대리지표일 뿐이며 실제 차량 진입을 보장하지 않습니다.",
+  "토지 소유권과 실제 이용 가능 면적은 평가하지 않습니다.",
+];
 
 // --------------------------------------------------------------------------- //
 // Weight-sensitivity stability.
@@ -424,8 +549,11 @@ export const GLOSSARY: Record<string, Described> = {
   scenario_lab: { primary: "가중치 바꿔보기", detail: "weight scenario lab" },
   transparency: { primary: "데이터·출처", detail: "data & source transparency" },
   demand: { primary: "폐기물 처리 수요", detail: "1인당 발생량 기반 수요(demand)" },
-  zoning: { primary: "토지이용 조건", detail: "용도지역 등 토지이용(zoning)" },
-  road: { primary: "도로 접근성", detail: "가까운 도로까지의 거리(road access)" },
+  zoning: { primary: "용도지역 호환성", detail: "법정 용도지역 대분류 기반 토지이용 맥락(zoning)" },
+  road: {
+    primary: "도로 근접성 대리지표",
+    detail: "가까운 도로까지의 거리 기반 대리지표(road proximity proxy)이며 차량 진입 보장이 아님",
+  },
   baseline: { primary: "기본 기준", detail: "운영 기본 가정(baseline)이며 전문가 AHP 결과가 아님" },
 };
 
