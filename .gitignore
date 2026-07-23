@@ -54,7 +54,16 @@ logs/
 .vscode/
 
 # Local data artifacts
-data/raw/
+# data/raw stays ignored. Git cannot re-include a file whose parent directory is
+# excluded, so the environment raw-data path is descended explicitly, one level
+# at a time, purely so a provenance README can be committed alongside the
+# Git-ignored source files. Everything else under data/raw is still ignored.
+data/raw/*
+!data/raw/environment/
+data/raw/environment/*
+!data/raw/environment/wetland_inventory/
+data/raw/environment/wetland_inventory/*
+!data/raw/environment/wetland_inventory/README.md
 data/interim/
 data/processed/
 data/samples/*.json

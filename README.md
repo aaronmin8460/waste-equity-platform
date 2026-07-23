@@ -162,6 +162,28 @@ transparency** panel (paginated un-mapped facilities; the recorded reason or
 `GET /api/v1/facilities/mapping-transparency` endpoint (no migration; Alembic head
 unchanged). See [docs/CITIZEN_LANGUAGE_AND_UX.md](docs/CITIZEN_LANGUAGE_AND_UX.md).
 
+**Suitability Phase 1A** prepared an environmental-data foundation for a future
+suitability expansion: an audit of 15 candidate datasets, a layer architecture, a
+backend layer registry with inert pipeline interfaces, an empty ingestion
+framework, and one additive catalogue table (`environmental_layer_registry`).
+Foundation only — no score, weight, rank, candidate status, API contract, or
+frontend calculation changed.
+
+**Suitability Phase 1B-0** verified the first of those datasets against a real
+file: the **국립생태원 내륙습지 공간데이터 및 속성정보** inland wetland inventory
+(공공데이터포털 `15086410`, 2,704 features, EPSG:5186 confirmed from the `.prj`,
+UTF-8 confirmed from the `.cpg`, 0 invalid/null/empty geometries, unique `CODE`).
+The dataset has completed **local contract verification only** — recommendation
+**GO for Phase 1B ingestion**. It is **not ingested into PostGIS** and **not used
+in scoring**; no score, rank, candidate status, policy version, or production
+behaviour changed. It must stay separate from the statutory 습지보호지역 layer
+(`UM901`) already ingested: `UM901` is a designated protection area with legal
+effect and includes coastal 연안습지, while the inventory is a survey of inland
+wetlands that confers no status (only 1 of 232 capital-region inventory features
+carries any designation note). The raw dataset is local-only and Git-ignored.
+Contract: [docs/WETLAND_INVENTORY_DATA_CONTRACT.md](docs/WETLAND_INVENTORY_DATA_CONTRACT.md);
+observed values: [docs/WETLAND_INVENTORY_VALIDATION_REPORT.md](docs/WETLAND_INVENTORY_VALIDATION_REPORT.md).
+
 See:
 
 - [AGENTS.md](AGENTS.md)
@@ -173,5 +195,8 @@ See:
 - [Capital-Region Landfill Inbound](docs/CAPITAL_REGION_LANDFILL_FLOW_IMPLEMENTATION.md)
 - [MOIS Monthly Population 2008–2026](docs/MOIS_POPULATION_2008_2026.md)
 - [Phase 0 Findings](docs/PHASE_0_FINDINGS.md)
+- [Suitability Environmental Data Audit](docs/SUITABILITY_ENVIRONMENTAL_DATA_AUDIT.md)
+- [Wetland Inventory Data Contract](docs/WETLAND_INVENTORY_DATA_CONTRACT.md)
+- [Wetland Inventory Validation Report](docs/WETLAND_INVENTORY_VALIDATION_REPORT.md)
 
 # waste-equity-platform
