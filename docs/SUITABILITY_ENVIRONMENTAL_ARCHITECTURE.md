@@ -56,7 +56,7 @@ citizen label, a modality, and a lifecycle. Names are drawn from the audit
 | `land_cover` | 토지피복 | vector_polygon | PLANNED |
 | `river_network` | 하천망 | vector_line | PLANNED |
 | `geology` | 지질 | vector_polygon | PLANNED |
-| `wetland_inventory` | 내륙습지 목록 | vector_polygon | PLANNED |
+| `wetland_inventory` | 내륙습지 목록 | vector_polygon | PLANNED (contract `LIVE_VERIFIED`, not ingested) |
 | `building_footprint` | 건축물 | vector_polygon | FUTURE |
 | `parcel` | 연속지적 | vector_polygon | FUTURE |
 | `land_ownership` | 토지소유 | vector_polygon | FUTURE |
@@ -176,7 +176,7 @@ Cadence follows the source's real publication frequency (from the audit):
 | `land_cover` | 부정기 (권역별) | quarterly metadata check |
 | `river_network` | 연간 (NGII) | annual |
 | `geology` | 부정기 | on map-sheet revision |
-| `wetland_inventory` | 부정기 | on new 조사 목록 |
+| `wetland_inventory` | 수시 (1회성 데이터) | manual metadata check on a new 국립생태원 publication |
 | `building_footprint` | 월전체/월변동 | monthly metadata check |
 | `flood_hazard` | 부정기 | blocked until licence resolved |
 
@@ -305,3 +305,28 @@ never by breaking the current response shape.
   existing table.
 
 Everything else in this document is design for Phase 1B and beyond.
+
+## 12. Phase 1B-0 addendum — `wetland_inventory` contract verification
+
+Phase 1B-0 (2026-07-23) verified one planned layer's **source contract** against
+a real local file. It is verification and documentation only:
+
+- The 국립생태원 내륙습지 inventory (2,704 features, EPSG:5186, UTF-8) has completed
+  local contract verification: `LIVE_VERIFIED`, recommendation **GO**.
+- It is **not ingested into PostGIS** — no table, no migration, no loader
+  registered with the CLI, no API endpoint, no map layer.
+- It is **not used in scoring** — no weight, exclusion rule, rank, candidate
+  status, or policy version changed, and none may change without a separate
+  policy-version bump.
+- It must remain **separate from `UM901` (습지보호지역)**. `UM901` is a statutory
+  protection area with legal effect and includes coastal 연안습지; the inventory
+  is a survey of inland wetlands and confers no status. Only 1 of 232
+  capital-region inventory features carries any designation note. The two are
+  never merged, and existing `UM901` data is never modified.
+- Phase 1B ingestion is the next step, and only against the carried conditions
+  in the validation report (PostGIS-based region assignment, forced UTF-8, raw
+  storage of source anomalies, portal-metadata re-check).
+
+Contract: [WETLAND_INVENTORY_DATA_CONTRACT.md](WETLAND_INVENTORY_DATA_CONTRACT.md) ·
+Observed values: [WETLAND_INVENTORY_VALIDATION_REPORT.md](WETLAND_INVENTORY_VALIDATION_REPORT.md) ·
+Tooling: `ingestion/src/waste_equity_ingestion/wetland_inventory_contract.py` (read-only).

@@ -227,18 +227,18 @@ is verified beyond documentation in Phase 1A.
 
 | Field | Value |
 | --- | --- |
-| Official source | 국립습지센터/환경부 전국내륙습지 조사목록 + 습지보호지역(existing `UM901`); 생태자연도 as adjunct |
-| License | KOGL; 생태자연도 KOGL Type 3 (변경금지) **conflicts with derived analysis** — separate the two |
-| Update cycle | 부정기 (조사 주기) |
-| Source CRS → storage CRS | EPSG:5186/5179 → EPSG:4326 |
+| Official source | **국립생태원_내륙습지 공간데이터 및 속성정보_20220720** (공공데이터포털 파일데이터 `15086410`), from the 「습지보전법」 전국내륙습지 기초조사 2000–2021; separate from 습지보호지역 (existing `UM901`). 생태자연도 is a **different** dataset, not part of this source. |
+| License | **이용허락범위 제한 없음** (portal-stated, verified 2026-07-23). The KOGL Type 3 (변경금지) concern applies to 생태자연도 only, which this source does not include. |
+| Update cycle | 수시 (1회성 데이터) — one-off publication per 조사 round |
+| Source CRS → storage CRS | **EPSG:5186 (verified from the `.prj`)** → EPSG:4326 |
 | Spatial resolution | Vector (wetland-inventory polygons) |
-| Geometry type | MultiPolygon |
-| Expected file size (수도권) | ~10–100 MB (estimate) |
-| Preprocessing required | Reproject, dedupe against existing `UM901` protected wetlands, category normalization |
-| Suitability usage | Environmental sensitivity screening (extends the existing wetland-protection screen to non-designated inventoried wetlands) |
+| Geometry type | Polygon 2,696 / MultiPolygon 8 (normalize to MultiPolygon) |
+| Actual file size | 5.7 MB ZIP / 12.9 MB extracted, **nationwide** (well under the earlier estimate) |
+| Preprocessing required | Reproject (`always_xy=True`), force **UTF-8** DBF decode (**not** the `cp949` structural default), normalize categories, geometric region assignment; keep separate from `UM901` |
+| Suitability usage | Environmental sensitivity screening (extends context to surveyed, non-designated wetlands) — **not implemented, and no scoring role is granted by verification** |
 | Implementation difficulty | Medium |
-| Verification | `DOCUMENTED_NOT_TESTED`; the designated `UM901` subset is already `IMPLEMENTED` |
-| **Phase 1B recommendation** | **CONDITIONAL GO** — usable for screening once deduplicated with existing protected wetlands; 생태자연도 Type 3 licence must be reviewed before any derived use. |
+| Verification | **`LIVE_VERIFIED`** (local contract verification, Phase 1B-0, 2026-07-23) — 2,704 features, 0 invalid/null/empty geometry, unique `CODE`, Korean text intact. **Not ingested.** The designated `UM901` subset is separately `IMPLEMENTED`. |
+| **Phase 1B recommendation** | **GO FOR PHASE 1B INGESTION** (upgraded from CONDITIONAL GO). Both original conditions are resolved: 생태자연도 is a different dataset, and the `UM901` overlap is quantified (4 of 232 capital-region features overlap; 1 is geometrically identical to the 김포 `UM901` polygon) with `CODE`-keyed dedup rules. Carried conditions: PostGIS-based region assignment, forced UTF-8, raw storage of source anomalies, portal-metadata re-check. See [WETLAND_INVENTORY_DATA_CONTRACT.md](WETLAND_INVENTORY_DATA_CONTRACT.md) and [WETLAND_INVENTORY_VALIDATION_REPORT.md](WETLAND_INVENTORY_VALIDATION_REPORT.md). |
 
 ---
 
@@ -364,7 +364,7 @@ is verified beyond documentation in Phase 1A.
 | 6 | Land Cover | PLANNED | Vector polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
 | 7 | River Network | PLANNED | Vector line/polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
 | 8 | Geology | PLANNED | Vector polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
-| 9 | Wetlands (inventory) | PLANNED | Vector polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
+| 9 | Wetlands (inventory) | PLANNED (contract verified, **not ingested**) | Vector polygon | 4326 | **LIVE_VERIFIED** | Medium | **GO** |
 | 10 | Building Footprints | FUTURE | Vector polygon | 4326 | DOCUMENTED_NOT_TESTED | High | CONDITIONAL GO |
 | 11 | Parcel | FUTURE | Vector polygon | 4326 | LIVE_VERIFIED (API) | Very High | CONDITIONAL GO (refine) |
 | 12 | Ownership | FUTURE | Vector polygon | 4326 | LIVE_VERIFIED (caveat) | Very High | CONDITIONAL GO (optional) |
@@ -377,6 +377,10 @@ is verified beyond documentation in Phase 1A.
 1. **Live contract probes.** Every `DOCUMENTED_NOT_TESTED` source must pass a
    small live/manual probe (source, CRS from `.prj`/metadata, license, one
    sample feature) — the same gate Phase 2.5A applied — before ingestion.
+   *Wetlands (#9) has now cleared this gate* (Phase 1B-0, 2026-07-23): its
+   contract is `LIVE_VERIFIED` against the real local file. Clearing the gate
+   authorizes **ingestion planning only** — it is not ingestion, and it grants
+   the layer no scoring role.
 2. **Raster capability is new.** DEM, Land Cover (raster variant), and Flood
    Hazard require a raster pipeline the platform does not have. This is the
    single largest engineering prerequisite and is scoped in
