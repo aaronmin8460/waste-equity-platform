@@ -292,7 +292,7 @@ function SuitabilityLegend({
           the map's candidate fill uses. */}
       <div className="mt-2" data-testid="score-classes">
         <p className="mb-1 text-[11px] font-medium text-slate-500">
-          적합(eligible) 점수 등급 (0–100)
+          스크리닝 통과 셀 점수 등급 (0–100)
         </p>
         <ul className="flex flex-col gap-1 text-xs text-slate-600">
           {scoreClasses.map((cls, index) => (
@@ -312,7 +312,8 @@ function SuitabilityLegend({
       </div>
 
       <p className="mt-2 text-[11px] text-slate-500" data-testid="suitability-legend-note">
-        적합 셀은 점수(0–100)로 음영, 검토 필요 셀은 주황 점선, 제외 셀은 회색입니다. {disclaimer}
+        스크리닝 통과 셀은 점수(0–100)로 음영, 추가 검토 필요 셀은 주황 점선, 제외 셀은 회색입니다.{" "}
+        {disclaimer}
       </p>
     </section>
   );

@@ -138,9 +138,20 @@ V2 Phase 1 added the capital-region **수도권매립지 반입** feature — th
 
 Phase 7 completes a **citizen-language, plain-Korean redesign** and the final
 product features. The top navigation is now **지역 부담 / 후보지 분석 / 매립지 현황 /
-데이터·출처**, statuses read **1차 분석 통과 / 추가 확인 필요 / 현재 기준에서 제외**, and
+데이터·출처**, statuses read **스크리닝 통과 / 추가 검토 필요 / 프로젝트 스크리닝 제외**, and
 technical terms/versions/codes are demoted to "자세히 보기" detail layers — analytical
-honesty unchanged (missing ≠ zero, no legal/final/cost-complete claims). The 지역 부담
+honesty unchanged (missing ≠ zero, no legal/final/cost-complete claims).
+
+A follow-on **suitability transparency pass (Phase 0)** clarifies that 후보지 분석 is a
+**regional analytical screening**, not a siting decision: every 후보지 분석 sub-view heads
+with a standing analytical-screening disclaimer (`본 화면은 … 광역 후보지 스크리닝입니다 …`),
+the misleading component terms are renamed to what is actually measured
+(`용도지역 호환성`, `도로 근접성 대리지표`), each screening status carries a plain-Korean
+meaning, and a "현재 분석에 포함되지 않은 항목" disclosure lists the physical/environmental
+conditions the screen does **not** yet evaluate (경사·지질·지하수·토지피복·건축물·홍수·부지
+규모·소유권·차량 진입·현장조사/EIA). It is **presentation- and disclosure-only** — no score,
+weight, rank, status, exclusion rule, or stored record changed. See
+[docs/SUITABILITY_PHASE_0_TRANSPARENCY.md](docs/SUITABILITY_PHASE_0_TRANSPARENCY.md). The 지역 부담
 view adds **regional ranking** (값이 높은/낮은 지역, scope + top-N, map-synced), a
 searchable **2–3 region comparison**, a versioned validated **shareable URL**,
 injection-safe **CSV export**, and a **print/PNG report** (the PNG excludes the

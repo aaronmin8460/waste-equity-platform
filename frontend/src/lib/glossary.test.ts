@@ -14,9 +14,16 @@ import {
   STABILITY_META,
   STATUS_META,
   SUBVIEW_LABELS,
+  SUITABILITY_SCOPE_STATEMENTS,
+  SUITABILITY_SCREENING_DISCLAIMER,
+  SUITABILITY_SCREENING_SHORT_LABEL,
   UNKNOWN_REASON_EXPLANATION,
+  UNMODELED_SUITABILITY_FACTORS,
+  UNMODELED_SUITABILITY_NOTE,
+  UNMODELED_SUITABILITY_TITLE,
   accountingBasisLabel,
   codeWithName,
+  componentExplanation,
   hasForbiddenPrimaryToken,
   missingComponentLabel,
   missingReasonExplanation,
@@ -24,6 +31,7 @@ import {
   plainError,
   profileLabel,
   stabilitySentence,
+  statusExplanation,
   statusLabel,
 } from "./glossary";
 
@@ -60,10 +68,17 @@ describe("glossary — plain-Korean primary labels", () => {
     expect(SUBVIEW_LABELS.cost).toBe("비용 살펴보기");
   });
 
-  it("uses the exact plain status labels", () => {
-    expect(statusLabel("ELIGIBLE")).toBe("1차 분석 통과");
-    expect(statusLabel("REVIEW_REQUIRED")).toBe("추가 확인 필요");
-    expect(statusLabel("EXCLUDED")).toBe("현재 기준에서 제외");
+  it("uses the exact plain status labels (Phase 0 screening terminology)", () => {
+    expect(statusLabel("ELIGIBLE")).toBe("스크리닝 통과");
+    expect(statusLabel("REVIEW_REQUIRED")).toBe("추가 검토 필요");
+    expect(statusLabel("EXCLUDED")).toBe("프로젝트 스크리닝 제외");
+  });
+
+  it("explains each screening status in plain Korean without claiming legal status", () => {
+    expect(statusExplanation("ELIGIBLE")).toContain("다음 단계 검토 대상");
+    expect(statusExplanation("ELIGIBLE")).toContain("법적 허가 또는 실제 건설 가능성을 의미하지 않습니다");
+    expect(statusExplanation("REVIEW_REQUIRED")).toContain("자동 판정할 수 없습니다");
+    expect(statusExplanation("EXCLUDED")).toContain("법률상 최종 금지 판정을 의미하지 않습니다");
   });
 
   it("keeps the raw status code only in the detail layer", () => {
@@ -81,15 +96,27 @@ describe("glossary — plain-Korean primary labels", () => {
 });
 
 describe("glossary — score components", () => {
-  it("always shows a code with its Korean name, never bare", () => {
-    expect(codeWithName("zoning")).toBe("토지이용 조건(Z)");
-    expect(codeWithName("road")).toBe("도로 접근성(R)");
+  it("always shows a code with its Korean name, never bare (Phase 0 terminology)", () => {
+    expect(codeWithName("zoning")).toBe("용도지역 호환성(Z)");
+    expect(codeWithName("road")).toBe("도로 근접성 대리지표(R)");
     expect(codeWithName("equity")).toBe("기존 지역 부담(E)");
     expect(codeWithName("demand")).toBe("폐기물 처리 수요(D)");
   });
 
   it("orders the four components Z·R·E·D", () => {
     expect(COMPONENT_ORDER).toEqual(["zoning", "road", "equity", "demand"]);
+  });
+
+  it("explains what each component measures and, for Z/R, what it does NOT", () => {
+    // Zoning is an administrative land-use context, not physical suitability.
+    expect(componentExplanation("zoning")).toContain("행정적 토지이용 맥락");
+    expect(componentExplanation("zoning")).toContain("토지 소유권을 의미하지 않습니다");
+    // Road is a proximity proxy, not guaranteed vehicle access.
+    expect(componentExplanation("road")).toContain("대형차량 진입");
+    expect(componentExplanation("road")).toContain("보장하지 않습니다");
+    // Equity/demand carry their accurate meaning + a "not by itself suitability" note.
+    expect(componentExplanation("equity")).toContain("환경적 입지 적합성");
+    expect(componentExplanation("demand")).toContain("물리적 입지 조건이 아닙니다");
   });
 });
 
@@ -106,6 +133,56 @@ describe("glossary — profiles and stability", () => {
     expect(stabilitySentence("WEIGHT_SENSITIVE")).toBe("기준에 따라 순위 변화 큼");
     expect(stabilitySentence(null)).toBeNull();
     expect(stabilitySentence(undefined)).toBeNull();
+  });
+});
+
+describe("glossary — Phase 0 suitability transparency constants", () => {
+  it("carries the exact citizen-facing screening disclaimer and short label", () => {
+    expect(SUITABILITY_SCREENING_DISCLAIMER).toContain("공식 공간데이터를 이용한 광역 후보지 스크리닝");
+    expect(SUITABILITY_SCREENING_DISCLAIMER).toContain("법적 허가");
+    expect(SUITABILITY_SCREENING_DISCLAIMER).toContain("환경영향평가");
+    expect(SUITABILITY_SCREENING_DISCLAIMER).toContain("최종 입지 선정을 의미하지 않습니다");
+    expect(SUITABILITY_SCREENING_SHORT_LABEL).toBe("광역 분석 스크리닝 · 법적·공학적 적합 판정 아님");
+  });
+
+  it("lists exactly the ten not-yet-modelled factors with the non-zero note", () => {
+    expect(UNMODELED_SUITABILITY_TITLE).toBe("현재 분석에 포함되지 않은 항목");
+    expect(UNMODELED_SUITABILITY_FACTORS).toEqual([
+      "경사 및 정밀 지형",
+      "상세 지질 및 단층",
+      "지하수위 및 수문지질",
+      "토지피복과 실제 토지 이용 상태",
+      "건축물 점유와 철거 필요성",
+      "홍수·침수 위험",
+      "연속 사용 가능 부지 규모",
+      "필지 소유권과 취득 가능성",
+      "대형차량의 실제 진입 가능성",
+      "현장조사 및 환경영향평가",
+    ]);
+    // A missing value is never treated as 0 or as a safe condition.
+    expect(UNMODELED_SUITABILITY_NOTE).toContain("0점 또는 안전한 조건으로 간주하지 않습니다");
+  });
+
+  it("states the three export scope statements (grid≠parcel, road proxy, ownership)", () => {
+    expect(SUITABILITY_SCOPE_STATEMENTS.join(" ")).toContain("500m 후보 격자는 하나의 필지가 아닙니다");
+    expect(SUITABILITY_SCOPE_STATEMENTS.join(" ")).toContain("근접성 대리지표");
+    expect(SUITABILITY_SCOPE_STATEMENTS.join(" ")).toContain("토지 소유권과 실제 이용 가능 면적은 평가하지 않습니다");
+  });
+
+  it("keeps the new primary labels free of forbidden technical tokens", () => {
+    for (const text of [
+      SUITABILITY_SCREENING_DISCLAIMER,
+      SUITABILITY_SCREENING_SHORT_LABEL,
+      UNMODELED_SUITABILITY_TITLE,
+      UNMODELED_SUITABILITY_NOTE,
+      ...UNMODELED_SUITABILITY_FACTORS,
+      ...SUITABILITY_SCOPE_STATEMENTS,
+      STATUS_META.ELIGIBLE.primary,
+      STATUS_META.REVIEW_REQUIRED.primary,
+      STATUS_META.EXCLUDED.primary,
+    ]) {
+      expect(hasForbiddenPrimaryToken(text)).toBeNull();
+    }
   });
 });
 

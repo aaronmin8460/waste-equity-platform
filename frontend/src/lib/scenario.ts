@@ -11,20 +11,44 @@
  */
 
 import type { SuitabilityProfile, SuitabilityRun, UserScenarioWeights } from "./api";
+import { COMPONENT_META } from "./glossary";
 
 export const SCENARIO_COMPONENTS = ["zoning", "road", "equity", "demand"] as const;
 export type ScenarioComponent = (typeof SCENARIO_COMPONENTS)[number];
 export type ScenarioPercents = Record<ScenarioComponent, number>;
 
-/** Citizen-facing labels + component code for each weight control. */
+/**
+ * Citizen-facing labels + component code + explanation for each weight control.
+ *
+ * The label and explanation are taken from the central glossary (`COMPONENT_META`)
+ * so the weight editor, the score view, the legend, and the exports all show the
+ * SAME Phase 0 wording ("용도지역 호환성", "도로 근접성 대리지표", …) — there is no
+ * second, drifting copy of the component names here.
+ */
 export const SCENARIO_COMPONENT_META: Record<
   ScenarioComponent,
   { label: string; code: "Z" | "R" | "E" | "D"; explanation: string }
 > = {
-  zoning: { label: "토지이용", code: "Z", explanation: "용도지역 적합도 (land-use context)" },
-  road: { label: "도로 접근성", code: "R", explanation: "도로 근접 대리지표 (access proxy)" },
-  equity: { label: "형평성", code: "E", explanation: "기존 시설 부담 회피 (burden avoidance)" },
-  demand: { label: "처리 수요", code: "D", explanation: "1인당 처리 수요 (per-capita demand)" },
+  zoning: {
+    label: COMPONENT_META.zoning.primary,
+    code: COMPONENT_META.zoning.code,
+    explanation: COMPONENT_META.zoning.explanation,
+  },
+  road: {
+    label: COMPONENT_META.road.primary,
+    code: COMPONENT_META.road.code,
+    explanation: COMPONENT_META.road.explanation,
+  },
+  equity: {
+    label: COMPONENT_META.equity.primary,
+    code: COMPONENT_META.equity.code,
+    explanation: COMPONENT_META.equity.explanation,
+  },
+  demand: {
+    label: COMPONENT_META.demand.primary,
+    code: COMPONENT_META.demand.code,
+    explanation: COMPONENT_META.demand.explanation,
+  },
 };
 
 /** Preset weight sources available in a run, with citizen-facing labels. */
@@ -32,7 +56,7 @@ export const SCENARIO_PRESET_LABELS: Record<string, string> = {
   baseline: "기본 가정",
   equal: "균등",
   equity_focused: "형평성 중심",
-  access_focused: "접근성 중심",
+  access_focused: "근접성 중심",
   critic: "CRITIC 데이터 기반",
 };
 

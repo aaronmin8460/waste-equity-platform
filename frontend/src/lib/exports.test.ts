@@ -130,7 +130,7 @@ describe("buildScenarioCsv", () => {
   it("records run + versions + canonical weights + compare basis in the preamble", () => {
     const csv = flat(rows);
     expect(csv).toContain("분석 실행,#48");
-    expect(csv).toContain("토지이용 조건(Z),0.25000000");
+    expect(csv).toContain("용도지역 호환성(Z),0.25000000");
     expect(csv).toContain("계산 방법,user-weight-scenario-v1");
     expect(csv).toContain("비교 기준,기본 기준");
     expect(csv).toContain("설정 식별값,abc123def456");
@@ -140,6 +140,24 @@ describe("buildScenarioCsv", () => {
     const csv = flat(rows);
     expect(csv).toContain("임시 비교");
     expect(csv).toContain("저장되지 않습니다");
+  });
+
+  it("carries the Phase 0 analytical scope & limitations block", () => {
+    const csv = flat(rows);
+    // The screening disclaimer travels with the export.
+    expect(csv).toContain("광역 후보지 스크리닝");
+    // Revised status labels + their explanations.
+    expect(csv).toContain("상태 · 스크리닝 통과");
+    expect(csv).toContain("상태 · 추가 검토 필요");
+    expect(csv).toContain("상태 · 프로젝트 스크리닝 제외");
+    // Component definitions.
+    expect(csv).toContain("구성요소 · 용도지역 호환성");
+    expect(csv).toContain("구성요소 · 도로 근접성 대리지표");
+    // Not-yet-modelled factors + the three scope statements.
+    expect(csv).toContain("현재 분석에 포함되지 않은 항목");
+    expect(csv).toContain("경사 및 정밀 지형");
+    expect(csv).toContain("500m 후보 격자는 하나의 필지가 아닙니다");
+    expect(csv).toContain("토지 소유권과 실제 이용 가능 면적은 평가하지 않습니다");
   });
 
   it("emits exact score strings and a plain rank-movement label", () => {

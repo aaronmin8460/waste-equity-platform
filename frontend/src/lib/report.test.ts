@@ -125,14 +125,45 @@ describe("buildScenarioReport", () => {
   });
 
   it("labels the temporary, non-official nature and uses named component codes", () => {
-    const disclaimer = model.blocks.find((b) => b.kind === "disclaimer");
-    expect(disclaimer && disclaimer.kind === "disclaimer" && disclaimer.text).toContain(
-      "임시 비교",
+    const disclaimers = model.blocks.filter((b) => b.kind === "disclaimer");
+    expect(disclaimers.some((b) => b.kind === "disclaimer" && b.text.includes("임시 비교"))).toBe(
+      true,
     );
     const section = model.blocks.find((b) => b.kind === "section");
     if (section && section.kind === "section") {
-      expect(section.rows.map((r) => r[0])).toContain("토지이용 조건(Z)");
+      expect(section.rows.map((r) => r[0])).toContain("용도지역 호환성(Z)");
     }
+  });
+
+  it("carries the Phase 0 screening disclaimer, provenance, and 분석 범위와 한계 section", () => {
+    const disclaimers = model.blocks.filter(
+      (b): b is { kind: "disclaimer"; text: string } => b.kind === "disclaimer",
+    );
+    // The full analytical-screening disclaimer is present near the top.
+    expect(disclaimers.some((b) => b.text.includes("광역 후보지 스크리닝"))).toBe(true);
+
+    const sections = model.blocks.filter(
+      (b): b is { kind: "section"; heading: string; rows: [string, string][] } =>
+        b.kind === "section",
+    );
+    const headings = sections.map((s) => s.heading);
+    // Provenance survives (never removed).
+    expect(headings).toContain("분석 버전 정보");
+    const provenance = sections.find((s) => s.heading === "분석 버전 정보")!;
+    expect(provenance.rows.map((r) => r[1])).toContain("suitability-policy-v2");
+    // Status meanings + component definitions are present.
+    expect(headings).toContain("분석 범위와 한계 — 상태 설명");
+    const statusSection = sections.find((s) => s.heading === "분석 범위와 한계 — 상태 설명")!;
+    expect(statusSection.rows.map((r) => r[0])).toContain("스크리닝 통과");
+    expect(headings).toContain("구성요소 정의");
+
+    // The not-yet-modelled factors + scope statements ride along as notes.
+    const notes = model.blocks
+      .filter((b): b is { kind: "note"; text: string } => b.kind === "note")
+      .map((b) => b.text)
+      .join("\n");
+    expect(notes).toContain("현재 분석에 포함되지 않은 항목");
+    expect(notes).toContain("500m 후보 격자는 하나의 필지가 아닙니다");
   });
 
   it("draws without throwing using a stub context", () => {

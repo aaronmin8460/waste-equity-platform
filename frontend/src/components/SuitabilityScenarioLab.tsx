@@ -26,6 +26,7 @@ import {
   type UserScenarioPreview,
   type UserScenarioWeights,
 } from "../lib/api";
+import { statusLabel } from "../lib/glossary";
 import {
   SCENARIO_COMPONENTS,
   SCENARIO_COMPONENT_META,
@@ -606,9 +607,9 @@ function ScenarioSummary({
         </dd>
         <dt className="text-slate-500">상태 분포</dt>
         <dd>
-          적합 {result.candidate_count_eligible.toLocaleString()} · 검토{" "}
-          {result.candidate_count_review.toLocaleString()} · 제외{" "}
-          {result.candidate_count_excluded.toLocaleString()}
+          {statusLabel("ELIGIBLE")} {result.candidate_count_eligible.toLocaleString()} ·{" "}
+          {statusLabel("REVIEW_REQUIRED")} {result.candidate_count_review.toLocaleString()} ·{" "}
+          {statusLabel("EXCLUDED")} {result.candidate_count_excluded.toLocaleString()}
         </dd>
       </dl>
       {/* Phase 7: the primary <dt>s read `분석 실행` / `순위 산정 대상`; the raw
@@ -644,7 +645,7 @@ function ScenarioTopCandidates({
     <section aria-label="사용자 시나리오 상위 후보" data-testid="scenario-top-candidates">
       <h3 className="mb-1 text-xs font-semibold text-slate-700">사용자 시나리오 상위 후보</h3>
       {result.top_candidates.length === 0 ? (
-        <p className="text-xs text-slate-500">표시할 적합 후보가 없습니다.</p>
+        <p className="text-xs text-slate-500">표시할 스크리닝 통과 후보가 없습니다.</p>
       ) : (
         <ul className="flex flex-col gap-1">
           {result.top_candidates.map((c) => {
@@ -703,7 +704,7 @@ function ScenarioCandidateDetail({
         ? detail.custom_provisional_score != null
           ? `잠정 ${detail.custom_provisional_score}점 (최종 점수·순위 없음)`
           : "잠정 점수 없음 (구성요소 부족)"
-        : "제외 — 점수·순위 없음";
+        : `${statusLabel("EXCLUDED")} — 점수·순위 없음`;
   return (
     <section
       aria-label="사용자 시나리오 후보 상세"
@@ -723,7 +724,7 @@ function ScenarioCandidateDetail({
       </div>
       <p className="mt-1">
         <span className="font-medium">{detail.sigungu_region_name ?? ""}</span> · 상태{" "}
-        {detail.status}
+        {statusLabel(detail.status)}
       </p>
       <p className="mt-0.5" data-testid="scenario-detail-score">
         점수: {scoreLine}
@@ -778,7 +779,7 @@ function ScenarioMethodology() {
       <summary className="cursor-pointer font-semibold text-slate-700">방법론 및 한계</summary>
       <ul className="mt-1 list-disc pl-4 text-slate-600">
         <li>고정된 한 개 분석 실행의 저장된 Z/R/E/D 구성점수만 재결합합니다.</li>
-        <li>상태(적합/검토/제외), 배제·검토 사유, 안정성은 재계산되지 않습니다.</li>
+        <li>구역 상태 판정, 배제·검토 사유, 안정성은 재계산되지 않습니다.</li>
         <li>순위는 완전한 ELIGIBLE 후보에 대해 custom_score 내림차순·candidate_key 오름차순으로 산정됩니다.</li>
         <li>검토 후보는 최종 점수·순위가 없으며, 결측 구성요소는 0으로 대체되지 않습니다.</li>
         <li>새 공식 분석 실행·저장 프로파일·CRITIC·안정성 정의를 만들지 않으며 데이터베이스에 저장되지 않습니다.</li>

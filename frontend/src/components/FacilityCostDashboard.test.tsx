@@ -1139,7 +1139,7 @@ describe("candidate integration", () => {
     expect(text).not.toContain("최저 비용");
     expect(text).not.toContain("승인된");
     // The screening outcome reads as plain Korean, not as the raw enum.
-    expect(text).toContain("1차 분석 통과");
+    expect(text).toContain("스크리닝 통과");
     // The analytical status carries its reference year + derivation/policy version,
     // now in the diagnostic disclosure rather than the primary line.
     const prov = screen.getByTestId("fc-candidate-provenance").textContent ?? "";

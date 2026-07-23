@@ -18,10 +18,31 @@
  * the layout is unit-testable without a real canvas.
  */
 
+import type { SuitabilityStatus } from "./api";
 import { readableTimestamp } from "./csv";
 import type { ComparisonExportInput, RankingExportInput, ScenarioExportInput } from "./exports";
-import { codeWithName, profileLabel, stabilitySentence } from "./glossary";
+import {
+  COMPONENT_META,
+  COMPONENT_ORDER,
+  SUITABILITY_SCOPE_STATEMENTS,
+  SUITABILITY_SCREENING_DISCLAIMER,
+  UNMODELED_SUITABILITY_FACTORS,
+  UNMODELED_SUITABILITY_NOTE,
+  UNMODELED_SUITABILITY_TITLE,
+  codeWithName,
+  componentExplanation,
+  profileLabel,
+  stabilitySentence,
+  statusExplanation,
+  statusLabel,
+} from "./glossary";
 import { SCOPE_LABELS } from "./ranking";
+
+const SCREENING_STATUSES: readonly SuitabilityStatus[] = [
+  "ELIGIBLE",
+  "REVIEW_REQUIRED",
+  "EXCLUDED",
+];
 
 export type ReportBlock =
   | { kind: "title"; text: string }
@@ -348,6 +369,8 @@ export function buildScenarioReport(input: ScenarioExportInput): ReportModel {
     blocks: [
       { kind: "title", text: "가중치 바꿔보기 — 상위 후보지" },
       { kind: "subtitle", text: `분석 실행 #${input.runId} · 비교 기준 ${profileLabel(input.compareProfile)}` },
+      // Prominent analytical-screening disclaimer, near the top (Phase 0 §8).
+      { kind: "disclaimer", text: SUITABILITY_SCREENING_DISCLAIMER },
       {
         kind: "section",
         heading: "점수 반영 기준(가중치)",
@@ -356,6 +379,18 @@ export function buildScenarioReport(input: ScenarioExportInput): ReportModel {
           [codeWithName("road"), w.road],
           [codeWithName("equity"), w.equity],
           [codeWithName("demand"), w.demand],
+        ],
+      },
+      // Provenance the technical layer already carried — preserved, never removed.
+      {
+        kind: "section",
+        heading: "분석 버전 정보",
+        rows: [
+          ["분석 규칙 버전", input.policyVersion],
+          ["계산 방식 버전", input.derivationVersion],
+          ["분석 구역 버전", input.candidateGridVersion],
+          ["계산 방법", input.methodVersion],
+          ["설정 식별값", input.scenarioHashShort],
         ],
       },
       {
@@ -369,6 +404,27 @@ export function buildScenarioReport(input: ScenarioExportInput): ReportModel {
           stabilitySentence(c.stability_class) ?? "-",
         ]),
       },
+      // Phase 0: the concise "분석 범위와 한계" section every printable suitability
+      // report must carry — status meanings, component definitions, unmodelled
+      // factors, and the three scope statements.
+      {
+        kind: "section",
+        heading: "분석 범위와 한계 — 상태 설명",
+        rows: SCREENING_STATUSES.map((st) => [statusLabel(st), statusExplanation(st)]),
+      },
+      {
+        kind: "section",
+        heading: "구성요소 정의",
+        rows: COMPONENT_ORDER.map((component) => [
+          COMPONENT_META[component].primary,
+          componentExplanation(component),
+        ]),
+      },
+      {
+        kind: "note",
+        text: `${UNMODELED_SUITABILITY_TITLE}: ${UNMODELED_SUITABILITY_FACTORS.join(", ")}. ${UNMODELED_SUITABILITY_NOTE}`,
+      },
+      { kind: "note", text: SUITABILITY_SCOPE_STATEMENTS.join(" ") },
       { kind: "disclaimer", text: SCENARIO_REPORT_DISCLAIMER },
     ],
   };
