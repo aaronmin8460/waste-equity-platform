@@ -1,6 +1,7 @@
 """SQLAlchemy models for the core metadata schema."""
 
 from .base import Base
+from .environmental import EnvironmentalLayerRegistry
 from .facilities import WasteTreatmentFacility
 from .facility_cost import FacilityStandardCost
 from .landfill_inbound import LandfillInboundMonthly
@@ -24,6 +25,7 @@ __all__ = [
     "Base",
     "DataSource",
     "DatasetFreshness",
+    "EnvironmentalLayerRegistry",
     "FacilityStandardCost",
     "IngestionRun",
     "LandfillInboundMonthly",

@@ -30,6 +30,7 @@ EXPECTED_TABLES = {
     "structural_protected_features",
     "suitability_analysis_runs",
     "suitability_candidates",
+    "environmental_layer_registry",
 }
 EXPECTED_SOURCE_IDS = {"waste_statistics", "sgis", "airkorea", "kma", "vworld"}
 
