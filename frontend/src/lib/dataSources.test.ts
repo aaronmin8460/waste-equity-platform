@@ -445,3 +445,34 @@ describe("organizationLabel", () => {
     expect(organizationLabel("toString")).toBe("toString");
   });
 });
+
+describe("inland-wetland inventory source (Phase 1B-2)", () => {
+  it("renders the 국립생태원 inland-wetland inventory under the 환경·생태 area", () => {
+    const rows = buildDisplaySources(
+      [
+        source({
+          source_id: "nie_wetland_inventory",
+          source_name: "국립생태원 (National Institute of Ecology)",
+          dataset_name: "내륙습지 공간데이터 및 속성정보",
+          publication_frequency: "STRUCTURAL",
+          documentation_url: "https://www.data.go.kr/data/15086410/fileData.do",
+        }),
+      ],
+      null,
+    );
+    const wetland = rows.find((row) => row.sourceId === "nie_wetland_inventory");
+    expect(wetland).toBeDefined();
+    expect(wetland!.organization).toBe("국립생태원");
+    expect(wetland!.datasetName).toBe("내륙습지 공간데이터 및 속성정보");
+    expect(wetland!.area).toBe("environmental");
+    expect(wetland!.areaLabel).toBe(SOURCE_AREA_LABELS.environmental);
+    expect(wetland!.translated).toBe(true);
+    // A structural/one-off dataset, and a real documentation URL survives.
+    expect(wetland!.frequencyLabel).toBe("수시 갱신");
+    expect(wetland!.documentationUrl).toBe("https://www.data.go.kr/data/15086410/fileData.do");
+  });
+
+  it("labels the environmental area in Korean", () => {
+    expect(SOURCE_AREA_LABELS.environmental).toBe("환경·생태");
+  });
+});

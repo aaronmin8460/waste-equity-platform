@@ -168,7 +168,7 @@ vi.mock("maplibre-gl", () => {
 });
 
 // Import AFTER the mock is registered.
-import MapView, { regionPopupHtml } from "./MapView";
+import MapView, { regionPopupHtml, wetlandPopupHtml } from "./MapView";
 
 const EMPTY_BOUNDARIES: RegionBoundaryCollection = {
   type: "FeatureCollection",
@@ -186,6 +186,9 @@ const DEFAULT_VISIBILITY: StatusVisibility = {
 const BASELINE_TILE_URL =
   "http://localhost:8000/api/v1/suitability/tiles/47/baseline/{z}/{x}/{y}.mvt";
 
+const WETLAND_TILE_URL =
+  "http://localhost:8000/api/v1/environment/wetlands/tiles/{z}/{x}/{y}.mvt";
+
 function baseProps(overrides: Partial<React.ComponentProps<typeof MapView>> = {}) {
   return {
     boundaries: EMPTY_BOUNDARIES,
@@ -198,6 +201,15 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof MapView>> = {}
     facilities: [],
     showFacilities: false,
     mode: "suitability" as MapMode,
+    showWetlands: false,
+    wetlandTileUrl: WETLAND_TILE_URL,
+    wetlandTypeVisibility: {
+      하천습지: true,
+      호수습지: true,
+      산지습지: true,
+      인공습지: true,
+    },
+    wetlandDesignationOnly: false,
     candidateTileUrl: BASELINE_TILE_URL,
     candidateBreaks: [20, 40, 60, 80] as readonly number[],
     statusVisibility: DEFAULT_VISIBILITY,
@@ -686,5 +698,119 @@ describe("candidate + facility interactions still work", () => {
     expect(map.getLayer("selected-candidate-outline")).toBeDefined();
     // …and the map is moved to bring the (polygon) candidate into view.
     expect(map.fitBoundsCalls.length).toBeGreaterThan(0);
+  });
+});
+
+describe("MapView inland-wetland layer", () => {
+  it("creates a `wetlands` vector source bound to the wetlands source-layer", () => {
+    const { map } = renderAndLoad(baseProps());
+    const source = map.getSource("wetlands") as { type: string; tiles: string[]; maxzoom: number };
+    expect(source).toBeDefined();
+    expect(source.type).toBe("vector");
+    expect(source.tiles).toEqual([WETLAND_TILE_URL]);
+    expect(source.tiles[0]).toContain("/api/v1/environment/wetlands/tiles/");
+    const fill = map.getLayer("wetlands-fill");
+    expect(fill!.source).toBe("wetlands");
+    expect(fill!["source-layer"]).toBe("wetlands");
+    expect(map.getLayer("wetlands-outline")).toBeDefined();
+  });
+
+  it("stacks the wetland layer BELOW the candidate layers", () => {
+    const { map } = renderAndLoad(baseProps());
+    expect(map.layers.indexOf("wetlands-fill")).toBeLessThan(map.layers.indexOf("candidates-fill"));
+  });
+
+  it("is OFF by default (visibility none) and turns on with showWetlands", () => {
+    const { map, rerender } = renderAndLoad(baseProps());
+    expect(map.layout["wetlands-fill"].visibility).toBe("none");
+    expect(map.layout["wetlands-outline"].visibility).toBe("none");
+    rerender(<MapView {...baseProps({ showWetlands: true })} />);
+    expect(map.layout["wetlands-fill"].visibility).toBe("visible");
+    expect(map.layout["wetlands-outline"].visibility).toBe("visible");
+  });
+
+  it("filters by wetland type (a disabled type is dropped from the filter)", () => {
+    const { map } = renderAndLoad(
+      baseProps({
+        showWetlands: true,
+        wetlandTypeVisibility: { 하천습지: true, 호수습지: false, 산지습지: true, 인공습지: true },
+      }),
+    );
+    const filter = JSON.stringify(map.filters["wetlands-fill"]);
+    expect(filter).toContain("하천습지");
+    expect(filter).not.toContain("호수습지");
+  });
+
+  it("restricts to features with a designation note when designationOnly is set", () => {
+    const { map } = renderAndLoad(baseProps({ showWetlands: true, wetlandDesignationOnly: true }));
+    const filter = JSON.stringify(map.filters["wetlands-fill"]);
+    expect(filter).toContain("has");
+    expect(filter).toContain("designation_note");
+  });
+
+  it("wetlandPopupHtml carries type, area, provider, reference date, and both disclaimers", () => {
+    const html = wetlandPopupHtml({
+      wetland_name: "테스트 습지",
+      wetland_type: "하천습지",
+      reported_area_m2: 12345,
+      designation_note: "습지보호지역(환경부지정)",
+    });
+    expect(html).toContain("테스트 습지");
+    expect(html).toContain("습지 유형: 하천습지");
+    expect(html).toContain("12,345 m²");
+    // designation note appears only as labelled source text, never as legal status.
+    expect(html).toContain("원자료 지정 메모: 습지보호지역(환경부지정)");
+    expect(html).toContain("제공기관: 국립생태원");
+    expect(html).toContain("기준일: 2022-07-20");
+    expect(html).toContain("법정 습지보호지역을 뜻하지 않습니다");
+    expect(html).toContain("UM901 보호구역 레이어에서 별도로 확인");
+    // No score / exclusion / legal-eligibility language.
+    expect(html).not.toContain("점수");
+    expect(html).not.toContain("제외");
+    expect(html).not.toContain("입지");
+  });
+
+  it("wetlandPopupHtml adds source 시도/시군구 and address once detail is known", () => {
+    const detail = {
+      id: 1,
+      wetland_code: "X",
+      wetland_name: "테스트 습지",
+      wetland_type: "하천습지",
+      reported_area_m2: 100,
+      source_address: "서울특별시 종로구 청운동",
+      source_sido_name: "서울특별시",
+      source_sigungu_name: "종로구",
+      source_eupmyeondong_name: "청운동",
+      designation_note: null,
+      designation_note_label: "원자료 지정 메모",
+      source_reference_date: "2022-07-20",
+      statutory_status_statement: "…",
+      um901_distinction_statement: "…",
+    } as import("../lib/api").WetlandFeatureDetail;
+    const html = wetlandPopupHtml({ wetland_name: "테스트 습지" }, detail);
+    expect(html).toContain("출처 시도/시군구: 서울특별시 종로구");
+    expect(html).toContain("주소: 서울특별시 종로구 청운동");
+  });
+
+  it("clicking a wetland opens a popup built from the tile attributes", () => {
+    const { map } = renderAndLoad(baseProps({ showWetlands: true }));
+    // No `id` on the feature, so no detail fetch fires — the immediate popup only.
+    map.emitLayer("click", "wetlands-fill", {
+      features: [
+        {
+          properties: {
+            wetland_name: "한강 밤섬",
+            wetland_type: "하천습지",
+            reported_area_m2: 273503,
+          },
+        },
+      ],
+      lngLat: { lng: 126.9, lat: 37.5 },
+    });
+    const popup = h.popups[h.popups.length - 1];
+    expect(popup.added).toBe(true);
+    expect(popup.html).toContain("한강 밤섬");
+    expect(popup.html).toContain("습지 유형: 하천습지");
+    expect(popup.html).toContain("법정 습지보호지역을 뜻하지 않습니다");
   });
 });

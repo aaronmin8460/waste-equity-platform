@@ -63,6 +63,16 @@ from .suitability import (
     SuitabilityRunOut,
     SuitabilitySummaryOut,
 )
+from .wetland import (
+    WetlandInventoryError,
+    WetlandInventoryFeatureDetail,
+    WetlandInventoryFeatureSummary,
+    WetlandInventoryIngestionInfo,
+    WetlandInventoryLifecycle,
+    WetlandInventoryListResponse,
+    WetlandInventoryMetadataResponse,
+    WetlandInventoryProvenance,
+)
 
 __all__ = [
     "CandidateDetailOut",
@@ -121,4 +131,12 @@ __all__ = [
     "UnmappedFacilityRow",
     "WastePerCapitaOut",
     "WasteStatisticsOut",
+    "WetlandInventoryError",
+    "WetlandInventoryFeatureDetail",
+    "WetlandInventoryFeatureSummary",
+    "WetlandInventoryIngestionInfo",
+    "WetlandInventoryLifecycle",
+    "WetlandInventoryListResponse",
+    "WetlandInventoryMetadataResponse",
+    "WetlandInventoryProvenance",
 ]

@@ -838,6 +838,110 @@ export function suitabilityTileUrl(runId: number, profile: SuitabilityProfile): 
 export const SUITABILITY_TILE_SOURCE_LAYER = "candidates";
 
 // --------------------------------------------------------------------------- //
+// Inland-wetland inventory (Phase 1B-2) — read-only environmental map layer.
+//
+// A SEPARATE optional layer over the surveyed 국립생태원 내륙습지 목록. It is not a
+// statutory protection area and carries no score/rank/exclusion — the API is
+// strictly read-only. Kept distinct from the statutory UM901 layer.
+// --------------------------------------------------------------------------- //
+
+/** Vector-tile source-layer name the map binds its wetland layers to. */
+export const WETLAND_TILE_SOURCE_LAYER = "wetlands";
+
+/**
+ * MapLibre vector-tile URL template for the active inland-wetland release. Same
+ * origin-resolution as {@link suitabilityTileUrl} (MapLibre fetches tiles from a
+ * Web Worker whose base URL is a blob:, so an empty base is resolved to the page
+ * origin). The tile is pinned to an immutable dataset version server-side.
+ */
+export function wetlandTileUrl(): string {
+  const base = apiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
+  return `${base}/api/v1/environment/wetlands/tiles/{z}/{x}/{y}.mvt`;
+}
+
+export interface WetlandLifecycle {
+  contract_verification: string;
+  database_ingestion: string;
+  api_exposure: string;
+  frontend_map_exposure: string;
+  /** Always "NOT_IMPLEMENTED" in this phase — the layer carries no score. */
+  scoring_integration: string;
+  production_deployment: string;
+}
+
+export interface WetlandProvenance {
+  dataset_version_id: number;
+  provider: string;
+  official_dataset_name: string;
+  provider_dataset_identifier: string;
+  official_source_url: string | null;
+  reference_date: string;
+  source_crs: string;
+  storage_crs: string;
+  source_encoding: string | null;
+  transformation_version: string;
+  license_note: string | null;
+}
+
+export interface WetlandMetadata {
+  layer_name: string;
+  korean_label: string;
+  provider: string;
+  official_dataset_name: string;
+  provider_dataset_identifier: string;
+  official_source_url: string | null;
+  reference_date: string;
+  source_crs: string;
+  storage_crs: string;
+  source_encoding: string | null;
+  transformation_version: string;
+  declared_feature_count: number | null;
+  served_feature_count: number;
+  geometry_type: string;
+  lifecycle: WetlandLifecycle;
+  statutory_status_statement: string;
+  um901_distinction_statement: string;
+  license_note: string | null;
+  provenance: WetlandProvenance;
+  last_ingestion: {
+    run_id: number;
+    status: string;
+    rows_inserted: number;
+    reference_period: string | null;
+  } | null;
+}
+
+/**
+ * One wetland feature's detail — the public-safe subset the click popup needs
+ * (source names + address that never travel in the lightweight tile). Geometry
+ * and the full provenance block are also served but not consumed by the popup.
+ */
+export interface WetlandFeatureDetail {
+  id: number;
+  wetland_code: string;
+  wetland_name: string;
+  wetland_type: string;
+  reported_area_m2: number | null;
+  source_address: string | null;
+  source_sido_name: string | null;
+  source_sigungu_name: string | null;
+  source_eupmyeondong_name: string | null;
+  designation_note: string | null;
+  designation_note_label: string;
+  source_reference_date: string;
+  statutory_status_statement: string;
+  um901_distinction_statement: string;
+}
+
+export function fetchWetlandMetadata(): Promise<WetlandMetadata> {
+  return fetchJson<WetlandMetadata>("/api/v1/environment/wetlands/metadata");
+}
+
+export function fetchWetlandDetail(id: number): Promise<WetlandFeatureDetail> {
+  return fetchJson<WetlandFeatureDetail>(`/api/v1/environment/wetlands/${id}`);
+}
+
+// --------------------------------------------------------------------------- //
 // User-weight scenario lab (Phase 6) — 사용자 가정 기반 시나리오.
 //
 // A TEMPORARY, on-read decision-support experiment: it recombines ONE fixed

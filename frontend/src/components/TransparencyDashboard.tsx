@@ -87,6 +87,7 @@ import EmptyState from "./ui/EmptyState";
 import InfoBanner from "./ui/InfoBanner";
 import KpiCard from "./ui/KpiCard";
 import Skeleton from "./ui/Skeleton";
+import WetlandSourceNote from "./WetlandSourceNote";
 import type { LoadedData } from "../app/page";
 
 /** One line under the <h1>, stating exactly what this page documents. */
@@ -632,6 +633,11 @@ export default function TransparencyDashboard({
               )}
             </>
           )}
+
+          {/* Inland-wetland inventory (Phase 1B-2) exposure disclosure: read-only
+              API/map layer, no suitability score, distinct from the statutory
+              UM901 protection area, verified locally only (not deployed). */}
+          <WetlandSourceNote />
         </section>
 
         {/* ── Reference periods and served record counts ───────────────────────── */}
