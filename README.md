@@ -173,16 +173,30 @@ frontend calculation changed.
 file: the **국립생태원 내륙습지 공간데이터 및 속성정보** inland wetland inventory
 (공공데이터포털 `15086410`, 2,704 features, EPSG:5186 confirmed from the `.prj`,
 UTF-8 confirmed from the `.cpg`, 0 invalid/null/empty geometries, unique `CODE`).
-The dataset has completed **local contract verification only** — recommendation
-**GO for Phase 1B ingestion**. It is **not ingested into PostGIS** and **not used
-in scoring**; no score, rank, candidate status, policy version, or production
-behaviour changed. It must stay separate from the statutory 습지보호지역 layer
-(`UM901`) already ingested: `UM901` is a designated protection area with legal
-effect and includes coastal 연안습지, while the inventory is a survey of inland
-wetlands that confers no status (only 1 of 232 capital-region inventory features
-carries any designation note). The raw dataset is local-only and Git-ignored.
+The dataset completed **local contract verification** (recommendation **GO**);
+raw files stay local-only and Git-ignored.
 Contract: [docs/WETLAND_INVENTORY_DATA_CONTRACT.md](docs/WETLAND_INVENTORY_DATA_CONTRACT.md);
 observed values: [docs/WETLAND_INVENTORY_VALIDATION_REPORT.md](docs/WETLAND_INVENTORY_VALIDATION_REPORT.md).
+
+**Suitability Phase 1B-1** ingested that verified inventory into **local** PostGIS:
+all **2,704** features load idempotently (first run 2704 inserted / second run 0
+inserted / 2704 skipped) into a dedicated `environmental_wetland_inventory_features`
+table (additive migration **0018**), versioned by an
+`environmental_dataset_versions` release row and driven by
+`waste-equity-probe wetland-inventory-ingest --write --source-shp …`. Source
+geometry is validated in EPSG:5186, reprojected (`always_xy=True`) to EPSG:4326,
+and promoted to MultiPolygon; SIDO/SIGUNGU codes are assigned **spatially** from
+the official `regions` boundaries (capital region only; others keep source names
+with NULL codes). Lifecycle: ingestion `IMPLEMENTED_AND_LOCALLY_VERIFIED`,
+production run `NOT_RUN`, API/map exposure `NOT_IMPLEMENTED`, scoring
+`NOT_IMPLEMENTED`. It stays **separate from the statutory 습지보호지역 layer
+(`UM901`)** — own table, no foreign key, `EXP` never read as legal status — and
+`UM901` is a designated protection area (legal effect, includes coastal 연안습지)
+while the inventory is a survey that confers no status (only 1 of 232
+capital-region features carries any designation note). No suitability score,
+weight, exclusion rule, candidate rank, candidate status, or production behaviour
+changed; nothing was deployed. Details:
+[docs/WETLAND_INVENTORY_INGESTION.md](docs/WETLAND_INVENTORY_INGESTION.md).
 
 See:
 
@@ -198,5 +212,6 @@ See:
 - [Suitability Environmental Data Audit](docs/SUITABILITY_ENVIRONMENTAL_DATA_AUDIT.md)
 - [Wetland Inventory Data Contract](docs/WETLAND_INVENTORY_DATA_CONTRACT.md)
 - [Wetland Inventory Validation Report](docs/WETLAND_INVENTORY_VALIDATION_REPORT.md)
+- [Wetland Inventory PostGIS Ingestion](docs/WETLAND_INVENTORY_INGESTION.md)
 
 # waste-equity-platform

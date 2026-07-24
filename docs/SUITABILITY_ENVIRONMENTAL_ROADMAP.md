@@ -55,11 +55,22 @@ gains exactly one additive table.
 
 ---
 
-## Phase 1B — First environmental factors (future, not in this branch)
+## Phase 1B — First environmental factors
 
 **Goal:** ingest and score the highest-value, license-clear new factors —
 **slope (DEM), land cover, river network, geology, wetland inventory** — the
 `PLANNED` layers.
+
+> **Status (2026-07-24).** The **wetland inventory** — a vector layer that does
+> not need the raster pipeline — has already been carried through its verify and
+> ingest steps ahead of the raster factors: **1B-0** verified its contract
+> (`LIVE_VERIFIED`) and **1B-1** ingested all 2,704 features into **local**
+> PostGIS (`IMPLEMENTED_AND_LOCALLY_VERIFIED`, migration 0018, dedicated
+> `environmental_wetland_inventory_features` table). It is **not** in production,
+> **not** scored, and **separate from `UM901`**. Adoption into scoring (the
+> equivalent of 1B-3 below) is **not** done. See
+> [WETLAND_INVENTORY_INGESTION.md](WETLAND_INVENTORY_INGESTION.md). The raster
+> factors below are still future.
 
 Phase 1B is itself sub-sequenced so each factor is a small, reviewable step:
 
@@ -122,7 +133,8 @@ the same versioning/rollback rules.
 | Phase | Layers | Lifecycle | Recommendation |
 | --- | --- | --- | --- |
 | Reuse | admin boundary, zoning, road centreline, protected areas | IMPLEMENTED | GO (reuse) |
-| 1B | DEM/slope, land cover, river network, geology, wetland inventory | PLANNED | CONDITIONAL GO |
+| 1B | wetland inventory | **IMPLEMENTED (local ingest; not scored)** | GO — ingested (1B-1) |
+| 1B | DEM/slope, land cover, river network, geology | PLANNED | CONDITIONAL GO |
 | 1C | building footprints, parcel, ownership, groundwater | FUTURE | CONDITIONAL GO |
 | 1C | flood hazard, faults | EXPERIMENTAL | NO GO (blocked) |
 

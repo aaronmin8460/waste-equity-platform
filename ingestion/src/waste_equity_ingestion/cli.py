@@ -34,6 +34,7 @@ from .structural_layer_ingestion import run_structural_ingestion
 from .suitability_build import run_suitability_build
 from .vworld_geocoding_ingestion import run_vworld_geocoding
 from .vworld_zoning_ingestion import run_zoning_ingestion
+from .wetland_inventory_ingestion import run_wetland_inventory_ingestion
 
 ProbeFunc = Callable[[ProbeSettings], ProbeResult]
 
@@ -58,6 +59,7 @@ VWORLD_ZONING_INGEST = "vworld-zoning-ingest"
 VWORLD_PROTECTED_INGEST = "vworld-protected-ingest"
 VWORLD_ROADS_INGEST = "vworld-roads-ingest"
 SUITABILITY_BUILD = "suitability-build"
+WETLAND_INVENTORY_INGEST = "wetland-inventory-ingest"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -80,6 +82,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 VWORLD_PROTECTED_INGEST,
                 VWORLD_ROADS_INGEST,
                 SUITABILITY_BUILD,
+                WETLAND_INVENTORY_INGEST,
             ]
         ),
     )
@@ -153,6 +156,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--source-encoding",
         default=None,
         help="vworld-zoning-ingest: source DBF attribute encoding (default cp949).",
+    )
+    parser.add_argument(
+        "--source-shp",
+        help=(
+            "wetland-inventory-ingest: path to the local official inland-wetland "
+            "shapefile (.shp). Required — there is no default path and no sample "
+            "fallback; the raw dataset is Git-ignored local data."
+        ),
+    )
+    parser.add_argument(
+        "--no-region-assignment",
+        action="store_true",
+        help=(
+            "wetland-inventory-ingest: skip spatial SIDO/SIGUNGU code assignment "
+            "against the official boundaries in the database (codes stay NULL)."
+        ),
     )
     parser.add_argument(
         "--reference-year",
@@ -385,6 +404,25 @@ def run_vworld_zoning(settings: ProbeSettings, args: argparse.Namespace) -> int:
     return 0
 
 
+def run_wetland_inventory(args: argparse.Namespace) -> int:
+    """Validate and (with --write) load the inland wetland inventory into PostGIS."""
+
+    if not args.dry_run and not args.write:
+        raise IngestionError("wetland-inventory-ingest requires either --dry-run or --write")
+    if not args.source_shp:
+        raise IngestionError(
+            "wetland-inventory-ingest requires --source-shp /path/to/*.shp; there is no "
+            "default source path and no sample-data fallback."
+        )
+    report = run_wetland_inventory_ingestion(
+        source_shp=args.source_shp,
+        write=bool(args.write),
+        assign_regions=not bool(args.no_region_assignment),
+    )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    return 0 if report.status in ("SUCCEEDED", "PARTIAL") else 1
+
+
 def run_vworld_structural(settings: ProbeSettings, args: argparse.Namespace, family: str) -> int:
     if not args.dry_run and not args.write:
         raise IngestionError(f"vworld-{family}-ingest requires either --dry-run or --write")
@@ -475,6 +513,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_vworld_structural(settings, args, "roads")
         if args.source == SUITABILITY_BUILD:
             return run_suitability(settings, args)
+        if args.source == WETLAND_INVENTORY_INGEST:
+            return run_wetland_inventory(args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)

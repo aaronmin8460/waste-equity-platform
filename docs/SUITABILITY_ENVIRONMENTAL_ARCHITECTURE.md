@@ -56,7 +56,7 @@ citizen label, a modality, and a lifecycle. Names are drawn from the audit
 | `land_cover` | 토지피복 | vector_polygon | PLANNED |
 | `river_network` | 하천망 | vector_line | PLANNED |
 | `geology` | 지질 | vector_polygon | PLANNED |
-| `wetland_inventory` | 내륙습지 목록 | vector_polygon | PLANNED (contract `LIVE_VERIFIED`, not ingested) |
+| `wetland_inventory` | 내륙습지 목록 | vector_polygon | IMPLEMENTED (local ingest, Phase 1B-1; not in production, not scored) |
 | `building_footprint` | 건축물 | vector_polygon | FUTURE |
 | `parcel` | 연속지적 | vector_polygon | FUTURE |
 | `land_ownership` | 토지소유 | vector_polygon | FUTURE |
@@ -330,3 +330,28 @@ a real local file. It is verification and documentation only:
 Contract: [WETLAND_INVENTORY_DATA_CONTRACT.md](WETLAND_INVENTORY_DATA_CONTRACT.md) ·
 Observed values: [WETLAND_INVENTORY_VALIDATION_REPORT.md](WETLAND_INVENTORY_VALIDATION_REPORT.md) ·
 Tooling: `ingestion/src/waste_equity_ingestion/wetland_inventory_contract.py` (read-only).
+
+## 13. Phase 1B-1 addendum — `wetland_inventory` PostGIS ingestion
+
+Phase 1B-1 (2026-07-24) ingested that verified layer into **local** PostGIS. It is
+the first environmental-layer *release* actually persisted, and it establishes the
+environmental versioning pattern the later factors reuse.
+
+- Migration **0018** (additive, revises 0017) adds `environmental_dataset_versions`
+  (the environmental counterpart of `structural_dataset_versions`) and
+  `environmental_wetland_inventory_features` (MULTIPOLYGON/4326), plus the
+  `nie_wetland_inventory` data source. No existing table is altered.
+- All **2,704** features load idempotently (`CODE`-keyed, `ON CONFLICT DO NOTHING`)
+  via `waste-equity-probe wetland-inventory-ingest`. First run 2704/0/0, second run
+  0/2704/0. Source geometry validated in EPSG:5186, reprojected `always_xy=True`,
+  promoted to MultiPolygon; six reprojection self-intersections are stored as
+  transformed and reported, never repaired or dropped.
+- Region codes are assigned **spatially** against the official `regions`
+  boundaries (capital region only; the rest keep NULL codes with source names).
+- Lifecycle: ingestion `IMPLEMENTED_AND_LOCALLY_VERIFIED`; production run
+  `NOT_RUN`; API / map exposure `NOT_IMPLEMENTED`; scoring `NOT_IMPLEMENTED`.
+  Still **separate from `UM901`** (own table, no FK, `EXP` never read as legal
+  status); existing `UM901`, structural, and suitability data unchanged.
+
+Details: [WETLAND_INVENTORY_INGESTION.md](WETLAND_INVENTORY_INGESTION.md) ·
+Loader: `ingestion/src/waste_equity_ingestion/wetland_inventory_ingestion.py`.

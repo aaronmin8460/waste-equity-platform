@@ -77,9 +77,18 @@ Confirmed by reading the local files (Phase 1B-0, 2026-07-23):
 
 ## Status
 
-This dataset has completed **local contract verification only**. It is **not**
-ingested into PostGIS, **not** used in suitability scoring, and is **not** the
-same thing as the statutory 습지보호지역 layer (`UM901`) already in the platform.
+Contract verification is `LIVE_VERIFIED` (Phase 1B-0) and this dataset has been
+ingested into **local** PostGIS (Phase 1B-1,
+`IMPLEMENTED_AND_LOCALLY_VERIFIED`, 2026-07-24): all 2,704 features load
+idempotently into `environmental_wetland_inventory_features`. It is **not** run
+in production, **not** used in suitability scoring, and is **not** the same thing
+as the statutory 습지보호지역 layer (`UM901`) already in the platform — the two
+are never merged.
+
+The raw files here remain local-only and Git-ignored; this README is still the
+only committed file in this directory. Ingestion reads the files, never writes
+or modifies them.
 
 - Contract: [`docs/WETLAND_INVENTORY_DATA_CONTRACT.md`](../../../../docs/WETLAND_INVENTORY_DATA_CONTRACT.md)
 - Observed values: [`docs/WETLAND_INVENTORY_VALIDATION_REPORT.md`](../../../../docs/WETLAND_INVENTORY_VALIDATION_REPORT.md)
+- Ingestion: [`docs/WETLAND_INVENTORY_INGESTION.md`](../../../../docs/WETLAND_INVENTORY_INGESTION.md)

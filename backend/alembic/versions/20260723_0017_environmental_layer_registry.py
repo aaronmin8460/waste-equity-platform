@@ -254,7 +254,14 @@ def upgrade() -> None:
         sa.Column("verification_status", sa.String(length=40), nullable=False),
         sa.Column("readiness_recommendation", sa.String(length=20), nullable=False),
         sa.Column("suitability_role", sa.String(length=300), nullable=False),
-        sa.Column("implementation_difficulty", sa.String(length=40), nullable=False),
+        # 80, not the original 40: the seed below contains a 50-character value
+        # ("High (sparse network → modelled/uncertain surface)"). SQLite does not
+        # enforce VARCHAR limits, so the too-narrow column passed the unit tests
+        # but made this migration abort on PostgreSQL with
+        # StringDataRightTruncation, before any environment could reach 0017.
+        # Widened at the source because the transactional DDL rolled the failed
+        # upgrade back: no database has ever held this table at width 40.
+        sa.Column("implementation_difficulty", sa.String(length=80), nullable=False),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_environmental_layer_registry")),
