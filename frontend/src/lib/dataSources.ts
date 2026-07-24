@@ -72,7 +72,14 @@ function lookup<T>(registry: Record<string, T>, key: string): T | undefined {
 // --------------------------------------------------------------------------- //
 
 export type SourceArea =
-  "population" | "waste" | "landfill" | "spatial" | "air" | "weather" | "unclassified";
+  | "population"
+  | "waste"
+  | "landfill"
+  | "spatial"
+  | "environmental"
+  | "air"
+  | "weather"
+  | "unclassified";
 
 /** Plain-Korean subject label. `unclassified` never guesses a subject. */
 export const SOURCE_AREA_LABELS: Record<SourceArea, string> = {
@@ -80,6 +87,7 @@ export const SOURCE_AREA_LABELS: Record<SourceArea, string> = {
   waste: "폐기물 발생·처리",
   landfill: "수도권매립지",
   spatial: "공간정보",
+  environmental: "환경·생태",
   air: "대기질 관측",
   weather: "기상 관측",
   unclassified: "분야 정보 없음",
@@ -91,6 +99,7 @@ export const SOURCE_AREA_ORDER: readonly SourceArea[] = [
   "waste",
   "landfill",
   "spatial",
+  "environmental",
   "air",
   "weather",
   "unclassified",
@@ -204,6 +213,13 @@ const SOURCE_DISPLAY: Record<string, SourceDisplayEntry> = {
     // "용도지역지구도 및 구조적 공간레이어 (zoning/protected/road bulk files)"
     dataset: "용도지역지구도와 구조 공간레이어",
     area: "spatial",
+  },
+  nie_wetland_inventory: {
+    // "National Institute of Ecology" — surveyed inland-wetland inventory (Phase 1B).
+    // A read-only environmental context layer; NOT the statutory 습지보호지역 (UM901).
+    organization: "국립생태원",
+    dataset: "내륙습지 공간데이터 및 속성정보",
+    area: "environmental",
   },
   "15064381": {
     // "수도권매립지관리공사 (Sudokwon Landfill Site Management Corp.)"

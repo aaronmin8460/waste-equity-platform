@@ -10,8 +10,8 @@
 | Contract verification | `LIVE_VERIFIED` (Phase 1B-0) |
 | PostGIS ingestion | **`IMPLEMENTED_AND_LOCALLY_VERIFIED`** (2026-07-24) |
 | Production ingestion (OCI/AWS) | `NOT_RUN` |
-| Read-only API exposure | `NOT_IMPLEMENTED` |
-| Frontend map exposure | `NOT_IMPLEMENTED` |
+| Read-only API exposure | **`IMPLEMENTED_AND_LOCALLY_VERIFIED`** (Phase 1B-2 — see [WETLAND_INVENTORY_API_AND_MAP.md](WETLAND_INVENTORY_API_AND_MAP.md)) |
+| Frontend map exposure | **`IMPLEMENTED_AND_LOCALLY_VERIFIED`** (Phase 1B-2) |
 | Scoring / weight / exclusion integration | `NOT_IMPLEMENTED` |
 | OCI deployment | `NOT_ATTEMPTED` |
 
@@ -283,13 +283,17 @@ candidate status. To reload after a downgrade+upgrade, re-run the CLI `--write`.
   40, so fixing in place is safe. This is what let 0017 (and therefore 0018)
   apply on PostgreSQL for the first time.
 
-## 13. Phase 1B-2 boundary (next, not in this phase)
+## 13. Phase 1B-2 (implemented — read-only API + map layer)
 
-Phase 1B-2 may add a **read-only** API endpoint and/or a separate map layer over
-this table. It must keep the layer **distinct from UM901**, must not infer legal
-status, and must not add any scoring role. Any future scoring use requires a
-separate, explicit policy-version review (contract §16) — it is not authorized by
-ingestion.
+Phase 1B-2 (2026-07-24) exposed this table **read-only** through four `GET`
+endpoints under `/api/v1/environment/wetlands` (metadata, list/query, feature
+detail, MVT tiles) and a **separate, optional** MapLibre map layer, with per-type
+and designation filters, a legend, a click popup, and a source disclosure. The
+layer is kept **distinct from UM901** (separate namespace/layer/legend/color, no
+merge, no FK), infers no legal status, and adds **no** scoring role — the tables
+and migration 0018 are untouched (no new migration). Any future scoring use still
+requires a separate, explicit policy-version review (contract §16). See
+[WETLAND_INVENTORY_API_AND_MAP.md](WETLAND_INVENTORY_API_AND_MAP.md).
 
 ## 14. Production deployment boundary
 

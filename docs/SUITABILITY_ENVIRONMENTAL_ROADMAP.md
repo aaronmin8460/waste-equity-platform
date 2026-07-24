@@ -133,7 +133,7 @@ the same versioning/rollback rules.
 | Phase | Layers | Lifecycle | Recommendation |
 | --- | --- | --- | --- |
 | Reuse | admin boundary, zoning, road centreline, protected areas | IMPLEMENTED | GO (reuse) |
-| 1B | wetland inventory | **IMPLEMENTED (local ingest; not scored)** | GO — ingested (1B-1) |
+| 1B | wetland inventory | **IMPLEMENTED (local ingest + read-only API/map; not scored)** | GO — ingested (1B-1), exposed read-only (1B-2) |
 | 1B | DEM/slope, land cover, river network, geology | PLANNED | CONDITIONAL GO |
 | 1C | building footprints, parcel, ownership, groundwater | FUTURE | CONDITIONAL GO |
 | 1C | flood hazard, faults | EXPERIMENTAL | NO GO (blocked) |

@@ -14,6 +14,7 @@ from .routes import (
     reporting,
     suitability,
     suitability_scenarios,
+    wetlands,
 )
 
 
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(suitability_scenarios.router)
     app.include_router(landfill.router)
     app.include_router(facility_cost.router)
+    app.include_router(wetlands.router)
     return app
 
 

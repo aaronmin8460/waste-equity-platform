@@ -19,8 +19,13 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import type { FacilityItem, RegionBoundaryCollection, SuitabilityStatus } from "../lib/api";
-import { SUITABILITY_TILE_SOURCE_LAYER } from "../lib/api";
+import type {
+  FacilityItem,
+  RegionBoundaryCollection,
+  SuitabilityStatus,
+  WetlandFeatureDetail,
+} from "../lib/api";
+import { SUITABILITY_TILE_SOURCE_LAYER, WETLAND_TILE_SOURCE_LAYER, fetchWetlandDetail } from "../lib/api";
 import {
   CANDIDATE_EXCLUDED_COLOR,
   CANDIDATE_REVIEW_COLOR,
@@ -34,6 +39,18 @@ import {
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import { geometryBounds, isDegenerateBounds, stabilityBadgeLabel } from "../lib/suitability";
 import { statusLabel } from "../lib/glossary";
+import type { WetlandType } from "../lib/wetland";
+import {
+  WETLAND_DESIGNATION_NOTE_LABEL,
+  WETLAND_DETAIL_WARNING,
+  WETLAND_OUTLINE_COLOR,
+  WETLAND_PROVIDER,
+  WETLAND_REFERENCE_DATE,
+  WETLAND_TYPES,
+  WETLAND_TYPE_COLORS,
+  WETLAND_UM901_DISTINCTION,
+  formatWetlandArea,
+} from "../lib/wetland";
 
 /**
  * The modes that actually render a map. The 수도권매립지 dashboard mode is not
@@ -78,6 +95,14 @@ const CANDIDATE_LAYER_IDS = [
   "candidates-review-outline",
   "candidates-stable-outline",
 ];
+
+// The inland-wetland vector source stops generating tiles at this zoom; MapLibre
+// overzooms it above. Wetland polygons are surveyed features (not a 500 m grid),
+// so a modest cap keeps a zoomed-in viewport from requesting a tile swarm.
+const WETLAND_TILE_MAX_ZOOM = 12;
+// Semi-transparent so the layer reads as background context beneath the
+// candidate grid and never as an authoritative overlay.
+const WETLAND_FILL_OPACITY = 0.5;
 
 const BASE_STYLE: maplibregl.StyleSpecification = {
   version: 8,
@@ -149,6 +174,18 @@ interface MapViewProps {
   facilities: FacilityItem[];
   showFacilities: boolean;
   mode: MapMode;
+  /**
+   * Inland-wetland inventory (내륙습지 목록) — a SEPARATE optional environmental
+   * layer, rendered below the candidate/selection layers. Read-only context: it
+   * carries no score, no exclusion, and is distinct from the statutory UM901
+   * layer. `wetlandTileUrl` is the constant MVT template; null disables the layer.
+   */
+  showWetlands: boolean;
+  wetlandTileUrl: string | null;
+  /** Per-type visibility (하천/호수/산지/인공) — doubles as the legend selection. */
+  wetlandTypeVisibility: Record<WetlandType, boolean>;
+  /** Restrict to features carrying a source designation note (EXP). */
+  wetlandDesignationOnly: boolean;
   /**
    * MVT tile-URL template ("…/{z}/{x}/{y}.mvt") for the active run + profile, or
    * null when there is no suitability run to render (e.g. equity mode). Changing
@@ -280,6 +317,81 @@ function stableOutlineFilter(visibility: StatusVisibility): maplibregl.FilterSpe
   ] as unknown as maplibregl.FilterSpecification;
 }
 
+// --- Inland-wetland inventory layer (Phase 1B-2) -----------------------------
+// A SEPARATE optional environmental layer. Its fill is a flat categorical color
+// by wetland type (never a score step) and it carries no legal/exclusion effect.
+
+// Categorical fill by the source wetland type; an unknown type falls back to a
+// neutral gray (never dropped, never a danger red).
+function wetlandColorExpression(): maplibregl.ExpressionSpecification {
+  return [
+    "match",
+    ["get", "wetland_type"],
+    "하천습지",
+    WETLAND_TYPE_COLORS["하천습지"],
+    "호수습지",
+    WETLAND_TYPE_COLORS["호수습지"],
+    "산지습지",
+    WETLAND_TYPE_COLORS["산지습지"],
+    "인공습지",
+    WETLAND_TYPE_COLORS["인공습지"],
+    "#9aa2ad",
+  ] as unknown as maplibregl.ExpressionSpecification;
+}
+
+// Wetland filter: only the enabled types, optionally restricted to features that
+// carry a source designation note (`designation_note` is present in the tile only
+// when non-null). When no type is enabled the layer matches nothing.
+function wetlandFilter(
+  typeVisibility: Record<WetlandType, boolean>,
+  designationOnly: boolean,
+): maplibregl.FilterSpecification {
+  const visible = WETLAND_TYPES.filter((t) => typeVisibility[t]);
+  const typeIn = ["in", ["get", "wetland_type"], ["literal", visible]];
+  if (!designationOnly) {
+    return typeIn as unknown as maplibregl.FilterSpecification;
+  }
+  return ["all", typeIn, ["has", "designation_note"]] as unknown as maplibregl.FilterSpecification;
+}
+
+/**
+ * The inland-wetland click popup HTML. Built from the lightweight tile properties
+ * (name, type, area, designation note) plus the constant provider/reference-date,
+ * the statutory-status warning, and the UM901 distinction. When the feature detail
+ * has been fetched it additionally shows the source 시도/시군구 and address (which
+ * never travel in the tile). Exported so it can be asserted directly in tests.
+ *
+ * `designation_note` is rendered only as labelled source text (원자료 지정 메모) — it
+ * is never presented as a legal determination.
+ */
+export function wetlandPopupHtml(
+  props: Record<string, unknown>,
+  detail?: WetlandFeatureDetail | null,
+): string {
+  const name = props.wetland_name ?? detail?.wetland_name ?? "내륙습지";
+  const type = props.wetland_type ?? detail?.wetland_type ?? "";
+  const areaRaw = props.reported_area_m2 ?? detail?.reported_area_m2 ?? null;
+  const area = formatWetlandArea(areaRaw == null ? null : Number(areaRaw));
+  const note = props.designation_note ?? detail?.designation_note ?? null;
+  const noteLine = note ? `<br/>${WETLAND_DESIGNATION_NOTE_LABEL}: ${note}` : "";
+  const regionText = detail
+    ? [detail.source_sido_name, detail.source_sigungu_name].filter(Boolean).join(" ")
+    : "";
+  const regionLine = regionText ? `<br/>출처 시도/시군구: ${regionText}` : "";
+  const addressLine = detail?.source_address ? `<br/>주소: ${detail.source_address}` : "";
+  return (
+    `<strong>${name}</strong><br/>` +
+    `습지 유형: ${type}<br/>` +
+    `면적: ${area}` +
+    regionLine +
+    addressLine +
+    noteLine +
+    `<br/><small>제공기관: ${WETLAND_PROVIDER} · 기준일: ${WETLAND_REFERENCE_DATE}</small>` +
+    `<br/><small>${WETLAND_DETAIL_WARNING}</small>` +
+    `<br/><small>${WETLAND_UM901_DISTINCTION}</small>`
+  );
+}
+
 /**
  * The region tooltip/popup HTML, shared by the desktop hover tooltip and the
  * click/tap popup so both show the same information: region name, selected metric
@@ -352,6 +464,10 @@ export default function MapView({
   facilities,
   showFacilities,
   mode,
+  showWetlands,
+  wetlandTileUrl,
+  wetlandTypeVisibility,
+  wetlandDesignationOnly,
   candidateTileUrl,
   candidateBreaks,
   statusVisibility,
@@ -374,6 +490,8 @@ export default function MapView({
   // URL / hash), a run change, or leaving scenario view can invalidate a stale
   // custom popup instead of leaving it pinned with outdated numbers.
   const candidatePopupRef = useRef<maplibregl.Popup | null>(null);
+  // The single inland-wetland click popup. One at a time, like the candidate popup.
+  const wetlandPopupRef = useRef<maplibregl.Popup | null>(null);
   // A single reusable tooltip popup for desktop region hover (no close button, so
   // it reads as a lightweight tooltip); the last-hovered region code so its HTML
   // is rebuilt only when the pointer crosses into a different region.
@@ -481,6 +599,42 @@ export default function MapView({
       map.getCanvas().style.cursor = "";
     });
 
+    // Inland-wetland click: an immediate popup from the light tile attributes, then
+    // (best-effort) enriched with the fetched detail's source 시도/시군구 + 주소.
+    // Bound once, keyed by the stable layer id. This is a read-only disclosure —
+    // it never changes any score, status, or selection.
+    map.on("click", "wetlands-fill", (event) => {
+      const feature = event.features?.[0];
+      if (!feature) return;
+      const props = feature.properties as Record<string, unknown>;
+      wetlandPopupRef.current?.remove();
+      const popup = new maplibregl.Popup()
+        .setLngLat(event.lngLat)
+        .setHTML(wetlandPopupHtml(props))
+        .addTo(map);
+      wetlandPopupRef.current = popup;
+      const id = Number(props.id);
+      if (!Number.isNaN(id)) {
+        fetchWetlandDetail(id)
+          .then((detail) => {
+            // Only if this popup is still the current, still-open one.
+            const open = typeof popup.isOpen === "function" ? popup.isOpen() : true;
+            if (wetlandPopupRef.current === popup && open) {
+              popup.setHTML(wetlandPopupHtml(props, detail));
+            }
+          })
+          .catch(() => {
+            // Enrichment is best-effort; the tile-based popup stays as shown.
+          });
+      }
+    });
+    map.on("mouseenter", "wetlands-fill", () => {
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", "wetlands-fill", () => {
+      map.getCanvas().style.cursor = "";
+    });
+
     map.on("load", () => {
       loadedRef.current = true;
       setMapLoading(false);
@@ -553,6 +707,8 @@ export default function MapView({
       pinnedPopupRef.current = null;
       candidatePopupRef.current?.remove();
       candidatePopupRef.current = null;
+      wetlandPopupRef.current?.remove();
+      wetlandPopupRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -693,6 +849,46 @@ export default function MapView({
         });
       }
       map.setPaintProperty("regions-fill", "fill-color", fillColorExpression(breaks, palette));
+
+      // --- Inland-wetland inventory (environmental context) as PostGIS vector tiles ---
+      // Added BEFORE the candidate block so it stacks BELOW the candidate/selection
+      // layers, and ABOVE the OSM basemap. The tile URL is constant (pinned to the
+      // active release server-side), so the source is added once; only the type/
+      // designation filter and on/off visibility change afterwards. A SEPARATE layer
+      // from UM901 — never merged, never a hard exclusion, never scored.
+      if (wetlandTileUrl) {
+        if (!map.getSource("wetlands")) {
+          map.addSource("wetlands", {
+            type: "vector",
+            tiles: [wetlandTileUrl],
+            minzoom: 0,
+            maxzoom: WETLAND_TILE_MAX_ZOOM,
+          });
+          map.addLayer({
+            id: "wetlands-fill",
+            type: "fill",
+            source: "wetlands",
+            "source-layer": WETLAND_TILE_SOURCE_LAYER,
+            paint: {
+              "fill-color": wetlandColorExpression(),
+              "fill-opacity": WETLAND_FILL_OPACITY,
+            },
+          });
+          map.addLayer({
+            id: "wetlands-outline",
+            type: "line",
+            source: "wetlands",
+            "source-layer": WETLAND_TILE_SOURCE_LAYER,
+            paint: { "line-color": WETLAND_OUTLINE_COLOR, "line-width": 0.6 },
+          });
+        }
+        const filter = wetlandFilter(wetlandTypeVisibility, wetlandDesignationOnly);
+        map.setFilter("wetlands-fill", filter);
+        map.setFilter("wetlands-outline", filter);
+        const wetlandVisibility = showWetlands ? "visible" : "none";
+        map.setLayoutProperty("wetlands-fill", "visibility", wetlandVisibility);
+        map.setLayoutProperty("wetlands-outline", "visibility", wetlandVisibility);
+      }
 
       // --- Candidate grid (suitability) as PostGIS vector tiles ---
       // The whole grid is available as MVT; the viewport pulls only the tiles it
@@ -853,6 +1049,10 @@ export default function MapView({
     facilities,
     showFacilities,
     mode,
+    showWetlands,
+    wetlandTileUrl,
+    wetlandTypeVisibility,
+    wetlandDesignationOnly,
     candidateTileUrl,
     candidateBreaks,
     statusVisibility,

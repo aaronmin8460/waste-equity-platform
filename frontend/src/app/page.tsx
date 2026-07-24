@@ -41,6 +41,7 @@ import {
   hasCriticStability,
   suitabilityTileUrl,
   userScenarioTileUrl,
+  wetlandTileUrl,
   type CandidateDetail,
   type DataSourceItem,
   type DatasetEnvelope,
@@ -96,6 +97,9 @@ import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import MapLegendOverlay from "../components/MapLegendOverlay";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import TransparencyDashboard from "../components/TransparencyDashboard";
+import WetlandLayerControl from "../components/WetlandLayerControl";
+import type { WetlandType } from "../lib/wetland";
+import { defaultWetlandTypeVisibility } from "../lib/wetland";
 import RegionRanking from "../components/RegionRanking";
 import RegionComparison, { type ComparisonValue } from "../components/RegionComparison";
 import ShareExportBar from "../components/ShareExportBar";
@@ -227,6 +231,16 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [metricKey, setMetricKey] = useState<MetricKey>("population");
   const [showFacilities, setShowFacilities] = useState(true);
+
+  // Inland-wetland inventory (내륙습지 목록) — a SEPARATE optional environmental
+  // layer, OFF by default (it is background context, never a scored/exclusion
+  // layer, and distinct from the statutory UM901 layer). Not URL-serialized —
+  // mirrors the `showFacilities` precedent, so existing shared links are unaffected.
+  const [showWetlands, setShowWetlands] = useState(false);
+  const [wetlandTypeVisibility, setWetlandTypeVisibility] = useState<Record<WetlandType, boolean>>(
+    defaultWetlandTypeVisibility,
+  );
+  const [wetlandDesignationOnly, setWetlandDesignationOnly] = useState(false);
 
   const [mode, setMode] = useState<DashboardMode>("equity");
   const [profile, setProfile] = useState<SuitabilityProfile>("baseline");
@@ -640,6 +654,19 @@ export default function Home() {
 
   // Stable-only display toggle (independent of statusVisibility).
   const toggleStableOnly = useCallback(() => setStableOnly((prev) => !prev), []);
+
+  // Inland-wetland layer controls. The tile URL is constant (pinned to the active
+  // release server-side), so it is computed once. Toggles only affect this
+  // separate overlay — never any candidate, score, status, or region state.
+  const wetlandTiles = useMemo(() => wetlandTileUrl(), []);
+  const toggleWetlands = useCallback(() => setShowWetlands((prev) => !prev), []);
+  const toggleWetlandType = useCallback((type: WetlandType) => {
+    setWetlandTypeVisibility((prev) => ({ ...prev, [type]: !prev[type] }));
+  }, []);
+  const toggleWetlandDesignationOnly = useCallback(
+    () => setWetlandDesignationOnly((prev) => !prev),
+    [],
+  );
 
   const metric = METRICS.find((candidate) => candidate.key === metricKey) ?? METRICS[0];
 
@@ -1583,6 +1610,10 @@ export default function Home() {
           facilities={data.facilities.items}
           showFacilities={showFacilities}
           mode={mode}
+          showWetlands={showWetlands}
+          wetlandTileUrl={wetlandTiles}
+          wetlandTypeVisibility={wetlandTypeVisibility}
+          wetlandDesignationOnly={wetlandDesignationOnly}
           candidateTileUrl={candidateTileUrl}
           candidateBreaks={CANDIDATE_SCORE_BREAKS}
           candidateContext={scenarioActive ? "scenario" : "stored"}
@@ -1601,6 +1632,18 @@ export default function Home() {
               : "500m 후보 격자를 표시한 인터랙티브 지도입니다. 상세 후보는 좌측 '상위 후보지' 목록과 '후보 상세' 패널에서 접근할 수 있습니다. 광역 분석 스크리닝이며 법적·공학적 적합 판정이 아닙니다."
           }
           onRegionClick={(code) => setSelectedRegionCode(code)}
+        />
+        {/* Inland-wetland inventory (내륙습지 목록) — separate optional environmental
+            layer control at the map's top-left. Off by default; toggling it never
+            affects candidates, scores, statuses, or region state. Distinct from the
+            statutory UM901 layer. */}
+        <WetlandLayerControl
+          show={showWetlands}
+          onToggleShow={toggleWetlands}
+          typeVisibility={wetlandTypeVisibility}
+          onToggleType={toggleWetlandType}
+          designationOnly={wetlandDesignationOnly}
+          onToggleDesignationOnly={toggleWetlandDesignationOnly}
         />
         {/* Floating legend over the lower-left of the map — one legend per map mode.
             It never recomputes colors/breaks: equity mode receives the page's active

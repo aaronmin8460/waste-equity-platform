@@ -56,7 +56,7 @@ citizen label, a modality, and a lifecycle. Names are drawn from the audit
 | `land_cover` | 토지피복 | vector_polygon | PLANNED |
 | `river_network` | 하천망 | vector_line | PLANNED |
 | `geology` | 지질 | vector_polygon | PLANNED |
-| `wetland_inventory` | 내륙습지 목록 | vector_polygon | IMPLEMENTED (local ingest, Phase 1B-1; not in production, not scored) |
+| `wetland_inventory` | 내륙습지 목록 | vector_polygon | IMPLEMENTED (local ingest 1B-1 + read-only API/map 1B-2; not in production, not scored) |
 | `building_footprint` | 건축물 | vector_polygon | FUTURE |
 | `parcel` | 연속지적 | vector_polygon | FUTURE |
 | `land_ownership` | 토지소유 | vector_polygon | FUTURE |
@@ -355,3 +355,23 @@ environmental versioning pattern the later factors reuse.
 
 Details: [WETLAND_INVENTORY_INGESTION.md](WETLAND_INVENTORY_INGESTION.md) ·
 Loader: `ingestion/src/waste_equity_ingestion/wetland_inventory_ingestion.py`.
+
+## 14. Phase 1B-2 addendum — `wetland_inventory` read-only API + map layer
+
+Phase 1B-2 (2026-07-24) exposed the local inventory **read-only** and drew it as a
+**separate** map layer. It adds no migration, no score, and no scoring role.
+
+- Router `api/routes/wetlands.py` (namespace `/api/v1/environment/wetlands`) adds
+  four `GET` endpoints — metadata, bounded list/query, feature detail, and PostGIS
+  **MVT** tiles (source-layer `wetlands`, `ST_TileEnvelope`/`ST_AsMVTGeom`,
+  filter-before-transform, immutable-version ETag) — mirroring the suitability
+  tile pattern. Schemas live in `schemas/wetland.py`. Every route is read-only.
+- The frontend adds a distinct MapLibre `wetlands` vector layer **below** the
+  candidate/selection layers (off by default), a per-type filter/legend, a
+  designation filter, a click popup, and a data-sources disclosure.
+- Kept **separate from `UM901`** at every level (namespace, layer, legend, color;
+  no merge, no FK, `EXP` only as labelled source text). Lifecycle: API + map
+  exposure `IMPLEMENTED_AND_LOCALLY_VERIFIED`; scoring `NOT_IMPLEMENTED`;
+  production `NOT_RUN`. `UM901`, structural, and suitability data unchanged.
+
+Details: [WETLAND_INVENTORY_API_AND_MAP.md](WETLAND_INVENTORY_API_AND_MAP.md).

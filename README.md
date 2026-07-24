@@ -198,6 +198,22 @@ weight, exclusion rule, candidate rank, candidate status, or production behaviou
 changed; nothing was deployed. Details:
 [docs/WETLAND_INVENTORY_INGESTION.md](docs/WETLAND_INVENTORY_INGESTION.md).
 
+**Suitability Phase 1B-2** exposed that local inventory **read-only** through four
+`GET` endpoints under `/api/v1/environment/wetlands` (metadata, bounded list/query,
+feature detail, and PostGIS **MVT** vector tiles) and a **separate, optional**
+MapLibre map layer (`내륙습지 목록`, off by default) with a per-type filter/legend, a
+designation-note filter, a click popup, and a source disclosure. It stays
+distinct from the statutory `UM901` layer at every level — separate endpoint
+namespace, separate map layer/legend/color, and explicit text (내륙습지 목록은
+국립생태원의 조사·목록 데이터이며 모든 습지가 법정 습지보호지역을 의미하지 않습니다 / 법정
+습지보호지역은 UM901 보호구역 레이어에서 별도로 확인). The layer is never labelled
+보호구역 / 제외지역, never merged with UM901, and carries **no** score, rank, or
+exclusion. Lifecycle: API exposure and frontend map exposure
+`IMPLEMENTED_AND_LOCALLY_VERIFIED`, scoring `NOT_IMPLEMENTED`, production
+`NOT_RUN`. No migration was added; no suitability score, weight, candidate, or
+production data changed; nothing was deployed. Details:
+[docs/WETLAND_INVENTORY_API_AND_MAP.md](docs/WETLAND_INVENTORY_API_AND_MAP.md).
+
 See:
 
 - [AGENTS.md](AGENTS.md)

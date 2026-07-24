@@ -239,6 +239,7 @@ is verified beyond documentation in Phase 1A.
 | Implementation difficulty | Medium |
 | Verification | **`LIVE_VERIFIED`** (local contract verification, Phase 1B-0, 2026-07-23) — 2,704 features, 0 invalid/null/empty geometry, unique `CODE`, Korean text intact. The designated `UM901` subset is separately `IMPLEMENTED`. |
 | Ingestion | **`IMPLEMENTED_AND_LOCALLY_VERIFIED`** (Phase 1B-1, 2026-07-24) — all 2,704 features loaded idempotently into a dedicated `environmental_wetland_inventory_features` table (migration 0018), local PostGIS only, **not run in production**, kept separate from `UM901`, no scoring role. See [WETLAND_INVENTORY_INGESTION.md](WETLAND_INVENTORY_INGESTION.md). |
+| API / map exposure | **`IMPLEMENTED_AND_LOCALLY_VERIFIED`** (Phase 1B-2, 2026-07-24) — read-only endpoints under `/api/v1/environment/wetlands` (metadata, list, detail, MVT tiles) + a separate MapLibre layer, kept distinct from `UM901`, **no scoring role**, no new migration, not deployed. See [WETLAND_INVENTORY_API_AND_MAP.md](WETLAND_INVENTORY_API_AND_MAP.md). |
 | **Phase 1B recommendation** | **GO FOR PHASE 1B INGESTION** — **done for the inventory (1B-0 verify → 1B-1 local ingest).** Both original conditions were resolved: 생태자연도 is a different dataset, and the `UM901` overlap is quantified (4 of 232 capital-region features overlap; 1 is geometrically identical to the 김포 `UM901` polygon) with `CODE`-keyed dedup rules. Carried conditions were met at ingest: PostGIS-based region assignment, forced UTF-8, raw storage of source anomalies. See [WETLAND_INVENTORY_DATA_CONTRACT.md](WETLAND_INVENTORY_DATA_CONTRACT.md) and [WETLAND_INVENTORY_VALIDATION_REPORT.md](WETLAND_INVENTORY_VALIDATION_REPORT.md). |
 
 ---
@@ -365,7 +366,7 @@ is verified beyond documentation in Phase 1A.
 | 6 | Land Cover | PLANNED | Vector polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
 | 7 | River Network | PLANNED | Vector line/polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
 | 8 | Geology | PLANNED | Vector polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
-| 9 | Wetlands (inventory) | IMPLEMENTED (local ingest; **not in production, not scored**) | Vector polygon | 4326 | **LIVE_VERIFIED** | Medium | **GO (ingested locally, Phase 1B-1)** |
+| 9 | Wetlands (inventory) | IMPLEMENTED (local ingest + read-only API/map; **not in production, not scored**) | Vector polygon | 4326 | **LIVE_VERIFIED** | Medium | **GO (ingested 1B-1; read-only API/map 1B-2)** |
 | 10 | Building Footprints | FUTURE | Vector polygon | 4326 | DOCUMENTED_NOT_TESTED | High | CONDITIONAL GO |
 | 11 | Parcel | FUTURE | Vector polygon | 4326 | LIVE_VERIFIED (API) | Very High | CONDITIONAL GO (refine) |
 | 12 | Ownership | FUTURE | Vector polygon | 4326 | LIVE_VERIFIED (caveat) | Very High | CONDITIONAL GO (optional) |
