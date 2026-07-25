@@ -183,11 +183,11 @@ is verified beyond documentation in Phase 1A.
 | Spatial resolution | Vector polygons (세분류 down to ~1:5,000); raster variant also exists |
 | Geometry type | MultiPolygon (vector 세분류) |
 | Expected file size (수도권) | ~0.5–3 GB for 세분류 vector (estimate) |
-| Preprocessing required | Reproject, normalize land-cover class codes, dominant-class or area-share per 500 m cell |
-| Suitability usage | **토지피복 / 실제 토지 이용 상태** — actual-use context (built-up vs forest vs water vs cropland) beyond administrative zoning |
+| Preprocessing required | Reproject (`always_xy=True`), force **CP949** DBF decode (from the DBF LDID byte — no `.cpg` ships), normalize class codes, dominant-class or area-share per 500 m cell |
+| Suitability usage | **토지피복 / 실제 토지 이용 상태** — actual-use context (built-up vs forest vs water vs cropland) beyond administrative zoning — **not implemented, and no scoring role is granted by verification** |
 | Implementation difficulty | Medium (vector, but large; class-code normalization required) |
-| Verification | `DOCUMENTED_NOT_TESTED` |
-| **Phase 1B recommendation** | **CONDITIONAL GO** — confirm the vector (not WMS-only) download and KOGL terms; the WMS product is display-only and NO GO for analysis. |
+| Verification | **`LIVE_VERIFIED`** (local **세분류 [2025]** contract validation, land-cover 1B, 2026-07-25) — **2,117 map-sheet shapefiles** (Seoul 130 · Incheon 346 · Gyeonggi 1,641), single 15-field schema, `.prj` resolves to EPSG:5186 from TM parameters (datum named ITRF2000, not Korea 2000), no `.cpg` → **CP949** proven from the DBF LDID byte + strict decode, invalid source geometries present (reported, not repaired), 101 cross-region border-sheet ids. See [LAND_COVER_DATA_CONTRACT.md](LAND_COVER_DATA_CONTRACT.md) and [LAND_COVER_VALIDATION_REPORT.md](LAND_COVER_VALIDATION_REPORT.md). Ingestion remains `NOT_IMPLEMENTED`. |
+| **Phase 1B recommendation** | **CONDITIONAL GO** — the vector (not WMS-only) download is verified locally; carried conditions before ingestion: reconfirm the EGIS/KOGL licence in writing, force CP949, resolve EPSG:5186 by TM parameters + `always_xy=True`, apply the map-sheet duplicate policy, and `MakeValid` invalid source polygons. The WMS product remains display-only and NO GO for analysis. |
 
 ### B3. River Network (하천망)
 
@@ -363,7 +363,7 @@ is verified beyond documentation in Phase 1A.
 | 3 | Road Centerlines | IMPLEMENTED | Vector line | 4326 | LIVE_VERIFIED | Low | GO (reuse) |
 | 4 | Protected Areas | IMPLEMENTED | Vector polygon | 4326 | LIVE_VERIFIED | Low | GO (reuse) |
 | 5 | DEM (slope) | PLANNED | Raster | 4326 (derived) | DOCUMENTED_NOT_TESTED | High | CONDITIONAL GO |
-| 6 | Land Cover | PLANNED | Vector polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
+| 6 | Land Cover | PLANNED | Vector polygon | 4326 | **LIVE_VERIFIED** (contract only; **not ingested, not scored**) | Medium | CONDITIONAL GO |
 | 7 | River Network | PLANNED | Vector line/polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
 | 8 | Geology | PLANNED | Vector polygon | 4326 | DOCUMENTED_NOT_TESTED | Medium | CONDITIONAL GO |
 | 9 | Wetlands (inventory) | IMPLEMENTED (local ingest + read-only API/map; **not in production, not scored**) | Vector polygon | 4326 | **LIVE_VERIFIED** | Medium | **GO (ingested 1B-1; read-only API/map 1B-2)** |
@@ -380,9 +380,11 @@ is verified beyond documentation in Phase 1A.
    small live/manual probe (source, CRS from `.prj`/metadata, license, one
    sample feature) — the same gate Phase 2.5A applied — before ingestion.
    *Wetlands (#9) has now cleared this gate* (Phase 1B-0, 2026-07-23): its
-   contract is `LIVE_VERIFIED` against the real local file. Clearing the gate
-   authorizes **ingestion planning only** — it is not ingestion, and it grants
-   the layer no scoring role.
+   contract is `LIVE_VERIFIED` against the real local file. *Land Cover (#6) has
+   now also cleared this gate* (land-cover 1B, 2026-07-25): its 세분류 [2025]
+   contract is `LIVE_VERIFIED` against the 2,117 local map-sheet shapefiles.
+   Clearing the gate authorizes **ingestion planning only** — it is not
+   ingestion, and it grants the layer no scoring role.
 2. **Raster capability is new.** DEM, Land Cover (raster variant), and Flood
    Hazard require a raster pipeline the platform does not have. This is the
    single largest engineering prerequisite and is scoped in

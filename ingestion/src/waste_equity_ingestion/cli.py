@@ -9,6 +9,8 @@ from collections.abc import Callable
 
 from .config import ProbeSettings
 from .errors import IngestionError, MissingConfigurationError, MissingCredentialsError, ProbeError
+from .land_cover_contract import STATUS_FAIL as LAND_COVER_STATUS_FAIL
+from .land_cover_contract import validate_land_cover
 from .landfill_inbound import run_landfill_inbound
 from .mois_population_contract import EARLIEST_SUPPORTED_MONTH
 from .mois_population_ingestion import run_mois_population_ingestion
@@ -60,6 +62,7 @@ VWORLD_PROTECTED_INGEST = "vworld-protected-ingest"
 VWORLD_ROADS_INGEST = "vworld-roads-ingest"
 SUITABILITY_BUILD = "suitability-build"
 WETLAND_INVENTORY_INGEST = "wetland-inventory-ingest"
+LAND_COVER_CONTRACT_VALIDATE = "land-cover-contract-validate"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -83,6 +86,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 VWORLD_ROADS_INGEST,
                 SUITABILITY_BUILD,
                 WETLAND_INVENTORY_INGEST,
+                LAND_COVER_CONTRACT_VALIDATE,
             ]
         ),
     )
@@ -172,6 +176,31 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "wetland-inventory-ingest: skip spatial SIDO/SIGUNGU code assignment "
             "against the official boundaries in the database (codes stay NULL)."
         ),
+    )
+    parser.add_argument(
+        "--source-root",
+        help=(
+            "land-cover-contract-validate: local root directory containing the "
+            "seoul/incheon/gyeonggi land-cover tile subdirectories (Git-ignored raw data). "
+            "Required for that command; there is no default and no sample fallback."
+        ),
+    )
+    parser.add_argument(
+        "--report-json",
+        help=(
+            "land-cover-contract-validate: optional local path to write the sanitized JSON "
+            "summary (never committed to Git)."
+        ),
+    )
+    parser.add_argument(
+        "--no-geometry",
+        action="store_true",
+        help="land-cover-contract-validate: skip per-feature geometry validation.",
+    )
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="land-cover-contract-validate: emit per-100-tile progress to stderr (no paths).",
     )
     parser.add_argument(
         "--reference-year",
@@ -423,6 +452,35 @@ def run_wetland_inventory(args: argparse.Namespace) -> int:
     return 0 if report.status in ("SUCCEEDED", "PARTIAL") else 1
 
 
+def run_land_cover_contract(args: argparse.Namespace) -> int:
+    """Read-only contract verification of a local land-cover acquisition root.
+
+    No database, no network, no writes to the source. Prints a sanitized JSON
+    summary (no local paths, no per-feature payload, no raw Korean row dump) and,
+    with --report-json, writes the same summary to a local, un-committed path.
+    Exit 0 for PASS / PASS_WITH_WARNINGS, nonzero for a hard contract failure.
+    """
+
+    if not args.source_root:
+        raise IngestionError(
+            "land-cover-contract-validate requires --source-root /path/to/2025_lv3; there is "
+            "no default source root and no sample-data fallback."
+        )
+    report = validate_land_cover(
+        args.source_root,
+        read_geometry=not args.no_geometry,
+        progress=bool(args.progress),
+    )
+    print(json.dumps(report.to_summary(), ensure_ascii=False))
+    if args.report_json:
+        from pathlib import Path
+
+        Path(args.report_json).write_text(
+            json.dumps(report.to_summary(), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    return 0 if report.status != LAND_COVER_STATUS_FAIL else 1
+
+
 def run_vworld_structural(settings: ProbeSettings, args: argparse.Namespace, family: str) -> int:
     if not args.dry_run and not args.write:
         raise IngestionError(f"vworld-{family}-ingest requires either --dry-run or --write")
@@ -515,6 +573,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_suitability(settings, args)
         if args.source == WETLAND_INVENTORY_INGEST:
             return run_wetland_inventory(args)
+        if args.source == LAND_COVER_CONTRACT_VALIDATE:
+            return run_land_cover_contract(args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)
