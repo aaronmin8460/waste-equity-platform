@@ -3,6 +3,8 @@
 from .base import Base
 from .environmental import (
     EnvironmentalDatasetVersion,
+    EnvironmentalLandCoverFeature,
+    EnvironmentalLandCoverMapSheet,
     EnvironmentalLayerRegistry,
     EnvironmentalWetlandInventoryFeature,
 )
@@ -30,6 +32,8 @@ __all__ = [
     "DataSource",
     "DatasetFreshness",
     "EnvironmentalDatasetVersion",
+    "EnvironmentalLandCoverFeature",
+    "EnvironmentalLandCoverMapSheet",
     "EnvironmentalLayerRegistry",
     "EnvironmentalWetlandInventoryFeature",
     "FacilityStandardCost",

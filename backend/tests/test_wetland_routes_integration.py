@@ -144,6 +144,7 @@ def seeded(pg_session: Session) -> dict[str, int]:
         official_dataset_name="국립생태원_내륙습지 공간데이터 및 속성정보",
         provider_dataset_identifier="TEST-1B2-IDENTIFIER",
         official_source_url="https://www.data.go.kr/data/15086410/fileData.do",
+        reference_period=REF_DATE.isoformat(),
         reference_date=REF_DATE,
         source_checksum="testchecksum-1b2",
         source_crs="EPSG:5186",

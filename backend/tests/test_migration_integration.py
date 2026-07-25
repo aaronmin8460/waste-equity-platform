@@ -33,6 +33,8 @@ EXPECTED_TABLES = {
     "environmental_layer_registry",
     "environmental_dataset_versions",
     "environmental_wetland_inventory_features",
+    "environmental_land_cover_map_sheets",
+    "environmental_land_cover_features",
 }
 EXPECTED_SOURCE_IDS = {"waste_statistics", "sgis", "airkorea", "kma", "vworld"}
 

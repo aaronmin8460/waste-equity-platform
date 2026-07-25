@@ -688,6 +688,10 @@ def _get_or_create_version(
         official_dataset_name=OFFICIAL_DATASET_NAME,
         provider_dataset_identifier=PROVIDER_DATASET_IDENTIFIER,
         official_source_url=OFFICIAL_SOURCE_URL,
+        # This inventory proves a precise reference date; its reference_period is
+        # that date's ISO string (matching the migration-0019 backfill), so the
+        # release identity is unchanged by the reference_period column.
+        reference_period=REFERENCE_DATE.isoformat(),
         reference_date=REFERENCE_DATE,
         source_archive_filename=archive_filename,
         source_filename=validation.source_filename,

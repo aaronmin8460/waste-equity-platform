@@ -11,6 +11,7 @@ from .config import ProbeSettings
 from .errors import IngestionError, MissingConfigurationError, MissingCredentialsError, ProbeError
 from .land_cover_contract import STATUS_FAIL as LAND_COVER_STATUS_FAIL
 from .land_cover_contract import validate_land_cover
+from .land_cover_ingestion import run_land_cover_ingestion
 from .landfill_inbound import run_landfill_inbound
 from .mois_population_contract import EARLIEST_SUPPORTED_MONTH
 from .mois_population_ingestion import run_mois_population_ingestion
@@ -63,6 +64,7 @@ VWORLD_ROADS_INGEST = "vworld-roads-ingest"
 SUITABILITY_BUILD = "suitability-build"
 WETLAND_INVENTORY_INGEST = "wetland-inventory-ingest"
 LAND_COVER_CONTRACT_VALIDATE = "land-cover-contract-validate"
+LAND_COVER_INGEST = "land-cover-ingest"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -87,6 +89,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 SUITABILITY_BUILD,
                 WETLAND_INVENTORY_INGEST,
                 LAND_COVER_CONTRACT_VALIDATE,
+                LAND_COVER_INGEST,
             ]
         ),
     )
@@ -200,7 +203,46 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--progress",
         action="store_true",
-        help="land-cover-contract-validate: emit per-100-tile progress to stderr (no paths).",
+        help=(
+            "land-cover-contract-validate / land-cover-ingest: emit per-sheet progress to "
+            "stderr (no paths)."
+        ),
+    )
+    parser.add_argument(
+        "--map-sheet-id",
+        help=(
+            "land-cover-ingest: comma-separated canonical map-sheet id(s) to process. Pilot "
+            "selector; permitted for --dry-run only."
+        ),
+    )
+    parser.add_argument(
+        "--region",
+        choices=["seoul", "incheon", "gyeonggi"],
+        help=(
+            "land-cover-ingest: restrict processing to one source region. Pilot selector; "
+            "permitted for --dry-run only."
+        ),
+    )
+    parser.add_argument(
+        "--max-map-sheets",
+        type=int,
+        help=(
+            "land-cover-ingest: process at most N canonical map sheets (deterministic order). "
+            "Pilot selector; permitted for --dry-run only. Truncation is reported, not hidden."
+        ),
+    )
+    parser.add_argument(
+        "--expected-manifest-sha256",
+        help=(
+            "land-cover-ingest --write: required aggregate manifest SHA-256; must match the "
+            "validated source or the write is refused."
+        ),
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1000,
+        help="land-cover-ingest: COPY staging batch size (default 1000).",
     )
     parser.add_argument(
         "--reference-year",
@@ -481,6 +523,49 @@ def run_land_cover_contract(args: argparse.Namespace) -> int:
     return 0 if report.status != LAND_COVER_STATUS_FAIL else 1
 
 
+def run_land_cover_ingest(args: argparse.Namespace) -> int:
+    """Stream the land-cover foundation loader (dry-run pilot or guarded write).
+
+    Sanitized JSON goes to stdout; progress goes to stderr. Exactly one of
+    --dry-run/--write is required. Pilot selectors are permitted for --dry-run
+    only; a filtered/partial --write is refused. Exit 0 for a
+    successful/partial documented completion, nonzero for a contract failure,
+    checksum mismatch, transformation failure, database failure, or a prohibited
+    partial write (all surface as a raised error).
+    """
+
+    if not args.dry_run and not args.write:
+        raise IngestionError("land-cover-ingest requires either --dry-run or --write")
+    if not args.source_root:
+        raise IngestionError(
+            "land-cover-ingest requires --source-root /path/to/2025_lv3; there is no default "
+            "source root and no sample-data fallback."
+        )
+    map_sheet_ids = (
+        [value.strip() for value in args.map_sheet_id.split(",") if value.strip()]
+        if args.map_sheet_id
+        else None
+    )
+    report = run_land_cover_ingestion(
+        source_root=args.source_root,
+        write=bool(args.write),
+        batch_size=int(args.batch_size),
+        map_sheet_ids=map_sheet_ids,
+        region=args.region,
+        max_map_sheets=args.max_map_sheets,
+        expected_manifest_sha256=args.expected_manifest_sha256,
+        progress=bool(args.progress),
+    )
+    print(json.dumps(report.sanitized_summary(), ensure_ascii=False))
+    if args.report_json:
+        from pathlib import Path
+
+        Path(args.report_json).write_text(
+            json.dumps(report.sanitized_summary(), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    return 0 if report.status in ("SUCCEEDED", "PARTIAL") else 1
+
+
 def run_vworld_structural(settings: ProbeSettings, args: argparse.Namespace, family: str) -> int:
     if not args.dry_run and not args.write:
         raise IngestionError(f"vworld-{family}-ingest requires either --dry-run or --write")
@@ -575,6 +660,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_wetland_inventory(args)
         if args.source == LAND_COVER_CONTRACT_VALIDATE:
             return run_land_cover_contract(args)
+        if args.source == LAND_COVER_INGEST:
+            return run_land_cover_ingest(args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)

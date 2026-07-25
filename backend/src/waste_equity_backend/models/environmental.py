@@ -93,10 +93,18 @@ class EnvironmentalDatasetVersion(Base):
 
     __tablename__ = "environmental_dataset_versions"
     __table_args__ = (
+        # Release identity keys on ``reference_period`` (always present), not
+        # ``reference_date`` (nullable). A dataset whose official reference is a
+        # bare year — the 세분류 [2025] 토지피복지도 — carries reference_period="2025"
+        # and reference_date=NULL, while the wetland inventory keeps its precise
+        # reference_date and a reference_period backfilled from it (migration
+        # 0019). Keying on reference_period keeps identity deterministic for both
+        # (a NULL reference_date can never anchor a unique key). See
+        # ``docs/LAND_COVER_INGESTION_FOUNDATION.md`` §"Reference-period decision".
         UniqueConstraint(
             "layer_name",
             "provider_dataset_identifier",
-            "reference_date",
+            "reference_period",
             "source_checksum",
             "transformation_version",
             name="uq_environmental_dataset_versions_release",
@@ -115,8 +123,15 @@ class EnvironmentalDatasetVersion(Base):
     official_dataset_name: Mapped[str] = mapped_column(String(300))
     provider_dataset_identifier: Mapped[str] = mapped_column(String(200))
     official_source_url: Mapped[str | None] = mapped_column(String(500))
+    # Official dataset reference *period*, always present and part of the release
+    # identity. A precise date ("2022-07-20") when the source proves one, or a
+    # bare year ("2025") when the source only supports a year. Never fabricated.
+    reference_period: Mapped[str] = mapped_column(String(20))
     # Official dataset reference date (기준일), not the local download date.
-    reference_date: Mapped[datetime.date] = mapped_column(Date)
+    # NULL is permitted when the source only supports a year-level reference and
+    # no precise date is proven (e.g. the 세분류 [2025] 토지피복지도); it must never
+    # be fabricated from a folder token, IMG_DATE, DBF byte, or file timestamp.
+    reference_date: Mapped[datetime.date | None] = mapped_column(Date)
     # Original distribution filenames. The files themselves are Git-ignored local
     # raw data and are never committed or stored in the database.
     source_archive_filename: Mapped[str | None] = mapped_column(String(500))
@@ -257,5 +272,174 @@ class EnvironmentalWetlandInventoryFeature(Base):
     # identity; reproducible from the source, independent of database ids.
     feature_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     # Every source DBF column, verbatim, after a strict UTF-8 decode.
+    raw_attributes: Mapped[Any] = mapped_column(JsonVariant, default=dict)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EnvironmentalLandCoverMapSheet(Base):
+    """One canonical source map sheet of the 세분류 [2025] 토지피복지도 release.
+
+    The acquisition ships 2,117 tiled shapefiles keyed by an 8-digit map-sheet
+    number; 101 of those numbers occur under two 시도 folders as **byte-identical
+    border sheets** (verified: 0 within-region duplicates, 0 conflicting
+    checksums). This table records *one* row per unique canonical sheet — its
+    source filename, ``.shp`` checksum, every folder/region occurrence
+    (``source_regions``), the duplicate count and classification, and the
+    per-sheet processing tallies — so a border sheet is loaded once while its
+    provenance still names every place it was found. Directory names are kept as
+    *reported* provenance only; a feature is **never** assigned a region from its
+    folder (border sheets span 시도), and that assignment is deferred to a spatial
+    intersection against the official ``regions`` boundaries.
+
+    A duplicate map-sheet id whose ``.shp`` checksums *differ* is a genuine
+    conflict: the loader halts on it rather than auto-picking or merging, so no
+    such row is ever written silently. Holds no score column.
+    """
+
+    __tablename__ = "environmental_land_cover_map_sheets"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_version_id",
+            "map_sheet_id",
+            name="uq_land_cover_map_sheets_version_sheet",
+        ),
+        Index("ix_land_cover_map_sheets_map_sheet_id", "map_sheet_id"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True
+    )
+    dataset_version_id: Mapped[int] = mapped_column(
+        ForeignKey("environmental_dataset_versions.id"), index=True
+    )
+    # Canonical 8-digit map-sheet number (the ``.shp`` stem, e.g. "37705097").
+    map_sheet_id: Mapped[str] = mapped_column(String(40))
+    # Filename of the canonical copy that was read (never a local absolute path).
+    canonical_source_filename: Mapped[str] = mapped_column(String(255))
+    # SHA-256 of the canonical ``.shp`` bytes; every duplicate copy shares it.
+    source_shp_checksum: Mapped[str] = mapped_column(String(64), index=True)
+    # Every folder occurrence: [{"region": ..., "dir_name": ...}] — reported
+    # provenance, never the authoritative region of any feature.
+    source_regions: Mapped[Any] = mapped_column(JsonVariant, default=list)
+    duplicate_occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
+    # "unique" | "byte_identical_cross_region" | "byte_identical_within_region".
+    # A conflicting-checksum duplicate never reaches this table (the loader halts).
+    duplicate_classification: Mapped[str] = mapped_column(String(40))
+    source_feature_count: Mapped[int] = mapped_column(Integer, default=0)
+    # [minx, miny, maxx, maxy] from the ``.shp`` header, in the source CRS (5186).
+    source_bounds_5186: Mapped[Any | None] = mapped_column(JsonVariant)
+    source_crs: Mapped[str] = mapped_column(String(20))
+    source_encoding: Mapped[str] = mapped_column(String(30))
+    # PENDING | PROCESSED | REJECTED | PILOT_DRY_RUN.
+    processing_status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    accepted_feature_count: Mapped[int] = mapped_column(Integer, default=0)
+    repaired_feature_count: Mapped[int] = mapped_column(Integer, default=0)
+    rejected_feature_count: Mapped[int] = mapped_column(Integer, default=0)
+    transformation_version: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EnvironmentalLandCoverFeature(Base):
+    """One normalized 세분류 (Level-3) land-cover polygon.
+
+    Each row preserves all 15 source DBF attributes — the six L1/L2/L3 code+name
+    columns and IMG_NAME/IMG_DATE/INX_NUM/ANNO as typed convenience columns, plus
+    a lossless ``raw_attributes`` JSONB carrying every column verbatim (including
+    the five *_INFO imagery-processing fields). Korean labels, spacing, and
+    capitalization are stored exactly as published — never corrected.
+
+    Geometry is stored as ``MULTIPOLYGON`` in EPSG:4326; ``geometry_area_m2`` is
+    measured in the projected source CRS (EPSG:5186, metres) *before*
+    reprojection, never from 4326 degrees. The geometry-repair audit columns
+    record, per feature, whether the source geometry was valid, the reason it was
+    not, whether ``ST_MakeValid``/``shapely.make_valid`` was applied, how many
+    non-polygonal components a GeometryCollection result discarded, and the
+    source/repaired/delta areas. Holds no score, weight, exclusion, rank, or
+    candidate column and is read by no scoring code.
+    """
+
+    __tablename__ = "environmental_land_cover_features"
+    __table_args__ = (
+        # Stable per-sheet record identity: the source record index within its
+        # canonical map sheet, scoped to the release.
+        UniqueConstraint(
+            "dataset_version_id",
+            "map_sheet_id",
+            "source_record_index",
+            name="uq_land_cover_features_version_sheet_record",
+        ),
+        # Geometry-derived identity guard (sha-256 over the normalized geometry +
+        # release identity), scoped to the release so a later release may legally
+        # restate the same polygon.
+        UniqueConstraint(
+            "dataset_version_id",
+            "feature_fingerprint",
+            name="uq_land_cover_features_version_fingerprint",
+        ),
+        # Deliberately lean for a 7-million-row table: the two unique indexes
+        # above already serve (dataset_version_id[, map_sheet_id]) prefix lookups,
+        # so only class filtering gets its own btree. See
+        # ``docs/LAND_COVER_INGESTION_FOUNDATION.md`` §"Identity and indexes".
+        Index("ix_land_cover_features_l3_code", "l3_code"),
+        # geoalchemy2 attaches the GIST spatial index on ``geometry`` itself.
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True
+    )
+    dataset_version_id: Mapped[int] = mapped_column(
+        ForeignKey("environmental_dataset_versions.id"), index=True
+    )
+    # No standalone index: covered by the (dataset_version_id, map_sheet_id,
+    # source_record_index) unique index's prefix.
+    map_sheet_id: Mapped[str] = mapped_column(String(40))
+    # Source record ordinal within the canonical map sheet (0-based, stable).
+    source_record_index: Mapped[int] = mapped_column(Integer)
+    # Class hierarchy, verbatim (대·중·세분류). Codes are 3-digit strings.
+    l1_code: Mapped[str | None] = mapped_column(String(10))
+    l1_name: Mapped[str | None] = mapped_column(String(60))
+    l2_code: Mapped[str | None] = mapped_column(String(10))
+    l2_name: Mapped[str | None] = mapped_column(String(60))
+    l3_code: Mapped[str | None] = mapped_column(String(10))
+    l3_name: Mapped[str | None] = mapped_column(String(60))
+    # Source imagery/annotation attributes, verbatim.
+    img_name: Mapped[str | None] = mapped_column(String(60))
+    # IMG_DATE is a dBASE 'D' field; stored as its stringified value, never used
+    # as the dataset reference date.
+    img_date: Mapped[str | None] = mapped_column(String(20))
+    inx_num: Mapped[str | None] = mapped_column(String(20))
+    anno: Mapped[str | None] = mapped_column(Text)
+    geometry: Mapped[Any] = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=4326))
+    # Area measured on the projected source CRS (EPSG:5186, metres) before
+    # reprojection — never computed from EPSG:4326 degrees.
+    geometry_area_m2: Mapped[float] = mapped_column(Float)
+    # Geometry-repair audit. ``source_geometry_valid`` is the validity of the
+    # geometry as published, in the source CRS.
+    source_geometry_valid: Mapped[bool] = mapped_column(Boolean)
+    source_invalidity_reason: Mapped[str | None] = mapped_column(String(200))
+    # "none" (valid source) | "made_valid" (repaired) — never a silent drop.
+    geometry_repair_status: Mapped[str] = mapped_column(String(20))
+    geometry_repair_method: Mapped[str | None] = mapped_column(String(50))
+    # Non-polygonal components discarded when MakeValid returned a mixed
+    # GeometryCollection (0 when none were discarded).
+    discarded_component_count: Mapped[int] = mapped_column(Integer, default=0)
+    discarded_component_types: Mapped[Any | None] = mapped_column(JsonVariant)
+    # Source / repaired / delta area in EPSG:5186 m² — only meaningful when the
+    # source geometry was repaired; NULL otherwise.
+    source_area_m2: Mapped[float | None] = mapped_column(Float)
+    repaired_area_m2: Mapped[float | None] = mapped_column(Float)
+    area_delta_m2: Mapped[float | None] = mapped_column(Float)
+    # sha-256 over the source-CRS geometry WKB (before repair/reprojection).
+    source_geometry_fingerprint: Mapped[str] = mapped_column(String(64))
+    # Deterministic sha-256 over the normalized stored geometry + release
+    # identity; reproducible from the source, independent of database ids.
+    feature_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    source_crs: Mapped[str] = mapped_column(String(20))
+    target_crs: Mapped[str] = mapped_column(String(20))
+    source_encoding: Mapped[str] = mapped_column(String(30))
+    # Reference *period* of the release (e.g. "2025"); year-only for this source.
+    source_reference_period: Mapped[str] = mapped_column(String(20))
+    transformation_version: Mapped[str] = mapped_column(String(100))
+    # Every source DBF column, verbatim, after a strict CP949 decode (lossless).
     raw_attributes: Mapped[Any] = mapped_column(JsonVariant, default=dict)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))

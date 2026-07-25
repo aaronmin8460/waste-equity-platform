@@ -2,7 +2,7 @@
 
 **Phase:** Suitability land-cover 1B (contract validation)
 **Layer name:** `land_cover`
-**Status:** source dataset `ACQUIRED_LOCALLY` · contract validation `LIVE_VERIFIED` · database ingestion `NOT_IMPLEMENTED` · scoring integration `NOT_IMPLEMENTED`
+**Status:** source dataset `ACQUIRED_LOCALLY` · contract validation `LIVE_VERIFIED` · ingestion implementation `IMPLEMENTED_AND_TESTED` (foundation; full local load `NOT_RUN`) · scoring integration `NOT_IMPLEMENTED`. See `docs/LAND_COVER_INGESTION_FOUNDATION.md` (Phase 1B-LC1).
 
 This document is the **contract** for the 환경부/EGIS 세분류 (Level-3) 토지피복지도,
 2025 edition, for the Seoul Metropolitan Area: what the official source is, what
@@ -350,7 +350,9 @@ the existing zoning (`용도지역`) screen. Until all three exist, the layer st
 | --- | --- |
 | Source dataset | `ACQUIRED_LOCALLY` (Seoul/Incheon/Gyeonggi, Git-ignored) |
 | Contract validation | `LIVE_VERIFIED` (local file inspection, 2026-07-25 — see the validation report) |
-| Database ingestion | `NOT_IMPLEMENTED` |
+| Ingestion implementation | `IMPLEMENTED_AND_TESTED` (Phase 1B-LC1 foundation + controlled pilot — see `docs/LAND_COVER_INGESTION_FOUNDATION.md`) |
+| Full local official load | `NOT_RUN` |
+| Production load | `NOT_RUN` |
 | API / map exposure | `NOT_IMPLEMENTED` |
 | Scoring integration | `NOT_IMPLEMENTED` |
 
