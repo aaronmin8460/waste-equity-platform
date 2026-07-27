@@ -11,7 +11,7 @@ from .config import ProbeSettings
 from .errors import IngestionError, MissingConfigurationError, MissingCredentialsError, ProbeError
 from .land_cover_contract import STATUS_FAIL as LAND_COVER_STATUS_FAIL
 from .land_cover_contract import validate_land_cover
-from .land_cover_ingestion import run_land_cover_ingestion
+from .land_cover_ingestion import run_land_cover_coverage_report, run_land_cover_ingestion
 from .landfill_inbound import run_landfill_inbound
 from .mois_population_contract import EARLIEST_SUPPORTED_MONTH
 from .mois_population_ingestion import run_mois_population_ingestion
@@ -65,6 +65,7 @@ SUITABILITY_BUILD = "suitability-build"
 WETLAND_INVENTORY_INGEST = "wetland-inventory-ingest"
 LAND_COVER_CONTRACT_VALIDATE = "land-cover-contract-validate"
 LAND_COVER_INGEST = "land-cover-ingest"
+LAND_COVER_COVERAGE = "land-cover-coverage"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -90,6 +91,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 WETLAND_INVENTORY_INGEST,
                 LAND_COVER_CONTRACT_VALIDATE,
                 LAND_COVER_INGEST,
+                LAND_COVER_COVERAGE,
             ]
         ),
     )
@@ -243,6 +245,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=int,
         default=1000,
         help="land-cover-ingest: COPY staging batch size (default 1000).",
+    )
+    parser.add_argument(
+        "--dataset-version-id",
+        type=int,
+        help=(
+            "land-cover-coverage: dataset_version_id to assess (default: the active "
+            "land_cover release). Read-only coverage proof; no scoring."
+        ),
     )
     parser.add_argument(
         "--reference-year",
@@ -566,6 +576,28 @@ def run_land_cover_ingest(args: argparse.Namespace) -> int:
     return 0 if report.status in ("SUCCEEDED", "PARTIAL") else 1
 
 
+def run_land_cover_coverage(args: argparse.Namespace) -> int:
+    """Run the read-only capital-region land-cover coverage proof.
+
+    No writes, no scoring: reads the loaded land-cover features and the official
+    ``regions`` SIDO boundaries and reports exact covered / uncovered / overlap
+    areas and coverage ratios (EPSG:5186 m²), inventing no tolerance. Prints a
+    sanitized JSON summary; with --report-json also writes it to a local,
+    un-committed path. Exit 0 when computed (or when there is no active release
+    yet, reported honestly), nonzero only on an unexpected error.
+    """
+
+    report = run_land_cover_coverage_report(dataset_version_id=args.dataset_version_id)
+    print(json.dumps(report, ensure_ascii=False))
+    if args.report_json:
+        from pathlib import Path
+
+        Path(args.report_json).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    return 0
+
+
 def run_vworld_structural(settings: ProbeSettings, args: argparse.Namespace, family: str) -> int:
     if not args.dry_run and not args.write:
         raise IngestionError(f"vworld-{family}-ingest requires either --dry-run or --write")
@@ -662,6 +694,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_land_cover_contract(args)
         if args.source == LAND_COVER_INGEST:
             return run_land_cover_ingest(args)
+        if args.source == LAND_COVER_COVERAGE:
+            return run_land_cover_coverage(args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)

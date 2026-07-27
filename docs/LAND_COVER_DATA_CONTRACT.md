@@ -2,7 +2,7 @@
 
 **Phase:** Suitability land-cover 1B (contract validation)
 **Layer name:** `land_cover`
-**Status:** source dataset `ACQUIRED_LOCALLY` · contract validation `LIVE_VERIFIED` · ingestion implementation `IMPLEMENTED_AND_TESTED` (foundation; full local load `NOT_RUN`) · scoring integration `NOT_IMPLEMENTED`. See `docs/LAND_COVER_INGESTION_FOUNDATION.md` (Phase 1B-LC1).
+**Status:** source dataset `ACQUIRED_LOCALLY` · contract validation `LIVE_VERIFIED` · ingestion implementation `IMPLEMENTED_AND_TESTED` · full local official load `COMPLETE` (Phase 1B-LC2, local dev DB only) · production/OCI load `NOT_RUN` · scoring integration `NOT_IMPLEMENTED` · licence `LOCAL_USE_ONLY_PENDING_CLARIFICATION`. See `docs/LAND_COVER_INGESTION_FOUNDATION.md` (Phase 1B-LC1) and `docs/LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md` (Phase 1B-LC2).
 
 This document is the **contract** for the 환경부/EGIS 세분류 (Level-3) 토지피복지도,
 2025 edition, for the Seoul Metropolitan Area: what the official source is, what
@@ -288,12 +288,18 @@ is created, proposed as active, or implied by this contract.**
 
 ## 12. Coverage
 
-Full capital-region coverage is **NOT proven** by this phase. Per-region source
-extents (from the `.shp` headers) are recorded and are plausible for the capital
-region, but proving no-gap coverage requires unioning tile footprints and
-intersecting them with the platform's official 시도 boundaries in PostGIS —
-deferred to the ingestion phase, which loads into PostGIS. No coverage claim is
-fabricated.
+Full capital-region coverage was **NOT proven** by the contract phase. It was
+**measured** after the full local load (Phase 1B-LC2) by unioning canonical
+map-sheet footprints and intersecting them with the official 시도 boundaries in
+PostGIS (EPSG:5186): coverage ratio Seoul 0.9503, Incheon 0.6108, Gyeonggi 0.8517,
+combined **0.8361** (footprint overlap 0.00 km²). Interpretation: **`INCOMPLETE`**
+against the administrative boundaries — complete land coverage remains
+**`NOT_PROVEN`**, because a large part of the shortfall is attributable to SIDO
+boundaries including coastal/maritime/island extent a land-cover coastline excludes
+and to the acquired tile extent (min lon ≈125.72°E) not reaching Incheon's far West
+Sea islands, and the land-vs-sea decomposition was not computed (no coastline
+reference). No coverage claim is fabricated. See
+`docs/LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md` §8.
 
 ## 13. Error handling and missing values
 
@@ -351,10 +357,11 @@ the existing zoning (`용도지역`) screen. Until all three exist, the layer st
 | Source dataset | `ACQUIRED_LOCALLY` (Seoul/Incheon/Gyeonggi, Git-ignored) |
 | Contract validation | `LIVE_VERIFIED` (local file inspection, 2026-07-25 — see the validation report) |
 | Ingestion implementation | `IMPLEMENTED_AND_TESTED` (Phase 1B-LC1 foundation + controlled pilot — see `docs/LAND_COVER_INGESTION_FOUNDATION.md`) |
-| Full local official load | `NOT_RUN` |
+| Full local official load | `COMPLETE` (Phase 1B-LC2, local dev DB only — 6,901,309 canonical features, 2,013 map sheets, dataset_version 212, idempotent re-run; see `docs/LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md`) |
 | Production load | `NOT_RUN` |
 | API / map exposure | `NOT_IMPLEMENTED` |
 | Scoring integration | `NOT_IMPLEMENTED` |
+| Licence / public-use | `LOCAL_USE_ONLY_PENDING_CLARIFICATION` |
 
 ## Verification tooling
 

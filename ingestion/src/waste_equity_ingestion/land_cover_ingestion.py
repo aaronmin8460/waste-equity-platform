@@ -1507,3 +1507,94 @@ def compute_land_cover_coverage(
         if row.wkb is not None
     }
     return coverage_against_boundaries(footprints, boundaries)
+
+
+def resolve_active_land_cover_version(session: Session) -> int | None:
+    """Return the id of the active local ``land_cover`` release, or ``None``.
+
+    Read-only. Picks the active release for :data:`LAYER_NAME`; if several are
+    active (should not happen) the most recent id wins. Used by the coverage CLI
+    so an operator need not know the surrogate id.
+    """
+
+    return session.execute(
+        select(EnvironmentalDatasetVersion.id)
+        .where(
+            EnvironmentalDatasetVersion.layer_name == LAYER_NAME,
+            EnvironmentalDatasetVersion.is_active.is_(True),
+        )
+        .order_by(EnvironmentalDatasetVersion.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def run_land_cover_coverage_report(
+    *,
+    dataset_version_id: int | None = None,
+    region_level: str = "SIDO",
+    session_factory: Any | None = None,
+) -> dict[str, Any]:
+    """Run the capital-region coverage proof and return a sanitized summary.
+
+    Read-only: reads the stored features and the official ``regions`` boundaries,
+    computes each canonical map-sheet footprint (the union of that sheet's stored
+    feature geometries) and the exact covered / uncovered / overlap areas in
+    EPSG:5186, and reports per-region and combined coverage ratios. No score,
+    weight, rank, or candidate is read or written, and no tolerance is invented —
+    the exact geometry results are reported and the threshold interpretation is
+    left UNRESOLVED (see :class:`CoverageResult`). This never claims full official
+    coverage; it only reports what the loaded geometry actually covers.
+    """
+
+    factory = session_factory or get_sessionmaker()
+    session: Session = factory()
+    try:
+        version_id = (
+            dataset_version_id
+            if dataset_version_id is not None
+            else resolve_active_land_cover_version(session)
+        )
+        if version_id is None:
+            return {
+                "job": "land-cover-coverage",
+                "layer_name": LAYER_NAME,
+                "status": "NO_ACTIVE_RELEASE",
+                "message": "No active land_cover release found; load the dataset first.",
+            }
+        result = compute_land_cover_coverage(
+            session, dataset_version_id=version_id, region_level=region_level
+        )
+    finally:
+        session.close()
+
+    total_boundary = sum(r.boundary_area_m2 for r in result.per_region)
+    total_covered = sum(r.covered_area_m2 for r in result.per_region)
+    combined_ratio = (total_covered / total_boundary) if total_boundary > 0 else 0.0
+    return {
+        "job": "land-cover-coverage",
+        "layer_name": LAYER_NAME,
+        "status": "COMPUTED",
+        "dataset_version_id": version_id,
+        "region_level": region_level,
+        "area_crs": SOURCE_CRS,
+        "footprint_method": (
+            "canonical map-sheet footprint = PostGIS ST_UnaryUnion(ST_Collect(feature geometry)) "
+            "per map_sheet_id (duplicate cross-region sheets stored once), unioned across sheets; "
+            "boundaries = official regions SIDO geometry transformed to EPSG:5186"
+        ),
+        "per_region": [
+            {
+                "region_code": r.region_code,
+                "boundary_area_m2": r.boundary_area_m2,
+                "covered_area_m2": r.covered_area_m2,
+                "uncovered_area_m2": r.uncovered_area_m2,
+                "coverage_ratio": r.coverage_ratio,
+            }
+            for r in result.per_region
+        ],
+        "combined_boundary_area_m2": total_boundary,
+        "combined_covered_area_m2": total_covered,
+        "combined_coverage_ratio": combined_ratio,
+        "footprint_overlap_area_m2": result.footprint_overlap_area_m2,
+        "tolerance_policy": result.tolerance_policy,
+    }

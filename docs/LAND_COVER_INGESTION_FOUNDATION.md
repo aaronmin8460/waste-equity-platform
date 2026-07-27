@@ -10,7 +10,7 @@
 | Source dataset | `ACQUIRED_LOCALLY` (Seoul/Incheon/Gyeonggi, Git-ignored) |
 | Contract validation | `LIVE_VERIFIED` (see `docs/LAND_COVER_VALIDATION_REPORT.md`) |
 | Ingestion implementation | `IMPLEMENTED_AND_TESTED` (schema, migration, loader, CLI, tests, pilot) |
-| Full local official load | `NOT_RUN` |
+| Full local official load | `COMPLETE` (Phase 1B-LC2, local dev DB only — see `docs/LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md`: 6,901,309 canonical features, 2,013 map sheets, dataset_version 212, idempotent re-run) |
 | Production load | `NOT_RUN` |
 | API / map exposure | `NOT_IMPLEMENTED` |
 | Scoring integration | `NOT_IMPLEMENTED` |
