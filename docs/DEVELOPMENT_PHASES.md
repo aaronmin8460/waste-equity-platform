@@ -647,9 +647,25 @@ Completed subphases (all **local only** — production/OCI `NOT_RUN` unless stat
   and never a class row; uncovered area is never modelled as a land-cover class;
   undefined ratios serialize as `null`. bbox reuses the existing candidate GiST index
   through the stable `(grid version, candidate key)` identity without persisting or
-  returning any geometry. Backend only: no frontend, no tiles, no scoring, licence still
-  `LOCAL_USE_ONLY_PENDING_CLARIFICATION`.
+  returning any geometry. Backend only at the time it shipped: no frontend, no tiles, no
+  scoring, licence still `LOCAL_USE_ONLY_PENDING_CLARIFICATION`.
   ([LAND_COVER_CELL_STATISTICS_API.md](LAND_COVER_CELL_STATISTICS_API.md))
+- **1B-LC5A — land cover, candidate-detail frontend.** The suitability
+  candidate-detail panel now shows the selected cell's land-cover statistics, read from
+  the LC4 per-cell detail and class-distribution endpoints using the candidate's own
+  stable `candidate_key`. The three coverage states are visibly and semantically
+  distinct; a `PARTIAL` cell shows both evaluated and uncovered area/percentage and is
+  never rendered as 100% covered even when its exact-residual ratio rounds there; a
+  `NO_COVERAGE` cell shows the served warning and no class rows, with no synthetic
+  Unknown/기타 class derived from uncovered area. Both share denominators are shown and
+  never conflated, and no column is normalized to 100%. Scoring non-use
+  (`used_in_suitability_scoring: false`) and the pending licence state are always-visible
+  body text. Superseded requests are both aborted and discarded by a key-tagged request
+  state, and a land-cover failure is contained inside its own section. Frontend + two
+  metadata lines only: no migration, no scoring change, no map layer/legend/filter, no
+  deployment; `frontend_exposure` becomes `CANDIDATE_DETAIL_ONLY`.
+  ([LAND_COVER_CANDIDATE_DETAIL_FRONTEND.md](LAND_COVER_CANDIDATE_DETAIL_FRONTEND.md))
+- **1B-LC5B — land cover, map layer, legend, and filters.** Planned, not started.
 
 Required checks applied to every subphase:
 

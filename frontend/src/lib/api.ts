@@ -942,6 +942,223 @@ export function fetchWetlandDetail(id: number): Promise<WetlandFeatureDetail> {
 }
 
 // --------------------------------------------------------------------------- //
+// Land-cover candidate-cell statistics (Phase 1B-LC4/LC5A) — 토지피복 격자 통계.
+//
+// Per canonical 500 m candidate cell, the land-cover composition of the acquired
+// 세분류 [2025] 토지피복지도 release, as derived and frozen by Phase 1B-LC3. Read-only
+// and DESCRIPTIVE: nothing here feeds a suitability score, rank, status, exclusion,
+// review reason, weight, policy, or derivation version — the served
+// `used_in_suitability_scoring: false` is mirrored in the types so the UI can state
+// it from the response rather than from a hardcoded assumption.
+//
+// Only the subset the candidate-detail panel consumes is typed here (the backend
+// serves a larger schema); the fields that carry meaning the UI must not weaken —
+// candidate key, coverage status/ratio, both share denominators, licence/lifecycle
+// metadata, and the scoring flag — are all typed exactly.
+// --------------------------------------------------------------------------- //
+
+/**
+ * Coverage of a candidate cell by the acquired land-cover extent.
+ *
+ * Decided by exact set-theoretic emptiness of the polygonal residual, NOT by an
+ * area threshold, so a cell is never promoted to COMPLETE_EXACT for being close to
+ * fully covered. `NO_COVERAGE` means ONLY that the acquired extent does not
+ * evaluate the cell — never that no land cover exists, that the land is empty /
+ * unused / vacant, or that the cell is safe or suitable.
+ */
+export type LandCoverCoverageStatus = "COMPLETE_EXACT" | "PARTIAL" | "NO_COVERAGE";
+
+/**
+ * The dominant class at each level of the official source hierarchy.
+ *
+ * Every field is null for a `NO_COVERAGE` cell (no class rows exist at all). Nulls
+ * are preserved as nulls — never coerced to "" or to a zero class code, which would
+ * fabricate a class the source never assigned.
+ */
+export interface LandCoverDominantClass {
+  l1_code: string | null;
+  l1_name: string | null;
+  l2_code: string | null;
+  l2_name: string | null;
+  l3_code: string | null;
+  l3_name: string | null;
+}
+
+/** Distinct class counts and per-level area sums (all zero for `NO_COVERAGE`). */
+export interface LandCoverClassCounts {
+  l1_class_count: number;
+  l2_class_count: number;
+  l3_class_count: number;
+  l1_class_area_sum_m2: number;
+  l2_class_area_sum_m2: number;
+  l3_class_area_sum_m2: number;
+}
+
+/** Identity of the active LC3 statistics release the response was read from. */
+export interface LandCoverStatisticsRelease {
+  statistics_version_id: number;
+  status: string;
+  derivation_version: string;
+  area_crs: string;
+  candidate_grid_version: string;
+  candidate_grid_fingerprint: string;
+  land_cover_dataset_version_id: number;
+  reference_period: string;
+  expected_cell_count: number;
+  processed_cell_count: number;
+}
+
+/** Lifecycle of the land-cover dataset's exposure. Served, never assumed. */
+export interface LandCoverLifecycle {
+  source_contract_validation: string;
+  database_ingestion: string;
+  cell_statistics_derivation: string;
+  api_exposure: string;
+  frontend_exposure: string;
+  vector_tiles: string;
+  scoring_integration: string;
+  production_deployment: string;
+}
+
+/**
+ * The load-bearing disclosures served with every land-cover statistics response.
+ *
+ * Rendered verbatim rather than restated, so the UI cannot drift from the backend's
+ * own wording on licence state, scoring non-use, or coverage meaning.
+ */
+export interface LandCoverDisclosures {
+  reference_period: string;
+  /** Always "LOCAL_USE_ONLY_PENDING_CLARIFICATION" for the acquired release. */
+  license_status: string;
+  license_statement: string;
+  license_note: string | null;
+  /** Always false in this phase. Typed as boolean so the UI reads the served value. */
+  used_in_suitability_scoring: boolean;
+  scoring_statement: string;
+  coverage_status_semantics: Record<LandCoverCoverageStatus, string>;
+  no_coverage_warning_ko: string;
+  uncovered_area_statement: string;
+  class_label_statement: string;
+  raw_feature_exposure_statement: string;
+  availability_statement: string;
+  lifecycle: LandCoverLifecycle;
+}
+
+/**
+ * One candidate cell's land-cover statistics.
+ *
+ * `uncovered_area_m2` is a COVERAGE measurement on the cell, never a land-cover
+ * class: no UNKNOWN/UNCLASSIFIED pseudo-class is synthesized from it anywhere.
+ */
+export interface LandCoverCellStatistics {
+  candidate_grid_version: string;
+  candidate_key: string;
+  candidate_geometry_fingerprint: string;
+  sido_region_code: string | null;
+  sido_region_name: string | null;
+  sigungu_region_code: string | null;
+  sigungu_region_name: string | null;
+  /** The cell's own area in the release's area CRS — not a nominal 500×500 m. */
+  cell_area_m2: number;
+  evaluated_area_m2: number;
+  uncovered_area_m2: number;
+  uncovered_residual_area_m2: number;
+  coverage_ratio: number;
+  coverage_status: LandCoverCoverageStatus;
+  /** The backend's own plain-language meaning of `coverage_status`. */
+  coverage_status_meaning: string;
+  topological_cover_predicate: boolean;
+  intersection_area_sum_m2: number;
+  overlap_area_m2: number;
+  matched_feature_count: number;
+  dominant_class: LandCoverDominantClass;
+  class_counts: LandCoverClassCounts;
+  candidate_occurrence_count: number;
+  representation_variant_count: number;
+  guard_applied: boolean;
+  derivation_version: string;
+  area_crs: string;
+  used_in_suitability_scoring: boolean;
+  release: LandCoverStatisticsRelease;
+  disclosures: LandCoverDisclosures;
+}
+
+/**
+ * One class row of a cell's distribution, with BOTH share denominators.
+ *
+ * `share_of_evaluated_area` is the share of the part of the cell the release
+ * actually evaluated; `share_of_cell_area` is the share of the whole cell. They
+ * diverge exactly as much as the cell is uncovered, and are never conflated.
+ * `share_of_evaluated_area` is null (never 0) when there is no evaluated area.
+ */
+export interface LandCoverClassShare {
+  /** 1 = 대분류, 2 = 중분류, 3 = 세분류. */
+  class_level: 1 | 2 | 3;
+  /** Official source class code, preserved verbatim. */
+  class_code: string;
+  /** Official source Korean class name, preserved verbatim — never translated. */
+  class_name: string;
+  class_area_m2: number;
+  share_of_evaluated_area: number | null;
+  share_of_cell_area: number | null;
+}
+
+/**
+ * A cell's complete class distribution across all three official levels.
+ *
+ * `items` is a single flat, deterministically ordered list (level ascending, then
+ * area descending) exactly as served; it is EMPTY for a `NO_COVERAGE` cell.
+ */
+export interface LandCoverCellClassDistribution {
+  candidate_grid_version: string;
+  candidate_key: string;
+  coverage_status: LandCoverCoverageStatus;
+  coverage_status_meaning: string;
+  cell_area_m2: number;
+  evaluated_area_m2: number;
+  uncovered_area_m2: number;
+  coverage_ratio: number;
+  class_level_filter: number | null;
+  class_counts: LandCoverClassCounts;
+  total: number;
+  items: LandCoverClassShare[];
+  used_in_suitability_scoring: boolean;
+  release: LandCoverStatisticsRelease;
+  disclosures: LandCoverDisclosures;
+}
+
+const LAND_COVER_CELL_STATISTICS_PATH = "/api/v1/environment/land-cover/cell-statistics";
+
+/**
+ * One candidate cell's land-cover statistics.
+ *
+ * `candidateKey` is the candidate's own stable identity as served by the
+ * suitability API (`<grid version>:<i>_<j>`) — never derived from coordinates,
+ * array order, rank, or display text. It is percent-encoded because the canonical
+ * key contains a colon.
+ */
+export function fetchLandCoverCellStatistics(
+  candidateKey: string,
+  signal: AbortSignal,
+): Promise<LandCoverCellStatistics> {
+  return fetchJsonSignal<LandCoverCellStatistics>(
+    `${LAND_COVER_CELL_STATISTICS_PATH}/cells/${encodeURIComponent(candidateKey)}`,
+    signal,
+  );
+}
+
+/** One candidate cell's complete L1/L2/L3 class distribution. */
+export function fetchLandCoverCellClasses(
+  candidateKey: string,
+  signal: AbortSignal,
+): Promise<LandCoverCellClassDistribution> {
+  return fetchJsonSignal<LandCoverCellClassDistribution>(
+    `${LAND_COVER_CELL_STATISTICS_PATH}/cells/${encodeURIComponent(candidateKey)}/classes`,
+    signal,
+  );
+}
+
+// --------------------------------------------------------------------------- //
 // User-weight scenario lab (Phase 6) — 사용자 가정 기반 시나리오.
 //
 // A TEMPORARY, on-read decision-support experiment: it recombines ONE fixed

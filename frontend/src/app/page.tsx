@@ -94,6 +94,7 @@ import type { LandfillUnavailableState } from "../lib/landfill";
 import { landfillUnavailableFromAll } from "../lib/landfill";
 import DashboardShell from "../components/DashboardShell";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
+import LandCoverCellPanel from "../components/LandCoverCellPanel";
 import MapLegendOverlay from "../components/MapLegendOverlay";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import TransparencyDashboard from "../components/TransparencyDashboard";
@@ -2564,6 +2565,12 @@ function CandidateDetailPanel({
           )}
         </>
       )}
+      {/* Phase 1B-LC5A: this cell's land-cover composition, as a clearly separated
+          descriptive section. It owns its own fetch/loading/error state, so a
+          land-cover failure never hides the suitability details above. Rendered for
+          every status (including EXCLUDED) because the statistics describe the cell,
+          not its screening outcome. */}
+      <LandCoverCellPanel candidateKey={detail.candidate_key} />
       {/* Phase 0: the same "not yet included" disclosure, so a reader inspecting one
           candidate sees the screening's limits without leaving the panel. */}
       <div className="mt-2">

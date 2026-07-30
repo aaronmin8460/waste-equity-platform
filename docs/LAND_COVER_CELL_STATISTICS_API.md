@@ -6,8 +6,14 @@ Read-only HTTP exposure of the derived statistics that
 세분류 [2025] 토지피복지도 release.
 
 **Status: implemented and verified against a local development database only.**
-No frontend, no vector tiles, no OCI migration, no production deployment, no scoring
-integration, and no new database migration.
+No vector tiles, no OCI migration, no production deployment, no scoring integration, and
+no new database migration.
+
+When LC4 shipped there was also no frontend. That is no longer true:
+[Phase 1B-LC5A](LAND_COVER_CANDIDATE_DETAIL_FRONTEND.md) reads
+`/cells/{candidate_key}` and `/cells/{candidate_key}/classes` from the suitability
+candidate-detail panel. There is still no map-wide land-cover layer, legend, or filter
+(Phase 1B-LC5B), and the API contract itself is unchanged by that phase.
 
 ---
 
@@ -395,10 +401,17 @@ Served on every response under `disclosures.lifecycle`:
 | `database_ingestion` | `IMPLEMENTED_AND_LOCALLY_VERIFIED` |
 | `cell_statistics_derivation` | `IMPLEMENTED_AND_LOCALLY_VERIFIED` |
 | `api_exposure` | `IMPLEMENTED` |
-| `frontend_exposure` | `NOT_IMPLEMENTED` |
+| `frontend_exposure` | `CANDIDATE_DETAIL_ONLY` |
 | `vector_tiles` | `NOT_IMPLEMENTED` |
 | `scoring_integration` | `NOT_IMPLEMENTED` |
 | `production_deployment` | `NOT_RUN` |
+
+`frontend_exposure` was `NOT_IMPLEMENTED` when LC4 shipped. Phase 1B-LC5A reads
+`/cells/{candidate_key}` and `/cells/{candidate_key}/classes` from the suitability
+candidate-detail panel, so it is now `CANDIDATE_DETAIL_ONLY` — deliberately not a bare
+`IMPLEMENTED`, because there is still no map-wide land-cover layer, legend, or filter
+(that is Phase 1B-LC5B, and `vector_tiles` stays `NOT_IMPLEMENTED` until then). See
+`docs/LAND_COVER_CANDIDATE_DETAIL_FRONTEND.md`.
 
 ## 12. Licence and public-use status
 

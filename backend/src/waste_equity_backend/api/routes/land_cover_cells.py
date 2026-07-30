@@ -82,15 +82,19 @@ ClassArea = EnvironmentalLandCoverCellClassArea
 StatVersion = EnvironmentalLandCoverCellStatVersion
 
 # --- Lifecycle (documented phase states, not live health checks) -------------
-# scoring_integration is NOT_IMPLEMENTED by contract; frontend_exposure and
-# vector_tiles are NOT_IMPLEMENTED because LC4 is backend-only; production_deployment
-# is NOT_RUN because this phase was verified against a local database only.
+# scoring_integration is NOT_IMPLEMENTED by contract. frontend_exposure became
+# CANDIDATE_DETAIL_ONLY in Phase 1B-LC5A, which reads these endpoints from the
+# suitability candidate-detail panel: the statistics are now shown per selected cell,
+# but there is still no map-wide land-cover layer, legend, or filter — so vector_tiles
+# stays NOT_IMPLEMENTED and the state is deliberately not a bare "IMPLEMENTED".
+# production_deployment stays NOT_RUN: every phase so far was verified against a local
+# database only.
 LIFECYCLE = LandCoverCellStatisticsLifecycle(
     source_contract_validation="LIVE_VERIFIED",
     database_ingestion="IMPLEMENTED_AND_LOCALLY_VERIFIED",
     cell_statistics_derivation="IMPLEMENTED_AND_LOCALLY_VERIFIED",
     api_exposure="IMPLEMENTED",
-    frontend_exposure="NOT_IMPLEMENTED",
+    frontend_exposure="CANDIDATE_DETAIL_ONLY",
     vector_tiles="NOT_IMPLEMENTED",
     scoring_integration="NOT_IMPLEMENTED",
     production_deployment="NOT_RUN",
