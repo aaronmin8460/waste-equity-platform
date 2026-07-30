@@ -638,6 +638,18 @@ Completed subphases (all **local only** — production/OCI `NOT_RUN` unless stat
   L1/L2/L3 class-area and share composition. Areas are measured in EPSG:5186 behind an
   indexed EPSG:4326 spatial prefilter.
   ([LAND_COVER_CANDIDATE_CELL_STATISTICS.md](LAND_COVER_CANDIDATE_CELL_STATISTICS.md))
+- **1B-LC4 — land cover, read-only per-cell statistics API.** Five read-only endpoints
+  (`/api/v1/environment/land-cover/cell-statistics`: active release, aggregate summary,
+  bounded cell list, per-cell detail, per-cell class distribution) over the persisted LC3
+  release. **No migration** — live query-plan evidence showed `0020` already carries the
+  needed indexes. Coverage status and ratio travel with every composition response so
+  partial data cannot be shown as complete; `NO_COVERAGE` carries an explicit disclosure
+  and never a class row; uncovered area is never modelled as a land-cover class;
+  undefined ratios serialize as `null`. bbox reuses the existing candidate GiST index
+  through the stable `(grid version, candidate key)` identity without persisting or
+  returning any geometry. Backend only: no frontend, no tiles, no scoring, licence still
+  `LOCAL_USE_ONLY_PENDING_CLARIFICATION`.
+  ([LAND_COVER_CELL_STATISTICS_API.md](LAND_COVER_CELL_STATISTICS_API.md))
 
 Required checks applied to every subphase:
 

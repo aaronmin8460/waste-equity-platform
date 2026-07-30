@@ -53,7 +53,7 @@ citizen label, a modality, and a lifecycle. Names are drawn from the audit
 | `road_centerline` | 도로중심선 | vector_line | IMPLEMENTED (reuse) |
 | `protected_area` | 보호·규제구역 | vector_polygon | IMPLEMENTED (reuse) |
 | `dem_slope` | 수치표고·경사 | raster | PLANNED |
-| `land_cover` | 토지피복 | vector_polygon | IMPLEMENTED (local vector ingest 1B-LC2 + per-cell statistics 1B-LC3; not in production, not scored) |
+| `land_cover` | 토지피복 | vector_polygon | IMPLEMENTED (local vector ingest 1B-LC2 + per-cell statistics 1B-LC3 + read-only statistics API 1B-LC4; no frontend, not in production, not scored) |
 | `river_network` | 하천망 | vector_line | PLANNED |
 | `geology` | 지질 | vector_polygon | PLANNED |
 | `wetland_inventory` | 내륙습지 목록 | vector_polygon | IMPLEMENTED (local ingest 1B-1 + read-only API/map 1B-2; not in production, not scored) |
@@ -393,6 +393,14 @@ existing vector pipeline exactly and needs no PostGIS raster capability.
   audit, the dominant L1/L2/L3 class, and the **complete** L1/L2/L3 class-area and share
   composition. See
   [LAND_COVER_CANDIDATE_CELL_STATISTICS.md](LAND_COVER_CANDIDATE_CELL_STATISTICS.md).
+- **1B-LC4 (2026-07-30, local only).** Read-only HTTP exposure of that tier — five `GET`
+  endpoints under `/api/v1/environment/land-cover/cell-statistics`. **No migration**: the
+  0020 indexes proved sufficient under `EXPLAIN (ANALYZE, BUFFERS)`. Because the derived
+  tier deliberately stores no geometry (point 1 below), a bbox filter reaches the cell
+  geometry through the stable `(candidate_grid_version, candidate_key)` identity and the
+  existing candidate GiST index — the pattern any future per-cell factor should reuse
+  rather than persisting a second geometry copy. Still not scored, not in production. See
+  [LAND_COVER_CELL_STATISTICS_API.md](LAND_COVER_CELL_STATISTICS_API.md).
 
 Two design points generalize to every future per-cell factor:
 

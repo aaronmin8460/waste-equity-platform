@@ -9,6 +9,7 @@ from .routes import (
     equity,
     facility_cost,
     health,
+    land_cover_cells,
     landfill,
     metadata,
     reporting,
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(landfill.router)
     app.include_router(facility_cost.router)
     app.include_router(wetlands.router)
+    app.include_router(land_cover_cells.router)
     return app
 
 

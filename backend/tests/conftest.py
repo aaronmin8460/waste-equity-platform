@@ -27,6 +27,10 @@ from waste_equity_backend.models import (
     Base,
     DatasetFreshness,
     DataSource,
+    EnvironmentalDatasetVersion,
+    EnvironmentalLandCoverCellClassArea,
+    EnvironmentalLandCoverCellStatistic,
+    EnvironmentalLandCoverCellStatVersion,
     FacilityStandardCost,
     IngestionRun,
     LandfillInboundMonthly,
@@ -51,6 +55,15 @@ METADATA_TABLES = [
     # Non-spatial; the candidates table is spatial and is covered by the
     # suitability route integration tests (TEST_DATABASE_URL).
     SuitabilityAnalysisRun.__table__,
+    # Environmental dataset provenance and the three LC3 candidate-cell land-cover
+    # statistics tables. All four are genuinely non-spatial (LC3 stores no geometry:
+    # the cell geometry already lives on suitability_candidates), so the read-only
+    # LC4 API is fully exercisable here. Only its bbox filter needs candidate
+    # geometry and therefore lives in the PostGIS tier (TEST_DATABASE_URL).
+    EnvironmentalDatasetVersion.__table__,
+    EnvironmentalLandCoverCellStatVersion.__table__,
+    EnvironmentalLandCoverCellStatistic.__table__,
+    EnvironmentalLandCoverCellClassArea.__table__,
 ]
 
 # A copy of `regions` minus the geometry column, in its own MetaData so the
