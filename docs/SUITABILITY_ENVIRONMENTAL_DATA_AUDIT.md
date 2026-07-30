@@ -400,6 +400,26 @@ is verified beyond documentation in Phase 1A.
    value for a future factor is never scored 0 or "safe"; it is `REVIEW_REQUIRED`
    or excluded from that component until real data exists.
 
+## Land-cover status update (1B-LC2 / 1B-LC3)
+
+Land Cover (#6) has moved beyond the contract gate, **locally only**:
+
+- **1B-LC2 (2026-07-27)** loaded all 6,901,309 canonical features of the 세분류 [2025]
+  vector release into the local PostGIS database, with proven idempotency and measured
+  capital-region coverage (Seoul ≈ 0.9503, Incheon ≈ 0.6108, Gyeonggi ≈ 0.8517, combined
+  ≈ 0.8361 — `INCOMPLETE`).
+- **1B-LC3 (2026-07-28)** derived versioned per-cell land-cover statistics for every
+  unique canonical 500 m candidate cell (migration 0020, derivation version
+  `land-cover-cell-stats-v1`). Those regional coverage ratios are **not** copied into any
+  cell row; each cell carries its own measured coverage.
+
+Neither phase grants land cover a scoring role, changes any score/weight/exclusion/rank/
+status/policy/derivation version, deploys anything, or exposes any API or map. The
+licence remains `LOCAL_USE_ONLY_PENDING_CLARIFICATION`, which continues to block public
+exposure. Details:
+[LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md](LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md) ·
+[LAND_COVER_CANDIDATE_CELL_STATISTICS.md](LAND_COVER_CANDIDATE_CELL_STATISTICS.md).
+
 ## What this audit does not do
 
 - It does not authorize scoring, ingestion, downloads, or any score/rank/status

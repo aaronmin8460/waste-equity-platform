@@ -457,6 +457,17 @@ itself but must be resolved first:
 
 ---
 
+## 13.1 Follow-on phase (1B-LC3)
+
+The loaded release documented here is the sole input to **Phase 1B-LC3**, which derives
+versioned land-cover statistics for every unique canonical 500 m candidate-grid cell
+(migration 0020, derivation version `land-cover-cell-stats-v1`) **from this database
+only** — it re-reads no source file, requires no source root, and does not touch the
+external drive. The counts recorded above (release 212, 6,901,309 features, 2,013 map
+sheets, L1=7/L2=22/L3=41, `ST_IsValid` 0 invalid) are the inputs that phase verifies
+before it computes anything, and it leaves every one of them unchanged. See
+[LAND_COVER_CANDIDATE_CELL_STATISTICS.md](LAND_COVER_CANDIDATE_CELL_STATISTICS.md).
+
 ## 14. Confirmation — local-only
 
 This phase remains **local-only**. No OCI deploy, no public API, no public map, no raw

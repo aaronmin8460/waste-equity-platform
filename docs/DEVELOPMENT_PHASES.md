@@ -606,6 +606,47 @@ Subphases:
   stability, distributions, and a full live PostGIS verification with idempotency
   and hand-checks.
 
+## Phase 1A/1B (parallel track): Environmental Layers
+
+Goal: add versioned, reproducible environmental/physical datasets behind the existing
+spatial platform, **without** granting any of them a scoring role. Design and lifecycle
+live in [SUITABILITY_ENVIRONMENTAL_ARCHITECTURE.md](SUITABILITY_ENVIRONMENTAL_ARCHITECTURE.md)
+and [SUITABILITY_ENVIRONMENTAL_DATA_AUDIT.md](SUITABILITY_ENVIRONMENTAL_DATA_AUDIT.md).
+
+This track runs alongside Phases 5–6 and is deliberately gated: clearing a contract gate
+authorizes ingestion planning only, and adopting a factor into scoring is a separate
+decision with its own `policy_version` / `derivation_version` bump and a new suitability
+run (historical runs stay immutable).
+
+Completed subphases (all **local only** — production/OCI `NOT_RUN` unless stated):
+
+- **1A — foundation.** Layer catalogue (`environmental_layer_registry`, migration 0017),
+  backend registry constants, inert ingestion scaffolding. No data, no score.
+- **1B-0/1/2 — inland wetland inventory.** Contract verification, PostGIS ingestion
+  (migration 0018, 2,704 features), and a read-only API + separate map layer. Deployed to
+  OCI; kept strictly separate from the statutory `UM901` 습지보호지역 layer; not scored.
+- **1B-LC1/LC2 — land cover, ingestion.** Contract validation of the 환경부 EGIS 세분류
+  [2025] 토지피복지도, then the full local write of **6,901,309** canonical features across
+  **2,013** map sheets (migration 0019), with proven real-source idempotency and measured
+  — `INCOMPLETE` — capital-region coverage.
+  ([LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md](LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md))
+- **1B-LC3 — land cover, per-cell statistics.** The first realization of the
+  derived-per-cell tier: migration **0020** adds three additive tables holding, per unique
+  canonical 500 m candidate cell of `capital-grid-500m-v1`, the measured cell area, the
+  union-based evaluated/uncovered area, an exact coverage status with no completeness
+  tolerance, the source-overlap audit, the dominant L1/L2/L3 class, and the complete
+  L1/L2/L3 class-area and share composition. Areas are measured in EPSG:5186 behind an
+  indexed EPSG:4326 spatial prefilter.
+  ([LAND_COVER_CANDIDATE_CELL_STATISTICS.md](LAND_COVER_CANDIDATE_CELL_STATISTICS.md))
+
+Required checks applied to every subphase:
+
+- Additive, reversible migration; single Alembic head; no seeded official data.
+- Idempotency proven against real data, not only against fixtures.
+- An analytical baseline regression showing every suitability run, candidate, score,
+  rank, status, policy version, derivation version, and candidate geometry unchanged.
+- Honest lifecycle labels; a planned or partial artifact is never presented as complete.
+
 ## Phase 6: Automated Refresh And Operations
 
 Goal: run periodic data refresh through a separate scheduler process.

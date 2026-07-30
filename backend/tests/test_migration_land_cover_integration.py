@@ -71,7 +71,13 @@ def engine() -> Engine:
 def test_head_is_single_and_includes_0019() -> None:
     _upgrade()
     script = ScriptDirectory.from_config(_config())
-    assert script.get_current_head() == "0019"
+    # ``get_current_head()`` raising would mean the graph forked; a single head is
+    # the invariant this test guards. It is deliberately NOT pinned to 0019 — later
+    # phases add migrations on top, and pinning would turn every legitimate addition
+    # into a false failure here (migration 0020 added the candidate-cell statistics
+    # tables). What must stay true is that 0019 is still a linear ancestor of head.
+    head = script.get_current_head()
+    assert head is not None
     revisions = {s.revision for s in script.walk_revisions()}
     assert "0019" in revisions
     assert "0018" in revisions

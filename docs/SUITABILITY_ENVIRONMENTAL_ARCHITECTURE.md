@@ -53,7 +53,7 @@ citizen label, a modality, and a lifecycle. Names are drawn from the audit
 | `road_centerline` | 도로중심선 | vector_line | IMPLEMENTED (reuse) |
 | `protected_area` | 보호·규제구역 | vector_polygon | IMPLEMENTED (reuse) |
 | `dem_slope` | 수치표고·경사 | raster | PLANNED |
-| `land_cover` | 토지피복 | vector_polygon | PLANNED |
+| `land_cover` | 토지피복 | vector_polygon | IMPLEMENTED (local vector ingest 1B-LC2 + per-cell statistics 1B-LC3; not in production, not scored) |
 | `river_network` | 하천망 | vector_line | PLANNED |
 | `geology` | 지질 | vector_polygon | PLANNED |
 | `wetland_inventory` | 내륙습지 목록 | vector_polygon | IMPLEMENTED (local ingest 1B-1 + read-only API/map 1B-2; not in production, not scored) |
@@ -375,3 +375,43 @@ Phase 1B-2 (2026-07-24) exposed the local inventory **read-only** and drew it as
   production `NOT_RUN`. `UM901`, structural, and suitability data unchanged.
 
 Details: [WETLAND_INVENTORY_API_AND_MAP.md](WETLAND_INVENTORY_API_AND_MAP.md).
+
+## 15. Land-cover addendum — vector ingestion (1B-LC2) and per-cell statistics (1B-LC3)
+
+The `land_cover` layer took the **vector** path, not the raster one Part 3 sketched:
+the 환경부 EGIS 세분류 [2025] 토지피복지도 ships as tiled shapefiles, so it follows the
+existing vector pipeline exactly and needs no PostGIS raster capability.
+
+- **1B-LC2 (2026-07-27, local only).** 6,901,309 normalized MULTIPOLYGON/4326 features
+  across 2,013 canonical map sheets under one `environmental_dataset_versions` release
+  (migration 0019). Real-source idempotency proven. See
+  [LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md](LAND_COVER_FULL_LOCAL_INGESTION_REPORT.md).
+- **1B-LC3 (2026-07-28, local only).** The first realization of this document's
+  **derived-per-cell** tier (Part 4, tier 3). Migration **0020** adds three additive
+  tables holding, per canonical 500 m candidate cell, the measured cell area, the
+  union-based evaluated/uncovered area, an exact coverage status, the source-overlap
+  audit, the dominant L1/L2/L3 class, and the **complete** L1/L2/L3 class-area and share
+  composition. See
+  [LAND_COVER_CANDIDATE_CELL_STATISTICS.md](LAND_COVER_CANDIDATE_CELL_STATISTICS.md).
+
+Two design points generalize to every future per-cell factor:
+
+1. **Derived statistics belong to a versioned grid cell + a versioned dataset release,
+   not to an analysis run.** Part 4 said this tier is "materialized per suitability run";
+   the implementation deliberately does **not** do that. `suitability_candidates` repeats
+   the same cell once per run, and a land-cover fact about a cell does not depend on the
+   scoring profile that happened to include it. The statistics are therefore keyed by
+   `(candidate_grid_version, candidate_key)` and carry a candidate-grid fingerprint, with
+   **no** foreign key to `suitability_analysis_runs`. When a factor is eventually adopted,
+   the run's `input_dataset_version_ids` gains the statistics version id — the existing
+   supersession rule, unchanged.
+2. **Canonicalization is a first-class gate.** Repeated occurrences of one cell must be
+   the same geometry (`ST_Equals`); a genuine conflict halts the derivation, while a
+   byte-differing but provably identical representation is recorded as an audited variant
+   rather than silently merged.
+
+Lifecycle: local vector ingestion `COMPLETE_LOCALLY`; per-cell statistics
+`IMPLEMENTED_AND_TESTED` with the local derivation `COMPLETE`; API, map, production/OCI,
+and scoring all `NOT_IMPLEMENTED`/`NOT_RUN`; licence `PENDING_CLARIFICATION`. No
+suitability score, weight, exclusion rule, rank, candidate status, policy version, or
+derivation version changed.

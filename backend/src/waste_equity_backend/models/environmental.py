@@ -29,9 +29,12 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
+    false,
+    text,
     true,
 )
 from sqlalchemy.dialects import postgresql
@@ -442,4 +445,290 @@ class EnvironmentalLandCoverFeature(Base):
     transformation_version: Mapped[str] = mapped_column(String(100))
     # Every source DBF column, verbatim, after a strict CP949 decode (lossless).
     raw_attributes: Mapped[Any] = mapped_column(JsonVariant, default=dict)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EnvironmentalLandCoverCellStatVersion(Base):
+    """One complete derived release of 500 m candidate-cell land-cover statistics.
+
+    A derived statistics release is a pure **function of two versioned inputs** —
+    an active ``land_cover`` ``environmental_dataset_versions`` row and a canonical
+    candidate-grid version — plus the deterministic ``derivation_version``. It is
+    therefore deliberately **not** linked to any one ``suitability_analysis_runs``
+    row: the same grid cell carries the same land-cover composition regardless of
+    which scoring profile or analysis run happened to include it. Nothing here is a
+    score, weight, exclusion, rank, candidate status, or policy input, and no
+    suitability table is written by the derivation that fills it.
+
+    ``input_signature`` is the idempotency key: re-deriving the same inputs reuses
+    this row rather than creating a second release. ``is_active`` is set **only**
+    after every expected canonical cell has a valid statistics row, so a partial or
+    failed derivation can never be presented as a complete active release.
+    """
+
+    __tablename__ = "environmental_land_cover_cell_stat_versions"
+    __table_args__ = (
+        # Deterministic derived-release identity (sha-256 over the land-cover
+        # release identity + candidate-grid version/fingerprint + derivation
+        # version + area CRS + expected cell count).
+        UniqueConstraint("input_signature", name="uq_land_cover_cell_stat_versions_signature"),
+        # At most one *active* release per (source release, grid version,
+        # derivation version). Partial index: superseded/failed rows are preserved.
+        Index(
+            "uq_land_cover_cell_stat_versions_active",
+            "land_cover_dataset_version_id",
+            "candidate_grid_version",
+            "derivation_version",
+            unique=True,
+            postgresql_where=text("is_active"),
+            sqlite_where=text("is_active"),
+        ),
+        Index("ix_land_cover_cell_stat_versions_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True
+    )
+    # The active land_cover release the statistics were derived from.
+    land_cover_dataset_version_id: Mapped[int] = mapped_column(
+        ForeignKey("environmental_dataset_versions.id"), index=True
+    )
+    # Canonical candidate-grid version (e.g. "capital-grid-500m-v1"), taken from
+    # ``suitability_analysis_runs.candidate_grid_version`` — never invented here.
+    candidate_grid_version: Mapped[str] = mapped_column(String(50), index=True)
+    # sha-256 over every canonical cell's (key, geometry fingerprint) in key order:
+    # proves *which* grid the release was computed against, independent of run ids.
+    candidate_grid_fingerprint: Mapped[str] = mapped_column(String(64))
+    # Deterministic derivation version ("land-cover-cell-stats-v1"). Deliberately
+    # distinct from the suitability derivation version, which is never touched.
+    derivation_version: Mapped[str] = mapped_column(String(50))
+    # CRS every area/intersection was measured in. Always a projected metre CRS
+    # (EPSG:5186); geometry itself is stored in EPSG:4326 upstream.
+    area_crs: Mapped[str] = mapped_column(String(20))
+    input_signature: Mapped[str] = mapped_column(String(64))
+    # RUNNING | SUCCEEDED | FAILED. A FAILED or RUNNING version is never active.
+    status: Mapped[str] = mapped_column(String(20))
+    # Canonical cell count discovered from the database, and how many were written.
+    expected_cell_count: Mapped[int] = mapped_column(Integer, default=0)
+    processed_cell_count: Mapped[int] = mapped_column(Integer, default=0)
+    complete_exact_count: Mapped[int] = mapped_column(Integer, default=0)
+    partial_count: Mapped[int] = mapped_column(Integer, default=0)
+    no_coverage_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_cell_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Provenance of the canonicalization (Part 2): how many raw candidate rows the
+    # grid version had, how many duplicate occurrences canonicalization removed, and
+    # how many cells had a byte-differing but topologically identical (ST_Equals)
+    # geometry representation across runs. Recorded, never silently absorbed.
+    candidate_row_count: Mapped[int] = mapped_column(Integer, default=0)
+    duplicate_candidate_occurrence_count: Mapped[int] = mapped_column(Integer, default=0)
+    representation_variant_cell_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Aggregate areas in ``area_crs`` m².
+    total_cell_area_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    total_evaluated_area_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    total_uncovered_area_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    aggregate_coverage_ratio: Mapped[float | None] = mapped_column(Float)
+    # Source-overlap audit (Part 5G): the sum of per-feature intersection areas
+    # *before* the cross-feature/cross-class union, the resulting overlap, and its
+    # extremes. Overlaps are reported, never normalized away.
+    total_intersection_area_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    total_overlap_area_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    cells_with_source_overlap: Mapped[int] = mapped_column(Integer, default=0)
+    max_overlap_area_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    max_overlap_ratio: Mapped[float] = mapped_column(Float, default=0.0)
+    # Numerical non-negativity guard audit. The guard exists only to stop a
+    # floating-point overlay artifact producing an impossible negative area; every
+    # application is counted and its largest magnitude recorded, never hidden.
+    guard_applied_cell_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_guard_adjustment_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    class_row_count: Mapped[int] = mapped_column(Integer, default=0)
+    batch_size: Mapped[int] = mapped_column(Integer, default=0)
+    # Owning derivation attempt. Each attempt gets its own ``ingestion_runs`` row;
+    # a failed attempt's row stays FAILED forever even if a later attempt succeeds.
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ingestion_runs.run_id"), index=True
+    )
+    # Sanitized derivation metadata (method description, guard definition, coverage
+    # semantics). No local path, no geometry, no per-feature payload.
+    derivation_metadata: Mapped[Any | None] = mapped_column(JsonVariant)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EnvironmentalLandCoverCellStatistic(Base):
+    """Land-cover composition of one canonical 500 m candidate-grid cell.
+
+    One row per (statistics version, candidate-grid version, candidate key). The
+    row holds the cell-level measurements — actual clipped cell area, the union
+    (double-count-free) evaluated area, uncovered area, coverage ratio and exact
+    coverage status, the source-overlap audit, and the dominant L1/L2/L3 class —
+    while the **complete** class composition lives in
+    ``environmental_land_cover_cell_class_areas`` (one child row per observed class
+    at each level), so nothing beyond the dominant class is discarded.
+
+    No geometry is stored: the cell geometry already exists on
+    ``suitability_candidates`` and the class composition is areal. Consequently
+    there is no spatial index here. This table holds no score, weight, exclusion,
+    rank, or candidate-status column, and no suitability result reads it.
+    """
+
+    __tablename__ = "environmental_land_cover_cell_statistics"
+    __table_args__ = (
+        UniqueConstraint(
+            "statistics_version_id",
+            "candidate_grid_version",
+            "candidate_key",
+            name="uq_land_cover_cell_statistics_version_key",
+        ),
+        Index("ix_land_cover_cell_statistics_candidate_key", "candidate_key"),
+        Index("ix_land_cover_cell_statistics_grid_version", "candidate_grid_version"),
+        Index("ix_land_cover_cell_statistics_sido", "sido_region_code"),
+        Index(
+            "ix_land_cover_cell_statistics_version_status",
+            "statistics_version_id",
+            "coverage_status",
+        ),
+        Index(
+            "ix_land_cover_cell_statistics_version_dominant_l1",
+            "statistics_version_id",
+            "dominant_l1_code",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True
+    )
+    statistics_version_id: Mapped[int] = mapped_column(
+        ForeignKey("environmental_land_cover_cell_stat_versions.id"), index=True
+    )
+    land_cover_dataset_version_id: Mapped[int] = mapped_column(
+        ForeignKey("environmental_dataset_versions.id"), index=True
+    )
+    candidate_grid_version: Mapped[str] = mapped_column(String(50))
+    # ``<grid version>:<i>_<j>`` — the canonical grid identity, not a run-scoped id.
+    candidate_key: Mapped[str] = mapped_column(String(50))
+    # sha-256 over the canonical cell geometry (EWKB) + grid version + key. Ties the
+    # row to the exact geometry the areas were measured on.
+    candidate_geometry_fingerprint: Mapped[str] = mapped_column(String(64))
+    # Region provenance copied verbatim from the canonical candidate row (assigned
+    # there against the official boundaries); never re-derived or invented here.
+    sido_region_code: Mapped[str | None] = mapped_column(String(20))
+    sido_region_name: Mapped[str | None] = mapped_column(String(50))
+    sigungu_region_code: Mapped[str | None] = mapped_column(String(20))
+    sigungu_region_name: Mapped[str | None] = mapped_column(String(50))
+    # Actual clipped cell area in ``area_crs`` m² — measured, never assumed to be
+    # 250,000 m² (boundary-clipped edge cells are genuinely smaller).
+    cell_area_m2: Mapped[float] = mapped_column(Float)
+    # Area of the UNION of all polygonal land-cover intersections with this cell
+    # (overlapping source features counted once).
+    evaluated_area_m2: Mapped[float] = mapped_column(Float)
+    uncovered_area_m2: Mapped[float] = mapped_column(Float)
+    coverage_ratio: Mapped[float] = mapped_column(Float)
+    # Sum of the per-feature intersection areas *before* any union, kept beside the
+    # union area so the exact source overlap is auditable rather than absorbed.
+    intersection_area_sum_m2: Mapped[float] = mapped_column(Float)
+    overlap_area_m2: Mapped[float] = mapped_column(Float)
+    # NO_COVERAGE | COMPLETE_EXACT | PARTIAL. COMPLETE_EXACT means the polygonal
+    # residual of (cell − evaluated union) is EMPTY — an exact set-theoretic
+    # statement, never "close to 100%"; no completeness tolerance exists.
+    coverage_status: Mapped[str] = mapped_column(String(20))
+    # Geometry-derived uncovered area: ST_Area of the polygonal residual
+    # ST_Difference(cell, evaluated union), i.e. the whole cell for a NO_COVERAGE
+    # cell. Kept beside the arithmetic ``uncovered_area_m2`` (cell − evaluated) so
+    # the two independent measures can be compared rather than assumed equal.
+    uncovered_residual_area_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    # Raw ``ST_Covers(evaluated union, cell)`` result, stored as *evidence only*.
+    # It is deliberately NOT the status rule: on high-vertex clipped unions GEOS
+    # returns false even when the residual is provably empty and zero-area (see
+    # ``docs/LAND_COVER_CANDIDATE_CELL_STATISTICS.md``). Recording both keeps that
+    # disagreement auditable instead of hidden behind whichever answer was picked.
+    topological_cover_predicate: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Source features contributing a non-empty polygonal intersection to this cell.
+    matched_feature_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Largest class by intersection area at each level; ties break on the ascending
+    # official class code, never on database row order. NULL for NO_COVERAGE cells.
+    dominant_l1_code: Mapped[str | None] = mapped_column(String(10))
+    dominant_l1_name: Mapped[str | None] = mapped_column(String(60))
+    dominant_l2_code: Mapped[str | None] = mapped_column(String(10))
+    dominant_l2_name: Mapped[str | None] = mapped_column(String(60))
+    dominant_l3_code: Mapped[str | None] = mapped_column(String(10))
+    dominant_l3_name: Mapped[str | None] = mapped_column(String(60))
+    # Distinct classes observed in this cell per level, and the exact sum of the
+    # stored per-class areas at each level (the documented reconciliation
+    # denominator: it equals evaluated_area_m2 when the source partitions the cell).
+    l1_class_count: Mapped[int] = mapped_column(Integer, default=0)
+    l2_class_count: Mapped[int] = mapped_column(Integer, default=0)
+    l3_class_count: Mapped[int] = mapped_column(Integer, default=0)
+    l1_class_area_sum_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    l2_class_area_sum_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    l3_class_area_sum_m2: Mapped[float] = mapped_column(Float, default=0.0)
+    # Canonicalization audit for this cell: how many candidate rows carried this key
+    # across all runs of the grid version, and how many byte-distinct geometry
+    # representations beyond the canonical one were proven ST_Equals to it.
+    candidate_occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
+    representation_variant_count: Mapped[int] = mapped_column(Integer, default=0)
+    # True when the documented non-negativity guard changed a reported value.
+    guard_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    derivation_version: Mapped[str] = mapped_column(String(50))
+    area_crs: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EnvironmentalLandCoverCellClassArea(Base):
+    """One official land-cover class's area inside one candidate cell.
+
+    Three levels are stored per cell (``class_level`` 1/2/3 = 대·중·세분류), each
+    keyed by the **official source code and name, preserved verbatim** — never
+    re-labelled, re-grouped, or reinterpreted as suitability policy. The area is the
+    union of that class's intersections with the cell, so overlapping source
+    features of the same class are counted once.
+
+    Shares carry two explicitly different denominators, and they are never
+    conflated: ``share_of_evaluated_area`` divides by the covered (evaluated) area,
+    ``share_of_cell_area`` by the whole cell. When a cell has no coverage there are
+    no rows here at all — uncovered area is a coverage field on the parent row and
+    is **never** modelled as a synthetic "unknown" land-cover class.
+    """
+
+    __tablename__ = "environmental_land_cover_cell_class_areas"
+    __table_args__ = (
+        UniqueConstraint(
+            "cell_statistics_id",
+            "class_level",
+            "class_code",
+            name="uq_land_cover_cell_class_areas_cell_level_code",
+        ),
+        Index(
+            "ix_land_cover_cell_class_areas_version_level_code",
+            "statistics_version_id",
+            "class_level",
+            "class_code",
+        ),
+        Index("ix_land_cover_cell_class_areas_candidate_key", "candidate_key"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True
+    )
+    statistics_version_id: Mapped[int] = mapped_column(
+        ForeignKey("environmental_land_cover_cell_stat_versions.id"), index=True
+    )
+    cell_statistics_id: Mapped[int] = mapped_column(
+        ForeignKey("environmental_land_cover_cell_statistics.id"), index=True
+    )
+    # Denormalized for direct class-level queries without joining the parent.
+    candidate_key: Mapped[str] = mapped_column(String(50))
+    # 1 = 대분류 (L1), 2 = 중분류 (L2), 3 = 세분류 (L3).
+    class_level: Mapped[int] = mapped_column(SmallInteger)
+    class_code: Mapped[str] = mapped_column(String(10))
+    class_name: Mapped[str] = mapped_column(String(60))
+    class_area_m2: Mapped[float] = mapped_column(Float)
+    # class_area_m2 / evaluated_area_m2. NULL — never 0 — when the cell has no
+    # evaluated area, because the ratio is undefined rather than zero.
+    share_of_evaluated_area: Mapped[float | None] = mapped_column(Float)
+    # class_area_m2 / cell_area_m2.
+    share_of_cell_area: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))

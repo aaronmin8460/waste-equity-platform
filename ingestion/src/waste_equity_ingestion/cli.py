@@ -9,6 +9,15 @@ from collections.abc import Callable
 
 from .config import ProbeSettings
 from .errors import IngestionError, MissingConfigurationError, MissingCredentialsError, ProbeError
+from .land_cover_cell_statistics import (
+    DEFAULT_BATCH_SIZE as CELL_STATS_DEFAULT_BATCH,
+)
+from .land_cover_cell_statistics import (
+    REGION_ALIASES as CELL_STATS_REGION_ALIASES,
+)
+from .land_cover_cell_statistics import (
+    run_land_cover_cell_statistics,
+)
 from .land_cover_contract import STATUS_FAIL as LAND_COVER_STATUS_FAIL
 from .land_cover_contract import validate_land_cover
 from .land_cover_ingestion import run_land_cover_coverage_report, run_land_cover_ingestion
@@ -66,6 +75,7 @@ WETLAND_INVENTORY_INGEST = "wetland-inventory-ingest"
 LAND_COVER_CONTRACT_VALIDATE = "land-cover-contract-validate"
 LAND_COVER_INGEST = "land-cover-ingest"
 LAND_COVER_COVERAGE = "land-cover-coverage"
+LAND_COVER_CELL_STATS = "land-cover-cell-stats"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -92,6 +102,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 LAND_COVER_CONTRACT_VALIDATE,
                 LAND_COVER_INGEST,
                 LAND_COVER_COVERAGE,
+                LAND_COVER_CELL_STATS,
             ]
         ),
     )
@@ -245,6 +256,43 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=int,
         default=1000,
         help="land-cover-ingest: COPY staging batch size (default 1000).",
+    )
+    parser.add_argument(
+        "--candidate-grid-version",
+        help=(
+            "land-cover-cell-stats: canonical candidate-grid version to describe "
+            "(e.g. capital-grid-500m-v1). Required unless exactly one grid version "
+            "exists in suitability_analysis_runs."
+        ),
+    )
+    parser.add_argument(
+        "--candidate-key",
+        help=(
+            "land-cover-cell-stats: comma-separated canonical candidate key(s) to "
+            "compute. Pilot selector; permitted for --dry-run only."
+        ),
+    )
+    parser.add_argument(
+        "--max-cells",
+        type=int,
+        help=(
+            "land-cover-cell-stats: compute at most N canonical cells (deterministic "
+            "key order). Pilot selector; permitted for --dry-run only."
+        ),
+    )
+    parser.add_argument(
+        "--cell-batch-size",
+        type=int,
+        default=CELL_STATS_DEFAULT_BATCH,
+        help=(
+            "land-cover-cell-stats: candidate cells per computation batch "
+            f"(default {CELL_STATS_DEFAULT_BATCH})."
+        ),
+    )
+    parser.add_argument(
+        "--no-explain",
+        action="store_true",
+        help="land-cover-cell-stats: skip the EXPLAIN query-plan capture.",
     )
     parser.add_argument(
         "--dataset-version-id",
@@ -598,6 +646,51 @@ def run_land_cover_coverage(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_land_cover_cell_stats(args: argparse.Namespace) -> int:
+    """Derive versioned 500 m candidate-cell land-cover statistics from PostGIS only.
+
+    Reads the already-loaded land-cover release and the canonical candidate grid; it
+    never touches the raw source root, the external drive, or any physical path, and
+    takes no --source-root. Exactly one of --dry-run/--write is required. Pilot
+    selectors are permitted for --dry-run only; a filtered --write is refused so a
+    partial derivation can never create or activate a release. Sanitized JSON goes to
+    stdout, progress to stderr. Exit 0 only on a documented success.
+    """
+
+    if not args.dry_run and not args.write:
+        raise IngestionError("land-cover-cell-stats requires either --dry-run or --write")
+    if args.region is not None and args.region not in CELL_STATS_REGION_ALIASES:
+        raise IngestionError(
+            f"land-cover-cell-stats --region must be one of "
+            f"{', '.join(sorted(CELL_STATS_REGION_ALIASES))}"
+        )
+    candidate_keys = (
+        [value.strip() for value in args.candidate_key.split(",") if value.strip()]
+        if args.candidate_key
+        else None
+    )
+    report = run_land_cover_cell_statistics(
+        write=bool(args.write),
+        candidate_grid_version=args.candidate_grid_version,
+        dataset_version_id=args.dataset_version_id,
+        batch_size=int(args.cell_batch_size),
+        candidate_keys=candidate_keys,
+        region=args.region,
+        max_cells=args.max_cells,
+        explain=not bool(args.no_explain),
+        progress=bool(args.progress),
+    )
+    summary = report.sanitized_summary()
+    print(json.dumps(summary, ensure_ascii=False))
+    if args.report_json:
+        from pathlib import Path
+
+        Path(args.report_json).write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    return 0 if report.status == "SUCCEEDED" else 1
+
+
 def run_vworld_structural(settings: ProbeSettings, args: argparse.Namespace, family: str) -> int:
     if not args.dry_run and not args.write:
         raise IngestionError(f"vworld-{family}-ingest requires either --dry-run or --write")
@@ -696,6 +789,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_land_cover_ingest(args)
         if args.source == LAND_COVER_COVERAGE:
             return run_land_cover_coverage(args)
+        if args.source == LAND_COVER_CELL_STATS:
+            return run_land_cover_cell_stats(args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)
