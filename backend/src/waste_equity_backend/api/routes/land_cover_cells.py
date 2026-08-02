@@ -125,6 +125,26 @@ TILE_SOURCE_LAYER = "land_cover_cells"
 #: wetland tiles.
 TILE_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
+# Phase 1B-LC9 — transaction-local JIT suppression for the tile query only.
+#
+# Measured root cause, not a guess. At low zoom the tile plan's estimated cost
+# exceeds both ``jit_above_cost`` (100,000) and ``jit_inline_above_cost``
+# (500,000), so PostgreSQL LLVM-compiles the expression tree with inlining and
+# optimisation enabled — in every parallel worker — before executing it once.
+# ``EXPLAIN (ANALYZE)`` on the production database for z=7/109/49 attributed
+# 1.39–1.57 s of a 1.28 s wall-clock execution to JIT generation, inlining,
+# optimisation and emission (the figure exceeds wall clock because it is summed
+# across workers). The compiled expressions are almost entirely calls into
+# PostGIS C functions, which JIT cannot speed up, so the compilation is pure
+# overhead paid once per tile request.
+#
+# ``SET LOCAL`` scopes this to the request's own transaction: it is reset when
+# the session's transaction ends, so a pooled connection never carries it into
+# an unrelated request, and no server-wide or role-wide setting is touched. It
+# changes plan *execution strategy* only — never the rows, the ordering, or the
+# encoded bytes, which the LC9 tests assert directly.
+_TILE_DISABLE_JIT = text("SET LOCAL jit = off")
+
 # Parameterized MVT query, following the established project pattern: the tile
 # envelope is built in EPSG:3857 (``ST_TileEnvelope``) and transformed to EPSG:4326 for
 # the candidate predicate, so ``geometry && <bounds>`` hits the existing
@@ -153,6 +173,17 @@ TILE_CACHE_CONTROL = "public, max-age=31536000, immutable"
 # tile-filtered rows (hundreds at typical zooms) and makes a tile byte-deterministic,
 # so ``(version, run, z, x, y)`` really does identify one exact response body.
 #
+# ``tile`` is MATERIALIZED deliberately (Phase 1B-LC9). PostgreSQL inlines a
+# single-reference CTE by default, which pushes ``WHERE tile.geom IS NOT NULL``
+# down into the candidate scan as a filter — so ``ST_AsMVTGeom(ST_Transform(...))``
+# is evaluated TWICE for every candidate row: once to test the filter and once to
+# produce the output column. Materializing the CTE computes it exactly once. The
+# fence changes evaluation count only: the same rows, in the same explicit
+# ``ORDER BY candidate_key``, reach ``ST_AsMVT``, and the encoded tile is
+# byte-identical (verified by SHA-256 against the pre-change query on the
+# production database for z7/108/49, z7/109/49, z8/218/99, z9/436/198,
+# z10/873/396, z13/6985/3174 and an empty tile).
+#
 # Every user-controlled value (version, z, x, y) is a bound parameter.
 _TILE_SQL = f"""
 WITH bounds AS (
@@ -160,7 +191,7 @@ WITH bounds AS (
         ST_TileEnvelope(:z, :x, :y) AS geom_3857,
         ST_Transform(ST_TileEnvelope(:z, :x, :y), 4326) AS geom_4326
 ),
-tile AS (
+tile AS MATERIALIZED (
     SELECT
         ST_AsMVTGeom(
             ST_Transform(c.geometry, 3857),
@@ -1088,6 +1119,10 @@ def candidate_cell_tile(
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=cache_headers)
 
+    # Suppress JIT for this request's transaction only (see _TILE_DISABLE_JIT).
+    # The two resolution queries above have already opened the transaction, so
+    # ``SET LOCAL`` binds to it and is discarded when the session closes.
+    session.execute(_TILE_DISABLE_JIT)
     raw = session.execute(
         _TILE_SQL_STMT,
         {

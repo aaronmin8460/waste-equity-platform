@@ -41,6 +41,36 @@
 	# Backend: the versioned API and the health probe only.
 	@backend path /api/* /health
 	handle @backend {
+		# Mapbox Vector Tiles (Phase 1B-LC9).
+		#
+		# The site-level `encode` above is left EXACTLY as it was, so every
+		# content type Caddy compresses by default keeps compressing with the
+		# stock matcher (text/*, application/json*, application/javascript*,
+		# image/x-icon*, font/*, …). That default list does not contain the
+		# IANA vector-tile media type `application/vnd.mapbox-vector-tile`
+		# (it lists `application/x-protobuf*`, which is not what this API
+		# serves), so MVT responses were shipping uncompressed — measured on
+		# 2026-08-02: the z=7/109/49 land-cover tile transferred all
+		# 3,711,118 bytes with no `content-encoding`.
+		#
+		# This adds ONE media type rather than restating Caddy's default
+		# matcher, which specifying `match` at site level would replace and
+		# would silently drop whatever the restatement missed. Caddy skips a
+		# response that already carries `Content-Encoding`, so the outer
+		# `encode` does not re-compress what this one encoded — verified by
+		# `scripts/qa/verify-mvt-compression.sh`, which decodes both variants
+		# and compares SHA-256 against the identity response.
+		#
+		# Tiles are pure protobuf, so this is transfer-only: the decompressed
+		# bytes, the version-pinned ETag, the one-year immutable
+		# `Cache-Control` and the 304 revalidation path are unchanged.
+		encode {
+			zstd
+			gzip
+			match {
+				header Content-Type application/vnd.mapbox-vector-tile*
+			}
+		}
 		reverse_proxy backend:8000
 	}
 
