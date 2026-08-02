@@ -420,6 +420,27 @@ describe("COMPLETE_EXACT display", () => {
     expect(screen.queryByTestId("land-cover-no-coverage-warning")).not.toBeInTheDocument();
   });
 
+  // Phase 1B-LC6. Each level's dominant class is computed independently, so the three
+  // need not nest: 3,518 of the 47,893 cells in the active release carry a 중분류
+  // outside their 대분류 (a 대분류 total is a SUM over its members, and the largest sum
+  // need not contain the largest single member). Correct, but it reads as a data error
+  // unless the panel says so.
+  it("explains that the three dominant classes are computed per level and need not nest", async () => {
+    render(<LandCoverCellPanel candidateKey={COMPLETE_KEY} />);
+    await waitFor(() => expect(screen.getByTestId("land-cover-body")).toBeInTheDocument());
+
+    const note = screen.getByTestId("land-cover-dominant-note");
+    expect(note).toHaveTextContent("면적이 가장 큰 분류를 따로 계산한");
+    expect(note).toHaveTextContent("속하지 않을 수 있습니다");
+  });
+
+  it("omits the per-level note for a NO_COVERAGE cell, which has no dominant class", async () => {
+    render(<LandCoverCellPanel candidateKey={NO_COVERAGE_KEY} />);
+    await waitFor(() => expect(screen.getByTestId("land-cover-body")).toBeInTheDocument());
+
+    expect(screen.queryByTestId("land-cover-dominant-note")).not.toBeInTheDocument();
+  });
+
   it("does not describe exact evaluation as legal or universal completeness", async () => {
     render(<LandCoverCellPanel candidateKey={COMPLETE_KEY} />);
     await waitFor(() => expect(screen.getByTestId("land-cover-body")).toBeInTheDocument());

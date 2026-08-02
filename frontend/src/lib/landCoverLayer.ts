@@ -35,6 +35,11 @@ import { CLASS_LEVELS, type ClassLevel, type LandCoverErrorKind } from "./landCo
  * layer that cannot resolve its release is not a candidate whose statistics are
  * missing. None of them implies land cover is absent, and none exposes a stack trace,
  * SQL, path, connection string, or raw backend error.
+ *
+ * EVERY message states explicitly that the failure does not mean land cover is absent.
+ * That clause is load-bearing, not boilerplate: a reader who sees the layer refuse to
+ * draw must not conclude the area has no land cover. Phase 1B-LC6 found `MALFORMED`
+ * was the one message missing it and added it.
  */
 export const LAND_COVER_LAYER_ERRORS: Record<LandCoverErrorKind, string> = {
   NOT_FOUND:
@@ -42,7 +47,7 @@ export const LAND_COVER_LAYER_ERRORS: Record<LandCoverErrorKind, string> = {
   UNAVAILABLE:
     "토지피복 통계 레이어를 불러오지 못했습니다. 토지피복이 없다는 뜻은 아니며, 나머지 지도 기능은 그대로 사용할 수 있습니다.",
   MALFORMED:
-    "토지피복 통계 릴리스 응답을 해석할 수 없어 레이어를 표시하지 않습니다. 불완전한 값을 대신 표시하지 않습니다.",
+    "토지피복 통계 릴리스 응답을 해석할 수 없어 레이어를 표시하지 않습니다. 토지피복이 없다는 뜻은 아니며, 불완전한 값을 대신 표시하지 않습니다.",
 };
 
 // --------------------------------------------------------------------------- //

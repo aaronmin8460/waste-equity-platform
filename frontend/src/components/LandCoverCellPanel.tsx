@@ -226,6 +226,10 @@ function LandCoverBody({ data }: { data: LoadedStatistics }) {
   const { detail, classes } = data;
   const status = detail.coverage_status;
   const tone = COVERAGE_STATUS_TONES[status];
+  // A NO_COVERAGE cell has no dominant class at ANY level, so the per-level
+  // independence note below would describe nothing. Keyed off the served L1 code
+  // rather than off the status, so it follows the data even if the two ever diverge.
+  const hasDominantClass = detail.dominant_class.l1_code != null;
   // Deterministic: the API's own order (level ascending, then area descending) is
   // preserved by filtering; nothing is re-sorted, re-grouped, or merged here.
   const rows = useMemo(() => classRowsForLevel(classes.items, level), [classes.items, level]);
@@ -324,6 +328,20 @@ function LandCoverBody({ data }: { data: LoadedStatistics }) {
             testId="land-cover-dominant-l3"
           />
         </dl>
+        {/* Each level's dominant class is the largest class AT THAT LEVEL, computed
+            independently. The three therefore need not nest: in the active release
+            3,518 of 47,893 cells (7.3%) have a 중분류 outside their 대분류, because a
+            대분류 total is a SUM over its 중분류 members and the largest sum need not
+            contain the largest single member. Stated so a reader never reads a correct
+            non-nesting triple as a data error. Absent for NO_COVERAGE, which has no
+            dominant class at any level. */}
+        {hasDominantClass ? (
+          <p className="mt-1 text-[11px] text-ink-subtle" data-testid="land-cover-dominant-note">
+            각 수준의 우세 분류는 해당 수준에서 면적이 가장 큰 분류를 따로 계산한 값입니다. 대분류
+            면적은 그 하위 중분류 면적의 합이므로, 중분류·세분류 우세 분류가 대분류 우세 분류에
+            속하지 않을 수 있습니다.
+          </p>
+        ) : null}
         <p className="mt-1 text-[11px] text-ink-subtle" data-testid="land-cover-class-counts">
           분류 개수 — {CLASS_LEVEL_LABELS[1]} {classCountForLevel(detail.class_counts, 1) ?? "—"}개 ·{" "}
           {CLASS_LEVEL_LABELS[2]} {classCountForLevel(detail.class_counts, 2) ?? "—"}개 ·{" "}

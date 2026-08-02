@@ -489,6 +489,21 @@ describe("LAND_COVER_LAYER_ERRORS", () => {
     expect(LAND_COVER_LAYER_ERRORS.NOT_FOUND).toContain("토지피복이 없다는 뜻은 아닙니다");
     expect(LAND_COVER_LAYER_ERRORS.UNAVAILABLE).toContain("토지피복이 없다는 뜻은 아니며");
   });
+
+  // Phase 1B-LC6: the "not absent land cover" clause is required of EVERY message, not
+  // of the two that happened to be asserted individually. MALFORMED was missing it, so
+  // a reader who hit an unparseable release response saw the layer refuse to draw with
+  // no statement that land cover still exists there. Asserted over the whole record so
+  // a future message cannot be added without it.
+  it("states in EVERY message that the failure is not absent land cover", () => {
+    // Only the shared stem: the messages negate differently ("…뜻은 아닙니다" vs
+    // "…뜻은 아니며"), and "아닙니다" does not contain "아니" — 닙 follows 아, not 니.
+    for (const [kind, message] of Object.entries(LAND_COVER_LAYER_ERRORS)) {
+      expect(message, `${kind} must say the failure is not absent land cover`).toContain(
+        "토지피복이 없다는 뜻은",
+      );
+    }
+  });
 });
 
 const LAND_COVER_COVERAGE_NOTE = LAND_COVER_COVERAGE_LEGEND_NOTES.NO_COVERAGE;
