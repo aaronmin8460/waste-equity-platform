@@ -18,6 +18,32 @@ alias). Omitting them would fail variable interpolation or, worse, silently targ
 alias dcp='docker compose -p waste-equity-prod -f docker-compose.prod.yml --env-file .env.production'
 ```
 
+> ## ✅ Superseding note — 2026-08-02 (Phase 1B-LC8, EXECUTED)
+>
+> The land-cover deployment exclusion this checklist inherited from LC7 no longer applies.
+> The project owner confirmed **project-level authorization from the cooperating government
+> institution** (`GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION`), and the derived land-cover
+> services were **deployed to OCI and verified from the public URL on 2026-08-02**
+> (`PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER`). **No EGIS KOGL type is
+> asserted.**
+>
+> The executed LC8 procedure — backup, migration `0018 → 0020`, the sanitized derived-data
+> package, the idempotent import, the integrity gates, the public verification, the measured
+> performance, and the rollback plan — is recorded in
+> [LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md](LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md). Its
+> tooling lives in `scripts/deploy/`:
+>
+> ```bash
+> # 1. export locally (read-only), 2. transfer, 3. import on the server
+> scripts/deploy/export-land-cover-derived-package.sh <out-dir>
+> COMPOSE_PROJECT=waste-equity-prod DB_USER=waste_equity_prod DB_NAME=waste_equity \
+>   scripts/deploy/import-land-cover-derived-package.sh <package-dir>
+> ```
+>
+> The importer refuses on any candidate-grid fingerprint or content-checksum mismatch, never
+> imports raw source features or map sheets, and inserts zero logical rows on a re-run.
+> **The raw source tables are deliberately not deployed.**
+
 ## What this release adds
 
 - Accessibility foundation (lang, skip link, live regions, fieldsets, map alternatives).

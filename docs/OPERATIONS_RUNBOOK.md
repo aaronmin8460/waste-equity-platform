@@ -77,6 +77,60 @@ Destructive; requires explicit flags and takes a safety backup first:
 ./scripts/deployment/verify-production-data.sh --env-file .env.production
 ```
 
+## Land-cover derived statistics (Phase 1B-LC8)
+
+The public land-cover services are served from **derived** data only. The raw
+source-feature tables (`environmental_land_cover_features`,
+`environmental_land_cover_map_sheets`) are intentionally **empty in production** and must
+stay that way: no public runtime path reads them, and original SHP files and raw source
+polygons are not redistributed.
+
+Publication rests on `GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION` — a project-level
+authorization from the cooperating government institution, **not** an EGIS licence
+confirmation or a KOGL type. See
+[PUBLIC_DATA_PROJECT_AUTHORIZATION.md](PUBLIC_DATA_PROJECT_AUTHORIZATION.md).
+
+```bash
+# What is live right now
+dcp exec -T database psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+  "select id, derivation_version, is_active, expected_cell_count, class_row_count
+     from environmental_land_cover_cell_stat_versions order by id"
+
+# These two MUST be 0 in production
+dcp exec -T database psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+  "select (select count(*) from environmental_land_cover_features),
+          (select count(*) from environmental_land_cover_map_sheets)"
+```
+
+**Loading or re-loading a release** (idempotent; safe to re-run — it inserts zero logical
+rows when the package is already present):
+
+```bash
+COMPOSE_PROJECT=waste-equity-prod DB_USER="$POSTGRES_USER" DB_NAME="$POSTGRES_DB" \
+  scripts/deploy/import-land-cover-derived-package.sh ~/lc8-package
+```
+
+The importer runs in ONE transaction and refuses — rolling everything back — if the
+production candidate-grid fingerprint, the candidate-key set, the per-cell geometry
+fingerprints, the row counts, the coverage-state counts, or the content checksums differ
+from the package, or if any raw source row is present.
+
+**Turning the public land-cover feature off** without touching anything else (every
+land-cover endpoint then returns a structured 404 and the map layer disables itself):
+
+```bash
+dcp exec -T database psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c \
+  "UPDATE environmental_land_cover_cell_stat_versions SET is_active = false WHERE id = 1;"
+```
+
+Re-enable with `is_active = true`. Never delete the rows to disable the feature.
+
+**Known performance caveat.** The worst-case zoom-7 tile (the one covering most of the
+capital region) is ~3.7 MB and takes ~2 s; it is version-pinned and cached one year
+immutable, and `If-None-Match` revalidation returns 304. MVT responses are currently sent
+uncompressed. Measured, documented, and deliberately not changed during deployment — see
+[LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md](LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md) §13.
+
 ## Data refresh (future)
 
 Public-data ingestion is **not** part of this phase and is not automated here.

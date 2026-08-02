@@ -704,6 +704,11 @@ Completed subphases (all **local only** — production/OCI `NOT_RUN` unless stat
   runtime path reads them. **No migration**, no scoring integration
   (`used_in_suitability_scoring` stays `false`), and no suitability score, rank, status,
   exclusion, or review reason changed.
+  Deployed to OCI and verified from the public URL on 2026-08-02: migration `0018 → 0020`,
+  47,893 cell rows and 1,142,780 class rows imported transactionally behind a
+  candidate-grid-fingerprint gate, production tiles byte-identical to local, all 28 existing
+  public endpoints still 200, suitability checksum unchanged, and no Basic Authentication or
+  IP allowlist added.
   ([PUBLIC_DATA_PROJECT_AUTHORIZATION.md](PUBLIC_DATA_PROJECT_AUTHORIZATION.md),
   [LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md](LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md))
 
