@@ -14,6 +14,13 @@
  * exact value text is always present; the proportional bar is a decorative aid
  * only (aria-hidden), never the sole signal, and is drawn only when every compared
  * region has a value.
+ *
+ * A region whose value is unavailable is NEVER silently dropped from the
+ * comparison: it keeps its row and its chip, and this milestone additionally shows
+ * the SERVED availability reason beneath 자료 없음 when the source attached one
+ * (`ComparisonValue.unavailableReason`, resolved in page.tsx from the same feature
+ * property the map popup and the selected-region summary read). When the source
+ * attached no reason, nothing extra is rendered — none is invented.
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -27,6 +34,12 @@ export interface ComparisonValue {
   hasValue: boolean;
   /** Numeric value for the optional proportional bar; undefined when unavailable. */
   numeric?: number;
+  /**
+   * The SERVED reason no value exists for this region under the active metric.
+   * Undefined when a value was served, or when the source attached no reason —
+   * this is never an invented explanation.
+   */
+  unavailableReason?: string;
 }
 
 interface RegionComparisonProps {
@@ -128,8 +141,13 @@ export default function RegionComparison({
       data-testid="region-comparison"
       className="wep-card p-4 text-xs text-ink-muted"
     >
-      <h2 className="mb-1 text-sm font-semibold text-ink">지역 비교</h2>
-      <p className="mb-2 text-[11px] text-ink-subtle">
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-ink">지역 비교</h2>
+        <span className="flex-none tabular-nums text-xs text-ink-subtle" data-testid="comparison-count">
+          {selected.length} / {maxCompare}
+        </span>
+      </div>
+      <p className="mb-2 text-xs text-ink-subtle">
         최대 {maxCompare}개 지역을 골라 {metricLabel} 값을 나란히 비교합니다.
       </p>
 
@@ -160,7 +178,7 @@ export default function RegionComparison({
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 120)}
           onKeyDown={onKeyDown}
-          className="min-h-[32px] w-full rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm disabled:bg-surface-sunken disabled:text-ink-subtle"
+          className="min-h-[2.25rem] w-full rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm text-ink disabled:bg-surface-sunken disabled:text-ink-subtle"
           data-testid="comparison-search"
         />
         {open && matches.length > 0 && !atMax && (
@@ -169,7 +187,7 @@ export default function RegionComparison({
             ref={listboxRef}
             role="listbox"
             aria-label="검색 결과"
-            className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded border border-slate-200 bg-white shadow-lg"
+            className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-card border border-hairline-strong bg-surface shadow-float"
             data-testid="comparison-options"
           >
             {matches.map((o, i) => (
@@ -182,11 +200,11 @@ export default function RegionComparison({
                   e.preventDefault();
                   addRegion(o.code);
                 }}
-                className={`cursor-pointer px-2 py-1.5 text-sm ${
-                  i === activeIndex ? "bg-sky-100" : "hover:bg-slate-50"
+                className={`cursor-pointer px-2 py-1.5 text-sm text-ink ${
+                  i === activeIndex ? "bg-primary-soft font-medium" : "hover:bg-surface-muted"
                 }`}
               >
-                {o.name} <span className="text-[11px] text-slate-400">{o.code}</span>
+                {o.name} <span className="text-xs text-ink-subtle">{o.code}</span>
               </li>
             ))}
           </ul>
@@ -230,27 +248,34 @@ export default function RegionComparison({
               {metricLabel} 지역 비교 표{unit ? ` (단위 ${unit})` : ""}
             </caption>
             <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
+              <tr className="border-b border-hairline text-ink-subtle">
                 <th className="py-1 pr-2 font-medium">지역</th>
                 <th className="py-1 pr-2 text-right font-medium">값{unit ? ` (${unit})` : ""}</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.code} className="border-b border-slate-100">
-                  <td className="py-1 pr-2 text-slate-800">{r.name}</td>
-                  <td className="py-1 pr-2 text-right">
+                <tr key={r.code} className="border-b border-hairline align-top">
+                  <td className="py-1.5 pr-2 text-ink">{r.name}</td>
+                  <td className="py-1.5 pr-2 text-right">
                     <span
                       className={`tabular-nums font-medium ${
-                        r.hasValue ? "text-slate-900" : "text-amber-700"
+                        r.hasValue ? "text-ink" : "text-warn"
                       }`}
                     >
                       {r.hasValue ? r.display : "자료 없음"}
                     </span>
+                    {/* The served reason, when the source attached one. A region is
+                        never dropped from the comparison for lacking a value. */}
+                    {!r.hasValue && r.unavailableReason && (
+                      <span className="mt-0.5 block text-xs font-normal text-ink-subtle">
+                        {r.unavailableReason}
+                      </span>
+                    )}
                     {allHaveValue && (
-                      <span aria-hidden className="mt-0.5 block h-1 rounded bg-slate-100">
+                      <span aria-hidden className="mt-1 block h-1 rounded-pill bg-surface-sunken">
                         <span
-                          className="block h-1 rounded bg-sky-500"
+                          className="block h-1 rounded-pill bg-primary"
                           style={{
                             width: `${maxNumeric > 0 ? Math.round(((r.numeric ?? 0) / maxNumeric) * 100) : 0}%`,
                           }}

@@ -91,7 +91,11 @@ import type {
   RegionSelection,
   StatusVisibility,
 } from "../components/MapView";
-import { formatRegionMetricDisplay } from "../lib/regionDisplay";
+import { formatRegionMetricDisplay, regionUnavailableReasonLabel } from "../lib/regionDisplay";
+import EquityMapInsightStrip from "../components/equity/EquityMapInsightStrip";
+import EquityMetricSelector from "../components/equity/EquityMetricSelector";
+import EquityRegionPicker from "../components/equity/EquityRegionPicker";
+import EquityRegionSummary from "../components/equity/EquityRegionSummary";
 import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
 import type { LandfillUnavailableState } from "../lib/landfill";
@@ -166,6 +170,7 @@ import {
   statusExplanation,
   statusLabel,
   type DashboardArea,
+  type DataStatus,
 } from "../lib/glossary";
 
 /** Sub-view inside suitability mode: the score screening, the weight lab, or cost. */
@@ -996,6 +1001,17 @@ export default function Home() {
   const metricReferencePeriod =
     derivedInfo?.numeratorReferencePeriod ?? sourceInfo?.referencePeriod ?? "";
 
+  // How the active metric's values came to be, in the shared provenance vocabulary
+  // (lib/glossary DATA_STATUS_META). This is READ OFF the existing metric
+  // definition, not a new judgement: per-capita and facility-burden are computed
+  // from two official inputs (the same fact `DerivedPanel` already states in
+  // words), while population and waste generation are served as published. Used
+  // only to label provenance — it never affects a value, a rank, or a color.
+  const metricDataStatus: DataStatus =
+    metric.dataset === "waste-per-capita" || metric.dataset === "facility-burden"
+      ? "derived"
+      : "reported";
+
   // --- 지역 부담 ranking + comparison + export derivations ------------------- //
 
   // Every region on the active geography paired with its served value (or undefined
@@ -1017,15 +1033,23 @@ export default function Home() {
       const selection = buildRegionSelection(code);
       if (!selection) return null;
       const value = regionValues.get(code);
+      // The SERVED availability reason for a region with no value, so the
+      // comparison row can say WHY the cell is empty instead of only 자료 없음.
+      // Read from the same feature the summary and the map popup read; when the
+      // source attached no reason the label is "" and nothing extra is rendered.
+      const feature = activeBoundaries.features.find((f) => f.properties.region_code === code);
       return {
         code,
         name: selection.regionName,
         display: value?.display ?? "",
         hasValue: selection.hasValue,
         numeric: value?.numeric,
+        unavailableReason: selection.hasValue
+          ? undefined
+          : regionUnavailableReasonLabel(feature?.properties.unavailable_reason) || undefined,
       };
     },
-    [buildRegionSelection, regionValues],
+    [buildRegionSelection, regionValues, activeBoundaries],
   );
 
   // Concise source/period/accounting provenance for the CSV + report metadata.
@@ -1478,118 +1502,50 @@ export default function Home() {
 
         {mode === "equity" && (
           <>
-            {/* ACTIVE-METRIC SUMMARY (Phase 4 AC1).
-                The selected metric is the answer-first element of this column: its
-                plain-Korean name is the largest text here (text-base font-semibold),
-                the unit is muted secondary text, and the source + reference period
-                sit below as caption text so the metric's provenance is reachable
-                without opening a disclosure (repo AGENTS.md).
-
-                role="status" is unchanged — an implicit polite live region, so every
-                radio change is announced. It wraps ONLY the name + unit so the
-                announcement stays one short phrase; the provenance caption is
-                deliberately outside the live region (it would otherwise be re-read
-                on every metric change). There is no second metric state: this reads
-                the same `metric`/`unit` the map fill and legend read. */}
-            <section aria-label="지표 선택" className="wep-card p-4">
-              <div role="status" data-testid="selected-metric-summary">
-                <p className="text-xs font-medium text-ink-subtle">선택한 지표</p>
-                <p className="mt-0.5 text-base font-semibold leading-tight text-ink">
-                  {metric.label}
-                </p>
-                {unit ? <p className="mt-0.5 text-xs text-ink-subtle">단위 {unit}</p> : null}
-              </div>
-              {metricProvenance.length > 0 && (
-                <dl className="mt-2 border-t border-hairline pt-2 text-xs text-ink-subtle">
-                  {metricProvenance.map((entry) => (
-                    <div key={entry.label}>
-                      <dt className="inline font-medium">{entry.label}: </dt>
-                      <dd className="inline">{entry.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-            </section>
-
-            {/* SELECTED REGION.
-                Ordered directly after the active-metric card so the column answers
-                before it asks: "which metric am I looking at" then "which region did
-                I pick", with the controls below. Phase 4 moved it above the metric
-                list because a map click otherwise landed on a panel below the fold at
-                1440×900 — the reader had to scroll to see what they had just clicked.
-                Only the DOM order changed; the state, the testids, and the native
-                <select> are untouched. */}
-            <RegionSummary
-              selected={selectedRegion}
-              clear={() => setSelectedRegionCode(null)}
-              regionOptions={regionOptions}
-              onSelectRegion={(code) => setSelectedRegionCode(code)}
-              metricProvenance={metricProvenance}
-            />
-
-            {/* METRIC GROUPS (Phase 4 AC2 — structure deliberately unchanged).
-                Still exactly 3 <fieldset>s / 3 <legend>s / 11
-                input[type=radio][name="metric"] in ONE logical radio group, with the
-                same values and the same onChange, so native arrow-key behaviour and
-                every metric definition are untouched. Phase 4 only reduces density:
-                one card per family instead of a nested bordered box, tighter rows,
-                and a selected row that is emphasised by border + text weight in
-                addition to the native radio — never by color alone. */}
-            <section aria-label="지표 목록" className="wep-card p-4">
-              <h2 className="mb-2 text-sm font-semibold text-ink">지역 지표 선택</h2>
-              <div className="flex flex-col gap-3">
-                {METRIC_GROUPS.map((group) => (
-                  <fieldset key={group.key} className="m-0" data-testid={`metric-group-${group.key}`}>
-                    <legend className="mb-1 p-0 text-xs font-semibold text-ink-muted">
-                      {group.legend}
-                    </legend>
-                    <div className="flex flex-col gap-0.5">
-                      {METRICS.filter((candidate) => candidate.group === group.key).map(
-                        (candidate) => {
-                          const isActive = metricKey === candidate.key;
-                          return (
-                            <label
-                              key={candidate.key}
-                              className={`flex items-start gap-2 rounded-control border px-2 py-1.5 text-sm ${
-                                isActive
-                                  ? "border-primary bg-primary-soft font-semibold text-ink"
-                                  : "border-transparent text-ink-muted hover:bg-surface-muted"
-                              }`}
-                            >
-                              <input
-                                type="radio"
-                                name="metric"
-                                className="mt-0.5"
-                                checked={isActive}
-                                onChange={() => selectMetric(candidate.key)}
-                              />
-                              <span>{candidate.label}</span>
-                            </label>
-                          );
-                        },
-                      )}
-                    </div>
-                  </fieldset>
-                ))}
-              </div>
-            </section>
-
-            {/* Regional ranking + comparison + share/export. All read the active
-                metric's served values, so they follow the metric automatically, and
-                selecting a region here drives the ONE canonical selected-region state
-                (map + summary stay in sync). */}
-            <RegionRanking
-              regions={rankableRegions}
+            {/* CURRENT SELECTION — one answer-first summary card.
+                Before this milestone the same facts lived in two adjacent cards
+                ("선택한 지표" and "선택한 지역"), each printing its own copy of
+                `metricProvenance`. They are merged here: region → value → what is
+                measured → when the data is from → source, with the provenance shown
+                once. The role="status" live region, the contracted test IDs, and the
+                "a missing value shows its served reason, never a 0" rule are
+                unchanged (docs/ui-refresh/equity-dashboard.md). */}
+            <EquityRegionSummary
               metricLabel={metric.label}
               unit={unit}
-              scope={scope}
-              setScope={setScope}
-              topN={topN}
-              setTopN={setTopN}
-              selectedRegionCode={selectedRegionCode}
+              referencePeriod={metricReferencePeriod}
+              metricStatus={metricDataStatus}
+              metricProvenance={metricProvenance}
+              selected={selectedRegion}
+              onClear={() => setSelectedRegionCode(null)}
+            />
+
+            {/* REGION SEARCH & SELECTION — the keyboard path to the same canonical
+                `selectedRegionCode`, now its own labelled section instead of a form
+                control wedged inside the summary above. `selectedRegion?.regionCode`
+                (not the raw code) is passed deliberately: when a metric change moves
+                to a geography that lacks the stored region the derived selection is
+                null, and the select must return to its empty option rather than hold
+                a value no longer in its option list. */}
+            <EquityRegionPicker
+              regionOptions={regionOptions}
+              selectedRegionCode={selectedRegion?.regionCode ?? null}
               onSelectRegion={(code) => setSelectedRegionCode(code)}
             />
 
+            {/* METRIC GROUPS — structure frozen: 3 fieldsets / 3 legends / 11 radios
+                in one logical group (regression-contract §5). Presentation only. */}
+            <EquityMetricSelector
+              groups={METRIC_GROUPS}
+              metrics={METRICS}
+              metricKey={metricKey}
+              onSelectMetric={selectMetric}
+            />
+
+            {/* Comparison + ranking + share/export. All read the active metric's
+                served values, so they follow the metric automatically, and selecting
+                a region in either drives the ONE canonical selected-region state
+                (map + summary stay in sync). */}
             <RegionComparison
               regionOptions={regionOptions}
               resolveValue={resolveComparisonValue}
@@ -1599,6 +1555,19 @@ export default function Home() {
               setSelected={setComparison}
               onSelectRegionOnMap={(code) => setSelectedRegionCode(code)}
               maxCompare={MAX_COMPARE}
+            />
+
+            <RegionRanking
+              regions={rankableRegions}
+              metricLabel={metric.label}
+              unit={unit}
+              referencePeriod={metricReferencePeriod}
+              scope={scope}
+              setScope={setScope}
+              topN={topN}
+              setTopN={setTopN}
+              selectedRegionCode={selectedRegionCode}
+              onSelectRegion={(code) => setSelectedRegionCode(code)}
             />
 
             <ShareExportBar
@@ -1807,43 +1776,73 @@ export default function Home() {
             </div>
           ) : null}
         </div>
-        {/* Floating legend over the lower-left of the map — one legend per map mode.
-            It never recomputes colors/breaks: equity mode receives the page's active
-            scale rows (same palette/breaks as the fill); suitability mode receives the
-            candidate palette/breaks and the CANONICAL statusVisibility state (its
-            checkboxes drive the same filter the map reads). */}
-        {mode === "equity" ? (
-          <MapLegendOverlay
-            mode="equity"
-            metricLabel={metric.label}
-            unit={unit}
-            methodNote={scaleMethodNote(activeScale)}
-            rows={legendRows}
-            noDataColor={NO_DATA_COLOR}
-          />
-        ) : (
-          <MapLegendOverlay
-            mode="suitability"
-            scoreClasses={suitabilityScoreClasses}
-            eligibleColor={CANDIDATE_SCORE_PALETTE_5[3]}
-            reviewColor={CANDIDATE_REVIEW_COLOR}
-            excludedColor={CANDIDATE_EXCLUDED_COLOR}
-            statusVisibility={statusVisibility}
-            onToggleStatus={toggleStatus}
-            statusLabels={STATUS_LABELS}
-            stabilityAvailable={stabilityAvailable}
-            stableOnly={stableOnly}
-            onToggleStableOnly={toggleStableOnly}
-            stableOutlineColor={CANDIDATE_STABLE_OUTLINE_COLOR}
-            disclaimer={
-              scenarioActive
-                ? "사용자 가정 기반 임시 비교이며 공식 분석 실행·법적 입지 결정이 아닙니다."
-                : SUITABILITY_SCREENING_SHORT_LABEL
-            }
-            scenarioActive={scenarioActive}
-            scenarioWeights={appliedScenario?.weights ?? null}
-          />
-        )}
+        {/* THE MAP'S BOTTOM OVERLAY STACK — one bottom-anchored, left-aligned flex
+            column holding the floating legend and, in 지역 부담 only, the 해석·주의·
+            자료 기준·출처 insight strip beneath it.
+
+            Why a column instead of two absolutely-positioned cards: both belong in
+            the same bottom band, and hand-tuned `bottom-*` offsets would overlap the
+            moment either grew a line of Korean text at a narrower width. Stacking
+            them makes non-collision structural. It grows UPWARD from `bottom-8`,
+            which keeps the OSM attribution (bottom-right, ~24px) uncovered, and
+            `items-start` keeps each card at its own width, so the legend is
+            positioned exactly as before in every non-equity branch.
+
+            The strip is an OVERLAY, never an in-flow band under the map: the map
+            pane is contracted to reach the viewport bottom with nothing below it
+            (docs/ui-refresh/regression-contract.md §4), so an in-flow strip would
+            shorten the canvas and break that contract.
+
+            The legend never recomputes colors/breaks: equity mode receives the
+            page's active scale rows (same palette/breaks as the fill); suitability
+            mode receives the candidate palette/breaks and the CANONICAL
+            statusVisibility state (its checkboxes drive the filter the map reads). */}
+        <div className="pointer-events-none absolute bottom-8 left-2 right-2 z-10 flex flex-col items-start gap-2 md:left-3 md:right-3">
+          <div className="pointer-events-auto">
+            {mode === "equity" ? (
+              <MapLegendOverlay
+                mode="equity"
+                metricLabel={metric.label}
+                unit={unit}
+                methodNote={scaleMethodNote(activeScale)}
+                rows={legendRows}
+                noDataColor={NO_DATA_COLOR}
+              />
+            ) : (
+              <MapLegendOverlay
+                mode="suitability"
+                scoreClasses={suitabilityScoreClasses}
+                eligibleColor={CANDIDATE_SCORE_PALETTE_5[3]}
+                reviewColor={CANDIDATE_REVIEW_COLOR}
+                excludedColor={CANDIDATE_EXCLUDED_COLOR}
+                statusVisibility={statusVisibility}
+                onToggleStatus={toggleStatus}
+                statusLabels={STATUS_LABELS}
+                stabilityAvailable={stabilityAvailable}
+                stableOnly={stableOnly}
+                onToggleStableOnly={toggleStableOnly}
+                stableOutlineColor={CANDIDATE_STABLE_OUTLINE_COLOR}
+                disclaimer={
+                  scenarioActive
+                    ? "사용자 가정 기반 임시 비교이며 공식 분석 실행·법적 입지 결정이 아닙니다."
+                    : SUITABILITY_SCREENING_SHORT_LABEL
+                }
+                scenarioActive={scenarioActive}
+                scenarioWeights={appliedScenario?.weights ?? null}
+              />
+            )}
+          </div>
+          {mode === "equity" ? (
+            <EquityMapInsightStrip
+              metricLabel={metric.label}
+              unit={unit}
+              metricStatus={metricDataStatus}
+              referencePeriod={metricReferencePeriod}
+              metricProvenance={metricProvenance}
+              onOpenSources={() => changeMode("transparency")}
+            />
+          ) : null}
+        </div>
       </div>
 
       {/* Print / PNG report preview overlay (map-free). Opened from the equity
@@ -1919,131 +1918,6 @@ function CollapsibleSection({
           padding there; on mobile the visible summary already provides it. */}
       <div className="mobile-collapsible-body flex flex-col gap-4 px-4 pb-4 md:pt-4">{children}</div>
     </details>
-  );
-}
-
-// --------------------------------------------------------------------------- //
-// Selected-region summary — the accessible DOM alternative to a map region click.
-//
-// The MapLibre canvas cannot be reached by keyboard or a screen reader, so this
-// offers a keyboard-operable region <select> that populates the same summary the
-// map click does. It never fabricates a value: a region with no served value shows
-// its availability text (never a zero), and the displayed analytical value carries
-// its metric source and reference period (repo AGENTS.md) in addition to the
-// boundary provenance. Kept OUT of a collapsed <details> so its role="status"
-// region can announce the selection (a closed disclosure would hide it from the
-// a11y tree).
-// --------------------------------------------------------------------------- //
-
-function RegionSummary({
-  selected,
-  clear,
-  regionOptions,
-  onSelectRegion,
-  metricProvenance,
-}: {
-  selected: RegionSelection | null;
-  clear: () => void;
-  regionOptions: { code: string; name: string }[];
-  onSelectRegion: (code: string | null) => void;
-  metricProvenance: { label: string; value: string }[];
-}) {
-  return (
-    <section
-      aria-label="선택한 지역 요약"
-      className="wep-card p-4 text-xs text-ink-muted"
-      data-testid="selected-region-summary"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink">선택한 지역</h2>
-        {selected && (
-          <button
-            type="button"
-            onClick={clear}
-            className="text-ink-subtle hover:text-ink"
-            data-testid="selected-region-clear"
-          >
-            지우기 ✕
-          </button>
-        )}
-      </div>
-      {/* Keyboard/screen-reader selection path: a native <select> of every region
-          on the active geometry. Selecting one populates the same summary as a map
-          click, so pointer input is not required. Phase 4 restyles it and leaves the
-          element type, testid, and onChange contract untouched — it stays a native
-          <select> and is NOT replaced by the Phase 2 SearchableRegionPicker. */}
-      <label className="mt-2 block font-medium text-ink-muted">
-        지역 선택
-        <select
-          className="mt-1 w-full rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm text-ink"
-          data-testid="region-select"
-          value={selected?.regionCode ?? ""}
-          onChange={(event) => onSelectRegion(event.target.value === "" ? null : event.target.value)}
-        >
-          <option value="">지역을 선택하세요…</option>
-          {regionOptions.map((option) => (
-            <option key={option.code} value={option.code}>
-              {option.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {/* The live region wraps only the populated state, so a chosen region is
-          announced, while clearing it (e.g. on a metric change) does not read out
-          the empty prompt. */}
-      {selected === null ? (
-        <p className="mt-2 text-ink-subtle" data-testid="selected-region-empty">
-          지도에서 지역을 누르거나 위 목록에서 지역을 선택하면 이름과 값이 여기에 표시됩니다.
-        </p>
-      ) : (
-        // Phase 4 hierarchy: region name → value + unit → availability → provenance.
-        // The name and the value lead; every supporting line is de-emphasised caption
-        // text. No analytical content was removed.
-        <div role="status" className="mt-3">
-          <p className="text-base font-semibold leading-tight text-ink" data-testid="selected-region-name">
-            {selected.regionName}
-          </p>
-          <p className="mt-1 text-xs text-ink-subtle">{selected.metricLabel}</p>
-          {/* hasValue ⇒ served value (with its unit); otherwise the availability text
-              carried on the feature (e.g. "데이터 없음 — …"), never a fabricated 0.
-              Availability is conveyed by the TEXT itself, not by color — the smaller
-              warn-toned treatment is redundant emphasis, not the signal. */}
-          <p
-            className={
-              selected.hasValue
-                ? "mt-0.5 text-xl font-semibold tabular-nums text-ink"
-                : "mt-0.5 text-sm font-medium text-warn"
-            }
-            data-testid="selected-region-value"
-          >
-            {selected.metricDisplay}
-          </p>
-          <dl className="mt-2 space-y-0.5 border-t border-hairline pt-2 text-xs text-ink-subtle">
-            {/* Metric source + reference period(s) for the displayed value — for
-                derived metrics both inputs (AGENTS.md). Distinct from the boundary
-                provenance below. */}
-            {metricProvenance.map((entry) => (
-              <div key={entry.label} data-testid="selected-region-metric-source">
-                <dt className="inline font-medium">{entry.label}: </dt>
-                <dd className="inline">{entry.value}</dd>
-              </div>
-            ))}
-            <div>
-              <dt className="inline font-medium">경계 출처: </dt>
-              <dd className="inline">
-                {selected.sourceId} ({selected.boundaryReferencePeriod})
-              </dd>
-            </div>
-          </dl>
-          {selected.geometryKind === "DERIVED" && selected.childRegionNames.length > 0 && (
-            <p className="mt-1 text-xs text-ink-subtle" data-testid="selected-region-derived-note">
-              통계 보고 단위: 시 · 경계는 {selected.childRegionNames.join("·")} 자치구 경계의 파생
-              합집합입니다. 구별 공식 폐기물 값은 제공되지 않습니다.
-            </p>
-          )}
-        </div>
-      )}
-    </section>
   );
 }
 

@@ -10,9 +10,20 @@
  * and this list stay in sync. Changing the metric re-derives the values, so the
  * ranking follows the active metric automatically.
  *
+ * NO SECOND RANKING EXISTS HERE. `rankRegions` (lib/ranking.ts) is the one
+ * implementation; this component calls it and renders the result. Ordering, tie
+ * behaviour, the top-N cut, and the "regions with no value are EXCLUDED, never
+ * zero-filled" rule all live there and are covered by `lib/ranking.test.ts`.
+ *
  * Analytical honesty: only regions with an official value are ranked; an official
  * measured 0 IS ranked, an unavailable region is excluded and its count reported;
  * no "best/worst/good/bad" language is used.
+ *
+ * This milestone changed presentation only: the scope filter is now the shared
+ * `SegmentedControl` (same `aria-pressed` semantics, same test IDs), the basis line
+ * carries the reference period alongside the metric and unit, and the rows use the
+ * token palette. The rank number, the region name, the formatted value, the
+ * selected-row treatment, and the excluded-count line are unchanged.
  */
 
 import {
@@ -25,11 +36,15 @@ import {
   type ScopeSelection,
 } from "../lib/ranking";
 import { formatCount } from "../lib/metrics";
+import SegmentedControl from "./ui/SegmentedControl";
+import type { SegmentedControlOption } from "./ui/SegmentedControl";
 
 interface RegionRankingProps {
   regions: RankableRegion[];
   metricLabel: string;
   unit: string;
+  /** The active metric's served reference period; omitted when none was served. */
+  referencePeriod?: string;
   scope: ScopeSelection;
   setScope: (scope: ScopeSelection) => void;
   topN: number;
@@ -37,6 +52,11 @@ interface RegionRankingProps {
   selectedRegionCode: string | null;
   onSelectRegion: (code: string) => void;
 }
+
+/** The scope filter options — the same order and labels lib/ranking defines. */
+const SCOPE_OPTIONS: readonly SegmentedControlOption<ScopeSelection>[] = SCOPE_ORDER.map(
+  (scope) => ({ key: scope, label: SCOPE_LABELS[scope], testId: `rank-scope-${scope}` }),
+);
 
 function RankList({
   title,
@@ -67,12 +87,12 @@ function RankList({
                   type="button"
                   onClick={() => onSelectRegion(row.code)}
                   aria-current={isSelected ? "true" : undefined}
-                  className={`flex min-h-[32px] w-full items-baseline justify-between gap-2 rounded-control px-2 py-1 text-left text-xs ${
+                  className={`flex min-h-[2rem] w-full items-baseline justify-between gap-2 rounded-control px-2 py-1 text-left text-xs ${
                     // Selection is conveyed by aria-current, the ✓ glyph, and the
                     // border/weight change — never by the tint alone.
                     isSelected
-                      ? "border border-primary bg-primary-soft font-semibold text-ink"
-                      : "border border-transparent hover:bg-surface-muted"
+                      ? "border border-primary-border bg-primary-soft font-semibold text-ink"
+                      : "border border-transparent hover:border-hairline hover:bg-surface-muted"
                   }`}
                   data-testid="rank-row"
                 >
@@ -96,6 +116,7 @@ export default function RegionRanking({
   regions,
   metricLabel,
   unit,
+  referencePeriod,
   scope,
   setScope,
   topN,
@@ -106,48 +127,39 @@ export default function RegionRanking({
   const result = rankRegions(regions, scope, topN);
 
   return (
-    // Phase 4: the same section in the Phase 1 shared card language (`.wep-card`,
-    // standard padding, standard header scale). Ranking algorithm, scope grouping,
-    // order, tie behaviour, and the excluded-count reporting are untouched.
     <section
       aria-label="지역 순위"
       data-testid="region-ranking"
       className="wep-card p-4 text-xs text-ink-muted"
     >
-      <h2 className="mb-1 text-sm font-semibold text-ink">값이 높은·낮은 지역</h2>
-      <p className="mb-2 text-[11px] text-ink-subtle">
-        {metricLabel} 기준{unit ? ` · 단위 ${unit}` : ""}. 지역을 누르면 지도와 요약이 함께
-        움직입니다.
+      <h2 className="text-sm font-semibold text-ink">값이 높은·낮은 지역</h2>
+      {/* The ranking basis: which metric, in what unit, from when. */}
+      <p className="mt-0.5 text-xs text-ink-subtle" data-testid="rank-basis">
+        {metricLabel} 기준{unit ? ` · 단위 ${unit}` : ""}
+        {referencePeriod ? ` · 자료 기준 ${referencePeriod}` : ""}
+      </p>
+      <p className="mt-0.5 text-xs text-ink-subtle">
+        지역을 누르면 지도와 요약이 함께 움직입니다.
       </p>
 
-      {/* Scope filter */}
-      <div className="mb-2 flex flex-wrap gap-1" role="group" aria-label="지역 범위">
-        {SCOPE_ORDER.map((s) => (
-          <button
-            key={s}
-            type="button"
-            aria-pressed={scope === s}
-            onClick={() => setScope(s)}
-            className={`min-h-[32px] rounded-pill px-3 py-1 text-xs ${
-              scope === s
-                ? "bg-primary font-semibold text-primary-ink"
-                : "bg-surface-sunken text-ink-muted hover:bg-surface-muted"
-            }`}
-            data-testid={`rank-scope-${s}`}
-          >
-            {SCOPE_LABELS[s]}
-          </button>
-        ))}
+      {/* Scope filter — exclusive selection, native buttons with aria-pressed. */}
+      <div className="mt-2">
+        <SegmentedControl
+          options={SCOPE_OPTIONS}
+          value={scope}
+          onChange={setScope}
+          ariaLabel="지역 범위"
+        />
       </div>
 
       {/* Top-N selector */}
-      <div className="mb-2 flex items-center gap-2">
-        <label className="text-[11px] text-ink-subtle" htmlFor="rank-topn">
+      <div className="mt-2 flex items-center gap-2">
+        <label className="text-xs text-ink-subtle" htmlFor="rank-topn">
           표시 개수
         </label>
         <select
           id="rank-topn"
-          className="min-h-[32px] rounded-control border border-hairline-strong bg-surface px-2 py-1 text-xs"
+          className="min-h-[2rem] rounded-control border border-hairline-strong bg-surface px-2 py-1 text-xs text-ink"
           value={topN}
           onChange={(e) => setTopN(Number(e.target.value))}
           data-testid="rank-topn"
@@ -160,7 +172,7 @@ export default function RegionRanking({
         </select>
       </div>
 
-      <div className="flex gap-3">
+      <div className="mt-3 flex gap-3">
         <RankList
           title="값이 높은 지역"
           rows={result.high}
@@ -177,7 +189,7 @@ export default function RegionRanking({
         />
       </div>
 
-      <p className="mt-2 text-[11px] text-ink-subtle" data-testid="rank-excluded">
+      <p className="mt-2 border-t border-hairline pt-2 text-xs text-ink-subtle" data-testid="rank-excluded">
         순위 대상 {formatCount(result.rankedCount)}개 지역. 값이 없어 제외한 지역{" "}
         {formatCount(result.excludedCount)}개(0으로 채우지 않음).
       </p>

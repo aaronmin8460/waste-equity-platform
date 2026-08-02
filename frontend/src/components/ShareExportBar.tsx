@@ -15,6 +15,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import InfoBanner from "./ui/InfoBanner";
+
 interface ShareExportBarProps {
   getShareUrl: () => string;
   onDownloadRankingCsv: () => void;
@@ -75,27 +77,31 @@ export default function ShareExportBar({
       data-testid="share-export"
       className="wep-card p-4 text-xs"
     >
-      <h2 className="mb-1 text-sm font-semibold text-ink">공유 · 내보내기</h2>
+      <h2 className="text-sm font-semibold text-ink">공유 · 내보내기</h2>
+      <p className="mt-0.5 text-xs text-ink-subtle">
+        현재 지표·지역·순위 설정이 그대로 담깁니다.
+      </p>
 
       {/* Always-present live region so a restored-link warning is announced even
-          when it is injected after mount. */}
+          when it is injected after mount. The banner is the shared warning
+          primitive, so this is no longer one more hand-rolled amber box; it is NOT
+          role="alert" — nothing here needs interrupting. */}
       <div role="status" aria-live="polite">
         {urlWarnings && urlWarnings.length > 0 && (
-          <div
-            className="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800"
-            data-testid="url-warnings"
-          >
-            공유 링크의 일부 설정을 복원하지 못했습니다:
-            <ul className="mt-0.5 list-disc pl-4">
-              {urlWarnings.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
+          <div className="mt-2">
+            <InfoBanner tone="warning" testId="url-warnings">
+              공유 링크의 일부 설정을 복원하지 못했습니다:
+              <ul className="mt-0.5 list-disc pl-4">
+                {urlWarnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </InfoBanner>
           </div>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="mt-2 flex flex-wrap gap-1.5">
         <button
           type="button"
           className="wep-btn-primary"
@@ -130,18 +136,18 @@ export default function ShareExportBar({
       {/* Copy feedback (live region). */}
       <div aria-live="polite" className="mt-1 min-h-[1rem]">
         {copyState === "ok" && (
-          <p role="status" className="text-[11px] text-emerald-700" data-testid="copy-ok">
+          <p role="status" className="text-xs font-medium text-success" data-testid="copy-ok">
             링크를 복사했습니다.
           </p>
         )}
         {copyState === "fail" && (
-          <p role="alert" className="text-[11px] text-red-700" data-testid="copy-fail">
+          <p role="alert" className="text-xs font-medium text-danger" data-testid="copy-fail">
             복사하지 못했습니다. 주소창의 링크를 직접 복사해 주세요.
           </p>
         )}
       </div>
 
-      <p className="mt-1 text-[11px] text-ink-subtle">
+      <p className="mt-1 text-xs text-ink-subtle">
         보고서 이미지에는 지도가 포함되지 않습니다.
       </p>
     </section>
