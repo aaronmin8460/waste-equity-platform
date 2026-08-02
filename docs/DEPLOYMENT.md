@@ -8,13 +8,28 @@ never exposed to the Internet.
 > manually. This document is the exact runbook; nothing here creates chargeable
 > AWS resources or changes DNS automatically.
 
-> **Deployment exclusion — land cover (recorded 2026-08-02, Phase 1B-LC7).** The
-> land-cover subsystem (source features, derived 500 m cell statistics, the
-> `/api/v1/environment/land-cover/cell-statistics` endpoints, its MVT tiles, and the map
-> layer) is **not part of any deployment** and **must not be migrated to OCI or made
-> public**. The EGIS licence review returned **`UNRESOLVED_PENDING_WRITTEN_RESPONSE`**;
-> the lifecycle state is `LOCAL_USE_ONLY_PENDING_CLARIFICATION`. This exclusion lifts only
-> after **LC7A** records a written provider response permitting the specific surface. See
+> **Land-cover deployment scope — updated 2026-08-02 (Phase 1B-LC8).** The LC7
+> deployment exclusion recorded on 2026-08-02 is **superseded operationally**. The
+> project owner confirmed **project-level authorization from the cooperating government
+> institution** (`GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION`), so the **derived**
+> land-cover services are now **publicly deployed**:
+> `PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER`.
+>
+> **Deployed:** the derived 500 m cell statistics and class-area rows, the
+> `/api/v1/environment/land-cover/cell-statistics` endpoints, its MVT tiles, the map
+> layer, legend, filters, and the candidate-detail section.
+>
+> **Deliberately NOT deployed:** the raw source-feature table
+> (`environmental_land_cover_features`, 6,901,309 rows) and the map-sheet table
+> (`environmental_land_cover_map_sheets`, 2,013 rows). They are **not required by any
+> public runtime path** — verified from the router source and its SQL — and original SHP
+> files and raw source polygons are **not redistributed**.
+>
+> **No EGIS-specific KOGL type is asserted.** LC7's evidence finding
+> (`UNRESOLVED_PENDING_WRITTEN_RESPONSE`) stands as a historical record; publication
+> rests on the project-level authorization instead. See
+> [PUBLIC_DATA_PROJECT_AUTHORIZATION.md](PUBLIC_DATA_PROJECT_AUTHORIZATION.md),
+> [LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md](LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md),
 > [LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md](LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md)
 > and [LAND_COVER_PUBLICATION_SURFACE_MATRIX.md](LAND_COVER_PUBLICATION_SURFACE_MATRIX.md).
 

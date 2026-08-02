@@ -31,7 +31,11 @@ const PARTIAL_KEY = "capital-grid-500m-v1:1807_3923";
 const NO_COVERAGE_KEY = "capital-grid-500m-v1:1492_4000";
 
 const LICENSE_STATEMENT =
-  "Public-use/licence clarification for the acquired 토지피복지도 release is still pending written confirmation from the provider. KOGL Type 1 is NOT claimed and commercial-use permission is NOT claimed. Local analytical use only.";
+  "Public deployment of the derived land-cover services is authorized for the Waste Equity Platform under project-level authorization from its cooperating government institution. This operational authorization does not assert a dataset-specific EGIS KOGL type. Original SHP files, raw source polygons, and raw per-feature source records are not redistributed.";
+const PUBLIC_STATEMENT_KO =
+  "본 플랫폼은 협력 정부기관이 확인한 프로젝트 차원의 공공데이터 활용 범위에 따라 공개 운영됩니다. 토지피복 정보는 EGIS 「세분류 [2025] 전국 토지피복지도」를 Waste Equity Platform의 500 m 후보격자 단위로 가공한 파생 통계입니다. 원본 SHP 파일, 원본 토지피복 도형 및 원본 개별 피처 레코드는 제공하지 않습니다.";
+const ATTRIBUTION_KO =
+  "출처: 기후에너지환경부 환경공간정보서비스(EGIS), 「세분류 [2025] 전국 토지피복지도」. Waste Equity Platform이 서울·인천·경기 500 m 후보격자 단위로 가공한 파생 통계입니다.";
 const NO_COVERAGE_WARNING_KO =
   "‘미평가(NO_COVERAGE)’는 확보된 토지피복 자료의 범위가 해당 후보 격자를 평가하지 않았다는 뜻입니다. 토지피복이 없거나 비어 있거나 이용되지 않는 토지라는 의미가 아니며, 적합하거나 안전하다는 의미도 아닙니다.";
 
@@ -47,8 +51,25 @@ const COVERAGE_MEANINGS: Record<LandCoverCoverageStatus, string> = {
 function disclosures() {
   return {
     reference_period: "2025",
-    license_status: "LOCAL_USE_ONLY_PENDING_CLARIFICATION",
+    license_status: "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER",
     license_statement: LICENSE_STATEMENT,
+    authorization_basis: "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION",
+    public_statement_ko: PUBLIC_STATEMENT_KO,
+    attribution: {
+      provider: "기후에너지환경부 환경공간정보서비스(EGIS)",
+      official_dataset_name: "세분류 [2025] 전국 토지피복지도",
+      reference_period: "2025",
+      official_source_url: "https://aid.mcee.go.kr/intro/land.do",
+      transformation_version: "land-cover-v1",
+      candidate_grid_version: "capital-grid-500m-v1",
+      statistics_derivation_version: "land-cover-cell-stats-v1",
+      statistics_version_id: 1,
+      attribution_ko: ATTRIBUTION_KO,
+      raw_source_not_returned_ko:
+        "원본 SHP 파일, 원본 토지피복 도형 및 원본 개별 피처 레코드는 제공하지 않습니다.",
+      authorization_status: "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER",
+      authorization_basis: "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION",
+    },
     license_note: "EGIS/KOGL 벡터 토지피복지도 다운로드 약관 — 서면 재확인 필요",
     used_in_suitability_scoring: false,
     scoring_statement:
@@ -62,16 +83,16 @@ function disclosures() {
     raw_feature_exposure_statement:
       "This API exposes only aggregated per-cell statistics.",
     availability_statement:
-      "Implemented and verified against a local development database only. Production/OCI availability has not been established by this phase.",
+      "Publicly deployed and verified against the production database (Phase 1B-LC8). Only derived 500 m candidate-cell statistics are served; the raw source-feature tables are not deployed to production.",
     lifecycle: {
       source_contract_validation: "LIVE_VERIFIED",
-      database_ingestion: "IMPLEMENTED_AND_LOCALLY_VERIFIED",
-      cell_statistics_derivation: "IMPLEMENTED_AND_LOCALLY_VERIFIED",
-      api_exposure: "IMPLEMENTED",
-      frontend_exposure: "IMPLEMENTED",
-      vector_tiles: "NOT_IMPLEMENTED",
+      database_ingestion: "DERIVED_STATISTICS_DEPLOYED_RAW_SOURCE_LOCAL_ONLY",
+      cell_statistics_derivation: "IMPLEMENTED_AND_VERIFIED",
+      api_exposure: "PUBLIC_DEPLOYED_AND_VERIFIED",
+      frontend_exposure: "PUBLIC_DEPLOYED_AND_VERIFIED",
+      vector_tiles: "PUBLIC_DEPLOYED_AND_VERIFIED",
       scoring_integration: "NOT_IMPLEMENTED",
-      production_deployment: "NOT_RUN",
+      production_deployment: "PUBLIC_DEPLOYED",
     },
   };
 }
@@ -944,31 +965,49 @@ describe("scoring and licence disclosures", () => {
     expect(screen.getByTestId("land-cover-scoring-badge")).toHaveTextContent("점수 미반영");
   });
 
-  it("preserves the pending licence state and claims no KOGL/commercial/production status", async () => {
+  it("states the public authorization and its basis without claiming an EGIS/KOGL licence", async () => {
     render(<LandCoverCellPanel candidateKey={COMPLETE_KEY} />);
     await waitFor(() => expect(screen.getByTestId("land-cover-body")).toBeInTheDocument());
 
     expect(screen.getByTestId("land-cover-license-disclosure")).toHaveTextContent(
-      "LOCAL_USE_ONLY_PENDING_CLARIFICATION",
+      "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER",
     );
     expect(screen.getByTestId("land-cover-license-disclosure").closest("details")).toBeNull();
+    // The BASIS is project-level authorization — shown separately, never merged into
+    // a claim about the dataset's own licence.
+    expect(screen.getByTestId("land-cover-authorization-basis")).toHaveTextContent(
+      "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION",
+    );
+    expect(screen.getByTestId("land-cover-public-statement")).toHaveTextContent("협력 정부기관");
+    expect(screen.getByTestId("land-cover-public-statement")).toHaveTextContent(
+      "원본 SHP 파일",
+    );
     expect(screen.getByTestId("land-cover-license-statement")).toHaveTextContent(
-      "KOGL Type 1 is NOT claimed",
+      "does not assert a dataset-specific EGIS KOGL type",
     );
-    // The availability statement mentions OCI only to DENY it, which is the point.
-    expect(screen.getByTestId("land-cover-availability")).toHaveTextContent(
-      "local development database only",
-    );
-    expect(screen.getByTestId("land-cover-availability")).toHaveTextContent(
-      "Production/OCI availability has not been established by this phase",
+    expect(screen.getByTestId("land-cover-license-statement")).toHaveTextContent(
+      "are not redistributed",
     );
 
-    // No positive claim of a licence grant, commercial permission, or a completed
-    // production/OCI deployment appears anywhere in the section.
+    // No positive claim of an EGIS licence grant, a KOGL type, commercial permission,
+    // or raw-data redistribution appears anywhere in the section.
     const panel = screen.getByTestId("land-cover-cell-panel");
     expect(panel.textContent).not.toMatch(
-      /KOGL 제1유형|KOGL Type 1 is claimed|상업적 이용 가능|commercial use permitted|운영 배포 완료|배포 완료|production ready|OCI 배포 완료/i,
+      /KOGL 제1유형|KOGL Type 1 is claimed|공공누리 제1유형|EGIS 서면 승인|상업적 이용 가능|commercial use permitted|원본 SHP 제공|raw data redistribution/i,
     );
+  });
+
+  it("always shows the mandatory source attribution and the official source link", async () => {
+    render(<LandCoverCellPanel candidateKey={COMPLETE_KEY} />);
+    await waitFor(() => expect(screen.getByTestId("land-cover-body")).toBeInTheDocument());
+
+    const attribution = screen.getByTestId("land-cover-attribution");
+    expect(attribution).toHaveTextContent("출처: 기후에너지환경부 환경공간정보서비스(EGIS)");
+    expect(attribution).toHaveTextContent("세분류 [2025] 전국 토지피복지도");
+    expect(attribution).toHaveTextContent("500 m 후보격자");
+    const link = screen.getByTestId("land-cover-source-link");
+    expect(link).toHaveAttribute("href", "https://aid.mcee.go.kr/intro/land.do");
+    expect(link).toHaveAttribute("target", "_blank");
   });
 
   it("renders the served uncovered-area and class-label statements verbatim", async () => {

@@ -20,6 +20,13 @@ Three invariants are structural here, not merely documented in prose:
 Nothing here is a score, weight, exclusion, rank, or candidate status, and no
 suitability result reads it: every response states
 ``used_in_suitability_scoring: false``. See ``docs/LAND_COVER_CELL_STATISTICS_API.md``.
+
+Phase 1B-LC8 made these services public. Two things follow, and only these two: the
+disclosure block now states the public-deployment status and its basis
+(``GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION``), and every response carries the mandatory
+source attribution a consumer must display. Nothing about what is measured, how it is
+measured, or whether it feeds scoring changed — see
+``docs/PUBLIC_DATA_PROJECT_AUTHORIZATION.md``.
 """
 
 from __future__ import annotations
@@ -78,13 +85,37 @@ CLASS_LABEL_STATEMENT = (
     "Official source class codes and Korean names are preserved verbatim as stored by "
     "LC3 — never translated, normalized, renamed, re-grouped, or merged."
 )
-#: Public-use status. LC2 recorded the licence as pending written clarification; LC4
-#: only preserves that status and must not upgrade it.
-LICENSE_STATUS = "LOCAL_USE_ONLY_PENDING_CLARIFICATION"
+# --- Public-deployment authorization (Phase 1B-LC8) --------------------------
+# LC2/LC4 recorded the acquired release as LOCAL_USE_ONLY_PENDING_CLARIFICATION because
+# LC7 could not establish a dataset-specific EGIS licence from public evidence. LC8 does
+# not overturn that finding: it proceeds on a SEPARATE basis — the project owner confirmed
+# (2026-08-02) project-level authorization from the cooperating government institution
+# with which this project is conducted. See docs/PUBLIC_DATA_PROJECT_AUTHORIZATION.md.
+#
+# Two distinct facts, deliberately kept distinct in the payload:
+#   * AUTHORIZATION_BASIS — *why* the platform may publish (project-level authorization);
+#   * LICENSE_STATUS      — *what* public state the derived services are therefore in.
+# Neither asserts an EGIS-specific KOGL type, and neither permits raw-data redistribution.
+#: The basis on which the derived services are published. NOT an EGIS reply, NOT a KOGL
+#: designation, NOT a licence number.
+AUTHORIZATION_BASIS = "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION"
+#: The public state of the derived land-cover services. The field is historically named
+#: ``license_status`` (LC4) and consumers read that name, so the name is preserved while
+#: the value now states the public-deployment status rather than a pending licence.
+LICENSE_STATUS = "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER"
 LICENSE_STATEMENT = (
-    "Public-use/licence clarification for the acquired 토지피복지도 release is still "
-    "pending written confirmation from the provider. KOGL Type 1 is NOT claimed and "
-    "commercial-use permission is NOT claimed. Local analytical use only."
+    "Public deployment of the derived land-cover services is authorized for the Waste "
+    "Equity Platform under project-level authorization from its cooperating government "
+    "institution. This operational authorization does not assert a dataset-specific EGIS "
+    "KOGL type. Original SHP files, raw source polygons, and raw per-feature source "
+    "records are not redistributed."
+)
+#: Korean-language equivalent, asserted by the API so the UI cannot drift from it.
+PUBLIC_STATEMENT_KO = (
+    "본 플랫폼은 협력 정부기관이 확인한 프로젝트 차원의 공공데이터 활용 범위에 따라 공개 "
+    "운영됩니다. 토지피복 정보는 EGIS 「세분류 [2025] 전국 토지피복지도」를 Waste Equity "
+    "Platform의 500 m 후보격자 단위로 가공한 파생 통계입니다. 원본 SHP 파일, 원본 토지피복 "
+    "도형 및 원본 개별 피처 레코드는 제공하지 않습니다."
 )
 SCORING_STATEMENT = (
     "These statistics are descriptive and are not used in suitability scoring: no "
@@ -96,8 +127,29 @@ RAW_FEATURE_STATEMENT = (
     "geometry and per-feature records are never returned."
 )
 AVAILABILITY_STATEMENT = (
-    "Implemented and verified against a local development database only. Production/OCI "
-    "availability has not been established by this phase."
+    "Publicly deployed and verified against the production database (Phase 1B-LC8). "
+    "Only derived 500 m candidate-cell statistics are served; the raw source-feature "
+    "tables are not deployed to production."
+)
+
+# --- Mandatory source attribution (Phase 1B-LC8) ------------------------------
+#: Provider as currently named. The ministry was renamed and the historic EGIS host
+#: ``egis.me.go.kr`` now redirects to ``aid.mcee.go.kr``; both were revalidated live on
+#: 2026-08-02. The *stored* provenance row keeps whatever URL was recorded at acquisition
+#: time — this constant carries the currently valid official URL beside it.
+ATTRIBUTION_PROVIDER = "기후에너지환경부 환경공간정보서비스(EGIS)"
+ATTRIBUTION_DATASET_TITLE = "세분류 [2025] 전국 토지피복지도"
+ATTRIBUTION_REFERENCE_PERIOD = "2025"
+ATTRIBUTION_OFFICIAL_SOURCE_URL = "https://aid.mcee.go.kr/intro/land.do"
+ATTRIBUTION_TRANSFORMATION_VERSION = "land-cover-v1"
+ATTRIBUTION_CANDIDATE_GRID_VERSION = "capital-grid-500m-v1"
+#: The exact attribution string every public surface must display.
+SOURCE_ATTRIBUTION_KO = (
+    "출처: 기후에너지환경부 환경공간정보서비스(EGIS), 「세분류 [2025] 전국 토지피복지도」. "
+    "Waste Equity Platform이 서울·인천·경기 500 m 후보격자 단위로 가공한 파생 통계입니다."
+)
+RAW_SOURCE_NOT_RETURNED_KO = (
+    "원본 SHP 파일, 원본 토지피복 도형 및 원본 개별 피처 레코드는 제공하지 않습니다."
 )
 
 # --- Pagination bounds ------------------------------------------------------
@@ -111,12 +163,38 @@ MAX_PAGE_SIZE = 500
 MAX_CLASS_ROWS_PER_CELL = 70
 
 
+class LandCoverSourceAttributionOut(BaseModel):
+    """Mandatory, machine-readable source attribution (Phase 1B-LC8).
+
+    Carried by every response so a consumer that renders the statistics also receives
+    the attribution it must display. ``official_source_url`` is the currently valid
+    official URL, revalidated live; the *recorded* acquisition-time URL stays on
+    ``source_release.official_source_url`` and is not rewritten.
+    """
+
+    provider: str = ATTRIBUTION_PROVIDER
+    official_dataset_name: str = ATTRIBUTION_DATASET_TITLE
+    reference_period: str = ATTRIBUTION_REFERENCE_PERIOD
+    official_source_url: str = ATTRIBUTION_OFFICIAL_SOURCE_URL
+    transformation_version: str = ATTRIBUTION_TRANSFORMATION_VERSION
+    candidate_grid_version: str = ATTRIBUTION_CANDIDATE_GRID_VERSION
+    #: LC3 derivation version of the statistics being served, resolved per response.
+    statistics_derivation_version: str | None = None
+    #: Immutable id of the statistics release being served, resolved per response.
+    statistics_version_id: int | None = None
+    #: The exact string a public surface must display.
+    attribution_ko: str = SOURCE_ATTRIBUTION_KO
+    raw_source_not_returned_ko: str = RAW_SOURCE_NOT_RETURNED_KO
+    authorization_status: str = LICENSE_STATUS
+    authorization_basis: str = AUTHORIZATION_BASIS
+
+
 class LandCoverCellStatisticsLifecycle(BaseModel):
     """Per-aspect lifecycle of the candidate-cell land-cover statistics product.
 
     These are documented phase states, not live health checks. ``scoring_integration``
-    is ``NOT_IMPLEMENTED`` by contract and ``production_deployment`` is ``NOT_RUN``:
-    this phase is a local, read-only API over already-derived statistics.
+    is ``NOT_IMPLEMENTED`` by contract — LC8 authorized *publication*, not scoring use.
+    ``production_deployment`` became ``PUBLIC_DEPLOYED`` in Phase 1B-LC8.
     """
 
     source_contract_validation: str
@@ -137,8 +215,16 @@ class LandCoverCellStatisticsDisclosures(BaseModel):
     """
 
     reference_period: str | None
+    #: Public state of the derived services. Historic field name (LC4); the value is the
+    #: LC8 public-deployment status, not a licence grant. See ``authorization_basis``.
     license_status: str = LICENSE_STATUS
     license_statement: str = LICENSE_STATEMENT
+    #: Why publication is permitted for this project. Never an EGIS reply or KOGL type.
+    authorization_basis: str = AUTHORIZATION_BASIS
+    public_statement_ko: str = PUBLIC_STATEMENT_KO
+    attribution: LandCoverSourceAttributionOut = Field(
+        default_factory=LandCoverSourceAttributionOut
+    )
     license_note: str | None = None
     used_in_suitability_scoring: bool = False
     scoring_statement: str = SCORING_STATEMENT

@@ -681,12 +681,31 @@ Completed subphases (all **local only** — production/OCI `NOT_RUN` unless stat
   free use only for works carrying an attached 공공누리 (KOGL) Type 1 mark, and **no such
   mark is published for the downloaded vector 토지피복지도**. A KOGL Type 1 designation
   exists only for the separate WMS map service and for the ministry's own tabular area
-  statistics, and is **not** transferred to the SHP download. Deployment eligibility is
-  **BLOCKED** and the licence stays `LOCAL_USE_ONLY_PENDING_CLARIFICATION`. Next phase is
-  **LC7A — submit the written inquiry and record the official response**, not LC8.
+  statistics, and is **not** transferred to the SHP download. This evidence finding
+  **stands and is not withdrawn**; it is what the public sources showed. What it no
+  longer does is block deployment — see 1B-LC8 below, which proceeds on a *separate*
+  project-level basis. LC7A (submit the written EGIS inquiry) is therefore **no longer
+  the blocking next phase**; it remains optional future work.
   ([LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md](LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md),
   [LAND_COVER_PUBLICATION_SURFACE_MATRIX.md](LAND_COVER_PUBLICATION_SURFACE_MATRIX.md),
   [EGIS_LAND_COVER_LICENCE_INQUIRY_KO.md](EGIS_LAND_COVER_LICENCE_INQUIRY_KO.md))
+- **1B-LC8 — government-partner-authorized full public deployment.** On 2026-08-02 the
+  project owner confirmed **project-level authorization from the cooperating government
+  institution** with which this project is conducted
+  (`GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION`). That authorization — **not** an EGIS
+  reply and **not** a KOGL designation — is the basis on which the complete LC3–LC6
+  land-cover feature set became public:
+  `PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER`. The phase changed
+  disclosure constants, added mandatory source attribution to every public API response
+  and UI surface, and deployed the **derived** data only: the statistics version, the
+  47,893 cell rows and 1,142,780 class-area rows, resolved in production by natural key
+  rather than by local surrogate id. The 6,901,309-row raw source-feature table and the
+  2,013 map sheets were **not** deployed — direct source inspection proved no public
+  runtime path reads them. **No migration**, no scoring integration
+  (`used_in_suitability_scoring` stays `false`), and no suitability score, rank, status,
+  exclusion, or review reason changed.
+  ([PUBLIC_DATA_PROJECT_AUTHORIZATION.md](PUBLIC_DATA_PROJECT_AUTHORIZATION.md),
+  [LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md](LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md))
 
 Required checks applied to every subphase:
 

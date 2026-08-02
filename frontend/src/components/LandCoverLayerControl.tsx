@@ -24,7 +24,14 @@
 import { useId, useMemo, useState } from "react";
 
 import type { LandCoverCoverageStatus } from "../lib/api";
-import { CLASS_LEVELS, CLASS_LEVEL_LABELS, type ClassLevel } from "../lib/landCover";
+import {
+  CLASS_LEVELS,
+  CLASS_LEVEL_LABELS,
+  landCoverAttributionText,
+  landCoverOfficialSourceUrl,
+  type ClassLevel,
+  type LandCoverDisclosureLike,
+} from "../lib/landCover";
 import {
   LAND_COVER_COVERAGE_LEGEND_LABELS,
   LAND_COVER_COVERAGE_STATUSES,
@@ -41,11 +48,12 @@ import {
 export const LAND_COVER_LAYER_LABEL = "토지피복 격자 통계";
 
 /**
- * The layer's own lifecycle/licence disclosure. Restated in the platform's voice
- * beside the backend's served `license_status`; it never upgrades that status.
+ * The layer's own public-operation disclosure (Phase 1B-LC8). Restated in the
+ * platform's voice beside the backend's served status; it asserts no EGIS KOGL type
+ * and no raw-data redistribution right, and it keeps the scoring non-use statement.
  */
 export const LAND_COVER_LAYER_DISCLAIMER =
-  "확보된 토지피복 자료의 공개·이용 조건은 아직 서면 확인 전이며, 지역 분석 용도로만 사용합니다. 이 레이어는 설명용이며 적합성 점수·순위·제외 판정에 사용되지 않습니다.";
+  "본 플랫폼은 협력 정부기관이 확인한 프로젝트 차원의 공공데이터 활용 범위에 따라 공개 운영됩니다. 원본 SHP 파일과 원본 토지피복 도형은 제공하지 않습니다. 이 레이어는 설명용이며 적합성 점수·순위·제외 판정에 사용되지 않습니다.";
 
 /** Explains where the class-filter vocabulary comes from — loaded tiles, not a list. */
 export const LAND_COVER_CLASS_SOURCE_NOTE =
@@ -77,6 +85,12 @@ interface LandCoverLayerControlProps {
   onSetAllClasses: (visible: boolean) => void;
   /** Statistics version pinned into the tile URL, shown as provenance. */
   statisticsVersionId: number | null;
+  /**
+   * Disclosures served with the active release, used for the mandatory source
+   * attribution. Optional and possibly partial: attribution still renders from the
+   * canonical project constants when the release has not loaded or omits them.
+   */
+  disclosures?: LandCoverDisclosureLike;
 }
 
 export default function LandCoverLayerControl({
@@ -95,6 +109,7 @@ export default function LandCoverLayerControl({
   onToggleClass,
   onSetAllClasses,
   statisticsVersionId,
+  disclosures,
 }: LandCoverLayerControlProps) {
   const modeGroupId = useId();
   const levelGroupId = useId();
@@ -398,19 +413,36 @@ export default function LandCoverLayerControl({
           </p>
         ) : null}
 
-        {/* Lifecycle / licence / non-scoring disclosure. */}
+        {/* Public-operation / non-scoring disclosure. */}
         <p
           className="mt-2 border-t border-hairline pt-2 text-[11px] text-ink-subtle"
           data-testid="land-cover-layer-disclaimer"
         >
           {LAND_COVER_LAYER_DISCLAIMER}
         </p>
+        {/* Mandatory source attribution. Rendered from the served disclosures when
+            available and from the canonical project constant otherwise, so the
+            attribution can never be missing from a public surface. */}
+        <p className="mt-1 text-[11px] text-ink-subtle" data-testid="land-cover-layer-attribution">
+          {landCoverAttributionText(disclosures)}{" "}
+          <a
+            className="underline"
+            href={landCoverOfficialSourceUrl(disclosures)}
+            target="_blank"
+            rel="noreferrer noopener"
+            data-testid="land-cover-layer-source-link"
+          >
+            원본 자료 안내
+          </a>
+        </p>
         {statisticsVersionId !== null ? (
           <p
             className="mt-1 text-[11px] text-ink-subtle"
             data-testid="land-cover-layer-version"
+            data-diagnostic
           >
-            통계 릴리스 버전 {statisticsVersionId} · 지역 분석 전용 (로컬 확인)
+            통계 릴리스 버전 {statisticsVersionId} · 기준 시점 2025 · 파생 통계 (land-cover-v1 ·
+            capital-grid-500m-v1)
           </p>
         ) : null}
       </div>

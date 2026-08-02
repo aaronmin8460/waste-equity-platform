@@ -328,7 +328,16 @@ def test_release_resolves_the_synthetic_active_release(
     assert body["status"] == "SUCCEEDED"
     assert body["expected_cell_count"] == body["processed_cell_count"] == 3
     assert body["disclosures"]["used_in_suitability_scoring"] is False
-    assert body["disclosures"]["license_status"] == "LOCAL_USE_ONLY_PENDING_CLARIFICATION"
+    assert (
+        body["disclosures"]["license_status"]
+        == "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER"
+    )
+    assert body["disclosures"]["authorization_basis"] == "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION"
+    # Mandatory attribution resolves against the release actually served.
+    attribution = body["disclosures"]["attribution"]
+    assert attribution["statistics_version_id"] == seeded["release"].id
+    assert attribution["statistics_derivation_version"] == seeded["release"].derivation_version
+    assert attribution["attribution_ko"].startswith("출처: 기후에너지환경부")
 
 
 def test_partial_unique_index_blocks_a_second_active_release(

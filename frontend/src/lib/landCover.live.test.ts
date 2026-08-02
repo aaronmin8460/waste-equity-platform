@@ -56,13 +56,41 @@ describe.skipIf(!liveBaseUrl)("LC4 land-cover API — live backend", () => {
       status: string;
       is_active: boolean;
       derivation_version: string;
-      disclosures: { license_status: string; used_in_suitability_scoring: boolean };
+      disclosures: {
+        license_status: string;
+        authorization_basis: string;
+        public_statement_ko: string;
+        used_in_suitability_scoring: boolean;
+        attribution: {
+          provider: string;
+          official_dataset_name: string;
+          reference_period: string;
+          official_source_url: string;
+          attribution_ko: string;
+          statistics_version_id: number | null;
+        };
+      };
     }>(`${BASE}/release`);
     expect(release.status).toBe("SUCCEEDED");
     expect(release.is_active).toBe(true);
-    // The two disclosures the panel renders must really be served this way.
+    // The disclosures the panel renders must really be served this way.
     expect(release.disclosures.used_in_suitability_scoring).toBe(false);
-    expect(release.disclosures.license_status).toBe("LOCAL_USE_ONLY_PENDING_CLARIFICATION");
+    expect(release.disclosures.license_status).toBe(
+      "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER",
+    );
+    expect(release.disclosures.authorization_basis).toBe(
+      "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION",
+    );
+    // Mandatory attribution really travels with the response (Phase 1B-LC8).
+    const attribution = release.disclosures.attribution;
+    expect(attribution.provider).toContain("환경공간정보서비스");
+    expect(attribution.official_dataset_name).toContain("세분류 [2025]");
+    expect(attribution.reference_period).toBe("2025");
+    expect(attribution.official_source_url).toMatch(/^https:\/\//);
+    expect(attribution.attribution_ko).toContain("500 m 후보격자");
+    expect(attribution.statistics_version_id).not.toBeNull();
+    // No EGIS KOGL type may be asserted anywhere in the served disclosure text.
+    expect(release.disclosures.public_statement_ko).not.toMatch(/KOGL|공공누리|제1유형/);
   });
 
   it("parses and validates a real COMPLETE_EXACT cell", async () => {
@@ -74,7 +102,9 @@ describe.skipIf(!liveBaseUrl)("LC4 land-cover API — live backend", () => {
     expect(detail).not.toBeNull();
     expect(detail?.coverage_status).toBe("COMPLETE_EXACT");
     expect(detail?.used_in_suitability_scoring).toBe(false);
-    expect(detail?.disclosures.license_status).toBe("LOCAL_USE_ONLY_PENDING_CLARIFICATION");
+    expect(detail?.disclosures.license_status).toBe(
+      "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER",
+    );
     // A fully evaluated cell has a real dominant class at every level.
     expect(detail?.dominant_class.l1_code).toBeTruthy();
     expect(detail?.dominant_class.l3_name).toBeTruthy();

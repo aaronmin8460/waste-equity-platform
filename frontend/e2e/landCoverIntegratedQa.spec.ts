@@ -223,6 +223,75 @@ test.describe("LC6 — source and layer lifecycle", () => {
 // 2. Low-zoom cost, measured
 // --------------------------------------------------------------------------- //
 
+/**
+ * Phase 1B-LC8 — the public authorization disclosure and the mandatory source
+ * attribution must be VISIBLE in the browser, not merely present in the JSON.
+ *
+ * The two facts are asserted separately on purpose: the public-deployment status and
+ * the PROJECT-level basis it rests on. No surface may assert an EGIS written approval
+ * or a KOGL type, and none may offer raw SHP/source geometry.
+ */
+test.describe("LC8 — public authorization and attribution", () => {
+  test("the layer control shows the attribution, the basis, and no KOGL/raw-data claim", async ({
+    page,
+  }) => {
+    await gotoSuitability(page);
+    const control = await openControl(page);
+
+    const attribution = page.getByTestId("land-cover-layer-attribution");
+    await expect(attribution).toBeVisible();
+    await expect(attribution).toContainText("출처: 기후에너지환경부 환경공간정보서비스(EGIS)");
+    await expect(attribution).toContainText("세분류 [2025] 전국 토지피복지도");
+    await expect(attribution).toContainText("500 m 후보격자");
+    await expect(page.getByTestId("land-cover-layer-source-link")).toHaveAttribute(
+      "href",
+      /^https:\/\//,
+    );
+
+    const disclaimer = page.getByTestId("land-cover-layer-disclaimer");
+    await expect(disclaimer).toBeVisible();
+    await expect(disclaimer).toContainText("협력 정부기관");
+    await expect(disclaimer).toContainText("원본 SHP 파일");
+    await expect(disclaimer).toContainText("적합성 점수");
+
+    // No claim of an EGIS licence, a KOGL type, or a raw-data download anywhere in
+    // the control — publication rests on project authorization, nothing more.
+    const text = await control.innerText();
+    expect(text).not.toMatch(/KOGL|공공누리|제1유형|서면 승인|SHP 다운로드|원본 내려받기/);
+
+    await assertNoLeakedInternals(page);
+  });
+
+  test("the candidate-detail land-cover section shows the public status, its basis and the attribution", async ({
+    page,
+  }) => {
+    const candidateId = await discoverCandidateId(page, "coverage_status=COMPLETE_EXACT");
+    await page.goto(`${SUITABILITY_URL}&cand=${candidateId}`);
+    // Same settle order the other deep-link specs use: the map must mount before the
+    // candidate selection resolves and the land-cover section is requested at all.
+    await expect(page.locator(".maplibregl-canvas")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("land-cover-cell-panel")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("land-cover-body")).toBeVisible({ timeout: 30_000 });
+
+    await expect(page.getByTestId("land-cover-license-disclosure")).toContainText(
+      "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER",
+    );
+    await expect(page.getByTestId("land-cover-authorization-basis")).toContainText(
+      "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION",
+    );
+    await expect(page.getByTestId("land-cover-public-statement")).toContainText("협력 정부기관");
+    await expect(page.getByTestId("land-cover-attribution")).toContainText(
+      "출처: 기후에너지환경부 환경공간정보서비스(EGIS)",
+    );
+    // Publication never changes the scoring status.
+    await expect(page.getByTestId("land-cover-scoring-disclosure")).toContainText(
+      "used_in_suitability_scoring: false",
+    );
+
+    await assertNoLeakedInternals(page);
+  });
+});
+
 test.describe("LC6 — low-zoom cost", () => {
   test("records what the browser actually pays to enable the layer at the default view", async ({
     page,

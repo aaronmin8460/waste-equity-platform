@@ -322,29 +322,53 @@ def test_release_returns_full_identity_and_disclosures(seeded: Session, client: 
     assert source["source_checksum"] == "a" * 64
 
 
-def test_release_disclosures_state_pending_licence_and_no_scoring(
+def test_release_disclosures_state_public_authorization_and_no_scoring(
     seeded: Session, client: TestClient
 ) -> None:
     disclosures = client.get(f"{BASE}/release").json()["disclosures"]
 
     assert disclosures["reference_period"] == "2025"
-    assert disclosures["license_status"] == "LOCAL_USE_ONLY_PENDING_CLARIFICATION"
+    # Phase 1B-LC8: the public state is a DEPLOYMENT status resting on a PROJECT-level
+    # government-partner authorization. The two are separate fields on purpose.
+    assert (
+        disclosures["license_status"]
+        == "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER"
+    )
+    assert disclosures["authorization_basis"] == "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION"
     assert disclosures["used_in_suitability_scoring"] is False
+    # Publication authorization never becomes scoring use.
     assert disclosures["lifecycle"]["scoring_integration"] == "NOT_IMPLEMENTED"
-    # Phase 1B-LC5A showed these statistics in the candidate-detail panel; Phase
-    # 1B-LC5B added the version-pinned vector tiles and the map-wide layer, legend and
-    # filters that consume them. Both states are therefore
-    # IMPLEMENTED_AND_LOCALLY_VERIFIED — "locally", because every phase so far was
-    # verified against a local development database only.
-    assert disclosures["lifecycle"]["frontend_exposure"] == "IMPLEMENTED_AND_LOCALLY_VERIFIED"
-    assert disclosures["lifecycle"]["vector_tiles"] == "IMPLEMENTED_AND_LOCALLY_VERIFIED"
-    # Local verification is NOT production availability, and scoring is untouched.
-    assert disclosures["lifecycle"]["production_deployment"] == "NOT_RUN"
-    assert disclosures["lifecycle"]["api_exposure"] == "IMPLEMENTED"
-    # KOGL Type 1 and commercial use must never be claimed.
+    assert disclosures["lifecycle"]["frontend_exposure"] == "PUBLIC_DEPLOYED_AND_VERIFIED"
+    assert disclosures["lifecycle"]["vector_tiles"] == "PUBLIC_DEPLOYED_AND_VERIFIED"
+    assert disclosures["lifecycle"]["production_deployment"] == "PUBLIC_DEPLOYED"
+    assert disclosures["lifecycle"]["api_exposure"] == "PUBLIC_DEPLOYED_AND_VERIFIED"
+    # Only the DERIVED statistics are deployed; the raw source tables are not.
+    assert (
+        disclosures["lifecycle"]["database_ingestion"]
+        == "DERIVED_STATISTICS_DEPLOYED_RAW_SOURCE_LOCAL_ONLY"
+    )
+    # A dataset-specific EGIS KOGL type must never be asserted, and raw source data
+    # must never be presented as redistributable.
     statement = disclosures["license_statement"]
-    assert "KOGL Type 1 is NOT claimed" in statement
-    assert "commercial-use permission is NOT claimed" in statement
+    assert "does not assert a dataset-specific EGIS KOGL type" in statement
+    assert "are not redistributed" in statement
+    assert "KOGL Type" not in disclosures["public_statement_ko"]
+    assert "원본 SHP 파일" in disclosures["public_statement_ko"]
+    assert "협력 정부기관" in disclosures["public_statement_ko"]
+    # Mandatory source attribution travels with every response.
+    attribution = disclosures["attribution"]
+    assert attribution["provider"] == "기후에너지환경부 환경공간정보서비스(EGIS)"
+    assert attribution["official_dataset_name"] == "세분류 [2025] 전국 토지피복지도"
+    assert attribution["reference_period"] == "2025"
+    assert attribution["official_source_url"].startswith("https://")
+    assert attribution["transformation_version"] == "land-cover-v1"
+    assert attribution["candidate_grid_version"] == "capital-grid-500m-v1"
+    assert attribution["attribution_ko"].startswith("출처: 기후에너지환경부")
+    assert "500 m 후보격자" in attribution["attribution_ko"]
+    assert attribution["authorization_basis"] == "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION"
+    # The attribution names the exact release the numbers came from.
+    assert attribution["statistics_version_id"] is not None
+    assert attribution["statistics_derivation_version"] is not None
     # NO_COVERAGE must never be describable as empty/unused/suitable land.
     no_coverage = disclosures["coverage_status_semantics"]["NO_COVERAGE"]
     assert "does not evaluate this cell" in no_coverage

@@ -29,10 +29,90 @@ import {
   type LandCoverCellStatistics,
   type LandCoverClassShare,
   type LandCoverCoverageStatus,
+  type LandCoverDisclosures,
+  type LandCoverSourceAttribution,
 } from "./api";
 
 /** Canonical Korean source label for the layer, matching the backend `korean_label`. */
 export const LAND_COVER_SOURCE_LABEL = "토지피복";
+
+// --- Mandatory source attribution + public authorization (Phase 1B-LC8) -------
+// Attribution is mandatory project policy on every public surface, so it must render
+// even if a response is old, partial, or malformed. These constants mirror the backend
+// constants of the same meaning and are used only as the fallback when the served
+// values are missing — the served text always wins, so the UI cannot silently diverge
+// from what the API actually asserts.
+
+/** The exact attribution string every public land-cover surface must display. */
+export const LAND_COVER_ATTRIBUTION_KO =
+  "출처: 기후에너지환경부 환경공간정보서비스(EGIS), 「세분류 [2025] 전국 토지피복지도」. Waste Equity Platform이 서울·인천·경기 500 m 후보격자 단위로 가공한 파생 통계입니다.";
+
+/** Public-operation statement. Names no KOGL type and claims no EGIS reply. */
+export const LAND_COVER_PUBLIC_STATEMENT_KO =
+  "본 플랫폼은 협력 정부기관이 확인한 프로젝트 차원의 공공데이터 활용 범위에 따라 공개 운영됩니다. 토지피복 정보는 EGIS 「세분류 [2025] 전국 토지피복지도」를 Waste Equity Platform의 500 m 후보격자 단위로 가공한 파생 통계입니다. 원본 SHP 파일, 원본 토지피복 도형 및 원본 개별 피처 레코드는 제공하지 않습니다.";
+
+/** Currently valid official source page (the historic EGIS host redirects here). */
+export const LAND_COVER_OFFICIAL_SOURCE_URL = "https://aid.mcee.go.kr/intro/land.do";
+
+/** Provider as currently named, mirrored from the backend attribution constant. */
+export const LAND_COVER_PROVIDER = "기후에너지환경부 환경공간정보서비스(EGIS)";
+
+/** Official dataset title, verbatim. */
+export const LAND_COVER_DATASET_TITLE = "세분류 [2025] 전국 토지피복지도";
+
+/** Reference period of the acquired release. */
+export const LAND_COVER_REFERENCE_PERIOD = "2025";
+
+/** Machine status of the public deployment, mirrored from the backend constant. */
+export const LAND_COVER_AUTHORIZATION_STATUS =
+  "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER";
+
+/** Basis for publication. Never an EGIS licence confirmation or a KOGL designation. */
+export const LAND_COVER_AUTHORIZATION_BASIS = "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION";
+
+/**
+ * What a caller can hand the attribution helpers.
+ *
+ * Deliberately DEEP-partial: a disclosure block may arrive absent, incomplete, or from
+ * an older backend, and the helpers must cope rather than the call site asserting a
+ * complete object it does not have.
+ */
+export type LandCoverDisclosureLike = Partial<Omit<LandCoverDisclosures, "attribution">> & {
+  attribution?: Partial<LandCoverSourceAttribution>;
+};
+
+function servedText(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() !== "" ? value : fallback;
+}
+
+/**
+ * The attribution text to display, preferring what the API served.
+ *
+ * Never returns an empty string: attribution is mandatory, so a response that omits
+ * it (an older backend, a truncated payload) still renders the canonical project
+ * attribution rather than nothing at all.
+ */
+export function landCoverAttributionText(disclosures?: LandCoverDisclosureLike): string {
+  return servedText(disclosures?.attribution?.attribution_ko, LAND_COVER_ATTRIBUTION_KO);
+}
+
+/** The public-operation statement to display, preferring what the API served. */
+export function landCoverPublicStatement(disclosures?: LandCoverDisclosureLike): string {
+  return servedText(disclosures?.public_statement_ko, LAND_COVER_PUBLIC_STATEMENT_KO);
+}
+
+/** The official source URL to link, preferring what the API served. */
+export function landCoverOfficialSourceUrl(disclosures?: LandCoverDisclosureLike): string {
+  return servedText(
+    disclosures?.attribution?.official_source_url,
+    LAND_COVER_OFFICIAL_SOURCE_URL,
+  );
+}
+
+/** The publication basis to display, preferring what the API served. */
+export function landCoverAuthorizationBasis(disclosures?: LandCoverDisclosureLike): string {
+  return servedText(disclosures?.authorization_basis, LAND_COVER_AUTHORIZATION_BASIS);
+}
 
 /** The official dataset's own name for each hierarchy level. */
 export const CLASS_LEVEL_LABELS: Record<1 | 2 | 3, string> = {

@@ -89,14 +89,53 @@ describe("LandCoverLayerControl basics", () => {
     expect(screen.getByTestId("land-cover-layer-toggle")).not.toBeChecked();
   });
 
-  it("carries the licence + non-scoring disclosure and the pinned version", () => {
+  it("carries the public-operation + non-scoring disclosure and the pinned version", () => {
     renderOpen(baseProps());
     expect(screen.getByTestId("land-cover-layer-disclaimer")).toHaveTextContent(
       LAND_COVER_LAYER_DISCLAIMER,
     );
-    expect(LAND_COVER_LAYER_DISCLAIMER).toContain("서면 확인 전");
+    // Phase 1B-LC8: publication rests on a PROJECT-level authorization, states the
+    // raw-data non-redistribution, and keeps the scoring non-use sentence.
+    expect(LAND_COVER_LAYER_DISCLAIMER).toContain("협력 정부기관");
+    expect(LAND_COVER_LAYER_DISCLAIMER).toContain("원본 SHP 파일");
     expect(LAND_COVER_LAYER_DISCLAIMER).toContain("적합성 점수");
+    // No EGIS licence confirmation or KOGL type may be asserted here.
+    expect(LAND_COVER_LAYER_DISCLAIMER).not.toMatch(/KOGL|공공누리|제1유형|서면 승인/);
     expect(screen.getByTestId("land-cover-layer-version")).toHaveTextContent("통계 릴리스 버전 1");
+    expect(screen.getByTestId("land-cover-layer-version")).toHaveTextContent("기준 시점 2025");
+  });
+
+  it("always shows the mandatory source attribution, served or fallback", () => {
+    // No disclosures prop at all: the canonical project attribution still renders,
+    // because attribution is mandatory on every public surface.
+    renderOpen(baseProps());
+    expect(screen.getByTestId("land-cover-layer-attribution")).toHaveTextContent(
+      "출처: 기후에너지환경부 환경공간정보서비스(EGIS)",
+    );
+    expect(screen.getByTestId("land-cover-layer-source-link")).toHaveAttribute(
+      "href",
+      "https://aid.mcee.go.kr/intro/land.do",
+    );
+  });
+
+  it("prefers the attribution the API served over the local constant", () => {
+    renderOpen(
+      baseProps({
+        disclosures: {
+          attribution: {
+            attribution_ko: "출처: 서버가 보낸 문구",
+            official_source_url: "https://example.invalid/served",
+          },
+        },
+      }),
+    );
+    expect(screen.getByTestId("land-cover-layer-attribution")).toHaveTextContent(
+      "출처: 서버가 보낸 문구",
+    );
+    expect(screen.getByTestId("land-cover-layer-source-link")).toHaveAttribute(
+      "href",
+      "https://example.invalid/served",
+    );
   });
 
   it("disables the layer and shows a bounded message when no release resolved", () => {

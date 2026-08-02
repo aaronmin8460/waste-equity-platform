@@ -1788,6 +1788,7 @@ export default function Home() {
                 onToggleClass={toggleLandCoverClass}
                 onSetAllClasses={setAllLandCoverClasses}
                 statisticsVersionId={landCoverRelease?.statistics_version_id ?? null}
+                disclosures={landCoverRelease?.disclosures}
               />
             </div>
           ) : null}

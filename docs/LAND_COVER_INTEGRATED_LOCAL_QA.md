@@ -1,5 +1,35 @@
 # Land-cover integrated local QA — Phase 1B-LC6
 
+> ## ⚠️ Superseding operational note — 2026-08-02 (Phase 1B-LC8)
+>
+> **The LC7 findings in this document are historical evidence review and are NOT
+> withdrawn.** They record, accurately, what the official public sources showed on
+> 2026-08-02: LC7 **could not establish a dataset-specific EGIS licence** for the vector
+> 「세분류 [2025] 전국 토지피복지도」 download from public evidence, and the 공공누리 (KOGL)
+> Type 1 mark it found belongs to the separate WMS map service, not to the SHP download.
+>
+> What changed is the **operational basis for publication**, not that finding. On
+> 2026-08-02 the project owner confirmed **project-level authorization from the
+> cooperating government institution** with which this project is conducted. The project
+> therefore proceeds with **full public deployment under that project authorization**:
+>
+> * authorization basis — `GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION`
+> * public deployment status — `PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER`
+> * **no EGIS-specific KOGL type is asserted**, and this is **not** an EGIS written reply
+> * **original SHP files and raw source geometry remain unavailable for redistribution**
+> * derived APIs, derived MVT tiles, browser display, screenshots, and public
+>   presentation **are enabled** for this project
+> * **LC7A is no longer the blocking next phase**; **LC8** is the current implementation
+>   and deployment phase
+>
+> The two facts stay distinct and must not be merged: (1) *dataset-specific public
+> evidence* remains `UNRESOLVED_PENDING_WRITTEN_RESPONSE`; (2) *project-level
+> government-partner authorization* is `GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION`.
+> See [PUBLIC_DATA_PROJECT_AUTHORIZATION.md](PUBLIC_DATA_PROJECT_AUTHORIZATION.md) and
+> [LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md](LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md).
+
+
+
 End-to-end local verification of the complete land-cover subsystem built across
 LC3 → LC5B: persisted candidate-cell statistics (LC3), the read-only JSON API (LC4),
 the candidate-detail frontend section (LC5A), and the map-wide candidate-cell vector

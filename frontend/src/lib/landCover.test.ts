@@ -26,7 +26,15 @@ import {
   formatDominantClass,
   formatSharePercent,
   formatUncoveredRatioPercent,
+  LAND_COVER_ATTRIBUTION_KO,
+  LAND_COVER_AUTHORIZATION_BASIS,
+  LAND_COVER_OFFICIAL_SOURCE_URL,
+  LAND_COVER_PUBLIC_STATEMENT_KO,
+  landCoverAttributionText,
+  landCoverAuthorizationBasis,
   landCoverErrorKind,
+  landCoverOfficialSourceUrl,
+  landCoverPublicStatement,
   validateActiveRelease,
   validateCellStatistics,
   validateClassDistribution,
@@ -55,7 +63,9 @@ function cellBody(overrides: Record<string, unknown> = {}): Record<string, unkno
       l3_class_area_sum_m2: 86946.4,
     },
     release: { statistics_version_id: 1 },
-    disclosures: { license_status: "LOCAL_USE_ONLY_PENDING_CLARIFICATION" },
+    disclosures: {
+      license_status: "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER",
+    },
     ...overrides,
   };
 }
@@ -372,7 +382,8 @@ describe("validateActiveRelease", () => {
       processed_cell_count: 47893,
       coverage_status_counts: { COMPLETE_EXACT: 1, PARTIAL: 1, NO_COVERAGE: 1 },
       disclosures: {
-        license_status: "LOCAL_USE_ONLY_PENDING_CLARIFICATION",
+        license_status: "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER",
+        authorization_basis: "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION",
         used_in_suitability_scoring: false,
       },
       ...overrides,
@@ -418,9 +429,63 @@ describe("validateActiveRelease", () => {
     ).toBeNull();
   });
 
-  it("preserves the served licence status rather than assuming one", () => {
+  it("preserves the served public-deployment status rather than assuming one", () => {
     const release = validateActiveRelease(releaseBody());
-    expect(release?.disclosures.license_status).toBe("LOCAL_USE_ONLY_PENDING_CLARIFICATION");
+    expect(release?.disclosures.license_status).toBe(
+      "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER",
+    );
+    expect(release?.disclosures.authorization_basis).toBe(
+      "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION",
+    );
     expect(release?.disclosures.used_in_suitability_scoring).toBe(false);
+  });
+});
+
+/**
+ * Attribution is MANDATORY project policy on every public surface (Phase 1B-LC8), so
+ * these helpers must never return an empty string — a missing, blank, or wrongly-typed
+ * served value falls back to the canonical project constant rather than rendering
+ * nothing. The served value always wins when it is a usable string, so the UI cannot
+ * silently assert something the API does not.
+ */
+describe("land-cover public attribution helpers", () => {
+  const served = {
+    authorization_basis: "SERVED_BASIS",
+    public_statement_ko: "서버가 보낸 공개 문구",
+    attribution: {
+      attribution_ko: "서버가 보낸 출처 문구",
+      official_source_url: "https://example.invalid/served",
+    },
+  };
+
+  it("prefers the served attribution, statement, URL and basis", () => {
+    expect(landCoverAttributionText(served as never)).toBe("서버가 보낸 출처 문구");
+    expect(landCoverPublicStatement(served as never)).toBe("서버가 보낸 공개 문구");
+    expect(landCoverOfficialSourceUrl(served as never)).toBe("https://example.invalid/served");
+    expect(landCoverAuthorizationBasis(served as never)).toBe("SERVED_BASIS");
+  });
+
+  it.each([
+    ["undefined disclosures", undefined],
+    ["an empty object", {}],
+    ["a blank served string", { public_statement_ko: "   ", attribution: { attribution_ko: "" } }],
+    ["a wrongly-typed served value", { public_statement_ko: 7, attribution: { attribution_ko: 7 } }],
+  ])("falls back to the canonical constants for %s", (_label, raw) => {
+    expect(landCoverAttributionText(raw as never)).toBe(LAND_COVER_ATTRIBUTION_KO);
+    expect(landCoverPublicStatement(raw as never)).toBe(LAND_COVER_PUBLIC_STATEMENT_KO);
+    expect(landCoverOfficialSourceUrl(raw as never)).toBe(LAND_COVER_OFFICIAL_SOURCE_URL);
+    expect(landCoverAuthorizationBasis(raw as never)).toBe(LAND_COVER_AUTHORIZATION_BASIS);
+  });
+
+  it("never asserts an EGIS KOGL type or a raw-data redistribution right", () => {
+    for (const text of [LAND_COVER_ATTRIBUTION_KO, LAND_COVER_PUBLIC_STATEMENT_KO]) {
+      expect(text).not.toMatch(/KOGL|공공누리|제1유형|서면 승인|재배포 가능/);
+    }
+    // The public statement must keep the raw-data non-redistribution sentence.
+    expect(LAND_COVER_PUBLIC_STATEMENT_KO).toContain("원본 SHP 파일");
+    expect(LAND_COVER_PUBLIC_STATEMENT_KO).toContain("제공하지 않습니다");
+    // ...and name the project-level basis rather than a dataset-specific permission.
+    expect(LAND_COVER_PUBLIC_STATEMENT_KO).toContain("협력 정부기관");
+    expect(LAND_COVER_AUTHORIZATION_BASIS).toBe("GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION");
   });
 });

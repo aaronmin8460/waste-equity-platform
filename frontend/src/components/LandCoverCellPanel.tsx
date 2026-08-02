@@ -54,7 +54,11 @@ import {
   formatDominantClass,
   formatSharePercent,
   formatUncoveredRatioPercent,
+  landCoverAttributionText,
+  landCoverAuthorizationBasis,
   landCoverErrorKind,
+  landCoverOfficialSourceUrl,
+  landCoverPublicStatement,
   validateCellStatistics,
   validateClassDistribution,
   type ClassLevel,
@@ -483,11 +487,34 @@ function LandCoverBody({ data }: { data: LoadedStatistics }) {
           이 토지피복 통계는 설명용 자료이며, 적합성 점수·순위·적격 상태·제외 사유·검토 사유에 사용되지
           않습니다.
         </p>
+        {/* Public-deployment authorization (Phase 1B-LC8). The machine status and its
+            basis are shown separately and verbatim: the basis is a PROJECT-level
+            government-partner authorization, never an EGIS licence confirmation or a
+            KOGL designation, and the panel must not blur the two. */}
         <p className="mt-1" data-testid="land-cover-license-disclosure">
-          공공이용/라이선스 상태: {detail.disclosures.license_status}
+          공개 운영 상태: {detail.disclosures.license_status}
+        </p>
+        <p className="mt-0.5 text-[11px] text-ink-subtle" data-testid="land-cover-authorization-basis">
+          공개 근거: {landCoverAuthorizationBasis(detail.disclosures)}
+        </p>
+        <p className="mt-0.5 text-[11px] text-ink-subtle" data-testid="land-cover-public-statement">
+          {landCoverPublicStatement(detail.disclosures)}
         </p>
         <p className="mt-0.5 text-[11px] text-ink-subtle" data-testid="land-cover-license-statement">
           {detail.disclosures.license_statement}
+        </p>
+        {/* Mandatory source attribution — always rendered on this public surface. */}
+        <p className="mt-1 text-[11px] text-ink-subtle" data-testid="land-cover-attribution">
+          {landCoverAttributionText(detail.disclosures)}{" "}
+          <a
+            className="underline"
+            href={landCoverOfficialSourceUrl(detail.disclosures)}
+            target="_blank"
+            rel="noreferrer noopener"
+            data-testid="land-cover-source-link"
+          >
+            원본 자료 안내
+          </a>
         </p>
         <p className="mt-1 text-[11px] text-ink-subtle" data-testid="land-cover-availability">
           {detail.disclosures.availability_statement}

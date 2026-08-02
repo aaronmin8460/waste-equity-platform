@@ -1026,11 +1026,35 @@ export interface LandCoverLifecycle {
  * Rendered verbatim rather than restated, so the UI cannot drift from the backend's
  * own wording on licence state, scoring non-use, or coverage meaning.
  */
+export interface LandCoverSourceAttribution {
+  provider: string;
+  official_dataset_name: string;
+  reference_period: string;
+  official_source_url: string;
+  transformation_version: string;
+  candidate_grid_version: string;
+  statistics_derivation_version: string | null;
+  statistics_version_id: number | null;
+  /** The exact attribution string every public surface must display, verbatim. */
+  attribution_ko: string;
+  raw_source_not_returned_ko: string;
+  authorization_status: string;
+  authorization_basis: string;
+}
+
 export interface LandCoverDisclosures {
   reference_period: string;
-  /** Always "LOCAL_USE_ONLY_PENDING_CLARIFICATION" for the acquired release. */
+  /**
+   * Public state of the derived services — since Phase 1B-LC8,
+   * "PUBLIC_DEPLOYMENT_AUTHORIZED_BY_PROJECT_GOVERNMENT_PARTNER". The field keeps its
+   * historic name; the value is a deployment status, not a licence grant.
+   */
   license_status: string;
   license_statement: string;
+  /** Why publication is permitted: "GOVERNMENT_PARTNER_PROJECT_AUTHORIZATION". */
+  authorization_basis: string;
+  public_statement_ko: string;
+  attribution: LandCoverSourceAttribution;
   license_note: string | null;
   /** Always false in this phase. Typed as boolean so the UI reads the served value. */
   used_in_suitability_scoring: boolean;
@@ -1177,6 +1201,22 @@ export const LAND_COVER_CELL_TILE_SOURCE_LAYER = "land_cover_cells";
  * metadata) that the candidate-detail panel already covers. `statistics_version_id` is
  * the load-bearing field: it is what pins the tile URL to an immutable release.
  */
+/**
+ * Provenance of the acquired source release the statistics derive from.
+ *
+ * Optional on the client type: the map only needs the identity fields above, and a
+ * consumer must not crash if a response omits provenance. Nothing here is raw source
+ * geometry — it is release-level metadata only.
+ */
+export interface LandCoverSourceRelease {
+  dataset_version_id: number;
+  provider: string;
+  official_dataset_name: string;
+  official_source_url: string | null;
+  reference_period: string | null;
+  transformation_version: string;
+}
+
 export interface LandCoverActiveRelease {
   statistics_version_id: number;
   status: string;
@@ -1185,6 +1225,9 @@ export interface LandCoverActiveRelease {
   processed_cell_count: number;
   coverage_status_counts: Record<LandCoverCoverageStatus, number>;
   disclosures: LandCoverDisclosures;
+  /** LC3 derivation version of this release. Absent only on a malformed response. */
+  derivation_version?: string;
+  source_release?: LandCoverSourceRelease;
 }
 
 /** The active statistics release, for resolving the version-pinned tile URL. */

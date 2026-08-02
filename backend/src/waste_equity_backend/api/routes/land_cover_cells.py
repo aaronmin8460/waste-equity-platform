@@ -64,6 +64,7 @@ from ...schemas import (
     LandCoverDominantClassOut,
     LandCoverNumericalGuardAuditOut,
     LandCoverOverlapAuditOut,
+    LandCoverSourceAttributionOut,
     LandCoverSourceReleaseOut,
     LandCoverStatisticsReleaseOut,
     LandCoverStatisticsReleaseRef,
@@ -86,20 +87,22 @@ ClassArea = EnvironmentalLandCoverCellClassArea
 StatVersion = EnvironmentalLandCoverCellStatVersion
 
 # --- Lifecycle (documented phase states, not live health checks) -------------
-# scoring_integration is NOT_IMPLEMENTED by contract. Phase 1B-LC5B added the
-# version-pinned vector tiles below and the map-wide layer/legend/filters that consume
-# them, so vector_tiles and frontend_exposure both become
-# IMPLEMENTED_AND_LOCALLY_VERIFIED — "locally", because every phase so far was verified
-# against a local development database only and production_deployment stays NOT_RUN.
+# scoring_integration stays NOT_IMPLEMENTED by contract: Phase 1B-LC8 authorized public
+# *publication* of the derived services, never their use in scoring. LC8 deploys the
+# already-implemented LC3–LC6 feature set to production under the project-level
+# government-partner authorization recorded in docs/PUBLIC_DATA_PROJECT_AUTHORIZATION.md,
+# so production_deployment becomes PUBLIC_DEPLOYED and the surfaces that were previously
+# qualified as "locally verified" become PUBLIC_DEPLOYED_AND_VERIFIED. The raw
+# source-feature tables are deliberately NOT part of that deployment.
 LIFECYCLE = LandCoverCellStatisticsLifecycle(
     source_contract_validation="LIVE_VERIFIED",
-    database_ingestion="IMPLEMENTED_AND_LOCALLY_VERIFIED",
-    cell_statistics_derivation="IMPLEMENTED_AND_LOCALLY_VERIFIED",
-    api_exposure="IMPLEMENTED",
-    frontend_exposure="IMPLEMENTED_AND_LOCALLY_VERIFIED",
-    vector_tiles="IMPLEMENTED_AND_LOCALLY_VERIFIED",
+    database_ingestion="DERIVED_STATISTICS_DEPLOYED_RAW_SOURCE_LOCAL_ONLY",
+    cell_statistics_derivation="IMPLEMENTED_AND_VERIFIED",
+    api_exposure="PUBLIC_DEPLOYED_AND_VERIFIED",
+    frontend_exposure="PUBLIC_DEPLOYED_AND_VERIFIED",
+    vector_tiles="PUBLIC_DEPLOYED_AND_VERIFIED",
     scoring_integration="NOT_IMPLEMENTED",
-    production_deployment="NOT_RUN",
+    production_deployment="PUBLIC_DEPLOYED",
 )
 
 # --- Vector-tile (MVT) constants (Phase 1B-LC5B) ------------------------------
@@ -408,13 +411,25 @@ def _source_version(session: Session, release: StatVersion) -> EnvironmentalData
 
 
 def _disclosures(
-    license_note: str | None, reference_period: str | None
+    license_note: str | None,
+    reference_period: str | None,
+    release: StatVersion | None = None,
 ) -> LandCoverCellStatisticsDisclosures:
-    """Structured disclosures. ``license_note`` is the verbatim stored source note."""
+    """Structured disclosures. ``license_note`` is the verbatim stored source note.
 
+    The LC8 attribution block is filled in with the release being served, so the
+    mandatory attribution a consumer must display names the exact derivation and
+    statistics version behind the numbers rather than a generic dataset reference.
+    """
+
+    attribution = LandCoverSourceAttributionOut(
+        statistics_derivation_version=release.derivation_version if release else None,
+        statistics_version_id=release.id if release else None,
+    )
     return LandCoverCellStatisticsDisclosures(
         reference_period=reference_period,
         license_note=license_note,
+        attribution=attribution,
         lifecycle=LIFECYCLE,
     )
 
@@ -446,7 +461,7 @@ def _resolve_context(
     return (
         release,
         _release_ref(release, source.reference_period),
-        _disclosures(source.license_note, source.reference_period),
+        _disclosures(source.license_note, source.reference_period, release),
     )
 
 
@@ -646,7 +661,7 @@ def active_release(session: SessionDep) -> LandCoverStatisticsReleaseOut:
             license_note=source.license_note,
         ),
         derivation_metadata=metadata,
-        disclosures=_disclosures(source.license_note, source.reference_period),
+        disclosures=_disclosures(source.license_note, source.reference_period, release),
     )
 
 

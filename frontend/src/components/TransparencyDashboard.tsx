@@ -87,6 +87,7 @@ import EmptyState from "./ui/EmptyState";
 import InfoBanner from "./ui/InfoBanner";
 import KpiCard from "./ui/KpiCard";
 import Skeleton from "./ui/Skeleton";
+import LandCoverSourceNote from "./LandCoverSourceNote";
 import WetlandSourceNote from "./WetlandSourceNote";
 import type { LoadedData } from "../app/page";
 
@@ -638,6 +639,12 @@ export default function TransparencyDashboard({
               API/map layer, no suitability score, distinct from the statutory
               UM901 protection area, verified locally only (not deployed). */}
           <WetlandSourceNote />
+
+          {/* Land-cover candidate-cell statistics (Phase 1B-LC8) public disclosure:
+              mandatory source attribution, the project-level government-partner
+              authorization the publication rests on, the raw-data non-redistribution
+              statement, scoring non-use, and the coverage limitations. */}
+          <LandCoverSourceNote />
         </section>
 
         {/* ── Reference periods and served record counts ───────────────────────── */}
