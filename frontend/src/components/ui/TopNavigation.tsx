@@ -26,10 +26,31 @@
  * real (it is the group's accessible name), so the label element survives as an
  * `sr-only` span with the same id — still in the a11y tree, no longer visual noise.
  *
- * This component intentionally renders NO heading. The product/area `<h1>` belongs to
- * each view (the equity sidebar, `LandfillDashboard`, `FacilityCostDashboard`, and the
+ * This component intentionally renders NO heading. The area `<h1>` belongs to each
+ * view (the map sidebar, `LandfillDashboard`, `FacilityCostDashboard`, and the
  * transparency branch), and `app/accessibility.test.tsx` asserts exactly one `<h1>`
  * per view.
+ *
+ * ── The brand block (civic dashboard refresh) ────────────────────────────────────
+ * The bar is now [brand] … [primary navigation]. Three constraints shape it:
+ *   - The product name is a `<span>`, NOT a heading. It renders above every view,
+ *     so a heading here would become a second (and, in document order, the first)
+ *     `h1` on every screen.
+ *   - It sits OUTSIDE `role="group"`/`data-testid="mode-switch"`, so it never joins
+ *     the navigation's accessible group or its four-control count.
+ *   - The mark is a decorative `aria-hidden` SVG. It is deliberately beside the
+ *     buttons and never inside one: the terminology audit compares each button's
+ *     `textContent` with `.toBe`, so any icon or extra character inside a button
+ *     would break it.
+ * The name is the product's established wording (it was the map sidebar's `<h1>`
+ * before this refresh); moving it here is what let that `<h1>` become the area
+ * title, matching how the three map-free areas already title themselves. See
+ * docs/ui-refresh/regression-contract.md §10.
+ *
+ * No utility action is rendered. Every real export the product has (CSV, the
+ * shareable URL, the print report) is a page-level control with its own context;
+ * lifting one into the bar would either duplicate it or, worse, add a decorative
+ * button that looks like an export and does nothing.
  */
 
 import type { DashboardArea } from "../../lib/glossary";
@@ -42,6 +63,10 @@ const NAV_ITEMS: readonly { key: DashboardArea; testId: string }[] = [
   { key: "transparency", testId: "mode-transparency" },
 ] as const;
 
+/** The established product name and its English form (layout.tsx page title). */
+export const BRAND_NAME = "우리 동네 폐기물 지도";
+export const BRAND_SUBTITLE = "Waste Equity Platform";
+
 export interface TopNavigationProps {
   /** The active dashboard area. */
   mode: DashboardArea;
@@ -52,7 +77,30 @@ export interface TopNavigationProps {
 export default function TopNavigation({ mode, onChange }: TopNavigationProps) {
   return (
     <header className="wep-appbar" data-testid="top-navigation">
-      <div className="mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-8">
+      <div className="wep-appbar-row mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-8">
+        <div className="wep-brand" data-testid="app-brand">
+          {/* Decorative stacked-layers mark. aria-hidden: the product name beside it
+              is the accessible text, so the mark adds no duplicate announcement. */}
+          <span className="wep-brand-mark" aria-hidden>
+            <svg width="18" height="18" viewBox="0 0 24 24" focusable="false" aria-hidden>
+              <path d="M12 3 3 7.5 12 12l9-4.5L12 3Z" fill="currentColor" />
+              <path
+                d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <span className="wep-brand-text">
+            {/* A span, never a heading — every view owns its own single <h1>. */}
+            <span className="wep-brand-name">{BRAND_NAME}</span>
+            <span className="wep-brand-sub">{BRAND_SUBTITLE}</span>
+          </span>
+        </div>
+
         {/* The group's accessible name. Visually hidden (the old visible
             "무엇을 볼까요?" was noise that interrupted each page title), but kept in
             the a11y tree and still referenced by aria-labelledby. Deliberately a
@@ -61,12 +109,13 @@ export default function TopNavigation({ mode, onChange }: TopNavigationProps) {
         <span id="mode-switch-label" className="sr-only">
           분석 영역 선택
         </span>
-        {/* flex-wrap is retained for phone widths (four Korean labels do not fit on
-            one line at 390px). At the desktop targets (1280/1440) the full-width bar
-            leaves ample room, so the nav never wraps there — the sidebar-width
-            wrapping documented in the Phase 0 audit is fixed by the relocation. */}
+        {/* `.wep-nav-track` stretches each tab to the full bar height so the active
+            tab's indicator is flush with the bar's bottom border, and keeps
+            flex-wrap for phone widths (four Korean labels do not fit on one line at
+            390px). At the desktop targets the full-width bar leaves ample room, so
+            the nav never wraps there. */}
         <div
-          className="flex flex-wrap items-center gap-1"
+          className="wep-nav-track flex-wrap"
           role="group"
           aria-labelledby="mode-switch-label"
           data-testid="mode-switch"

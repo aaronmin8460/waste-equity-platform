@@ -279,9 +279,15 @@
    itself still wraps between tabs at phone widths. The min-height is constant at
    every breakpoint (no `md:min-h-0` reset), so the desktop target does not shrink
    below the mobile one. */
+/* The tab track. `align-items: stretch` is what makes each tab as tall as the bar,
+   so the active indicator is flush with the bar's bottom border.
+   NOTE: wrapping stays a `flex-wrap` UTILITY in the markup, not a declaration here.
+   These .wep-* rules are unlayered and therefore beat Tailwind's layered utilities,
+   so declaring it in both places would silently make the class the winner; keeping
+   it in the markup leaves one source of truth (and app/responsive.test.tsx asserts
+   the mode switcher carries it, since jsdom never loads this stylesheet). */
 .wep-nav-track {
   display: flex;
-  flex-wrap: wrap;
   align-items: stretch;
   gap: 0 0.25rem;
 }

@@ -1269,12 +1269,15 @@ export default function Home() {
       <main
         id="main-content"
         tabIndex={-1}
-        className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100 p-8"
+        className="flex min-h-screen min-h-dvh items-center justify-center bg-canvas p-8"
       >
-        <div className="max-w-lg rounded-lg border border-red-300 bg-white p-6 shadow" role="alert">
-          <h1 className="text-lg font-semibold text-red-700">자료를 불러오지 못했습니다</h1>
-          <p className="mt-2 text-sm text-slate-700">{error}</p>
-          <p className="mt-2 text-sm text-slate-500">
+        <div
+          className="max-w-lg rounded-card border border-danger-border bg-surface p-6"
+          role="alert"
+        >
+          <h1 className="text-lg font-semibold text-danger">자료를 불러오지 못했습니다</h1>
+          <p className="mt-2 text-sm text-ink-muted">{error}</p>
+          <p className="mt-2 text-sm text-ink-subtle">
             공공자료를 불러오지 못하면 지도는 표시되지 않습니다. 없는 값을 임의로 채우지 않습니다.
           </p>
           <button type="button" onClick={retry} className="wep-btn-primary mt-4">
@@ -1301,11 +1304,11 @@ export default function Home() {
       <main
         id="main-content"
         tabIndex={-1}
-        className="relative flex min-h-screen min-h-dvh flex-col bg-slate-100 md:flex-row"
+        className="relative flex min-h-screen min-h-dvh flex-col bg-canvas md:flex-row"
       >
         <div
           aria-hidden
-          className="flex w-full flex-col gap-4 border-b border-slate-200 bg-white p-5 md:w-96 md:flex-none md:border-r md:border-b-0"
+          className="flex w-full flex-col gap-4 border-b border-hairline bg-surface p-5 md:w-96 md:flex-none md:border-r md:border-b-0"
           data-testid="loading-skeleton-sidebar"
         >
           {/* Header block */}
@@ -1333,7 +1336,7 @@ export default function Home() {
         {/* The ONE announcement. role="status" is an implicit polite live region, so
             assistive tech reads the loading state and its resolution. */}
         <p
-          className="pointer-events-none absolute inset-x-0 top-1/2 mx-auto w-fit -translate-y-1/2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-sm"
+          className="pointer-events-none absolute inset-x-0 top-1/2 mx-auto w-fit -translate-y-1/2 rounded-pill border border-hairline bg-surface/95 px-4 py-2 text-sm text-ink-muted shadow-card"
           data-testid="loading"
           role="status"
         >

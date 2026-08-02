@@ -10,7 +10,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MODE_LABELS } from "../../lib/glossary";
-import TopNavigation from "./TopNavigation";
+import TopNavigation, { BRAND_NAME, BRAND_SUBTITLE } from "./TopNavigation";
 
 afterEach(cleanup);
 
@@ -87,6 +87,44 @@ describe("TopNavigation", () => {
   it("renders no heading of its own", () => {
     const { container } = render(<TopNavigation mode="equity" onChange={() => {}} />);
     expect(container.querySelectorAll("h1, h2, h3, h4, h5, h6")).toHaveLength(0);
+  });
+
+  it("renders the brand OUTSIDE the mode-switch group", () => {
+    render(<TopNavigation mode="equity" onChange={() => {}} />);
+    const brand = screen.getByTestId("app-brand");
+    expect(brand.textContent).toContain(BRAND_NAME);
+    expect(brand.textContent).toContain(BRAND_SUBTITLE);
+
+    // Never inside the labelled navigation group: the group's four controls are
+    // the four areas, and nothing else may join that count or its accessible name.
+    const group = screen.getByTestId("mode-switch");
+    expect(group.contains(brand)).toBe(false);
+    expect(group.querySelectorAll("button")).toHaveLength(4);
+    // Nor inside any button — the terminology audit compares button textContent
+    // with `.toBe`, so brand text inside one would break it.
+    for (const testId of Object.values(TEST_IDS)) {
+      expect(screen.getByTestId(testId).contains(brand)).toBe(false);
+    }
+  });
+
+  it("keeps the brand non-interactive and its mark decorative", () => {
+    const { container } = render(<TopNavigation mode="equity" onChange={() => {}} />);
+    const brand = screen.getByTestId("app-brand");
+    // No link/button: the brand is identity, not navigation. A "home" link here
+    // would be a fifth navigation control competing with the four areas.
+    expect(brand.querySelectorAll("a, button")).toHaveLength(0);
+    // The mark announces nothing — the product name beside it is the accessible text.
+    const mark = container.querySelector(".wep-brand-mark");
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    expect(mark?.textContent).toBe("");
+  });
+
+  it("still renders no heading once the brand is present", () => {
+    // The brand must be a <span>: this bar renders above every view's own single
+    // <h1>, so a heading here would become a second (and first-in-order) heading.
+    const { container } = render(<TopNavigation mode="equity" onChange={() => {}} />);
+    expect(container.querySelectorAll("h1, h2, h3, h4, h5, h6")).toHaveLength(0);
+    expect(screen.getByText(BRAND_NAME).tagName).toBe("SPAN");
   });
 
   it("reports the selected area through the change callback", () => {
