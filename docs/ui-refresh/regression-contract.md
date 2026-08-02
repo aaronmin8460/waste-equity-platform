@@ -4,8 +4,12 @@ What the visual refresh may **not** change. Every item below is enforced by a te
 that already exists or that this milestone added; the test is named so a future
 phase can find it before "cleaning up" the behavior it protects.
 
-A change to any item here is a product decision, not a styling decision. §10 lists
-the single item this milestone deliberately changed, and why.
+A change to any item here is a product decision, not a styling decision.
+
+The file spans the whole refresh. §1–§9 are the shared contracts; §10–§11 record
+the two decisions the **civic-dashboard foundation** milestone took deliberately;
+§12–§13 add what the **지역 부담 dashboard** milestone contracted and confirm it
+changed no existing expectation (see `equity-dashboard.md`).
 
 ## 1. Primary navigation labels (frozen strings)
 
@@ -58,9 +62,20 @@ Enforced by: `lib/urlState.test.ts`, `app/shell.test.tsx`, `app/page.selection.t
   region selector and ranking list are unchanged.
 * The map pane still fills the viewport bottom at desktop with no strip below it, and
   the floating legend stays inside the map bounds.
+* **Map-workspace overlays are the page's, and they stack.** The legend and the
+  지역 부담 insight strip are children of ONE bottom-anchored flex column inside
+  `.map-pane`, not two separately-anchored cards — hand-tuned `bottom-*` offsets
+  overlap as soon as either grows a line of Korean text at a narrower width.
+  `MapLegendOverlay` therefore owns no positioning of its own. Anything added to
+  that band joins the column; nothing in it may be placed in flow **below** the
+  map, which would shorten the canvas and break the bullet above.
+* `MapView` stays the DIRECT child of the `.map-pane` wrapper — overlays are its
+  siblings (`app/page.phase4.test.tsx`, `app/responsive.test.tsx` both read
+  `map-container.parentElement`).
 
 Enforced by: `app/shell.test.tsx`, `app/page.selection.test.tsx`, `components/MapView.test.tsx`,
-`e2e/desktopNavigation.spec.ts`, `e2e/responsive.spec.ts`, `e2e/civicShell.spec.ts`.
+`app/page.equityDashboard.test.tsx`, `e2e/desktopNavigation.spec.ts`,
+`e2e/responsive.spec.ts`, `e2e/civicShell.spec.ts`, `e2e/equityDashboard.spec.ts`.
 
 ## 5. Metric radios
 
@@ -69,6 +84,18 @@ per-capita, burden (`metric-group-total`, `metric-group-per_capita`,
 `metric-group-burden`) — with the same number of radios, the same grouping, and the
 same accessible names. `e2e/accessibility.spec.ts` asserts the page has exactly three
 fieldsets, so no new primitive may introduce a fourth.
+
+They live in `components/equity/EquityMetricSelector.tsx` since the equity-dashboard
+milestone, and the rules travelled with them:
+
+* eleven `input[type=radio][name="metric"]` in ONE logical group, so native arrow
+  keys still traverse all of them — never a `<select>`, tabs, chips, or an
+  accordion that hides a family on desktop;
+* each `<legend>` renders its `MetricGroup.legend` string and **nothing else** —
+  `app/page.phase4.test.tsx` compares the three with `toEqual`, so a count badge or
+  an icon inside a legend breaks it;
+* selection is signalled by the native `checked` radio + font weight + border in
+  addition to the tint.
 
 ## 6. Missing data is never zero
 
@@ -81,10 +108,17 @@ fieldsets, so no new primitive may introduce a fourth.
 * The new `DataStatusBadge` carries a **text** label for every state, so status is
   never conveyed by color alone; its missing state uses the neutral `--color-no-data`
   gray, which is not part of any analytical ramp.
+* A region whose value is unavailable is **never silently dropped** from the region
+  comparison: it keeps its chip and its row, and shows the served reason under
+  자료 없음 when the source attached one.
+* A card never fabricates a second value to fill a grid. When
+  `metricReferencePeriod` is empty the 자료 기준 item is omitted, leaving fewer
+  items — not padded with a placeholder.
 
 Enforced by: `components/ui/primitives.test.tsx`,
 `components/ui/dashboardPrimitives.test.tsx`, `lib/exports.test.ts`,
-`app/accessibility.test.tsx`, `e2e/responsive.spec.ts`.
+`app/accessibility.test.tsx`, `app/page.equityDashboard.test.tsx`,
+`app/page.phase4.test.tsx`, `e2e/responsive.spec.ts`.
 
 ## 7. Provenance, reference periods, and disclaimers
 
@@ -166,3 +200,58 @@ Adopting it would therefore have meant deleting passing tests to make a styling 
 fit — exactly what this contract exists to prevent. The application remains
 desktop-first (the desktop layout is the designed one; sub-1024 is preserved, not
 extended).
+
+## 12. The 지역 부담 current-selection summary and its sections
+
+Added by the equity-dashboard milestone (`docs/ui-refresh/equity-dashboard.md`).
+The equity control column is now four presentational components under
+`frontend/src/components/equity/`, and these facts travel with them:
+
+* **One summary card, one provenance list.** `selected-region-summary` holds the
+  region name, the served value, the 현재 지표 / 자료 기준 pair, the source lines,
+  and a `DataStatusBadge`. The former second card is gone; `metricProvenance` must
+  not be printed twice on one screen again.
+* **`selected-metric-summary` stays a `role="status"` live region wrapping ONLY the
+  metric name and unit.** The provenance caption is deliberately outside it — inside,
+  it would be re-read on every radio change. The metric name keeps
+  `text-base font-semibold` and the unit `text-xs`, i.e. visibly dominant
+  (`app/page.phase4.test.tsx`, `e2e/phase4EquityMap.spec.ts` compare the two
+  computed font sizes).
+* **The region control stays a native `<select>`** named 지역 선택
+  (`components/equity/EquityRegionPicker.tsx`). It is NOT replaced by
+  `components/ui/SearchableRegionPicker.tsx`, which is the facility-cost setup
+  picker. It is bound to the RESOLVED selection (`selectedRegion?.regionCode`), not
+  to the raw stored code, so a metric change to a geography that lacks the region
+  returns it to its empty option instead of holding a value not in its list.
+* **`DataStatusBadge` on this screen states metric PROVENANCE, not confidence.**
+  `derived` for `waste-per-capita` / `facility-burden` (computed from two official
+  inputs), `reported` otherwise, `missing` when the selected region has no served
+  value. It is read off `metric.dataset`; it must never become an input to a value,
+  a rank, a break, or a color.
+* **The insight strip states limitations, never conclusions.** It may show the
+  active metric's label/unit, its served reference period and source lines, and
+  standing limitations this application already documents. It must not claim a
+  region is unjust, unsafe, a good site, or responsible for another region's waste,
+  and it carries **no** `role="alert"` — it is standing content.
+* **No control on this screen is duplicated.** Exactly one `region-select`, one
+  `comparison-search`, one `rank-topn`, one `region-ranking`, one
+  `region-comparison`, one `share-export`, one `aside`.
+
+Enforced by: `app/page.equityDashboard.test.tsx`, `app/page.phase4.test.tsx`,
+`app/accessibility.test.tsx`, `app/page.selection.test.tsx`,
+`e2e/equityDashboard.spec.ts`, `e2e/phase4EquityMap.spec.ts`,
+`e2e/accessibility.spec.ts`.
+
+## 13. The equity-dashboard milestone changed no test expectation
+
+Unlike §10, this milestone has no deliberate contract change to record: every
+pre-existing unit and e2e assertion passes unmodified.
+
+One naming decision is worth keeping, because it looks like a styling choice and is
+not. The insight strip's action that opens the data-source area is labelled
+**출처 자세히 보기**, not 데이터·출처 화면 열기. `e2e/citizenFlows.spec.ts` locates the
+navigation tabs by accessible name **without** `exact: true`, so any second control
+whose name CONTAINS a frozen nav label (§1) makes that locator ambiguous — and it is
+a genuine ambiguity for a screen-reader user scanning by name, not merely a test
+artefact. The component was renamed; the test was left alone. Any future control
+that references an area must name the action, not repeat the area's frozen label.
