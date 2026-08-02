@@ -1455,10 +1455,11 @@ export default function Home() {
       suitabilityView={suitabilityView}
       onSuitabilityViewChange={changeSuitabilityView}
     >
-      {/* Phase 4: the control column is a SUNKEN surface so each section reads as a
-          distinct `.wep-card` (Phase 1 §8: page = surface-sunken, cards = surface).
-          The layout classes the responsive contract asserts — w-full, md:w-96,
-          md:flex-none — are unchanged; only the background and inner spacing move. */}
+      {/* The control column is a SUNKEN surface so each section inside it reads as a
+          distinct `.wep-card` (the shell root is the application canvas, cards are
+          white surfaces — docs/ui-refresh/design-tokens.md §2). The layout classes
+          the responsive contract asserts — w-full, md:w-96, md:flex-none,
+          md:overflow-y-auto — are unchanged. */}
       <aside className="flex w-full flex-col gap-3 border-b border-hairline bg-surface-sunken p-4 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
         {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
             데이터·출처, and 비용 살펴보기 already title themselves. The product name

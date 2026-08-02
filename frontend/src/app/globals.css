@@ -53,10 +53,12 @@
   /* Cards are separated from the canvas by a hairline BORDER, not by a shadow. */
   --color-hairline: #e3e8f0; /* default 1px border */
   --color-hairline-strong: #c9d3d9; /* inputs / quiet buttons — reads interactive */
-  --color-ink: #171c29; /* primary text, headings, metric values (~15.4:1) */
-  --color-ink-muted: #4d5466; /* secondary/body text (~8.6:1) */
-  --color-ink-subtle: #687083; /* tertiary: labels, captions (~4.96:1 — the
-                                  lightest text allowed; do not go lighter) */
+  --color-ink: #171c29; /* primary text, headings, metric values (17.01:1 on white) */
+  --color-ink-muted: #4d5466; /* secondary/body text (7.57:1) */
+  --color-ink-subtle: #687083; /* tertiary: labels, captions. 4.96:1 on white and
+                                  4.59:1 on the canvas — the worst case in the
+                                  palette and the lightest text allowed. Nothing
+                                  lighter or smaller may be introduced. */
 
   /* ---- Brand — teal ------------------------------------------------------ */
   /* Identity only (app-bar mark, reported-value badge). Deliberately NOT an action

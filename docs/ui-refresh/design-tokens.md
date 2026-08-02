@@ -44,10 +44,15 @@ by a **border**, not by a shadow.
 | `--color-ink-muted` | `#4d5466` | Secondary/body text. |
 | `--color-ink-subtle` | `#687083` | Tertiary text: labels, captions, help text. |
 
-Contrast on `--color-surface` (white): `ink` ≈ 15.4:1, `ink-muted` ≈ 8.6:1,
-`ink-subtle` ≈ 4.96:1. `ink-subtle` is the lightest text in the system and still
-clears WCAG AA 4.5:1 at the 12px caption sizes it is used at, so no smaller or
-lighter body text may be introduced.
+Measured contrast on `--color-surface` (white): `ink` 17.01:1, `ink-muted` 7.57:1,
+`ink-subtle` 4.96:1. On `--color-canvas`, `ink-subtle` is 4.59:1.
+
+`ink-subtle` is the lightest text in the system, and 4.59:1 on the canvas is the
+worst case in the whole palette — it still clears WCAG AA 4.5:1 at the 12px caption
+sizes it is used at, but it leaves almost no margin, so **no lighter or smaller body
+text may be introduced**. Every other pairing the tokens produce also clears AA:
+`warn` on `warn-surface` 4.94:1, `brand` on `brand-soft` 4.91:1, `primary-hover` on
+`primary-soft` 6.71:1, and `ink-muted` on `no-data` 5.44:1.
 
 ### Brand — teal
 
