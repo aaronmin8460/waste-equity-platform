@@ -8,6 +8,16 @@ never exposed to the Internet.
 > manually. This document is the exact runbook; nothing here creates chargeable
 > AWS resources or changes DNS automatically.
 
+> **Deployment exclusion — land cover (recorded 2026-08-02, Phase 1B-LC7).** The
+> land-cover subsystem (source features, derived 500 m cell statistics, the
+> `/api/v1/environment/land-cover/cell-statistics` endpoints, its MVT tiles, and the map
+> layer) is **not part of any deployment** and **must not be migrated to OCI or made
+> public**. The EGIS licence review returned **`UNRESOLVED_PENDING_WRITTEN_RESPONSE`**;
+> the lifecycle state is `LOCAL_USE_ONLY_PENDING_CLARIFICATION`. This exclusion lifts only
+> after **LC7A** records a written provider response permitting the specific surface. See
+> [LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md](LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md)
+> and [LAND_COVER_PUBLICATION_SURFACE_MATRIX.md](LAND_COVER_PUBLICATION_SURFACE_MATRIX.md).
+
 ## Target architecture
 
 ```

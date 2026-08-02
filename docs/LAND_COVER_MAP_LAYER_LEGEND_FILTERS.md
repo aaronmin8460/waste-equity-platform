@@ -693,7 +693,11 @@ expected = 47,893 processed, 0 failed, `COMPLETE_EXACT` 35,902 / `PARTIAL` 4,604
   confirmation from the provider. KOGL Type 1 is not claimed; commercial use is not
   claimed. Local analytical use only. This is why the layer defaults to **OFF**, alongside
   the fact that it is locally verified only and must not obscure the suitability
-  visualization unrequested.
+  visualization unrequested. **Update (LC7, 2026-08-02):** the licence review returned
+  **`UNRESOLVED_PENDING_WRITTEN_RESPONSE`** — no 공공누리 mark is published for the
+  downloaded vector product, so this layer and its tiles **must not be deployed publicly**
+  until LC7A returns a written answer. See
+  [LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md](LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md).
 * **Scoring.** Nothing here is read by any suitability code path. No score, rank, status,
   exclusion, review reason, weight, policy version, or derivation version changed, and
   every response still states `used_in_suitability_scoring: false`.

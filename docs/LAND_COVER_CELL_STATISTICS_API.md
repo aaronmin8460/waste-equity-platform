@@ -431,6 +431,15 @@ written confirmation from the provider. **KOGL Type 1 is not claimed. Commercial
 permission is not claimed.** The verbatim stored `license_note` is returned alongside
 the status. This phase interprets nothing further and upgrades nothing.
 
+> **Update (Phase 1B-LC7, 2026-08-02).** The licence review is complete and its result is
+> **`UNRESOLVED_PENDING_WRITTEN_RESPONSE`**: the EGIS copyright policy grants free use only
+> where a 공공누리 (KOGL) mark is attached, and none is published for the downloaded vector
+> 토지피복지도. The KOGL Type 1 designation that does exist belongs to the separate WMS map
+> service and to the ministry's own tabular statistics, and is **not** transferred to this
+> product. `license_status` is therefore **unchanged**, and **these endpoints must not be
+> exposed publicly** until LC7A returns a written answer. See
+> [LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md](LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md).
+
 ## 13. Scoring integration
 
 `used_in_suitability_scoring` is `false` on every per-cell response and in every

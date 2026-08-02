@@ -665,7 +665,28 @@ Completed subphases (all **local only** — production/OCI `NOT_RUN` unless stat
   metadata lines only: no migration, no scoring change, no map layer/legend/filter, no
   deployment; `frontend_exposure` becomes `CANDIDATE_DETAIL_ONLY`.
   ([LAND_COVER_CANDIDATE_DETAIL_FRONTEND.md](LAND_COVER_CANDIDATE_DETAIL_FRONTEND.md))
-- **1B-LC5B — land cover, map layer, legend, and filters.** Planned, not started.
+- **1B-LC5B — land cover, map layer, legend, and filters.** Shipped: a version-pinned
+  MVT endpoint plus the map-wide `land_cover_cells` layer with a dynamic legend and
+  filters. The tile carries the platform's own candidate geometry with LC3 statistics as
+  attributes — no land-cover source geometry, feature id, or raw attribute is ever
+  served. Layer defaults OFF; no migration, no scoring change, no deployment.
+  ([LAND_COVER_MAP_LAYER_LEGEND_FILTERS.md](LAND_COVER_MAP_LAYER_LEGEND_FILTERS.md))
+- **1B-LC6 — land cover, integrated local QA.** Integrated verification of LC3 → LC5B
+  against the local database. No migration, no scoring change, no deployment; licence
+  still `LOCAL_USE_ONLY_PENDING_CLARIFICATION`.
+  ([LAND_COVER_INTEGRATED_LOCAL_QA.md](LAND_COVER_INTEGRATED_LOCAL_QA.md))
+- **1B-LC7 — EGIS licence, public-use scope, and deployment eligibility.** Research,
+  evidence, and decision phase; no code, no migration, no database write, no deployment.
+  Outcome: **`UNRESOLVED_PENDING_WRITTEN_RESPONSE`** — the EGIS copyright policy grants
+  free use only for works carrying an attached 공공누리 (KOGL) Type 1 mark, and **no such
+  mark is published for the downloaded vector 토지피복지도**. A KOGL Type 1 designation
+  exists only for the separate WMS map service and for the ministry's own tabular area
+  statistics, and is **not** transferred to the SHP download. Deployment eligibility is
+  **BLOCKED** and the licence stays `LOCAL_USE_ONLY_PENDING_CLARIFICATION`. Next phase is
+  **LC7A — submit the written inquiry and record the official response**, not LC8.
+  ([LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md](LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md),
+  [LAND_COVER_PUBLICATION_SURFACE_MATRIX.md](LAND_COVER_PUBLICATION_SURFACE_MATRIX.md),
+  [EGIS_LAND_COVER_LICENCE_INQUIRY_KO.md](EGIS_LAND_COVER_LICENCE_INQUIRY_KO.md))
 
 Required checks applied to every subphase:
 

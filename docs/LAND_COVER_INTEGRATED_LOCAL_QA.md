@@ -13,6 +13,12 @@ Everything here was measured on a **local development environment only**. Nothin
 deployed. The licence position is unchanged and still pending clarification, and the
 statistics remain outside suitability scoring.
 
+> **Follow-up (Phase 1B-LC7, 2026-08-02).** The licence question LC6 left open was
+> investigated and returned **`UNRESOLVED_PENDING_WRITTEN_RESPONSE`** — deployment
+> eligibility is **BLOCKED**, so the subsystem QA'd here stays local-only pending
+> **LC7A**. See
+> [LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md](LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md).
+
 ---
 
 ## 1. Verified starting point
@@ -818,3 +824,10 @@ longer technical: it is whether the acquired 세분류 [2025] 토지피복지도
 served publicly, and under what terms. The licence state remains
 `LOCAL_USE_ONLY_PENDING_CLARIFICATION`, and no deployment may be considered until LC7
 resolves it.
+
+> **LC7 outcome (2026-08-02).** LC7 ran and did **not** resolve it: the decision is
+> **`UNRESOLVED_PENDING_WRITTEN_RESPONSE`** and deployment eligibility is **BLOCKED**. The
+> EGIS copyright policy grants free use only where a 공공누리 (KOGL) mark is attached, and
+> none is published for the downloaded vector product. **The actual next phase is
+> LC7A — submit the written inquiry and record the official response.** See
+> [LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md](LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md).

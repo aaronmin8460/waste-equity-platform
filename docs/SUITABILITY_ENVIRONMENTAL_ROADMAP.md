@@ -72,6 +72,20 @@ gains exactly one additive table.
 > [WETLAND_INVENTORY_INGESTION.md](WETLAND_INVENTORY_INGESTION.md). The raster
 > factors below are still future.
 
+> **Status (2026-08-02) — land cover.** The **land-cover** factor has been carried
+> locally from contract validation through full ingestion (LC1–LC2), derived 500 m
+> candidate-cell statistics (LC3), a read-only API (LC4), the candidate-detail panel
+> and map layer (LC5A/LC5B), and integrated QA (LC6) — **all against the local
+> development database only.** **LC7 then reviewed the EGIS licence and returned
+> `UNRESOLVED_PENDING_WRITTEN_RESPONSE`: deployment eligibility is BLOCKED.** The EGIS
+> copyright policy grants free use only where a 공공누리 (KOGL) mark is attached, and no
+> such mark is published for the downloaded vector 토지피복지도; the KOGL Type 1
+> designation that exists belongs to the separate WMS map service and to the ministry's
+> own tabular statistics, and is not transferred. Land cover is therefore **not
+> deployed, not public, and not scored**, and the next step is **LC7A — submit the
+> written inquiry**, not adoption into scoring. See
+> [LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md](LAND_COVER_LICENCE_PUBLIC_SCOPE_DECISION.md).
+
 Phase 1B is itself sub-sequenced so each factor is a small, reviewable step:
 
 1. **1B-0 — Live contract probes.** For each `DOCUMENTED_NOT_TESTED` source, run
@@ -134,7 +148,8 @@ the same versioning/rollback rules.
 | --- | --- | --- | --- |
 | Reuse | admin boundary, zoning, road centreline, protected areas | IMPLEMENTED | GO (reuse) |
 | 1B | wetland inventory | **IMPLEMENTED (local ingest + read-only API/map; not scored)** | GO — ingested (1B-1), exposed read-only (1B-2) |
-| 1B | DEM/slope, land cover, river network, geology | PLANNED | CONDITIONAL GO |
+| 1B | land cover | **IMPLEMENTED LOCALLY (ingest + derived statistics + read-only API/map; not scored, not deployed)** | **BLOCKED on licence** — LC7 returned `UNRESOLVED_PENDING_WRITTEN_RESPONSE`; next step LC7A |
+| 1B | DEM/slope, river network, geology | PLANNED | CONDITIONAL GO |
 | 1C | building footprints, parcel, ownership, groundwater | FUTURE | CONDITIONAL GO |
 | 1C | flood hazard, faults | EXPERIMENTAL | NO GO (blocked) |
 
