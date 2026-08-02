@@ -124,6 +124,7 @@ import RegionComparison, { type ComparisonValue } from "../components/RegionComp
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
 import InfoBanner from "../components/ui/InfoBanner";
+import PageHeader from "../components/ui/PageHeader";
 import Skeleton from "../components/ui/Skeleton";
 import {
   rankRegions,
@@ -149,6 +150,7 @@ import { classifyEquityRaw, stabilityBadgeLabel } from "../lib/suitability";
 import {
   COMPONENT_META,
   COMPONENT_ORDER,
+  MODE_LABELS,
   MODE_ORIENTATION,
   PROFILE_META,
   SUITABILITY_SCREENING_DISCLAIMER,
@@ -1269,12 +1271,15 @@ export default function Home() {
       <main
         id="main-content"
         tabIndex={-1}
-        className="flex min-h-screen min-h-dvh items-center justify-center bg-slate-100 p-8"
+        className="flex min-h-screen min-h-dvh items-center justify-center bg-canvas p-8"
       >
-        <div className="max-w-lg rounded-lg border border-red-300 bg-white p-6 shadow" role="alert">
-          <h1 className="text-lg font-semibold text-red-700">자료를 불러오지 못했습니다</h1>
-          <p className="mt-2 text-sm text-slate-700">{error}</p>
-          <p className="mt-2 text-sm text-slate-500">
+        <div
+          className="max-w-lg rounded-card border border-danger-border bg-surface p-6"
+          role="alert"
+        >
+          <h1 className="text-lg font-semibold text-danger">자료를 불러오지 못했습니다</h1>
+          <p className="mt-2 text-sm text-ink-muted">{error}</p>
+          <p className="mt-2 text-sm text-ink-subtle">
             공공자료를 불러오지 못하면 지도는 표시되지 않습니다. 없는 값을 임의로 채우지 않습니다.
           </p>
           <button type="button" onClick={retry} className="wep-btn-primary mt-4">
@@ -1301,11 +1306,11 @@ export default function Home() {
       <main
         id="main-content"
         tabIndex={-1}
-        className="relative flex min-h-screen min-h-dvh flex-col bg-slate-100 md:flex-row"
+        className="relative flex min-h-screen min-h-dvh flex-col bg-canvas md:flex-row"
       >
         <div
           aria-hidden
-          className="flex w-full flex-col gap-4 border-b border-slate-200 bg-white p-5 md:w-96 md:flex-none md:border-r md:border-b-0"
+          className="flex w-full flex-col gap-4 border-b border-hairline bg-surface p-5 md:w-96 md:flex-none md:border-r md:border-b-0"
           data-testid="loading-skeleton-sidebar"
         >
           {/* Header block */}
@@ -1333,7 +1338,7 @@ export default function Home() {
         {/* The ONE announcement. role="status" is an implicit polite live region, so
             assistive tech reads the loading state and its resolution. */}
         <p
-          className="pointer-events-none absolute inset-x-0 top-1/2 mx-auto w-fit -translate-y-1/2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-sm"
+          className="pointer-events-none absolute inset-x-0 top-1/2 mx-auto w-fit -translate-y-1/2 rounded-pill border border-hairline bg-surface/95 px-4 py-2 text-sm text-ink-muted shadow-card"
           data-testid="loading"
           role="status"
         >
@@ -1450,15 +1455,24 @@ export default function Home() {
       suitabilityView={suitabilityView}
       onSuitabilityViewChange={changeSuitabilityView}
     >
-      {/* Phase 4: the control column is a SUNKEN surface so each section reads as a
-          distinct `.wep-card` (Phase 1 §8: page = surface-sunken, cards = surface).
-          The layout classes the responsive contract asserts — w-full, md:w-96,
-          md:flex-none — are unchanged; only the background and inner spacing move. */}
+      {/* The control column is a SUNKEN surface so each section inside it reads as a
+          distinct `.wep-card` (the shell root is the application canvas, cards are
+          white surfaces — docs/ui-refresh/design-tokens.md §2). The layout classes
+          the responsive contract asserts — w-full, md:w-96, md:flex-none,
+          md:overflow-y-auto — are unchanged. */}
       <aside className="flex w-full flex-col gap-3 border-b border-hairline bg-surface-sunken p-4 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
-        <header>
-          <h1 className="text-lg font-bold text-ink">우리 동네 폐기물 지도</h1>
-          <p className="text-xs text-ink-subtle">서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지</p>
-        </header>
+        {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
+            데이터·출처, and 비용 살펴보기 already title themselves. The product name
+            it replaced now lives in the app bar's brand block, so the same words no
+            longer appear twice on one screen; the scope line below it is the exact
+            string this header carried before. See
+            docs/ui-refresh/regression-contract.md §10. ModeOrientation stays a
+            SIBLING so it still follows the h1 in document order (shell.test.tsx)
+            while keeping the column's gap-3 rhythm. */}
+        <PageHeader
+          title={MODE_LABELS[mode]}
+          description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
+        />
 
         <ModeOrientation mode={mode} />
 

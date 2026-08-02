@@ -563,6 +563,38 @@ export function glossary(key: string): Described {
 }
 
 // --------------------------------------------------------------------------- //
+// Value provenance — how a displayed number came to be. Rendered by
+// components/ui/DataStatusBadge.tsx.
+// --------------------------------------------------------------------------- //
+
+/**
+ * The five provenances a displayed value can have. This is a DATA-INTEGRITY
+ * vocabulary, not a styling one (repo AGENTS.md):
+ *
+ *  - `reported`  the official source served this value directly;
+ *  - `derived`   this platform computed it from official inputs — it is not a
+ *                figure any authority published;
+ *  - `caveat`    a served value that carries an interpretation limitation;
+ *  - `missing`   NO value was served. This is NOT zero, and must never be
+ *                rendered as one or filled in from a neighbouring period;
+ *  - `excluded`  deliberately outside the analysis by an explicit rule.
+ *
+ * The primary labels reuse the wording already established elsewhere in the
+ * product — "공식 값" is the term `lib/exports.ts` writes into the CSV
+ * provenance column, and "자료 없음" is `GLOSSARY.no_data.primary` — so the badge,
+ * the export, and the legend cannot drift apart.
+ */
+export type DataStatus = "reported" | "derived" | "caveat" | "missing" | "excluded";
+
+export const DATA_STATUS_META: Record<DataStatus, Described> = {
+  reported: { primary: "공식 값", detail: "출처 기관이 직접 제공한 값" },
+  derived: { primary: "계산값", detail: "공식 자료를 이 플랫폼이 계산한 값이며 공식 발표 수치가 아님" },
+  caveat: { primary: "해석 주의", detail: "제공된 값이지만 해석상 한계가 있음" },
+  missing: { primary: "자료 없음", detail: "값이 제공되지 않음 — 0이 아님" },
+  excluded: { primary: "분석 제외", detail: "분석 규칙에 따라 대상에서 제외된 항목" },
+};
+
+// --------------------------------------------------------------------------- //
 // Audit surface — the technical tokens that must NOT appear un-explained in
 // PRIMARY citizen UI. `glossary.test.ts` and the terminology-audit tests assert
 // that the primary label registries above are free of these.

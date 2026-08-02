@@ -33,10 +33,20 @@ export interface KpiCardProps {
    * exact backend decimal string is preserved.
    */
   value?: string;
+  /**
+   * Optional unit, rendered as a smaller muted suffix so the number itself stays
+   * the dominant element and a column of values still aligns on its digits. Kept
+   * SEPARATE from `value` rather than concatenated: a caller that already has the
+   * unit inside its formatted string keeps passing just `value`, and this one is
+   * never appended to an unavailability reason.
+   */
+  unit?: string;
   /** Served reason the value is unavailable. When set, it replaces the value. */
   unavailableReason?: string;
   /** Optional supporting caption (source, reference period, caveat). */
   caption?: ReactNode;
+  /** Optional provenance/status slot — e.g. a `DataStatusBadge`. */
+  status?: ReactNode;
   /** `hero` is the single dominant result on a screen. */
   size?: "hero" | "default";
   testId?: string;
@@ -46,8 +56,10 @@ export interface KpiCardProps {
 export default function KpiCard({
   label,
   value,
+  unit,
   unavailableReason,
   caption,
+  status,
   size = "default",
   testId,
   valueTestId,
@@ -55,7 +67,10 @@ export default function KpiCard({
   const unavailable = unavailableReason !== undefined;
   return (
     <div className={`wep-card ${size === "hero" ? "p-5" : ""}`.trim()} data-testid={testId}>
-      <dt className="text-xs font-medium text-ink-subtle">{label}</dt>
+      <dt className="flex items-start justify-between gap-2 text-xs font-medium text-ink-subtle">
+        <span className="min-w-0">{label}</span>
+        {status ? <span className="flex-none">{status}</span> : null}
+      </dt>
       <dd
         className={
           unavailable
@@ -66,7 +81,18 @@ export default function KpiCard({
         }
         data-testid={valueTestId}
       >
-        {unavailable ? unavailableReason : value}
+        {unavailable ? (
+          unavailableReason
+        ) : (
+          <>
+            {value}
+            {/* The unit is dropped entirely when the value is unavailable — a bare
+                "억원" beside a reason would imply a quantity that was not served. */}
+            {unit ? (
+              <span className="ml-1 text-sm font-medium text-ink-subtle">{unit}</span>
+            ) : null}
+          </>
+        )}
       </dd>
       {caption ? <p className="mt-1 text-xs text-ink-subtle">{caption}</p> : null}
     </div>

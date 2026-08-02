@@ -94,11 +94,10 @@ export default function DashboardShell({
             // before `md:h-dvh`) is required: `dvh` is not self-falling-back, so an
             // engine without it drops the whole declaration and the row would have no
             // definite height for `.map-pane` to resolve against.
-            // `bg-surface-sunken` is the existing --color-surface-sunken token
-            // (#f1f5f9) — the same neutral page background the branches used as a
-            // raw `bg-slate-100`, now named rather than re-specified.
-            "flex min-h-screen min-h-dvh flex-col bg-surface-sunken md:h-screen md:h-dvh"
-          : "flex min-h-screen min-h-dvh flex-col bg-surface-sunken"
+            // `bg-canvas` is the application background token — the very light
+            // blue-gray every white surface sits on (docs/ui-refresh/design-tokens.md).
+            "flex min-h-screen min-h-dvh flex-col bg-canvas md:h-screen md:h-dvh"
+          : "flex min-h-screen min-h-dvh flex-col bg-canvas"
       }
     >
       <TopNavigation mode={mode} onChange={onModeChange} />
