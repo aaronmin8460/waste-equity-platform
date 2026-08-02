@@ -124,6 +124,7 @@ import RegionComparison, { type ComparisonValue } from "../components/RegionComp
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
 import InfoBanner from "../components/ui/InfoBanner";
+import PageHeader from "../components/ui/PageHeader";
 import Skeleton from "../components/ui/Skeleton";
 import {
   rankRegions,
@@ -149,6 +150,7 @@ import { classifyEquityRaw, stabilityBadgeLabel } from "../lib/suitability";
 import {
   COMPONENT_META,
   COMPONENT_ORDER,
+  MODE_LABELS,
   MODE_ORIENTATION,
   PROFILE_META,
   SUITABILITY_SCREENING_DISCLAIMER,
@@ -1458,10 +1460,18 @@ export default function Home() {
           The layout classes the responsive contract asserts — w-full, md:w-96,
           md:flex-none — are unchanged; only the background and inner spacing move. */}
       <aside className="flex w-full flex-col gap-3 border-b border-hairline bg-surface-sunken p-4 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
-        <header>
-          <h1 className="text-lg font-bold text-ink">우리 동네 폐기물 지도</h1>
-          <p className="text-xs text-ink-subtle">서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지</p>
-        </header>
+        {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
+            데이터·출처, and 비용 살펴보기 already title themselves. The product name
+            it replaced now lives in the app bar's brand block, so the same words no
+            longer appear twice on one screen; the scope line below it is the exact
+            string this header carried before. See
+            docs/ui-refresh/regression-contract.md §10. ModeOrientation stays a
+            SIBLING so it still follows the h1 in document order (shell.test.tsx)
+            while keeping the column's gap-3 rhythm. */}
+        <PageHeader
+          title={MODE_LABELS[mode]}
+          description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
+        />
 
         <ModeOrientation mode={mode} />
 

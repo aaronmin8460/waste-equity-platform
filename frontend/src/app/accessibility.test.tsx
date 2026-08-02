@@ -149,6 +149,8 @@ vi.mock("../lib/api", async (importOriginal) => {
   };
 });
 
+import { MODE_LABELS } from "../lib/glossary";
+import { BRAND_NAME } from "../components/ui/TopNavigation";
 import Home from "./page";
 
 beforeEach(() => {
@@ -301,11 +303,26 @@ describe("map/dashboard readability (Phase 3)", () => {
 });
 
 describe("single logical heading", () => {
-  it("renders exactly one h1 in the equity view", async () => {
+  it("renders exactly one h1 in the equity view, titled with the area", async () => {
     const { container } = await renderLoaded();
     const h1s = container.querySelectorAll("h1");
     expect(h1s).toHaveLength(1);
-    expect(h1s[0].textContent).toContain("우리 동네 폐기물 지도");
+    // The civic-dashboard refresh moved the PRODUCT name into the app bar's brand
+    // block and made this h1 the AREA title, matching how 매립지 현황, 데이터·출처,
+    // and 비용 살펴보기 already title themselves (the same words no longer appear
+    // twice on one screen). See docs/ui-refresh/regression-contract.md §10 — the
+    // count assertion above is the contract and is unchanged.
+    expect(h1s[0].textContent).toBe(MODE_LABELS.equity);
+  });
+
+  it("keeps the product name on screen, in the app bar, without a second heading", async () => {
+    await renderLoaded();
+    const brand = screen.getByTestId("app-brand");
+    expect(brand.textContent).toContain(BRAND_NAME);
+    // Identity, not a heading: it renders above every view's own single h1.
+    expect(brand.querySelectorAll("h1, h2, h3, h4, h5, h6")).toHaveLength(0);
+    // And it is not inside the navigation's labelled group.
+    expect(screen.getByTestId("mode-switch").contains(brand)).toBe(false);
   });
 });
 

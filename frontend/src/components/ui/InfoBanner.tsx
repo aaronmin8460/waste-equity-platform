@@ -3,6 +3,14 @@
 /**
  * InfoBanner — the single banner primitive for caveats, warnings, and errors.
  *
+ * THIS IS THE PROJECT'S INLINE-NOTICE PRIMITIVE. The civic-dashboard refresh
+ * deliberately did NOT add a second `InlineNotice` component: this one already
+ * covers the info/warning roles that milestone called for (plus error and
+ * success), it is already the audited home for the amber sprawl described below,
+ * and a parallel notice component would recreate exactly the drift it was
+ * introduced to end. New callers use `tone="info"` for context and
+ * `tone="warning"` for caveats, limitations, and exclusions.
+ *
  * Why it exists: the Phase 0 audit measured 60 hand-rolled `amber-*` utility
  * occurrences across 8 components, using SEVEN different amber shades for one
  * semantic role, and serving five different jobs (genuine caveat, routine missing
