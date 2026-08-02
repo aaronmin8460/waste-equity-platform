@@ -100,13 +100,19 @@ export type MapLegendOverlayProps = EquityLegendProps | SuitabilityLegendProps;
 
 export default function MapLegendOverlay(props: MapLegendOverlayProps) {
   return (
-    // A floating card at the lower-left of the map. Absolute within the relative
-    // `.map-pane` wrapper (page.tsx), above the map canvas (z-10) but clear of the
-    // top-right navigation control and the bottom-right OSM attribution. Only this
-    // small card overlays the map, so the rest of the map stays interactive — no
-    // full-container wrapper blocks pointer events.
+    // A floating card in the map's lower-left overlay stack. POSITIONING IS THE
+    // PAGE'S: `page.tsx` renders this inside one bottom-anchored, left-aligned
+    // column within the relative `.map-pane`, above the canvas (z-10) and clear of
+    // the top-right navigation control and the bottom-right OSM attribution. The
+    // card owns only its own width and surface.
+    //
+    // Why the page owns it: the equity view stacks a second overlay (the 해석·주의·
+    // 출처 insight strip) in the same bottom band. Anchoring both to `bottom` with
+    // hand-tuned offsets would make them collide the moment either grew a line;
+    // one flex column makes non-collision structural. Only these small cards
+    // overlay the map, so the rest of it stays interactive.
     <details
-      className="map-legend absolute bottom-8 left-2 z-10 w-[min(86vw,288px)] rounded-card border border-hairline-strong bg-white/90 text-ink-muted shadow-float backdrop-blur-sm md:left-3"
+      className="map-legend w-[min(86vw,288px)] rounded-card border border-hairline-strong bg-white/90 text-ink-muted shadow-float backdrop-blur-sm"
       data-testid="map-legend"
     >
       <summary
