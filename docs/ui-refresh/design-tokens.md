@@ -174,7 +174,8 @@ Added or updated in this milestone:
 | `.wep-badge`, `.wep-badge-{reported,derived,caveat,missing,excluded}` | `DataStatusBadge` |
 
 New React components must use token utilities (`bg-surface`, `text-ink-muted`,
-`border-hairline`, …) or these classes. **No hard-coded hex values in components** —
-the only remaining literal colors in the frontend are `lib/metrics.ts` (the
-analytical palette, deliberately) and the MapLibre popup/skip-link rules in
-`globals.css` that style third-party markup.
+`border-hairline`, …) or these classes. **No hard-coded hex values in components.**
+After this milestone the only literal colors left in the frontend are the token
+definitions themselves and `lib/metrics.ts` — the analytical palette, deliberately.
+The skip link, the focus ring, and the MapLibre popup rules in `globals.css` were
+converted to tokens as part of the refresh.
