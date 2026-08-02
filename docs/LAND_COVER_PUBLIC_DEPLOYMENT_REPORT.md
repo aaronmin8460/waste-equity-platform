@@ -375,6 +375,15 @@ Browser, real production:
 * **Layer activation at the default view** — 1 tile (z=7/108/49), 216,084 bytes, slowest
   tile 527 ms, enable→legend **114 ms**, enable→settled **4,125 ms**.
 
+> **Superseded by Phase 1B-LC9 (2026-08-02).** The measurements in §13 below remain a
+> correct record of what LC8 deployed and measured; they are **not** the current
+> production behaviour. LC9 enabled zstd/gzip for the vector-tile media type and removed
+> the JIT-compilation and double-`ST_AsMVTGeom` cost from the tile query, without changing
+> one byte of tile content. Current figures: the z7/109/49 worst case transfers
+> **552,276 B** (was 3,711,118 B), warm total **1.417 s** (was 2.778 s), TTFB **0.744 s**
+> (was 1.442 s), and layer enable→settled is **2,258 ms** (was 4,125 ms). See
+> [LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md](LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md).
+
 ### The low-zoom tile problem is NOT solved
 
 LC6 flagged a large low-zoom tile and slow settlement locally. In production:
@@ -459,9 +468,13 @@ after deployment.
 
 ## 17. Known, honestly-recorded caveats
 
-1. **Low-zoom tile cost** — see §13. Measured, not solved.
-2. **MVT responses are transferred uncompressed** — measured (§13). Not changed in this
-   phase.
+1. **Low-zoom tile cost** — see §13. Measured, not solved *in LC8*. **Resolved in Phase
+   1B-LC9** (2026-08-02): the worst tile now transfers 552,276 B instead of 3,711,118 B
+   and its query runs in 579.6 ms instead of 1281.9 ms, with byte-identical content.
+2. **MVT responses are transferred uncompressed** — measured (§13). Not changed in LC8.
+   **Resolved in Phase 1B-LC9**: a scoped Caddy `encode` now serves zstd/gzip for
+   `application/vnd.mapbox-vector-tile`, with `Vary: Accept-Encoding`, per-encoding ETags
+   and a working 304 path.
 3. **Derivation-time audit fields describe the local run set.** The release's
    `candidate_row_count` (95,786) and the per-cell `candidate_occurrence_count` /
    `representation_variant_count` describe the runs that existed when LC3 derived the

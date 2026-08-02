@@ -34,6 +34,43 @@ git fetch --all --tags
 start (`alembic upgrade head`), waits for health, and smoke-tests. It never
 ingests data and never restores a dump. Record the printed deployed Git SHA.
 
+### Changing `deploy/Caddyfile` — recreate, never just reload
+
+`docker-compose.prod.yml` mounts `./deploy/Caddyfile` as a **single-file** bind
+mount, which binds the file's *inode*. `git pull` does not edit that file in
+place — it writes a new file and renames it over the path, creating a new inode —
+so the running container keeps serving the **old** Caddyfile. `caddy reload` then
+reports success and exit 0 while changing nothing, because it faithfully reloads
+the file it can see.
+
+Always validate first, then **recreate** the container:
+
+```bash
+cd /home/ubuntu/waste-equity-platform
+# 1. back up the current config outside Git, with a checksum
+mkdir -p ~/deployment-backups/caddy-$(date -u +%Y%m%dT%H%M%SZ)
+cp deploy/Caddyfile ~/deployment-backups/caddy-*/Caddyfile.pre-change
+sha256sum deploy/Caddyfile
+# 2. validate the NEW config before touching the running Caddy
+docker run --rm -e PUBLIC_DOMAIN=validate.invalid -e CADDY_ACME_EMAIL=noreply@invalid \
+  -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+# 3. recreate (named volumes caddy_data / caddy_config, and therefore the
+#    Let's Encrypt certificates, are preserved)
+dcp up -d --no-deps --force-recreate caddy
+# 4. confirm the container really has the new file
+docker exec waste-equity-prod-caddy-1 sha256sum /etc/caddy/Caddyfile
+```
+
+Verify the effect from outside, not from the exit code — e.g. after the Phase
+1B-LC9 vector-tile compression change:
+
+```bash
+curl -s -D - -o /dev/null -H 'Accept-Encoding: zstd' \
+  https://${PUBLIC_DOMAIN}/api/v1/environment/land-cover/cell-statistics/tiles/1/7/109/49.mvt \
+  | grep -i 'content-encoding\|content-type\|vary'
+```
+
 ## Roll the application back
 
 Rolls back **application images/commit only** — never the database schema.
@@ -191,6 +228,8 @@ delete the database volume. Use `dcp stop` / `dcp start` to pause/resume.
 | Wrong data counts | `verify-production-data.sh`; restore from backup if needed |
 | Suitability empty | run/candidates present? `verify-production-data.sh`; restore the dump |
 | Migrations failed on deploy | `dcp logs backend`; a bad migration → restore + fix forward |
+| A Caddyfile change had no effect | the single-file bind mount still holds the old inode — compare `docker exec waste-equity-prod-caddy-1 sha256sum /etc/caddy/Caddyfile` with the host file, then `dcp up -d --no-deps --force-recreate caddy` (see above) |
+| Vector tiles served uncompressed | Caddy's default `encode` matcher omits `application/vnd.mapbox-vector-tile`; the scoped `encode` in the backend handler supplies it (Phase 1B-LC9) |
 
 ## Incident stop conditions
 

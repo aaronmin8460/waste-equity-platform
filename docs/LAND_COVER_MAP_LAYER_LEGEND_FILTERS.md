@@ -135,6 +135,19 @@ a filesystem path, or a stack trace (asserted by test).
 The **canonical run** is part of the ETag key, not just the version, so a tile can never
 be revalidated against geometry it was not generated from.
 
+> **Reverse-proxy behaviour verified in Phase 1B-LC9 (2026-08-02).** The sentence below
+> was accurate when written; production caching and reverse-proxy interaction have since
+> been measured on the public origin. The origin negotiates **zstd** or **gzip** for the
+> vector-tile media type and adds `Vary: Accept-Encoding`. Caddy gives each encoding its
+> own entity tag by appending the encoder name inside the quotes
+> (`"lc-cells-{version}-{run}-{z}-{x}-{y}-gzip"` / `-zstd`), which RFC 9110 requires so a
+> shared cache cannot hand a gzip body to a client that never asked for one. The
+> **version-pinned stem is preserved** in every variant, and Caddy strips its own suffix
+> from an inbound `If-None-Match`, so `304` works whether the client presents the stem or
+> the variant tag. `Cache-Control` is unchanged, and the decompressed bytes of every
+> encoding are SHA-256-identical to the uncompressed response. See
+> [LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md](LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md).
+
 *Only local behaviour was verified.* No claim is made about production caching, CDN
 behaviour, or reverse-proxy interaction.
 

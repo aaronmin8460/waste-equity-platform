@@ -277,3 +277,22 @@ description.
   production and are not routed by Caddy.
 - This phase does not run public-data ingestion and does not start the Phase 6
   scheduler.
+- **A `deploy/Caddyfile` change needs the Caddy container RECREATED, not
+  reloaded.** The file is a single-file bind mount, so it binds an inode;
+  `git pull` replaces the file rather than editing it, and the container keeps
+  the old one. `caddy reload` then succeeds while changing nothing. Validate the
+  new config first (`caddy validate` in a throwaway container), then
+  `docker compose -p waste-equity-prod --env-file .env.production -f
+  docker-compose.prod.yml up -d --no-deps --force-recreate caddy`, which
+  preserves the `caddy_data`/`caddy_config` volumes and therefore the Let's
+  Encrypt certificates. Confirm with
+  `docker exec waste-equity-prod-caddy-1 sha256sum /etc/caddy/Caddyfile`, and
+  verify the effect from outside the server rather than from the exit code. See
+  [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md) and
+  [LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md](LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md).
+- Mapbox Vector Tiles are compressed by a **scoped** `encode` inside the backend
+  handler that matches `application/vnd.mapbox-vector-tile*`. Caddy's default
+  `encode` matcher does not cover that media type (it lists
+  `application/x-protobuf*`), so the site-level directive alone leaves tiles
+  uncompressed. Do not replace the site-level `encode` with an explicit `match`
+  — specifying `match` there discards Caddy's whole default content-type list.

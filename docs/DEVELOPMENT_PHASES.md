@@ -712,6 +712,32 @@ Completed subphases (all **local only** — production/OCI `NOT_RUN` unless stat
   ([PUBLIC_DATA_PROJECT_AUTHORIZATION.md](PUBLIC_DATA_PROJECT_AUTHORIZATION.md),
   [LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md](LAND_COVER_PUBLIC_DEPLOYMENT_REPORT.md))
 
+- **Phase 1B-LC9 — public vector-tile performance (complete, deployed 2026-08-02).**
+  A serving and rendering optimization only: **not one byte of tile content changed**,
+  proven by SHA-256 at both the SQL and HTTP layers across ten fixed version-pinned
+  tiles, in both environments. Two measured root causes, two minimal fixes. (1) Caddy's
+  default `encode` matcher does not list the IANA vector-tile media type
+  `application/vnd.mapbox-vector-tile`, so tiles shipped uncompressed while HTML, JSON
+  and JS on the same origin were gzipped; a scoped `encode` inside the backend handler
+  supplies it, leaving the site-level directive untouched. The worst-case z7/109/49 tile
+  went from **3,711,118 B to 552,276 B** transferred (0.149), and the ten representative
+  tiles together from 8,748,592 B to 1,402,768 B. (2) The low-zoom plan crossed
+  `jit_inline_above_cost`, so PostgreSQL LLVM-compiled a tree of PostGIS C calls in every
+  parallel worker for a query that runs once, and the single-reference `tile` CTE was
+  inlined so `ST_AsMVTGeom(ST_Transform(...))` evaluated twice per candidate;
+  materializing the CTE plus a transaction-local `SET LOCAL jit = off` cut production
+  execution from **1281.9 ms to 579.6 ms** (2.21×). Property dropping, geometry
+  simplification and buffer reduction were measured and **rejected** — the map-unused
+  properties save only 147 KB compressed while changing a published contract, tile
+  geometry already averages 5.015 vertices, and buffer 64→0 removes 0 features at z7/z13.
+  **No migration, no schema change, no database write, no scoring change**
+  (`used_in_suitability_scoring` stays `false`); the raw source-feature tables remain
+  unread by every public path and absent from production. In the public browser: layer
+  enable→legend **202 ms**, enable→settled **4,125 ms → 2,258 ms**, zero console errors,
+  zero failed requests.
+  ([LAND_COVER_MVT_PERFORMANCE_OPTIMIZATION.md](LAND_COVER_MVT_PERFORMANCE_OPTIMIZATION.md),
+  [LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md](LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md))
+
 Required checks applied to every subphase:
 
 - Additive, reversible migration; single Alembic head; no seeded official data.

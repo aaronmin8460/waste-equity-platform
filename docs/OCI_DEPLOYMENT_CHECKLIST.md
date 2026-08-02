@@ -145,6 +145,40 @@ dcp logs --since 10m backend | grep -iE "error|traceback" || echo "no errors"
 dcp ps            # all services Up/healthy
 ```
 
+## If the release changes `deploy/Caddyfile`
+
+Applies to any release touching the reverse-proxy config (e.g. Phase 1B-LC9's
+vector-tile compression). The file is a **single-file bind mount**, so it binds an
+inode; `git pull` replaces the file instead of editing it, and the running
+container keeps the old one. `caddy reload` then reports success and changes
+nothing. Back up, validate, then **recreate**:
+
+```bash
+cd /home/ubuntu/waste-equity-platform
+D=~/deployment-backups/caddy-$(date -u +%Y%m%dT%H%M%SZ); mkdir -p "$D"
+cp deploy/Caddyfile "$D/Caddyfile.pre-change"
+(cd "$D" && sha256sum Caddyfile.pre-change | tee SHA256SUM)   # outside Git, no secrets in the name
+
+docker run --rm -e PUBLIC_DOMAIN=validate.invalid -e CADDY_ACME_EMAIL=noreply@invalid \
+  -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+dcp up -d --no-deps --force-recreate caddy       # preserves caddy_data / caddy_config
+docker exec waste-equity-prod-caddy-1 sha256sum /etc/caddy/Caddyfile   # must match the host file
+```
+
+Then verify from **outside** the server, never from the exit code:
+
+```bash
+curl -s -D - -o /dev/null -H 'Accept-Encoding: zstd' \
+  https://waste-161-33-2-143.sslip.io/api/v1/environment/land-cover/cell-statistics/tiles/1/7/109/49.mvt \
+  | grep -i 'content-encoding\|content-type\|vary\|etag'
+curl -s -o /dev/null -w "%{http_code}\n" https://waste-161-33-2-143.sslip.io/   # HTML still served
+```
+
+Rollback for a Caddy-only change is: restore the backed-up file, re-validate,
+recreate the container.
+
 ## Rollback
 
 Migration 0015 is additive, so an application rollback needs **no** DB change (the

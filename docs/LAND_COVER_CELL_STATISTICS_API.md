@@ -452,6 +452,28 @@ layer as Mapbox Vector Tiles pinned to an immutable statistics version. It reads
 three LC3 tables plus the existing candidate geometry, adds no migration, and — like every
 handler here — never touches `environmental_land_cover_features`.
 
+> **Serving update (Phase 1B-LC9, 2026-08-02).** The tile *content* is unchanged — same
+> source layer `land_cover_cells`, same extent 4096, same twelve property keys, same
+> version-pinned ETag, same `Cache-Control: public, max-age=31536000, immutable`, and
+> byte-identical responses verified by SHA-256. Only how it is produced and transferred
+> changed:
+>
+> * **Transfer.** The public origin now negotiates **zstd** or **gzip** for
+>   `application/vnd.mapbox-vector-tile`, with `Vary: Accept-Encoding`. A client
+>   advertising no encoding still receives a valid uncompressed tile. Caddy gives each
+>   encoding its own entity tag (`"lc-cells-…-gzip"`, `"lc-cells-…-zstd"`) as RFC 9110
+>   requires, preserves the version-pinned stem, and strips its own suffix from an inbound
+>   `If-None-Match`, so `304` works for compressed and uncompressed variants alike.
+>   Measured: the worst low-zoom tile transfers 552,276 B instead of 3,711,118 B.
+> * **Query.** The tile CTE is `MATERIALIZED` (so `ST_AsMVTGeom(ST_Transform(...))` is
+>   evaluated once per candidate, not twice) and the request issues a transaction-local
+>   `SET LOCAL jit = off` (the low-zoom plan otherwise crosses `jit_inline_above_cost` and
+>   LLVM-compiles a tree of PostGIS C calls in every parallel worker for a query that runs
+>   once). Measured on production: 1281.9 ms → 579.6 ms.
+>
+> See [LAND_COVER_MVT_PERFORMANCE_OPTIMIZATION.md](LAND_COVER_MVT_PERFORMANCE_OPTIMIZATION.md)
+> and [LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md](LAND_COVER_LC9_PUBLIC_PERFORMANCE_REPORT.md).
+
 ## 12. Licence and public-use status
 
 `license_status` is **`LOCAL_USE_ONLY_PENDING_CLARIFICATION`**, unchanged from LC2.
