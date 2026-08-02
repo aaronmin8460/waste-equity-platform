@@ -68,7 +68,7 @@ docker cp "$PKG_DIR/cell_statistics.csv" "$CID:$STAGE/cell_statistics.csv"
 docker cp "$PKG_DIR/class_areas.csv" "$CID:$STAGE/class_areas.csv"
 # psql performs no variable interpolation inside `\copy`, so the two CSV paths are
 # substituted into a temporary copy of the script rather than passed as psql variables.
-RENDERED="$(mktemp -t lc8-import-sql)"
+RENDERED="$(mktemp "${TMPDIR:-/tmp}/lc8-import-sql.XXXXXX")"
 trap 'cleanup; rm -f "$RENDERED"' EXIT
 sed -e "s#@CELLS_CSV@#$STAGE/cell_statistics.csv#" \
     -e "s#@CLASSES_CSV@#$STAGE/class_areas.csv#" "$SQL_FILE" > "$RENDERED"
