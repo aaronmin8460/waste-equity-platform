@@ -13,6 +13,12 @@
  * cell of the selected run is reachable without ever loading a bbox-limited slice
  * of the ~48k grid. The basemap is OpenStreetMap raster tiles (public,
  * non-government) with attribution. The map talks only to the backend.
+ *
+ * Two SEPARATE optional environmental layers can be overlaid, each read-only and
+ * neither carrying any score, rank, exclusion, or legal effect: the inland-wetland
+ * inventory (Phase 1B-2) and the land-cover candidate-cell statistics (Phase 1B-LC5B).
+ * The land-cover layer draws the same 500 m grid from a VERSION-PINNED MVT endpoint —
+ * raw land-cover polygons are never requested and never rendered.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -25,7 +31,24 @@ import type {
   SuitabilityStatus,
   WetlandFeatureDetail,
 } from "../lib/api";
-import { SUITABILITY_TILE_SOURCE_LAYER, WETLAND_TILE_SOURCE_LAYER, fetchWetlandDetail } from "../lib/api";
+import {
+  LAND_COVER_CELL_TILE_SOURCE_LAYER,
+  SUITABILITY_TILE_SOURCE_LAYER,
+  WETLAND_TILE_SOURCE_LAYER,
+  fetchWetlandDetail,
+} from "../lib/api";
+import type { ClassLevel } from "../lib/landCover";
+import {
+  LAND_COVER_COVERAGE_OUTLINE_COLORS,
+  type LandCoverAvailableClasses,
+  type LandCoverCoverageVisibility,
+  type LandCoverVisualizationMode,
+  collectAvailableClasses,
+  landCoverFillColor,
+  landCoverFillOpacity,
+  landCoverFilter,
+  landCoverStatusOutlineFilter,
+} from "../lib/landCoverLayer";
 import {
   CANDIDATE_EXCLUDED_COLOR,
   CANDIDATE_REVIEW_COLOR,
@@ -95,6 +118,23 @@ const CANDIDATE_LAYER_IDS = [
   "candidates-review-outline",
   "candidates-stable-outline",
 ];
+
+// The land-cover candidate-cell source draws the SAME 500 m grid as the candidate
+// source, so it uses the same zoom bound: MapLibre overzooms above it rather than
+// requesting a swarm of sub-cell tiles.
+const LAND_COVER_TILE_MAX_ZOOM = CANDIDATE_TILE_MAX_ZOOM;
+
+const LAND_COVER_SOURCE_ID = "land-cover-cells";
+const LAND_COVER_FILL_LAYER_ID = "land-cover-cells-fill";
+// Per-status line layers, so coverage state is carried by LINE TREATMENT as well as
+// by fill color: a solid hairline for a fully-evaluated cell, a dashed outline for a
+// partly-evaluated one, and a dotted outline for an unevaluated one.
+const LAND_COVER_OUTLINE_LAYER_IDS = [
+  "land-cover-cells-complete-outline",
+  "land-cover-cells-partial-outline",
+  "land-cover-cells-nocoverage-outline",
+] as const;
+const LAND_COVER_LAYER_IDS = [LAND_COVER_FILL_LAYER_ID, ...LAND_COVER_OUTLINE_LAYER_IDS];
 
 // The inland-wetland vector source stops generating tiles at this zoom; MapLibre
 // overzooms it above. Wetland polygons are surveyed features (not a 500 m grid),
@@ -186,6 +226,36 @@ interface MapViewProps {
   wetlandTypeVisibility: Record<WetlandType, boolean>;
   /** Restrict to features carrying a source designation note (EXP). */
   wetlandDesignationOnly: boolean;
+  /**
+   * Land-cover candidate-cell statistics (토지피복 격자 통계) — a SEPARATE optional
+   * layer over the SAME 500 m candidate grid, available only in suitability mode.
+   * `landCoverTileUrl` is the VERSION-PINNED MVT template (it embeds the immutable
+   * LC3 statistics version); null when no active release resolved, which disables the
+   * layer entirely. Read-only and descriptive: it carries no score, rank, status,
+   * exclusion, or legal effect, and it never changes the suitability tiles.
+   */
+  showLandCover: boolean;
+  landCoverTileUrl: string | null;
+  /** "coverage" (평가 범위) or "dominant" (우세 분류). Paint-only; never reloads tiles. */
+  landCoverMode: LandCoverVisualizationMode;
+  /** Active official hierarchy level for dominant-class mode (1 대 / 2 중 / 3 세분류). */
+  landCoverClassLevel: ClassLevel;
+  /** Per-status visibility — doubles as the coverage legend selection. */
+  landCoverCoverage: LandCoverCoverageVisibility;
+  /** Explicitly-unchecked official class codes at the ACTIVE level. */
+  landCoverHiddenClassCodes: readonly string[];
+  /**
+   * The official classes the legend currently offers, per level. The fill's `match`
+   * arms are built from this same list, so the legend swatch and the painted cell can
+   * never disagree.
+   */
+  landCoverClasses: LandCoverAvailableClasses;
+  /**
+   * Reports the official classes present in the loaded tiles, so the control can offer
+   * a filter list built from what the release actually served rather than a hardcoded
+   * vocabulary. Called only when the observed set grows.
+   */
+  onLandCoverClassesChange?: (classes: LandCoverAvailableClasses) => void;
   /**
    * MVT tile-URL template ("…/{z}/{x}/{y}.mvt") for the active run + profile, or
    * null when there is no suitability run to render (e.g. equity mode). Changing
@@ -468,6 +538,14 @@ export default function MapView({
   wetlandTileUrl,
   wetlandTypeVisibility,
   wetlandDesignationOnly,
+  showLandCover,
+  landCoverTileUrl,
+  landCoverMode,
+  landCoverClassLevel,
+  landCoverCoverage,
+  landCoverHiddenClassCodes,
+  landCoverClasses,
+  onLandCoverClassesChange,
   candidateTileUrl,
   candidateBreaks,
   statusVisibility,
@@ -515,10 +593,16 @@ export default function MapView({
   // immutable once added, so a profile change requires removing and re-adding the
   // source rather than a GeoJSON-style setData swap.
   const appliedTileUrlRef = useRef<string | null>(null);
+  // Same contract for the land-cover source: its tiles are pinned to an immutable
+  // statistics version, so a version change means remove-and-re-add, not setData.
+  const appliedLandCoverTileUrlRef = useRef<string | null>(null);
+  // Latest class-discovery callback, read inside the once-bound map event handlers.
+  const onLandCoverClassesChangeRef = useRef(onLandCoverClassesChange);
   useEffect(() => {
     onCandidateClickRef.current = onCandidateClick;
     onRegionClickRef.current = onRegionClick;
     candidateContextRef.current = candidateContext;
+    onLandCoverClassesChangeRef.current = onLandCoverClassesChange;
   });
 
   // Reflect map state onto the container as read-only data attributes so tests
@@ -647,11 +731,37 @@ export default function MapView({
     // "loaded" once its viewport tiles arrive (or immediately, if the viewport
     // holds no tiles), and the map reaches "idle" when nothing more is pending —
     // either clears the refresh indicator, so it never sticks on permanently.
+    // The official land-cover classes actually present in the LOADED tiles. The
+    // filter/legend vocabulary comes from the served data rather than a hardcoded
+    // class list, so the UI can neither invent a class nor omit one the release has.
+    // Read from the tile source (not from a second network request) and reported
+    // upward; the page merges, so a class never disappears when it leaves the
+    // viewport. Guarded for the non-WebGL test/jsdom map, which has no query method.
+    const reportLandCoverClasses = () => {
+      const report = onLandCoverClassesChangeRef.current;
+      if (!report || !map.getSource(LAND_COVER_SOURCE_ID)) return;
+      const query = map.querySourceFeatures?.bind(map);
+      if (!query) return;
+      try {
+        const features = query(LAND_COVER_SOURCE_ID, {
+          sourceLayer: LAND_COVER_CELL_TILE_SOURCE_LAYER,
+        });
+        report(collectAvailableClasses(features));
+      } catch {
+        // A source that is mid-reload has no queryable tiles yet; the next
+        // sourcedata/idle event re-reads it. Never escalated to a visible error.
+      }
+    };
+
     map.on("sourcedata", (event) => {
       const e = event as unknown as { sourceId?: string; isSourceLoaded?: boolean };
       if (e && e.sourceId === "candidates" && e.isSourceLoaded) setCandidateLoading(false);
+      if (e && e.sourceId === LAND_COVER_SOURCE_ID && e.isSourceLoaded) reportLandCoverClasses();
     });
-    map.on("idle", () => setCandidateLoading(false));
+    map.on("idle", () => {
+      setCandidateLoading(false);
+      reportLandCoverClasses();
+    });
 
     // MapLibre errors. A single raster/vector TILE fetch failing is transient and
     // must never become a permanent fatal state — MapLibre keeps operating and
@@ -698,6 +808,7 @@ export default function MapView({
     return () => {
       loadedRef.current = false;
       appliedTileUrlRef.current = null;
+      appliedLandCoverTileUrlRef.current = null;
       if (resizeRaf) cancelAnimationFrame(resizeRaf);
       resizeObserver?.disconnect();
       hoverPopupRef.current?.remove();
@@ -1000,6 +1111,159 @@ export default function MapView({
         });
       }
 
+      // --- Land-cover candidate-cell statistics (Phase 1B-LC5B) as PostGIS tiles ---
+      // Added AFTER the facilities block and inserted `before` the facility symbols,
+      // so the stack is: basemap → wetlands → candidates → LAND COVER → facilities →
+      // selected-candidate highlight. Above the candidate fill (otherwise the layer it
+      // exists to show would be invisible under it) but below the facility points and
+      // the selected-candidate highlight, which must never be obscured.
+      //
+      // Candidate CLICKS are unaffected: the click handler is bound to the
+      // `candidates-fill` LAYER, and MapLibre delivers layer-scoped events regardless
+      // of which layers are painted above. No competing click handler is registered
+      // here, so there is exactly one candidate-selection model.
+      const addLandCoverSource = (url: string) => {
+        map.addSource(LAND_COVER_SOURCE_ID, {
+          type: "vector",
+          tiles: [url],
+          minzoom: 0,
+          maxzoom: LAND_COVER_TILE_MAX_ZOOM,
+        });
+        const before = map.getLayer("facilities-points") ? "facilities-points" : undefined;
+        map.addLayer(
+          {
+            id: LAND_COVER_FILL_LAYER_ID,
+            type: "fill",
+            source: LAND_COVER_SOURCE_ID,
+            "source-layer": LAND_COVER_CELL_TILE_SOURCE_LAYER,
+            paint: {
+              "fill-color": landCoverFillColor(
+                landCoverMode,
+                landCoverClassLevel,
+                landCoverClasses[landCoverClassLevel],
+              ) as unknown as maplibregl.ExpressionSpecification,
+              "fill-opacity": landCoverFillOpacity() as unknown as maplibregl.ExpressionSpecification,
+            },
+          },
+          before,
+        );
+        // Distinct LINE treatment per coverage status, so the three states stay
+        // distinguishable without relying on fill color alone (and in dominant-class
+        // mode, where the fill encodes the class instead of the coverage state).
+        const outlineSpec: Record<
+          (typeof LAND_COVER_OUTLINE_LAYER_IDS)[number],
+          { color: string; width: number; dash?: number[] }
+        > = {
+          "land-cover-cells-complete-outline": {
+            color: LAND_COVER_COVERAGE_OUTLINE_COLORS.COMPLETE_EXACT,
+            width: 0.5,
+          },
+          "land-cover-cells-partial-outline": {
+            color: LAND_COVER_COVERAGE_OUTLINE_COLORS.PARTIAL,
+            width: 1,
+            dash: [2, 1.5],
+          },
+          "land-cover-cells-nocoverage-outline": {
+            color: LAND_COVER_COVERAGE_OUTLINE_COLORS.NO_COVERAGE,
+            width: 0.9,
+            dash: [0.6, 1.6],
+          },
+        };
+        const statusForLayer = {
+          "land-cover-cells-complete-outline": "COMPLETE_EXACT",
+          "land-cover-cells-partial-outline": "PARTIAL",
+          "land-cover-cells-nocoverage-outline": "NO_COVERAGE",
+        } as const;
+        for (const id of LAND_COVER_OUTLINE_LAYER_IDS) {
+          const spec = outlineSpec[id];
+          map.addLayer(
+            {
+              id,
+              type: "line",
+              source: LAND_COVER_SOURCE_ID,
+              "source-layer": LAND_COVER_CELL_TILE_SOURCE_LAYER,
+              paint: {
+                "line-color": spec.color,
+                "line-width": spec.width,
+                ...(spec.dash ? { "line-dasharray": spec.dash } : {}),
+              },
+            },
+            before,
+          );
+          map.setFilter(
+            id,
+            landCoverStatusOutlineFilter(
+              statusForLayer[id],
+              landCoverFilter(
+                landCoverMode,
+                landCoverClassLevel,
+                landCoverCoverage,
+                landCoverHiddenClassCodes,
+              ),
+            ) as unknown as maplibregl.FilterSpecification,
+          );
+        }
+      };
+      const removeLandCoverSource = () => {
+        for (const id of LAND_COVER_LAYER_IDS) {
+          if (map.getLayer(id)) map.removeLayer(id);
+        }
+        if (map.getSource(LAND_COVER_SOURCE_ID)) map.removeSource(LAND_COVER_SOURCE_ID);
+      };
+
+      if (landCoverTileUrl) {
+        if (!map.getSource(LAND_COVER_SOURCE_ID)) {
+          addLandCoverSource(landCoverTileUrl);
+          appliedLandCoverTileUrlRef.current = landCoverTileUrl;
+        } else if (appliedLandCoverTileUrlRef.current !== landCoverTileUrl) {
+          // The active statistics release changed: re-point at the new immutable
+          // tiles (a vector source's tiles cannot be swapped in place).
+          removeLandCoverSource();
+          addLandCoverSource(landCoverTileUrl);
+          appliedLandCoverTileUrlRef.current = landCoverTileUrl;
+        }
+        // Mode / level / filter changes are PAINT AND FILTER updates only — they never
+        // reload the source, so switching 평가 범위 ↔ 우세 분류 or L1↔L2↔L3 costs no
+        // network request and can leave no stale styling behind.
+        const filter = landCoverFilter(
+          landCoverMode,
+          landCoverClassLevel,
+          landCoverCoverage,
+          landCoverHiddenClassCodes,
+        ) as unknown as maplibregl.FilterSpecification;
+        map.setPaintProperty(
+          LAND_COVER_FILL_LAYER_ID,
+          "fill-color",
+          landCoverFillColor(
+            landCoverMode,
+            landCoverClassLevel,
+            landCoverClasses[landCoverClassLevel],
+          ) as unknown as maplibregl.ExpressionSpecification,
+        );
+        map.setFilter(LAND_COVER_FILL_LAYER_ID, filter);
+        for (const id of LAND_COVER_OUTLINE_LAYER_IDS) {
+          if (!map.getLayer(id)) continue;
+          const status =
+            id === "land-cover-cells-complete-outline"
+              ? "COMPLETE_EXACT"
+              : id === "land-cover-cells-partial-outline"
+                ? "PARTIAL"
+                : "NO_COVERAGE";
+          map.setFilter(
+            id,
+            landCoverStatusOutlineFilter(
+              status,
+              filter as unknown as unknown[],
+            ) as unknown as maplibregl.FilterSpecification,
+          );
+        }
+      } else if (map.getSource(LAND_COVER_SOURCE_ID)) {
+        // No active release (or the release could not be resolved): tear the layer
+        // down completely rather than leave an empty source behind.
+        removeLandCoverSource();
+        appliedLandCoverTileUrlRef.current = null;
+      }
+
       // --- Mode + visibility toggles (guarded: candidate layers exist only once
       // a run's tile URL has been applied) ---
       const equity = mode === "equity";
@@ -1022,6 +1286,13 @@ export default function MapView({
           "visibility",
           suitability ? "visible" : "none",
         );
+      }
+      // The land-cover layer exists ONLY in the suitability map context and only when
+      // the user has enabled it: leaving suitability mode hides it without discarding
+      // the user's land-cover settings, so returning behaves predictably.
+      const landCoverVisibility = suitability && showLandCover ? "visible" : "none";
+      for (const id of LAND_COVER_LAYER_IDS) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", landCoverVisibility);
       }
       map.setLayoutProperty(
         "facilities-points",
@@ -1053,6 +1324,13 @@ export default function MapView({
     wetlandTileUrl,
     wetlandTypeVisibility,
     wetlandDesignationOnly,
+    showLandCover,
+    landCoverTileUrl,
+    landCoverMode,
+    landCoverClassLevel,
+    landCoverCoverage,
+    landCoverHiddenClassCodes,
+    landCoverClasses,
     candidateTileUrl,
     candidateBreaks,
     statusVisibility,

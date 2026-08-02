@@ -27,6 +27,7 @@ import {
   formatSharePercent,
   formatUncoveredRatioPercent,
   landCoverErrorKind,
+  validateActiveRelease,
   validateCellStatistics,
   validateClassDistribution,
 } from "./landCover";
@@ -353,5 +354,73 @@ describe("classRowsForLevel / classCountForLevel", () => {
     expect(classCountForLevel(counts, 1)).toBe(5);
     expect(classCountForLevel(counts, 3)).toBe(7);
     expect(classCountForLevel(null, 1)).toBeNull();
+  });
+});
+
+/**
+ * Active-release validation (Phase 1B-LC5B). The map's whole immutability claim rests
+ * on `statistics_version_id`, so a body that cannot supply a trustworthy one is
+ * rejected rather than used to build a tile URL.
+ */
+describe("validateActiveRelease", () => {
+  function releaseBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      statistics_version_id: 1,
+      status: "SUCCEEDED",
+      candidate_grid_version: "capital-grid-500m-v1",
+      expected_cell_count: 47893,
+      processed_cell_count: 47893,
+      coverage_status_counts: { COMPLETE_EXACT: 1, PARTIAL: 1, NO_COVERAGE: 1 },
+      disclosures: {
+        license_status: "LOCAL_USE_ONLY_PENDING_CLARIFICATION",
+        used_in_suitability_scoring: false,
+      },
+      ...overrides,
+    };
+  }
+
+  it("accepts a complete, succeeded release", () => {
+    const release = validateActiveRelease(releaseBody());
+    expect(release?.statistics_version_id).toBe(1);
+    expect(release?.candidate_grid_version).toBe("capital-grid-500m-v1");
+  });
+
+  it.each([
+    ["a non-object body", "not-an-object"],
+    ["null", null],
+  ])("rejects %s", (_label, raw) => {
+    expect(validateActiveRelease(raw)).toBeNull();
+  });
+
+  it.each([
+    ["a missing version id", { statistics_version_id: undefined }],
+    ["a non-integer version id", { statistics_version_id: 1.5 }],
+    ["a zero version id", { statistics_version_id: 0 }],
+    ["a string version id", { statistics_version_id: "1" }],
+  ])("rejects %s, so no tile URL is ever built from it", (_label, overrides) => {
+    expect(validateActiveRelease(releaseBody(overrides))).toBeNull();
+  });
+
+  it("rejects a release that is not SUCCEEDED", () => {
+    expect(validateActiveRelease(releaseBody({ status: "FAILED" }))).toBeNull();
+    expect(validateActiveRelease(releaseBody({ status: "RUNNING" }))).toBeNull();
+  });
+
+  it("rejects a release whose processed count does not match its expected count", () => {
+    // A partially-derived release must never be drawn as if it were complete.
+    expect(validateActiveRelease(releaseBody({ processed_cell_count: 47000 }))).toBeNull();
+  });
+
+  it("rejects a body with no disclosures block", () => {
+    expect(validateActiveRelease(releaseBody({ disclosures: undefined }))).toBeNull();
+    expect(
+      validateActiveRelease(releaseBody({ disclosures: { license_status: 1 } })),
+    ).toBeNull();
+  });
+
+  it("preserves the served licence status rather than assuming one", () => {
+    const release = validateActiveRelease(releaseBody());
+    expect(release?.disclosures.license_status).toBe("LOCAL_USE_ONLY_PENDING_CLARIFICATION");
+    expect(release?.disclosures.used_in_suitability_scoring).toBe(false);
   });
 });

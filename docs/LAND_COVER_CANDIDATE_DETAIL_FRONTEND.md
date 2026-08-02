@@ -35,9 +35,15 @@ nothing about suitability scoring.
 
 The backend change is metadata only: the served
 `disclosures.lifecycle.frontend_exposure` was `NOT_IMPLEMENTED`, which this phase makes
-untrue. It is now `CANDIDATE_DETAIL_ONLY` — deliberately not a bare `IMPLEMENTED`,
-because no map-wide exposure exists. No query, response value, index, or migration
+untrue. It became `CANDIDATE_DETAIL_ONLY` — deliberately not a bare `IMPLEMENTED`,
+because no map-wide exposure existed yet. No query, response value, index, or migration
 changed; the Alembic head stays at `0020`.
+
+> **Superseded by Phase 1B-LC5B.** That phase added the map-wide layer, dynamic legend and
+> filters, so `frontend_exposure` is now `IMPLEMENTED_AND_LOCALLY_VERIFIED` and
+> `vector_tiles` is no longer `NOT_IMPLEMENTED`. Everything else described in this
+> document — the candidate-detail panel, its validation rules, and its API usage — is
+> unchanged. See `docs/LAND_COVER_MAP_LAYER_LEGEND_FILTERS.md`.
 
 ## 3. API endpoints used
 
@@ -377,9 +383,16 @@ accessed.
 
 ## 16. Next phase
 
-**Phase 1B-LC5B — map layer, legend, and filters:** a map-wide land-cover presentation
-(choropleth or vector-tile layer), a legend with class colour assignment, and land-cover
-filters. `vector_tiles` stays `NOT_IMPLEMENTED` until then.
+**Phase 1B-LC5B — map layer, legend, and filters:** a map-wide land-cover presentation, a
+legend with class colour assignment, and land-cover filters. `vector_tiles` stays
+`NOT_IMPLEMENTED` until then.
 
 Not complete, and not claimed as complete by this phase: LC5B, OCI deployment,
 production deployment, licence resolution, and scoring integration.
+
+> **LC5B has since been completed locally** — it delivered a version-pinned MVT endpoint,
+> a MapLibre vector layer, coverage-status and dominant-class modes with L1/L2/L3
+> selection, both filter axes, and a dynamic legend, all verified against a local database
+> and a real browser. See `docs/LAND_COVER_MAP_LAYER_LEGEND_FILTERS.md`. The next phase is
+> **LC6 — integrated local QA, performance, and regression review**. OCI deployment,
+> production deployment, licence resolution, and scoring integration all remain not done.

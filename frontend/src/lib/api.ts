@@ -1159,6 +1159,55 @@ export function fetchLandCoverCellClasses(
 }
 
 // --------------------------------------------------------------------------- //
+// Land-cover candidate-cell vector tiles (Phase 1B-LC5B) — map-wide layer.
+//
+// The map draws the COMPLETE candidate-cell statistics layer as PostGIS vector
+// tiles. It deliberately does NOT reuse the paginated `/cells` JSON endpoint: that
+// caps at 500 rows and carries no geometry, so it cannot render 47,893 cells.
+// --------------------------------------------------------------------------- //
+
+/** Vector-tile source-layer name the map binds its land-cover layers to. */
+export const LAND_COVER_CELL_TILE_SOURCE_LAYER = "land_cover_cells";
+
+/**
+ * The subset of `GET /cell-statistics/release` the MAP needs.
+ *
+ * Only the release identity, the counts the control reports, and the disclosures are
+ * typed here — the backend serves a much larger schema (provenance, audits, derivation
+ * metadata) that the candidate-detail panel already covers. `statistics_version_id` is
+ * the load-bearing field: it is what pins the tile URL to an immutable release.
+ */
+export interface LandCoverActiveRelease {
+  statistics_version_id: number;
+  status: string;
+  candidate_grid_version: string;
+  expected_cell_count: number;
+  processed_cell_count: number;
+  coverage_status_counts: Record<LandCoverCoverageStatus, number>;
+  disclosures: LandCoverDisclosures;
+}
+
+/** The active statistics release, for resolving the version-pinned tile URL. */
+export function fetchLandCoverActiveRelease(signal: AbortSignal): Promise<LandCoverActiveRelease> {
+  return fetchJsonSignal<LandCoverActiveRelease>(`${LAND_COVER_CELL_STATISTICS_PATH}/release`, signal);
+}
+
+/**
+ * MapLibre vector-tile URL template for one IMMUTABLE statistics version.
+ *
+ * The version id is in the path, never implied by "whichever release is active when
+ * the tile is requested", so a tile URL means the same thing for as long as it is
+ * cached. Same origin-resolution as {@link suitabilityTileUrl}: in production
+ * `apiBaseUrl()` is "" and the tiles resolve against the page origin, which is
+ * resolved explicitly because MapLibre fetches tiles from a Web Worker whose base URL
+ * is a `blob:` URL. No host, IP, or domain is ever hardcoded.
+ */
+export function landCoverCellTileUrl(statisticsVersionId: number): string {
+  const base = apiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
+  return `${base}${LAND_COVER_CELL_STATISTICS_PATH}/tiles/${statisticsVersionId}/{z}/{x}/{y}.mvt`;
+}
+
+// --------------------------------------------------------------------------- //
 // User-weight scenario lab (Phase 6) — 사용자 가정 기반 시나리오.
 //
 // A TEMPORARY, on-read decision-support experiment: it recombines ONE fixed

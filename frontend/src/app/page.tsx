@@ -31,6 +31,7 @@ import {
   fetchReportingBoundaries,
   fetchReportingPerCapita,
   fetchReportingStatistics,
+  fetchLandCoverActiveRelease,
   fetchSuitabilityCandidateDetail,
   fetchSuitabilityLatestRun,
   fetchSuitabilityPolicy,
@@ -39,10 +40,13 @@ import {
   fetchWastePerCapita,
   fetchWasteStatistics,
   hasCriticStability,
+  landCoverCellTileUrl,
   suitabilityTileUrl,
   userScenarioTileUrl,
   wetlandTileUrl,
   type CandidateDetail,
+  type LandCoverActiveRelease,
+  type LandCoverCoverageStatus,
   type DataSourceItem,
   type DatasetEnvelope,
   type EquityEnvelope,
@@ -95,6 +99,20 @@ import { landfillUnavailableFromAll } from "../lib/landfill";
 import DashboardShell from "../components/DashboardShell";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import LandCoverCellPanel from "../components/LandCoverCellPanel";
+import LandCoverLayerControl from "../components/LandCoverLayerControl";
+import type { ClassLevel } from "../lib/landCover";
+import { landCoverErrorKind, validateActiveRelease } from "../lib/landCover";
+import {
+  LAND_COVER_LAYER_ERRORS,
+  type LandCoverAvailableClasses,
+  type LandCoverCoverageVisibility,
+  type LandCoverHiddenClasses,
+  type LandCoverVisualizationMode,
+  defaultCoverageVisibility,
+  defaultHiddenClasses,
+  emptyAvailableClasses,
+  mergeAvailableClasses,
+} from "../lib/landCoverLayer";
 import MapLegendOverlay from "../components/MapLegendOverlay";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import TransparencyDashboard from "../components/TransparencyDashboard";
@@ -242,6 +260,28 @@ export default function Home() {
     defaultWetlandTypeVisibility,
   );
   const [wetlandDesignationOnly, setWetlandDesignationOnly] = useState(false);
+
+  // Land-cover candidate-cell statistics (토지피복 격자 통계) — a SEPARATE optional
+  // layer over the SAME 500 m candidate grid, available only in suitability mode and
+  // OFF by default. Off by default deliberately: the source licence is still pending
+  // written clarification, the layer is locally verified only, and a fill above the
+  // candidate grid must never appear unrequested over the suitability visualization.
+  // Not URL-serialized (same precedent as showFacilities/showWetlands), so existing
+  // shared links are unaffected.
+  const [showLandCover, setShowLandCover] = useState(false);
+  const [landCoverMode, setLandCoverMode] = useState<LandCoverVisualizationMode>("coverage");
+  const [landCoverClassLevel, setLandCoverClassLevel] = useState<ClassLevel>(1);
+  const [landCoverCoverage, setLandCoverCoverage] = useState<LandCoverCoverageVisibility>(
+    defaultCoverageVisibility,
+  );
+  const [landCoverHidden, setLandCoverHidden] = useState<LandCoverHiddenClasses>(
+    defaultHiddenClasses,
+  );
+  const [landCoverClasses, setLandCoverClasses] = useState<LandCoverAvailableClasses>(
+    emptyAvailableClasses,
+  );
+  const [landCoverRelease, setLandCoverRelease] = useState<LandCoverActiveRelease | null>(null);
+  const [landCoverLayerError, setLandCoverLayerError] = useState<string | null>(null);
 
   const [mode, setMode] = useState<DashboardMode>("equity");
   const [profile, setProfile] = useState<SuitabilityProfile>("baseline");
@@ -668,6 +708,76 @@ export default function Home() {
     () => setWetlandDesignationOnly((prev) => !prev),
     [],
   );
+
+  // --- Land-cover candidate-cell layer (Phase 1B-LC5B) ------------------------
+  // The tile URL is VERSION-PINNED, so the active statistics release is resolved
+  // first and its immutable `statistics_version_id` goes into the template. The
+  // release is fetched once per entry into suitability mode; a failure here disables
+  // ONLY this layer — the base map, the candidate grid, facilities, candidate
+  // selection, the LC5A detail panel and Equity mode are untouched.
+  const suitabilityMapActive = mode === "suitability";
+  useEffect(() => {
+    if (!suitabilityMapActive || landCoverRelease) return;
+    const controller = new AbortController();
+    fetchLandCoverActiveRelease(controller.signal)
+      .then((raw) => {
+        if (controller.signal.aborted) return;
+        const release = validateActiveRelease(raw);
+        if (release) {
+          setLandCoverRelease(release);
+          setLandCoverLayerError(null);
+        } else {
+          // A response we cannot trust is never rendered as a usable layer, and the
+          // message never claims land cover is absent.
+          setLandCoverLayerError(LAND_COVER_LAYER_ERRORS.MALFORMED);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        setLandCoverLayerError(LAND_COVER_LAYER_ERRORS[landCoverErrorKind(cause)]);
+      });
+    return () => controller.abort();
+  }, [suitabilityMapActive, landCoverRelease]);
+
+  const landCoverTiles = useMemo(
+    () =>
+      landCoverRelease ? landCoverCellTileUrl(landCoverRelease.statistics_version_id) : null,
+    [landCoverRelease],
+  );
+  const toggleLandCover = useCallback(() => setShowLandCover((prev) => !prev), []);
+  const toggleLandCoverCoverage = useCallback((status: LandCoverCoverageStatus) => {
+    setLandCoverCoverage((prev) => ({ ...prev, [status]: !prev[status] }));
+  }, []);
+  const toggleLandCoverClass = useCallback(
+    (code: string) => {
+      setLandCoverHidden((prev) => {
+        const current = prev[landCoverClassLevel];
+        const next = current.includes(code)
+          ? current.filter((value) => value !== code)
+          : [...current, code];
+        return { ...prev, [landCoverClassLevel]: next };
+      });
+    },
+    [landCoverClassLevel],
+  );
+  const setAllLandCoverClasses = useCallback(
+    (visible: boolean) => {
+      setLandCoverHidden((prev) => ({
+        ...prev,
+        [landCoverClassLevel]: visible
+          ? []
+          : landCoverClasses[landCoverClassLevel].map((option) => option.code),
+      }));
+    },
+    [landCoverClassLevel, landCoverClasses],
+  );
+  // Classes observed in the loaded tiles are MERGED, never replaced, so a class does
+  // not vanish from the legend when it pans out of view. `mergeAvailableClasses`
+  // returns the previous object identity when nothing was added, so a quiet map
+  // (every tile already seen) causes no re-render.
+  const handleLandCoverClasses = useCallback((observed: LandCoverAvailableClasses) => {
+    setLandCoverClasses((prev) => mergeAvailableClasses(prev, observed));
+  }, []);
 
   const metric = METRICS.find((candidate) => candidate.key === metricKey) ?? METRICS[0];
 
@@ -1615,6 +1725,14 @@ export default function Home() {
           wetlandTileUrl={wetlandTiles}
           wetlandTypeVisibility={wetlandTypeVisibility}
           wetlandDesignationOnly={wetlandDesignationOnly}
+          showLandCover={showLandCover}
+          landCoverTileUrl={landCoverTiles}
+          landCoverMode={landCoverMode}
+          landCoverClassLevel={landCoverClassLevel}
+          landCoverCoverage={landCoverCoverage}
+          landCoverHiddenClassCodes={landCoverHidden[landCoverClassLevel]}
+          landCoverClasses={landCoverClasses}
+          onLandCoverClassesChange={handleLandCoverClasses}
           candidateTileUrl={candidateTileUrl}
           candidateBreaks={CANDIDATE_SCORE_BREAKS}
           candidateContext={scenarioActive ? "scenario" : "stored"}
@@ -1634,18 +1752,46 @@ export default function Home() {
           }
           onRegionClick={(code) => setSelectedRegionCode(code)}
         />
-        {/* Inland-wetland inventory (내륙습지 목록) — separate optional environmental
-            layer control at the map's top-left. Off by default; toggling it never
-            affects candidates, scores, statuses, or region state. Distinct from the
-            statutory UM901 layer. */}
-        <WetlandLayerControl
-          show={showWetlands}
-          onToggleShow={toggleWetlands}
-          typeVisibility={wetlandTypeVisibility}
-          onToggleType={toggleWetlandType}
-          designationOnly={wetlandDesignationOnly}
-          onToggleDesignationOnly={toggleWetlandDesignationOnly}
-        />
+        {/* Optional environmental layer controls, stacked at the map's TOP-LEFT so
+            they never overlap the score/status legend (bottom-left) or the navigation
+            control (top-right). Both are collapsed and OFF by default; toggling either
+            never affects candidates, scores, statuses, or region state. The land-cover
+            control is mounted only in suitability mode, which is the only context its
+            layer exists in. `min-w-0` keeps long Korean class names from forcing
+            horizontal overflow in the narrow mobile card. */}
+        <div className="pointer-events-none absolute left-2 top-2 z-10 flex w-[min(86vw,272px)] min-w-0 flex-col gap-2 md:left-3 md:top-3">
+          <div className="pointer-events-auto min-w-0">
+            <WetlandLayerControl
+              show={showWetlands}
+              onToggleShow={toggleWetlands}
+              typeVisibility={wetlandTypeVisibility}
+              onToggleType={toggleWetlandType}
+              designationOnly={wetlandDesignationOnly}
+              onToggleDesignationOnly={toggleWetlandDesignationOnly}
+            />
+          </div>
+          {mode === "suitability" ? (
+            <div className="pointer-events-auto min-w-0">
+              <LandCoverLayerControl
+                show={showLandCover}
+                onToggleShow={toggleLandCover}
+                available={landCoverTiles !== null}
+                unavailableMessage={landCoverLayerError}
+                mode={landCoverMode}
+                onModeChange={setLandCoverMode}
+                classLevel={landCoverClassLevel}
+                onClassLevelChange={setLandCoverClassLevel}
+                coverage={landCoverCoverage}
+                onToggleCoverage={toggleLandCoverCoverage}
+                availableClasses={landCoverClasses}
+                hiddenClassCodes={landCoverHidden[landCoverClassLevel]}
+                onToggleClass={toggleLandCoverClass}
+                onSetAllClasses={setAllLandCoverClasses}
+                statisticsVersionId={landCoverRelease?.statistics_version_id ?? null}
+              />
+            </div>
+          ) : null}
+        </div>
         {/* Floating legend over the lower-left of the map — one legend per map mode.
             It never recomputes colors/breaks: equity mode receives the page's active
             scale rows (same palette/breaks as the fill); suitability mode receives the

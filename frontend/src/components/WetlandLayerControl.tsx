@@ -10,8 +10,10 @@
  * disclosure, and the required statutory-status / UM901-distinction text. It never
  * shows a score, exclusion, or legal determination.
  *
- * Positioned at the map's TOP-LEFT so it never overlaps the score/status legend
- * (bottom-left) or the navigation control (top-right). Collapsed by default so it
+ * Rendered inside the map's TOP-LEFT optional-layer stack (page.tsx), which owns the
+ * absolute positioning and the card width so several optional-layer controls can sit
+ * one under another without overlapping — clear of the score/status legend
+ * (bottom-left) and the navigation control (top-right). Collapsed by default so it
  * never covers the map on first load.
  */
 
@@ -51,7 +53,7 @@ export default function WetlandLayerControl({
 }: WetlandLayerControlProps) {
   return (
     <details
-      className="absolute left-2 top-2 z-10 w-[min(86vw,272px)] rounded-card border border-hairline-strong bg-white/90 text-ink-muted shadow-float backdrop-blur-sm md:left-3 md:top-3"
+      className="w-full min-w-0 rounded-card border border-hairline-strong bg-white/90 text-ink-muted shadow-float backdrop-blur-sm"
       data-testid="wetland-layer-control"
     >
       <summary

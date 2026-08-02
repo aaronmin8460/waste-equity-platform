@@ -16,6 +16,14 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CandidateDetail, RegionBoundaryCollection } from "../lib/api";
+import type { ClassLevel } from "../lib/landCover";
+import {
+  LAND_COVER_COVERAGE_COLORS,
+  type LandCoverAvailableClasses,
+  type LandCoverVisualizationMode,
+  defaultCoverageVisibility,
+  landCoverClassColor,
+} from "../lib/landCoverLayer";
 import type { MapMode, StatusVisibility } from "./MapView";
 
 // Shared recorder for the fake map instances, created before the module mock so
@@ -41,6 +49,7 @@ interface FakeMapLike {
   getCanvas: () => { style: { cursor: string } };
   flyToCalls: unknown[][];
   fitBoundsCalls: unknown[][];
+  sourceFeatures: Record<string, { properties?: Record<string, unknown> | null }[]>;
 }
 
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
@@ -93,9 +102,14 @@ vi.mock("maplibre-gl", () => {
     getSource(id: string) {
       return this.sources[id];
     }
-    addLayer(layer: { id: string; source: string }) {
+    // Mirrors MapLibre's `addLayer(layer, beforeId)`: with a beforeId the layer is
+    // INSERTED before that layer rather than pushed on top, so `layers` really is the
+    // paint order and the land-cover stacking assertions are meaningful.
+    addLayer(layer: { id: string; source: string }, beforeId?: string) {
       this.layerById[layer.id] = layer;
-      this.layers.push(layer.id);
+      const index = beforeId ? this.layers.indexOf(beforeId) : -1;
+      if (index >= 0) this.layers.splice(index, 0, layer.id);
+      else this.layers.push(layer.id);
     }
     removeLayer(id: string) {
       delete this.layerById[id];
@@ -130,6 +144,12 @@ vi.mock("maplibre-gl", () => {
     }
     getCanvas() {
       return this.canvas;
+    }
+    // Tile features MapView reads to discover the official class vocabulary. Tests
+    // set this to a synthetic feature list; the default is an empty tile set.
+    sourceFeatures: Record<string, { properties?: Record<string, unknown> | null }[]> = {};
+    querySourceFeatures(sourceId: string) {
+      return this.sourceFeatures[sourceId] ?? [];
     }
     flyToCalls: unknown[][] = [];
     fitBoundsCalls: unknown[][] = [];
@@ -189,6 +209,71 @@ const BASELINE_TILE_URL =
 const WETLAND_TILE_URL =
   "http://localhost:8000/api/v1/environment/wetlands/tiles/{z}/{x}/{y}.mvt";
 
+/**
+ * Version-pinned land-cover tile template. `/tiles/1/` is the immutable LC3 statistics
+ * version — the whole point of the URL contract.
+ */
+const LAND_COVER_TILE_URL =
+  "http://localhost:8000/api/v1/environment/land-cover/cell-statistics/tiles/1/{z}/{x}/{y}.mvt";
+
+/**
+ * SYNTHETIC TEST FIXTURE — not official data. Three cells covering the three coverage
+ * states, with dominant classes at all three official levels for the covered ones and
+ * none at all for the uncovered one.
+ */
+const LAND_COVER_TILE_FEATURES = [
+  {
+    properties: {
+      candidate_key: "capital-grid-500m-v1:1_1",
+      coverage_status: "COMPLETE_EXACT",
+      coverage_ratio: 1,
+      dominant_l1_code: "300",
+      dominant_l1_name: "산림지역",
+      dominant_l2_code: "310",
+      dominant_l2_name: "활엽수림",
+      dominant_l3_code: "311",
+      dominant_l3_name: "활엽수림",
+    },
+  },
+  {
+    properties: {
+      candidate_key: "capital-grid-500m-v1:1_2",
+      coverage_status: "PARTIAL",
+      coverage_ratio: 0.5,
+      dominant_l1_code: "100",
+      dominant_l1_name: "시가화건조지역",
+      dominant_l2_code: "150",
+      dominant_l2_name: "교통지역",
+      dominant_l3_code: "154",
+      dominant_l3_name: "도로",
+    },
+  },
+  {
+    // A NO_COVERAGE cell genuinely carries NO dominant-class property at any level:
+    // ST_AsMVT omits NULL properties, exactly as the backend tile does.
+    properties: {
+      candidate_key: "capital-grid-500m-v1:1_3",
+      coverage_status: "NO_COVERAGE",
+      coverage_ratio: 0,
+    },
+  },
+];
+
+const LAND_COVER_CLASSES = {
+  1: [
+    { code: "100", name: "시가화건조지역" },
+    { code: "300", name: "산림지역" },
+  ],
+  2: [
+    { code: "150", name: "교통지역" },
+    { code: "310", name: "활엽수림" },
+  ],
+  3: [
+    { code: "154", name: "도로" },
+    { code: "311", name: "활엽수림" },
+  ],
+};
+
 function baseProps(overrides: Partial<React.ComponentProps<typeof MapView>> = {}) {
   return {
     boundaries: EMPTY_BOUNDARIES,
@@ -210,6 +295,17 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof MapView>> = {}
       인공습지: true,
     },
     wetlandDesignationOnly: false,
+    // The land-cover layer is OFF by default, exactly as the page mounts it.
+    showLandCover: false,
+    landCoverTileUrl: LAND_COVER_TILE_URL,
+    landCoverMode: "coverage" as LandCoverVisualizationMode,
+    landCoverClassLevel: 1 as ClassLevel,
+    landCoverCoverage: defaultCoverageVisibility(),
+    landCoverHiddenClassCodes: [] as readonly string[],
+    landCoverClasses: LAND_COVER_CLASSES as LandCoverAvailableClasses,
+    onLandCoverClassesChange: undefined as
+      | ((classes: LandCoverAvailableClasses) => void)
+      | undefined,
     candidateTileUrl: BASELINE_TILE_URL,
     candidateBreaks: [20, 40, 60, 80] as readonly number[],
     statusVisibility: DEFAULT_VISIBILITY,
@@ -812,5 +908,320 @@ describe("MapView inland-wetland layer", () => {
     expect(popup.html).toContain("한강 밤섬");
     expect(popup.html).toContain("습지 유형: 하천습지");
     expect(popup.html).toContain("법정 습지보호지역을 뜻하지 않습니다");
+  });
+});
+
+describe("MapView land-cover candidate-cell layer (Phase 1B-LC5B)", () => {
+  const FILL = "land-cover-cells-fill";
+  const OUTLINES = [
+    "land-cover-cells-complete-outline",
+    "land-cover-cells-partial-outline",
+    "land-cover-cells-nocoverage-outline",
+  ];
+
+  it("creates a vector source whose tiles are the VERSION-PINNED .mvt template", () => {
+    const { map } = renderAndLoad(baseProps({ showLandCover: true }));
+    const source = map.getSource("land-cover-cells") as {
+      type: string;
+      tiles: string[];
+      maxzoom: number;
+    };
+    expect(source).toBeDefined();
+    expect(source.type).toBe("vector");
+    expect(source.tiles).toEqual([LAND_COVER_TILE_URL]);
+    // The immutable statistics version is in the path, and the XYZ .mvt template.
+    expect(source.tiles[0]).toContain("/cell-statistics/tiles/1/");
+    expect(source.tiles[0]).toContain("{z}/{x}/{y}.mvt");
+    // NEVER the paginated JSON cell list, and never a raw land-cover feature endpoint.
+    expect(source.tiles[0]).not.toContain("/cells?");
+    expect(source.tiles[0]).not.toContain("limit=");
+    expect(source.tiles[0]).not.toContain("features");
+  });
+
+  it("binds every land-cover layer to the `land_cover_cells` source-layer", () => {
+    const { map } = renderAndLoad(baseProps({ showLandCover: true }));
+    for (const id of [FILL, ...OUTLINES]) {
+      const layer = map.getLayer(id);
+      expect(layer, id).toBeDefined();
+      expect(layer!.source).toBe("land-cover-cells");
+      expect(layer!["source-layer"]).toBe("land_cover_cells");
+    }
+  });
+
+  it("is OFF by default (visibility none) and turns on with showLandCover", () => {
+    const props = baseProps();
+    const { map, rerender } = renderAndLoad(props);
+    // The source is still created (so toggling is instant), but nothing is drawn.
+    expect(map.getSource("land-cover-cells")).toBeDefined();
+    for (const id of [FILL, ...OUTLINES]) {
+      expect(map.layout[id]["visibility"], id).toBe("none");
+    }
+    rerender(<MapView {...props} showLandCover={true} />);
+    for (const id of [FILL, ...OUTLINES]) {
+      expect(map.layout[id]["visibility"], id).toBe("visible");
+    }
+  });
+
+  it("does not create the source at all when no release resolved (null tile URL)", () => {
+    const { map } = renderAndLoad(
+      baseProps({ showLandCover: true, landCoverTileUrl: null }),
+    );
+    expect(map.getSource("land-cover-cells")).toBeUndefined();
+    expect(map.getLayer(FILL)).toBeUndefined();
+    // The suitability layer is untouched — a missing land-cover release is isolated.
+    expect(map.getSource("candidates")).toBeDefined();
+    expect(map.getLayer("candidates-fill")).toBeDefined();
+  });
+
+  it("does not re-create the source or layers on an unrelated re-render", () => {
+    const props = baseProps({ showLandCover: true });
+    const { map, rerender } = renderAndLoad(props);
+    const layerCount = map.layers.filter((id) => id.startsWith("land-cover-cells")).length;
+    rerender(<MapView {...props} showFacilities={true} />);
+    rerender(<MapView {...props} showFacilities={false} />);
+    expect(map.removedSources).not.toContain("land-cover-cells");
+    expect(map.layers.filter((id) => id.startsWith("land-cover-cells"))).toHaveLength(layerCount);
+  });
+
+  it("stacks the land-cover fill ABOVE the candidate fill but BELOW facilities", () => {
+    const { map } = renderAndLoad(baseProps({ showLandCover: true }));
+    const order = map.layers;
+    expect(order.indexOf(FILL)).toBeGreaterThan(order.indexOf("candidates-fill"));
+    expect(order.indexOf(FILL)).toBeLessThan(order.indexOf("facilities-points"));
+  });
+
+  it("keeps the selected-candidate highlight ABOVE the land-cover fill", () => {
+    const selected = {
+      candidate_id: 7,
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [126.9, 37.5],
+            [126.91, 37.5],
+            [126.91, 37.51],
+            [126.9, 37.51],
+            [126.9, 37.5],
+          ],
+        ],
+      },
+    } as unknown as CandidateDetail;
+    const props = baseProps({ showLandCover: true });
+    const { map, rerender } = renderAndLoad(props);
+    // Selecting after the layer exists is the real order: the highlight layers are
+    // added on top, and the land-cover fill was inserted below the facility symbols.
+    rerender(<MapView {...props} selectedCandidate={selected} />);
+    const order = map.layers;
+    expect(order.indexOf("selected-candidate-fill")).toBeGreaterThan(order.indexOf(FILL));
+    expect(order.indexOf("selected-candidate-outline")).toBeGreaterThan(order.indexOf(FILL));
+  });
+
+  it("keeps the highlight above land-cover when the layer is enabled AFTER selecting", () => {
+    const selected = {
+      candidate_id: 8,
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [126.9, 37.5],
+            [126.91, 37.5],
+            [126.91, 37.51],
+            [126.9, 37.51],
+            [126.9, 37.5],
+          ],
+        ],
+      },
+    } as unknown as CandidateDetail;
+    const props = baseProps({ showLandCover: false, landCoverTileUrl: null });
+    const { map, rerender } = renderAndLoad(props);
+    rerender(<MapView {...props} selectedCandidate={selected} />);
+    rerender(
+      <MapView
+        {...props}
+        selectedCandidate={selected}
+        showLandCover={true}
+        landCoverTileUrl={LAND_COVER_TILE_URL}
+      />,
+    );
+    const order = map.layers;
+    expect(order.indexOf(FILL)).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("selected-candidate-fill")).toBeGreaterThan(order.indexOf(FILL));
+  });
+
+  it("restores the source and layers after a style reload (a fresh map instance)", () => {
+    const props = baseProps({ showLandCover: true });
+    const { unmount } = renderAndLoad(props);
+    unmount();
+    // A style reload tears the map down and rebuilds it; the layer must come back
+    // with the same ids, source-layer and version-pinned tiles.
+    const { map } = renderAndLoad(props);
+    const source = map.getSource("land-cover-cells") as { tiles: string[] };
+    expect(source.tiles).toEqual([LAND_COVER_TILE_URL]);
+    for (const id of [FILL, ...OUTLINES]) expect(map.getLayer(id), id).toBeDefined();
+  });
+
+  it("paints coverage mode from the three coverage-status colors", () => {
+    const { map } = renderAndLoad(baseProps({ showLandCover: true }));
+    const fill = JSON.stringify(map.paint[FILL]["fill-color"]);
+    expect(fill).toContain("coverage_status");
+    expect(fill).toContain(LAND_COVER_COVERAGE_COLORS.COMPLETE_EXACT);
+    expect(fill).toContain(LAND_COVER_COVERAGE_COLORS.PARTIAL);
+    expect(fill).toContain(LAND_COVER_COVERAGE_COLORS.NO_COVERAGE);
+    // Coverage mode never reads a class code.
+    expect(fill).not.toContain("dominant_l1_code");
+  });
+
+  it.each([
+    [1 as ClassLevel, "dominant_l1_code", ["100", "300"]],
+    [2 as ClassLevel, "dominant_l2_code", ["150", "310"]],
+    [3 as ClassLevel, "dominant_l3_code", ["154", "311"]],
+  ])("paints dominant L%i from the official codes at that level", (level, property, codes) => {
+    const { map } = renderAndLoad(
+      baseProps({ showLandCover: true, landCoverMode: "dominant", landCoverClassLevel: level }),
+    );
+    const fill = JSON.stringify(map.paint[FILL]["fill-color"]);
+    expect(fill).toContain(property);
+    for (const code of codes) {
+      expect(fill).toContain(code);
+      // The swatch color is the deterministic per-code color, not a positional one.
+      expect(fill).toContain(landCoverClassColor(code));
+    }
+  });
+
+  it("gives a cell with no dominant class the neutral unevaluated treatment", () => {
+    const { map } = renderAndLoad(
+      baseProps({ showLandCover: true, landCoverMode: "dominant", landCoverClassLevel: 1 }),
+    );
+    const fill = JSON.stringify(map.paint[FILL]["fill-color"]);
+    // An explicit `!has` branch → the neutral color; never an invented class code.
+    expect(fill).toContain('["!",["has","dominant_l1_code"]]');
+    expect(fill).toContain(LAND_COVER_COVERAGE_COLORS.NO_COVERAGE);
+    expect(fill).not.toContain("기타");
+    expect(fill).not.toContain("Unknown");
+    expect(fill).not.toContain("UNKNOWN");
+  });
+
+  it("switches mode with a PAINT update, never a source reload", () => {
+    const props = baseProps({ showLandCover: true });
+    const { map, rerender } = renderAndLoad(props);
+    rerender(<MapView {...props} landCoverMode="dominant" />);
+    rerender(<MapView {...props} landCoverMode="dominant" landCoverClassLevel={3} />);
+    expect(map.removedSources).not.toContain("land-cover-cells");
+    expect(JSON.stringify(map.paint[FILL]["fill-color"])).toContain("dominant_l3_code");
+  });
+
+  it("filters by coverage status, dropping a disabled status from the filter", () => {
+    const props = baseProps({ showLandCover: true });
+    const { map, rerender } = renderAndLoad(props);
+    expect(JSON.stringify(map.filters[FILL])).toContain("NO_COVERAGE");
+    rerender(
+      <MapView
+        {...props}
+        landCoverCoverage={{ COMPLETE_EXACT: true, PARTIAL: true, NO_COVERAGE: false }}
+      />,
+    );
+    const filter = JSON.stringify(map.filters[FILL]);
+    expect(filter).toContain("COMPLETE_EXACT");
+    expect(filter).toContain("PARTIAL");
+    expect(filter).not.toContain("NO_COVERAGE");
+  });
+
+  it("filters by dominant class only in dominant mode, sparing cells with no class", () => {
+    const props = baseProps({ showLandCover: true, landCoverHiddenClassCodes: ["300"] });
+    const { map, rerender } = renderAndLoad(props);
+    // Coverage mode ignores the class filter entirely (the control does not offer it).
+    expect(JSON.stringify(map.filters[FILL])).not.toContain("dominant_l1_code");
+    rerender(<MapView {...props} landCoverMode="dominant" />);
+    const filter = JSON.stringify(map.filters[FILL]);
+    expect(filter).toContain("dominant_l1_code");
+    expect(filter).toContain("300");
+    // A cell with NO dominant class is exempt from the class clause, so hiding a
+    // class never silently deletes the unevaluated cells from the map.
+    expect(filter).toContain('["!",["has","dominant_l1_code"]]');
+  });
+
+  it("matches nothing when every coverage status is disabled", () => {
+    const { map } = renderAndLoad(
+      baseProps({
+        showLandCover: true,
+        landCoverCoverage: { COMPLETE_EXACT: false, PARTIAL: false, NO_COVERAGE: false },
+      }),
+    );
+    expect(JSON.stringify(map.filters[FILL])).toBe('["in",["get","coverage_status"],["literal",[]]]');
+  });
+
+  it("applies the layer filter to every per-status outline layer too", () => {
+    const { map } = renderAndLoad(
+      baseProps({
+        showLandCover: true,
+        landCoverCoverage: { COMPLETE_EXACT: true, PARTIAL: true, NO_COVERAGE: false },
+      }),
+    );
+    for (const id of OUTLINES) {
+      const filter = JSON.stringify(map.filters[id]);
+      expect(filter, id).toContain("coverage_status");
+      // Each outline is its own status AND the layer-wide coverage filter.
+      expect(filter, id).toContain("all");
+    }
+  });
+
+  it("keeps land-cover filters intact while the layer is toggled off and on", () => {
+    const props = baseProps({
+      showLandCover: true,
+      landCoverCoverage: { COMPLETE_EXACT: true, PARTIAL: false, NO_COVERAGE: true },
+    });
+    const { map, rerender } = renderAndLoad(props);
+    rerender(<MapView {...props} showLandCover={false} />);
+    rerender(<MapView {...props} showLandCover={true} />);
+    const filter = JSON.stringify(map.filters[FILL]);
+    expect(filter).toContain("COMPLETE_EXACT");
+    expect(filter).toContain("NO_COVERAGE");
+    expect(filter).not.toContain("PARTIAL");
+  });
+
+  it("hides the layer when leaving suitability mode and restores it on return", () => {
+    const props = baseProps({ showLandCover: true });
+    const { map, rerender } = renderAndLoad(props);
+    expect(map.layout[FILL]["visibility"]).toBe("visible");
+    rerender(<MapView {...props} mode="equity" candidateTileUrl={null} />);
+    expect(map.layout[FILL]["visibility"]).toBe("none");
+    rerender(<MapView {...props} mode="suitability" />);
+    expect(map.layout[FILL]["visibility"]).toBe("visible");
+  });
+
+  it("still opens the existing candidate detail when a cell is clicked", () => {
+    const onCandidateClick = vi.fn();
+    const { map } = renderAndLoad(baseProps({ showLandCover: true, onCandidateClick }));
+    // The land-cover fill registers NO click handler; the existing candidate handler
+    // stays the single selection model even with the land-cover fill painted above.
+    map.emitLayer("click", "candidates-fill", {
+      features: [{ properties: { candidate_id: 99, status: "ELIGIBLE", score: 70 } }],
+      lngLat: { lng: 126.9, lat: 37.5 },
+    });
+    expect(onCandidateClick).toHaveBeenCalledWith(99);
+  });
+
+  it("reports the official classes present in the loaded tiles, per level", () => {
+    const onLandCoverClassesChange = vi.fn();
+    const { map } = renderAndLoad(baseProps({ showLandCover: true, onLandCoverClassesChange }));
+    map.sourceFeatures["land-cover-cells"] = LAND_COVER_TILE_FEATURES;
+    act(() => map.fire("idle"));
+    expect(onLandCoverClassesChange).toHaveBeenCalled();
+    const reported = onLandCoverClassesChange.mock.calls.at(-1)![0];
+    // Official codes and Korean names, verbatim, ordered by code ascending.
+    expect(reported[1]).toEqual([
+      { code: "100", name: "시가화건조지역" },
+      { code: "300", name: "산림지역" },
+    ]);
+    expect(reported[2]).toEqual([
+      { code: "150", name: "교통지역" },
+      { code: "310", name: "활엽수림" },
+    ]);
+    expect(reported[3]).toEqual([
+      { code: "154", name: "도로" },
+      { code: "311", name: "활엽수림" },
+    ]);
+    // The NO_COVERAGE cell contributed no class at any level.
+    expect(reported[1]).toHaveLength(2);
   });
 });

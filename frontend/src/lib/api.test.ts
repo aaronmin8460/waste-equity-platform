@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  LAND_COVER_CELL_TILE_SOURCE_LAYER,
   SUITABILITY_TILE_SOURCE_LAYER,
   apiBaseUrl,
   availableProfiles,
   fetchJson,
+  fetchLandCoverActiveRelease,
   fetchReportingBoundaries,
   fetchReportingPerCapita,
   fetchReportingStatistics,
@@ -13,6 +15,7 @@ import {
   fetchSuitabilityCandidates,
   fetchSuitabilityPolicy,
   hasCriticStability,
+  landCoverCellTileUrl,
   suitabilityTileUrl,
   type SuitabilityRun,
 } from "./api";
@@ -242,5 +245,66 @@ describe("suitability client", () => {
     ]);
     // A null run (nothing loaded) still exposes the four static profiles.
     expect(availableProfiles(null)).not.toContain("critic");
+  });
+});
+
+describe("land-cover candidate-cell map layer client (Phase 1B-LC5B)", () => {
+  it("builds a VERSION-PINNED tile URL from the immutable statistics version", () => {
+    const url = landCoverCellTileUrl(1);
+    expect(url).toBe(
+      "http://localhost:8000/api/v1/environment/land-cover/cell-statistics/tiles/1/{z}/{x}/{y}.mvt",
+    );
+    // The version — not "whichever release is active at request time" — is in the path.
+    expect(url).toContain("/cell-statistics/tiles/1/");
+    expect(url).toContain("{z}/{x}/{y}.mvt");
+    // Never the paginated JSON cell list, and never a raw land-cover feature endpoint.
+    expect(url).not.toContain("/cells");
+    expect(url).not.toContain("limit=");
+    expect(url).not.toContain("bbox=");
+    expect(url).not.toContain("land-cover/features");
+  });
+
+  it("changes with the statistics version, so two releases never share a URL", () => {
+    expect(landCoverCellTileUrl(1)).not.toBe(landCoverCellTileUrl(2));
+    expect(landCoverCellTileUrl(2)).toContain("/tiles/2/");
+  });
+
+  it("resolves same-origin in production (empty API base), with no hardcoded host", () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "");
+    const url = landCoverCellTileUrl(1);
+    expect(url).toBe(
+      "/api/v1/environment/land-cover/cell-statistics/tiles/1/{z}/{x}/{y}.mvt",
+    );
+    expect(url).not.toContain("localhost");
+    expect(url).not.toContain("8000");
+    expect(url).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+    expect(url).not.toContain("sslip.io");
+  });
+
+  it("exposes the vector-tile source-layer name the map binds to", () => {
+    expect(LAND_COVER_CELL_TILE_SOURCE_LAYER).toBe("land_cover_cells");
+    // Distinct from the other two optional layers' source-layers.
+    expect(LAND_COVER_CELL_TILE_SOURCE_LAYER).not.toBe(SUITABILITY_TILE_SOURCE_LAYER);
+  });
+
+  it("requests the active release from the LC4 release endpoint", async () => {
+    const fetchMock = stubFetch(200, { statistics_version_id: 1 });
+    await fetchLandCoverActiveRelease(new AbortController().signal);
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "http://localhost:8000/api/v1/environment/land-cover/cell-statistics/release",
+    );
+  });
+
+  it("surfaces a structured release failure as an ApiError", async () => {
+    stubFetch(404, {
+      detail: { error: "NO_ACTIVE_STATISTICS_RELEASE", detail: "none" },
+    });
+    const failure = fetchLandCoverActiveRelease(new AbortController().signal);
+    await expect(failure).rejects.toBeInstanceOf(ApiError);
+    await failure.catch((error: ApiError) => {
+      expect(error.status).toBe(404);
+      expect(error.detail?.error).toBe("NO_ACTIVE_STATISTICS_RELEASE");
+    });
   });
 });

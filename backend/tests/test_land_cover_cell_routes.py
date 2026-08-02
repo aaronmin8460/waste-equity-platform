@@ -331,11 +331,14 @@ def test_release_disclosures_state_pending_licence_and_no_scoring(
     assert disclosures["license_status"] == "LOCAL_USE_ONLY_PENDING_CLARIFICATION"
     assert disclosures["used_in_suitability_scoring"] is False
     assert disclosures["lifecycle"]["scoring_integration"] == "NOT_IMPLEMENTED"
-    # Phase 1B-LC5A shows these statistics in the candidate-detail panel, so the
-    # frontend state is no longer NOT_IMPLEMENTED — but it is deliberately not a bare
-    # "IMPLEMENTED" either, because no map-wide layer/legend/filter exists yet.
-    assert disclosures["lifecycle"]["frontend_exposure"] == "CANDIDATE_DETAIL_ONLY"
-    assert disclosures["lifecycle"]["vector_tiles"] == "NOT_IMPLEMENTED"
+    # Phase 1B-LC5A showed these statistics in the candidate-detail panel; Phase
+    # 1B-LC5B added the version-pinned vector tiles and the map-wide layer, legend and
+    # filters that consume them. Both states are therefore
+    # IMPLEMENTED_AND_LOCALLY_VERIFIED — "locally", because every phase so far was
+    # verified against a local development database only.
+    assert disclosures["lifecycle"]["frontend_exposure"] == "IMPLEMENTED_AND_LOCALLY_VERIFIED"
+    assert disclosures["lifecycle"]["vector_tiles"] == "IMPLEMENTED_AND_LOCALLY_VERIFIED"
+    # Local verification is NOT production availability, and scoring is untouched.
     assert disclosures["lifecycle"]["production_deployment"] == "NOT_RUN"
     assert disclosures["lifecycle"]["api_exposure"] == "IMPLEMENTED"
     # KOGL Type 1 and commercial use must never be claimed.

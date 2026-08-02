@@ -2,9 +2,11 @@
 
 Exposes the derived statistics Phase 1B-LC3 persisted: for every canonical 500 m
 candidate-grid cell, the land-cover composition of the acquired 세분류 [2025]
-토지피복지도 release. Five read-only endpoints — the active release, an aggregate
+토지피복지도 release. Five read-only JSON endpoints — the active release, an aggregate
 summary, a bounded cell list, one cell's detail, and one cell's complete class
-distribution — serve exactly what LC3 stored.
+distribution — serve exactly what LC3 stored, and Phase 1B-LC5B adds a sixth,
+read-only Mapbox Vector Tile endpoint so the whole 47,893-cell grid can be drawn on
+the map without paging through JSON (see ``candidate_cell_tile`` below).
 
 Boundaries this router keeps, by construction:
 
@@ -16,10 +18,12 @@ Boundaries this router keeps, by construction:
   Every response states ``used_in_suitability_scoring: false``.
 * **No raw features.** ``environmental_land_cover_features`` (6.9 M rows) is never
   queried by any handler, and no land-cover feature geometry is ever returned. Only
-  the three persisted LC3 tables — plus, for the bbox filter alone, the existing
-  candidate geometry index — are read.
+  the three persisted LC3 tables — plus, for the bbox filter and the vector tiles, the
+  existing candidate geometry index — are read.
 * **No geometry duplication.** The candidate's geometry is already served by the
-  suitability candidate endpoints; this API does not re-serve or re-store it.
+  suitability candidate endpoints; the JSON endpoints do not re-serve or re-store it,
+  and the tile endpoint reads it in place from ``suitability_candidates`` rather than
+  persisting a second copy.
 
 Coverage semantics are preserved verbatim from LC3 and restated on every response, so
 ``NO_COVERAGE`` can never be presented as "no land cover exists" or as suitability.
@@ -30,8 +34,8 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from sqlalchemy import ColumnElement, Select, func, select
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
+from sqlalchemy import ColumnElement, Select, func, select, text
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from ...db import get_session
@@ -82,23 +86,110 @@ ClassArea = EnvironmentalLandCoverCellClassArea
 StatVersion = EnvironmentalLandCoverCellStatVersion
 
 # --- Lifecycle (documented phase states, not live health checks) -------------
-# scoring_integration is NOT_IMPLEMENTED by contract. frontend_exposure became
-# CANDIDATE_DETAIL_ONLY in Phase 1B-LC5A, which reads these endpoints from the
-# suitability candidate-detail panel: the statistics are now shown per selected cell,
-# but there is still no map-wide land-cover layer, legend, or filter — so vector_tiles
-# stays NOT_IMPLEMENTED and the state is deliberately not a bare "IMPLEMENTED".
-# production_deployment stays NOT_RUN: every phase so far was verified against a local
-# database only.
+# scoring_integration is NOT_IMPLEMENTED by contract. Phase 1B-LC5B added the
+# version-pinned vector tiles below and the map-wide layer/legend/filters that consume
+# them, so vector_tiles and frontend_exposure both become
+# IMPLEMENTED_AND_LOCALLY_VERIFIED — "locally", because every phase so far was verified
+# against a local development database only and production_deployment stays NOT_RUN.
 LIFECYCLE = LandCoverCellStatisticsLifecycle(
     source_contract_validation="LIVE_VERIFIED",
     database_ingestion="IMPLEMENTED_AND_LOCALLY_VERIFIED",
     cell_statistics_derivation="IMPLEMENTED_AND_LOCALLY_VERIFIED",
     api_exposure="IMPLEMENTED",
-    frontend_exposure="CANDIDATE_DETAIL_ONLY",
-    vector_tiles="NOT_IMPLEMENTED",
+    frontend_exposure="IMPLEMENTED_AND_LOCALLY_VERIFIED",
+    vector_tiles="IMPLEMENTED_AND_LOCALLY_VERIFIED",
     scoring_integration="NOT_IMPLEMENTED",
     production_deployment="NOT_RUN",
 )
+
+# --- Vector-tile (MVT) constants (Phase 1B-LC5B) ------------------------------
+# The map draws the COMPLETE candidate-cell statistics layer (47,893 cells on the
+# active release) as PostGIS Mapbox Vector Tiles. The paginated ``/cells`` JSON
+# endpoint is unusable for that by construction: it caps at 500 rows and carries no
+# geometry at all. The tile joins the already-persisted LC3 statistics to the existing
+# candidate geometry in place — it recomputes no intersection, stores no second copy of
+# the grid, and never reads ``environmental_land_cover_features``.
+MVT_CONTENT_TYPE = "application/vnd.mapbox-vector-tile"
+#: Web-Mercator tile pyramid: z 0..22 is the standard safe range (2^22 tiles/side).
+MVT_MIN_ZOOM = 0
+MVT_MAX_ZOOM = 22
+#: Source-layer name the frontend binds its land-cover layers to. Deliberately
+#: distinct from the suitability ``candidates`` and the ``wetlands`` source-layers, so
+#: the three optional map layers can never be confused for one another.
+TILE_SOURCE_LAYER = "land_cover_cells"
+#: The URL pins an immutable statistics version, so a served tile never changes;
+#: cache it aggressively (one year, immutable), exactly like the suitability and
+#: wetland tiles.
+TILE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+# Parameterized MVT query, following the established project pattern: the tile
+# envelope is built in EPSG:3857 (``ST_TileEnvelope``) and transformed to EPSG:4326 for
+# the candidate predicate, so ``geometry && <bounds>`` hits the existing
+# ``idx_suitability_candidates_geometry`` GiST index and only the *matched* geometries
+# are transformed to 3857 for ``ST_AsMVTGeom`` (filter-before-transform). The complete
+# candidate table is never transformed inside the predicate.
+#
+# Canonical geometry: the candidate rows are pinned to ONE analysis run (the canonical
+# run resolved by ``_resolve_canonical_run``), and ``(analysis_run_id, candidate_key)``
+# is UNIQUE, so no candidate key can appear twice in a tile and no ``DISTINCT ON`` over
+# every occurrence is needed. The statistics join is pinned to one statistics version
+# and one grid version, so a tile can never straddle two releases.
+#
+# Only the light attributes the map styles/filters/inspects with travel in the tile: no
+# source feature id, no raw land-cover attribute, no land-cover geometry, no class
+# distribution array, and no per-feature disclosure text. A NO_COVERAGE cell's dominant
+# class columns are NULL in LC3 and ``ST_AsMVT`` omits NULL properties, so such a cell
+# genuinely carries no dominant class rather than a fabricated "unknown" one.
+#
+# The aggregate is explicitly ordered by ``candidate_key``. Without it the planner is
+# free to feed ``ST_AsMVT`` in whatever order the join produces — and at low zoom it
+# chooses a PARALLEL hash join, whose row order varies between executions. Because MVT
+# delta-encodes geometry against the previous feature, that made the *bytes* of a
+# low-zoom tile differ slightly between regenerations of identical content, which would
+# quietly contradict the content-independent ETag below. The sort is over the already
+# tile-filtered rows (hundreds at typical zooms) and makes a tile byte-deterministic,
+# so ``(version, run, z, x, y)`` really does identify one exact response body.
+#
+# Every user-controlled value (version, z, x, y) is a bound parameter.
+_TILE_SQL = f"""
+WITH bounds AS (
+    SELECT
+        ST_TileEnvelope(:z, :x, :y) AS geom_3857,
+        ST_Transform(ST_TileEnvelope(:z, :x, :y), 4326) AS geom_4326
+),
+tile AS (
+    SELECT
+        ST_AsMVTGeom(
+            ST_Transform(c.geometry, 3857),
+            bounds.geom_3857,
+            4096, 64, true
+        ) AS geom,
+        s.candidate_key AS candidate_key,
+        s.statistics_version_id AS statistics_version_id,
+        s.coverage_status AS coverage_status,
+        s.coverage_ratio AS coverage_ratio,
+        s.dominant_l1_code AS dominant_l1_code,
+        s.dominant_l1_name AS dominant_l1_name,
+        s.dominant_l2_code AS dominant_l2_code,
+        s.dominant_l2_name AS dominant_l2_name,
+        s.dominant_l3_code AS dominant_l3_code,
+        s.dominant_l3_name AS dominant_l3_name,
+        s.sido_region_code AS sido_region_code,
+        s.sigungu_region_code AS sigungu_region_code
+    FROM bounds
+    JOIN suitability_candidates c
+      ON c.analysis_run_id = :run_id
+     AND c.geometry && bounds.geom_4326
+    JOIN environmental_land_cover_cell_statistics s
+      ON s.statistics_version_id = :version_id
+     AND s.candidate_grid_version = :grid_version
+     AND s.candidate_key = c.candidate_key
+)
+SELECT ST_AsMVT(tile.*, '{TILE_SOURCE_LAYER}', 4096, 'geom' ORDER BY tile.candidate_key)
+FROM tile
+WHERE tile.geom IS NOT NULL
+"""
+_TILE_SQL_STMT = text(_TILE_SQL)
 
 CoverageStatusParam = Literal["COMPLETE_EXACT", "PARTIAL", "NO_COVERAGE"]
 
@@ -187,6 +278,17 @@ def _resolve_active_release(session: Session) -> StatVersion:
             "release is ambiguous and this API refuses to choose one.",
         )
     release = releases[0]
+    _assert_servable(release)
+    return release
+
+
+def _assert_servable(release: StatVersion) -> None:
+    """Refuse a release that is not verifiably complete, whatever selected it.
+
+    Shared by the active-release resolution and the version-pinned tile endpoint, so a
+    failed or half-derived release can never be served through either path.
+    """
+
     if release.status != "SUCCEEDED":
         raise _error(
             409,
@@ -202,7 +304,95 @@ def _resolve_active_release(session: Session) -> StatVersion:
             f"{release.processed_cell_count} of {release.expected_cell_count} expected "
             f"cells with {release.failed_cell_count} failed. It will not be served.",
         )
+
+
+def _resolve_pinned_release(session: Session, statistics_version_id: int) -> StatVersion:
+    """The statistics release named by an immutable URL, or an honest failure.
+
+    Deliberately resolved **by id and never by fallback**: an unknown, failed, or
+    incomplete version returns a structured error rather than quietly serving whichever
+    release happens to be active, which would make a "version-pinned" tile a lie.
+
+    ``is_active`` is intentionally NOT required. The id is in the URL and the release is
+    immutable once written, so a tile URL keeps meaning exactly what it meant when it
+    was minted even after a newer release is activated — which is the whole point of the
+    one-year immutable cache contract. Completeness is still enforced.
+    """
+
+    release = session.get(StatVersion, statistics_version_id)
+    if release is None:
+        raise _error(
+            404,
+            "STATISTICS_VERSION_NOT_FOUND",
+            f"No candidate-cell land-cover statistics version with id "
+            f"{statistics_version_id} exists.",
+        )
+    _assert_servable(release)
     return release
+
+
+def _resolve_canonical_run(session: Session, release: StatVersion) -> int:
+    """The analysis run whose candidate rows are LC3's canonical geometry.
+
+    LC3 canonicalized the grid by taking, per ``(candidate_grid_version,
+    candidate_key)``, the occurrence with the lowest ``(analysis_run_id, id)`` — so the
+    geometry every stored measurement was taken on is the **lowest analysis run** of the
+    release's grid version. This resolves that same run rather than "the newest" or "any
+    succeeded" one, so a tile draws the exact cells the statistics describe.
+
+    Two conditions are refused instead of worked around:
+
+    * no SUCCEEDED run exists for the grid version — there is no canonical geometry;
+    * a run with a *lower* id exists for the grid version but is not SUCCEEDED — LC3's
+      canonical occurrence would then come from that run, so serving the lowest
+      *succeeded* run would silently draw different geometry than was measured.
+
+    The cardinality guard compares the run's recorded ``candidate_count_total`` with the
+    release's ``expected_cell_count``. It is an O(1) check on two stored scalars, not a
+    per-request count of 47,893 rows; combined with the UNIQUE
+    ``(analysis_run_id, candidate_key)`` constraint it establishes that the run holds
+    exactly one geometry per expected cell. A run that never recorded the count cannot
+    be verified, and is refused rather than assumed correct.
+    """
+
+    grid = release.candidate_grid_version
+    lowest = session.execute(
+        select(
+            SuitabilityAnalysisRun.id,
+            SuitabilityAnalysisRun.status,
+            SuitabilityAnalysisRun.candidate_count_total,
+        )
+        .where(SuitabilityAnalysisRun.candidate_grid_version == grid)
+        .order_by(SuitabilityAnalysisRun.id)
+        .limit(1)
+    ).first()
+    if lowest is None:
+        raise _error(
+            409,
+            "CANONICAL_RUN_NOT_FOUND",
+            f"No suitability analysis run exists for candidate-grid version {grid!r}, so "
+            "the canonical candidate geometry of the statistics release cannot be "
+            "resolved.",
+        )
+    run_id, status, candidate_count_total = lowest
+    if status != "SUCCEEDED":
+        raise _error(
+            409,
+            "CANONICAL_RUN_NOT_FOUND",
+            f"The lowest analysis run for candidate-grid version {grid!r} has status "
+            f"{status!r}. LC3 canonicalized the grid on the lowest run, so no other run "
+            "may be substituted for it.",
+        )
+    if candidate_count_total is None or candidate_count_total != release.expected_cell_count:
+        raise _error(
+            409,
+            "CANDIDATE_GEOMETRY_CARDINALITY_MISMATCH",
+            "The canonical suitability run does not hold exactly one candidate geometry "
+            f"per expected statistics cell (run reports {candidate_count_total} "
+            f"candidates, release expects {release.expected_cell_count}). Cells would be "
+            "dropped from the tile, so it is refused.",
+        )
+    return int(run_id)
 
 
 def _source_version(session: Session, release: StatVersion) -> EnvironmentalDatasetVersion:
@@ -836,4 +1026,68 @@ def cell_classes(
     )
 
 
-__all__ = ["LAND_COVER_LAYER_NAME", "router"]
+# --------------------------------------------------------------------------- #
+# 6. Candidate-cell vector tiles (Phase 1B-LC5B)
+# --------------------------------------------------------------------------- #
+@router.get("/tiles/{statistics_version_id}/{z}/{x}/{y}.mvt")
+def candidate_cell_tile(
+    session: SessionDep,
+    request: Request,
+    statistics_version_id: int,
+    z: int = Path(..., ge=MVT_MIN_ZOOM, le=MVT_MAX_ZOOM),
+    x: int = Path(..., ge=0),
+    y: int = Path(..., ge=0),
+) -> Response:
+    """One Web-Mercator vector tile of a statistics version's candidate cells.
+
+    The whole grid is reachable through this endpoint, so the map never pages the
+    500-row ``/cells`` JSON list (which also carries no geometry). The URL pins an
+    immutable statistics version, so the bytes of a given tile never change and it is
+    cacheable for a year.
+
+    Honest failure modes, none of which fall back to another release: an unknown version
+    is a structured 404; a failed, incomplete, or geometrically unmatched one is a
+    structured 409; an out-of-range x/y is a 422. A tile that simply overlaps no cell is
+    a valid **empty** tile (200, zero bytes), never an error — an empty viewport and a
+    broken layer must stay distinguishable.
+    """
+
+    # Validate x/y against the tile pyramid for this z before any DB work: at zoom z
+    # there are 2^z tiles per axis, indices 0..2^z-1. (z itself is bounded by Path.)
+    max_index = (1 << z) - 1
+    if x > max_index or y > max_index:
+        raise _invalid(
+            "INVALID_TILE_COORDINATE",
+            f"x and y must be in [0, {max_index}] at zoom {z}",
+        )
+
+    release = _resolve_pinned_release(session, statistics_version_id)
+    run_id = _resolve_canonical_run(session, release)
+
+    # Content-independent, immutable ETag: (statistics version, canonical run, z, x, y)
+    # fully determines the bytes, because neither a statistics release nor an analysis
+    # run is ever mutated in place. The run is part of the key so a tile can never be
+    # revalidated against geometry it was not generated from.
+    etag = f'"lc-cells-{release.id}-{run_id}-{z}-{x}-{y}"'
+    cache_headers = {"Cache-Control": TILE_CACHE_CONTROL, "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_headers)
+
+    raw = session.execute(
+        _TILE_SQL_STMT,
+        {
+            "version_id": release.id,
+            "grid_version": release.candidate_grid_version,
+            "run_id": run_id,
+            "z": z,
+            "x": x,
+            "y": y,
+        },
+    ).scalar()
+    # ST_AsMVT over zero matched rows returns NULL: a tile outside the grid's extent is
+    # a valid empty tile (0 bytes), never a server error.
+    body = bytes(raw) if raw is not None else b""
+    return Response(content=body, media_type=MVT_CONTENT_TYPE, headers=cache_headers)
+
+
+__all__ = ["LAND_COVER_LAYER_NAME", "TILE_SOURCE_LAYER", "router"]

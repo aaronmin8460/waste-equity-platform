@@ -24,6 +24,7 @@
 
 import {
   ApiError,
+  type LandCoverActiveRelease,
   type LandCoverCellClassDistribution,
   type LandCoverCellStatistics,
   type LandCoverClassShare,
@@ -301,6 +302,37 @@ export function validateClassDistribution(
     if (!isNullableFiniteNumber(row.share_of_cell_area)) return null;
   }
   return d as LandCoverCellClassDistribution;
+}
+
+/**
+ * Verify an active-release response is coherent enough to build a tile URL from.
+ *
+ * The identity fields are checked rather than assumed because the whole immutability
+ * claim rests on them: a tile URL is only version-pinned if `statistics_version_id` is
+ * a real integer the backend served. A release that is not `SUCCEEDED`, or whose
+ * processed count does not match its expected count, is rejected here too — the map
+ * must not draw a partially-derived release as if it were complete, even though the
+ * backend already refuses to serve one.
+ *
+ * Returns the response typed, or null — never a partially-defaulted object.
+ */
+export function validateActiveRelease(raw: unknown): LandCoverActiveRelease | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const d = raw as Partial<LandCoverActiveRelease>;
+  if (typeof d.statistics_version_id !== "number" || !Number.isInteger(d.statistics_version_id)) {
+    return null;
+  }
+  if (d.statistics_version_id <= 0) return null;
+  if (d.status !== "SUCCEEDED") return null;
+  if (typeof d.candidate_grid_version !== "string" || d.candidate_grid_version === "") return null;
+  if (!Number.isInteger(d.expected_cell_count) || !Number.isInteger(d.processed_cell_count)) {
+    return null;
+  }
+  if (d.expected_cell_count !== d.processed_cell_count) return null;
+  if (typeof d.disclosures !== "object" || d.disclosures === null) return null;
+  if (typeof d.disclosures.license_status !== "string") return null;
+  if (typeof d.disclosures.used_in_suitability_scoring !== "boolean") return null;
+  return d as LandCoverActiveRelease;
 }
 
 /**

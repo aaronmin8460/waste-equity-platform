@@ -401,17 +401,26 @@ Served on every response under `disclosures.lifecycle`:
 | `database_ingestion` | `IMPLEMENTED_AND_LOCALLY_VERIFIED` |
 | `cell_statistics_derivation` | `IMPLEMENTED_AND_LOCALLY_VERIFIED` |
 | `api_exposure` | `IMPLEMENTED` |
-| `frontend_exposure` | `CANDIDATE_DETAIL_ONLY` |
-| `vector_tiles` | `NOT_IMPLEMENTED` |
+| `frontend_exposure` | `IMPLEMENTED_AND_LOCALLY_VERIFIED` |
+| `vector_tiles` | `IMPLEMENTED_AND_LOCALLY_VERIFIED` |
 | `scoring_integration` | `NOT_IMPLEMENTED` |
 | `production_deployment` | `NOT_RUN` |
 
-`frontend_exposure` was `NOT_IMPLEMENTED` when LC4 shipped. Phase 1B-LC5A reads
-`/cells/{candidate_key}` and `/cells/{candidate_key}/classes` from the suitability
-candidate-detail panel, so it is now `CANDIDATE_DETAIL_ONLY` — deliberately not a bare
-`IMPLEMENTED`, because there is still no map-wide land-cover layer, legend, or filter
-(that is Phase 1B-LC5B, and `vector_tiles` stays `NOT_IMPLEMENTED` until then). See
-`docs/LAND_COVER_CANDIDATE_DETAIL_FRONTEND.md`.
+`frontend_exposure` was `NOT_IMPLEMENTED` when LC4 shipped, then `CANDIDATE_DETAIL_ONLY`
+after Phase 1B-LC5A read `/cells/{candidate_key}` and `/cells/{candidate_key}/classes`
+into the suitability candidate-detail panel. Phase 1B-LC5B added the map-wide layer,
+dynamic legend and filters, together with the version-pinned tile endpoint they consume,
+so both `frontend_exposure` and `vector_tiles` are now
+`IMPLEMENTED_AND_LOCALLY_VERIFIED` — "locally", because every phase so far was verified
+against a local development database only and `production_deployment` stays `NOT_RUN`.
+See `docs/LAND_COVER_CANDIDATE_DETAIL_FRONTEND.md` and
+`docs/LAND_COVER_MAP_LAYER_LEGEND_FILTERS.md`.
+
+A sixth, read-only endpoint was added in LC5B under this same router prefix:
+`GET /tiles/{statistics_version_id}/{z}/{x}/{y}.mvt`, serving the complete candidate-cell
+layer as Mapbox Vector Tiles pinned to an immutable statistics version. It reads the same
+three LC3 tables plus the existing candidate geometry, adds no migration, and — like every
+handler here — never touches `environmental_land_cover_features`.
 
 ## 12. Licence and public-use status
 
