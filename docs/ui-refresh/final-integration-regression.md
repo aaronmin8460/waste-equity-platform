@@ -492,32 +492,36 @@ added nor silenced a live-backend test.
 
 ## 14. Post-merge validation
 
-The branch was pushed, merged into the latest `main` with `--no-ff`
-(`ecf1d7f`, no conflicts), and `main` pushed to `origin` (`98372d7..ecf1d7f`).
-Everything below was then re-run **from merged `main`**, not carried over from the
-feature branch:
+The branch was pushed and merged into the latest `main` with `--no-ff`, with no
+conflicts, in three pushes: `98372d7..ecf1d7f` (the work), `ecf1d7f..775a4df` (this
+section), and `775a4df..93263ba` (the `civicShell` wait fix described below).
+Everything was re-run **from merged `main`**, not carried over from the feature
+branch — first at `ecf1d7f`, then in full again at `93263ba`, the last
+code-bearing commit:
 
-| Check | Result |
-| --- | --- |
-| `npm run lint` | **pass**, exit 0 |
-| `npm run typecheck` | **pass**, exit 0 |
-| `npm test` | **1094 passed, 7 skipped, 0 failed**, 31.04s |
-| `npm run build` | **pass**, exit 0 |
-| `npx playwright test e2e/facilityCostDashboard.spec.ts --repeat-each=10` | **260 passed, 0 failed**, 3.6m |
-| `npm run test:e2e` (clean server on port 3000) | **494 passed, 89 skipped, 0 failed**, 9.8m |
+| Check | at `ecf1d7f` | at `93263ba` (final) |
+| --- | --- | --- |
+| `npm run lint` | **pass**, exit 0 | **pass**, exit 0 |
+| `npm run typecheck` | **pass**, exit 0 | **pass**, exit 0 |
+| `npm test` | **1094 passed, 7 skipped, 0 failed**, 31.04s | **1094 passed, 7 skipped, 0 failed** |
+| `npm run build` | **pass**, exit 0 | **pass**, exit 0 |
+| `…facilityCostDashboard.spec.ts --repeat-each=10` | **260 passed, 0 failed**, 3.6m | **260 passed, 0 failed**, 3.7m |
+| `npm run test:e2e` (clean server on port 3000) | **494 passed, 89 skipped, 0 failed**, 9.8m | **494 passed, 89 skipped, 0 failed**, 9.1m |
 
 Identical to the feature-branch results in §13, including the unchanged 89
 live-backend skips. Merged `main` therefore has 0 relevant lint, TypeScript, unit,
 build, and Playwright failures.
 
-Repository state after the merge:
+Repository state:
 
 ```text
 current branch  main
-local HEAD      ecf1d7ff0d5678ca173864ecad26d896296149dd
-origin/main     ecf1d7ff0d5678ca173864ecad26d896296149dd
+local HEAD      93263baf2aebdeac38f170dd70ef67d885d24f90   (+ this docs-only commit)
+origin/main     same
 working tree    clean except untracked docs/SUITABILITY_SITE_CLUSTERS_SPEC.md
 ```
+
+The only commit after `93263ba` is this documentation edit, which touches no code.
 
 ### One further failure, found by the final re-run, investigated and fixed
 
@@ -557,9 +561,8 @@ could only ever mask a map mounting late.
 
 Re-verified: `--repeat-each=5` → **85 passed**, 3.0m; lint and typecheck exit 0.
 
-*(§14 is itself documentation merged after `ecf1d7f`, together with the
-`civicShell.spec.ts` wait fix; the numbers in the table above were re-confirmed at
-the final `main` HEAD.)*
+*(§14 was itself merged after `ecf1d7f`, together with the `civicShell.spec.ts` wait
+fix; the right-hand column above is the complete re-run at `93263ba`.)*
 
 ## 15. CI
 
