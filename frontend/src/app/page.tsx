@@ -2030,17 +2030,39 @@ function useDerivedInfo(
   }, [data, metric]);
 }
 
+/**
+ * WHY THIS PANEL IS NO LONGER AMBER (final UI integration milestone).
+ *
+ * It carried `border-amber-300 bg-amber-50`, and `.mobile-collapsible` force-opens
+ * 출처와 계산 방법 at md+, so on every desktop 지역 부담 screen a strong yellow card
+ * sat permanently between the refreshed white `wep-card` surfaces. In the refreshed
+ * system amber is the CAVEAT tone (`InfoBanner tone="warning"`, `--color-warn`), and
+ * three sections of docs/ui-refresh/regression-contract.md (§6, §16, §18) say neutral
+ * provenance must not be amber-by-default. 파생 지표 is neutral provenance: the same
+ * screen already states exactly this fact neutrally, through the
+ * `DataStatusBadge status="derived"` on `selected-region-summary`. Two contradictory
+ * visual languages for one semantic, with the louder one on the lesser surface.
+ *
+ * The container therefore moves onto the shared neutral tokens. Amber is KEPT for
+ * the one thing here that genuinely is a caveat — the metric's own `caveat` string —
+ * now via `text-warn` rather than a raw utility. Nothing else changed: no wording, no
+ * formula, no source, no value, no structure, no test id.
+ *
+ * `SourcePanel` below was deliberately left alone: its `slate-50` / `slate-200`
+ * resolve to `#f8fafc` / `#e2e8f0`, i.e. the same value as `--color-surface-muted`
+ * and within 1/255 of `--color-hairline`, so it has no visible conflict to fix.
+ */
 function DerivedPanel({ info, caveat }: { info: DerivedInfo; caveat?: string }) {
   return (
     <section
       aria-label="파생 지표 출처"
-      className="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-slate-700"
+      className="rounded-card border border-hairline bg-surface-muted p-3 text-xs text-ink-muted"
       data-testid="derived-metric-metadata"
     >
       {/* Korean-only primary heading (Phase 4). The technical framing stays in the
           method/derivation detail rendered below — nothing was removed. */}
       <h2 className="mb-1 text-sm font-semibold text-ink">파생 지표</h2>
-      <p className="mb-2 text-xs text-slate-600">
+      <p className="mb-2 text-xs text-ink-subtle">
         백엔드에서 공식 데이터 2종으로 산출: {info.formula} · 단위 {info.unit} · 산출 버전{" "}
         {info.derivationVersion}
       </p>
@@ -2088,7 +2110,9 @@ function DerivedPanel({ info, caveat }: { info: DerivedInfo; caveat?: string }) 
           산출할 수 없어 표시하지 않습니다.
         </p>
       )}
-      {caveat && <p className="mt-2 font-medium text-amber-800">{caveat}</p>}
+      {/* The metric's own caveat IS a caution about a value that exists, so it keeps
+          the warn role — as the token, and as the only warn-coloured text here. */}
+      {caveat && <p className="mt-2 font-medium text-warn">{caveat}</p>}
       <details className="mt-2">
         <summary className="cursor-pointer font-medium">산출 가정 (assumptions)</summary>
         <ul className="mt-1 list-disc space-y-1 pl-4">

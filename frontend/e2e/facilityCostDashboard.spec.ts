@@ -100,6 +100,74 @@ async function expectNoHorizontalOverflow(page: Page, where: string): Promise<vo
   );
 }
 
+/**
+ * Put the page at the very top and PROVE it got there before anything is measured.
+ *
+ * The first-screen assertion below used to return to the top with
+ * `page.mouse.wheel(0, -2000)`, which is a race: a wheel event is dispatched, not
+ * awaited, so the bounding box could be read while the scroll was still settling —
+ * and against a partially-scrolled page a clipped button measures as if it fitted.
+ * That nondeterminism is why the real 1024×768 defect (button bottom 838 of 768)
+ * survived several full-suite runs. `scrollTo` + a polled `scrollY === 0` removes
+ * the race entirely: nothing is measured until the document is provably at offset 0.
+ */
+async function scrollToTop(page: Page): Promise<void> {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY), { message: "document settled at the top" })
+    .toBe(0);
+}
+
+/**
+ * The full first-screen contract for the primary action, at `viewportHeight`.
+ *
+ * Asserts the action is at offset 0 of the document, entirely inside the viewport,
+ * actually hit-testable at its own centre (so no sticky element, overlay, or
+ * neighbouring card covers it), that the readiness context explaining its state is
+ * on the same screen, and that the page has not started scrolling sideways.
+ */
+async function expectActionOnFirstScreen(page: Page, viewportHeight: number): Promise<void> {
+  await scrollToTop(page);
+
+  const calculate = page.getByTestId("facility-cost-calculate");
+  await expect(calculate).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const el = document.querySelector<HTMLElement>('[data-testid="facility-cost-calculate"]')!;
+    const box = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    return {
+      scrollY: window.scrollY,
+      top: box.top,
+      bottom: box.bottom,
+      height: box.height,
+      // The action must be the thing at its own centre — `el.contains(hit)` also
+      // accepts the button's own text node wrapper, and nothing else.
+      coveredBy: hit === null ? "(nothing)" : el.contains(hit) ? null : describe(hit),
+    };
+
+    function describe(node: Element): string {
+      return node.getAttribute("data-testid") ?? node.tagName.toLowerCase();
+    }
+  });
+
+  expect(geometry.scrollY, "measured at the top of the document").toBe(0);
+  expect(geometry.top, "calculate button starts on screen").toBeGreaterThanOrEqual(0);
+  expect(geometry.bottom, "calculate button is not clipped by the fold").toBeLessThanOrEqual(
+    viewportHeight,
+  );
+  // The pre-existing 44px target is a floor, not a value to shrink to fit.
+  expect(geometry.height, "calculate button keeps its target size").toBeGreaterThanOrEqual(44);
+  expect(geometry.coveredBy, "calculate button is not overlapped").toBeNull();
+
+  // The context that explains why the action is enabled or disabled is on the same
+  // screen as the action — a reachable-by-scrolling explanation is not equivalent.
+  await expect(page.getByTestId("facility-cost-readiness")).toBeInViewport();
+  await expect(page.getByTestId("facility-cost-calculate-status")).toBeInViewport();
+
+  await expectNoHorizontalOverflow(page, "cost setup first screen");
+}
+
 /** Every element that scrolls vertically inside the dashboard subtree. */
 async function nestedScrollContainers(page: Page): Promise<string[]> {
   return page.evaluate(() => {
@@ -139,26 +207,26 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
       await expect(page.locator("#main-content")).toHaveCount(1);
 
+      // The primary action is inside the first viewport with the page at offset 0,
+      // BEFORE anything has scrolled. This is the contract the summary rail exists
+      // for, and it is measured on the as-loaded page, not on a page that has been
+      // scrolled and sent back up.
+      await expectActionOnFirstScreen(page, vp.height);
+
+      // …and the readiness summary beside it explains why it is disabled.
+      await expect(page.getByTestId("facility-cost-readiness")).toContainText("한 곳 이상 선택하세요");
+      await expect(page.getByTestId("facility-cost-calculate")).toBeDisabled();
+
       // The three setup stages exist and are individually reachable.
       for (const heading of ["1. 처리할 지역", "2. 처리 조건", "3. 계산 가정"]) {
         const step = page.getByRole("heading", { name: heading });
         await step.scrollIntoViewIfNeeded();
         await expect(step, heading).toBeVisible();
       }
-      await page.mouse.wheel(0, -2000);
 
-      // The primary action is inside the first viewport before any scrolling —
-      // that is what the sticky summary rail exists for.
-      const calculate = page.getByTestId("facility-cost-calculate");
-      const box = (await calculate.boundingBox())!;
-      expect(box.y, "calculate button starts on screen").toBeGreaterThanOrEqual(0);
-      expect(box.y + box.height, "calculate button is not clipped").toBeLessThanOrEqual(vp.height);
-
-      // …and the readiness summary beside it explains why it is disabled.
-      await expect(page.getByTestId("facility-cost-readiness")).toContainText("한 곳 이상 선택하세요");
-      await expect(calculate).toBeDisabled();
-
-      await expectNoHorizontalOverflow(page, "cost setup");
+      // Returning to the top restores the same first-screen state — the rail is not
+      // a one-shot initial-paint effect.
+      await expectActionOnFirstScreen(page, vp.height);
     });
 
     test("states that nothing has been calculated yet, and never shows a placeholder cost", async ({
