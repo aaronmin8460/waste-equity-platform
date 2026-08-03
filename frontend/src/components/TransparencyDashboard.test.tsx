@@ -981,4 +981,339 @@ describe("technical provenance", () => {
       expect(disclosure.querySelector("summary")!.textContent!.trim().length).toBeGreaterThan(0);
     }
   });
+
+  it("explains what each state label on this screen means, without claiming currency", async () => {
+    await renderDashboard();
+    const guide = screen.getByTestId("transparency-status-guide");
+    expect(guide.tagName).toBe("DETAILS");
+    for (const term of [
+      "직접 보고값",
+      "공식 자료 기반 계산값",
+      "기준 기간 정보 없음",
+      "수집 시점",
+      "사용 안 함",
+    ]) {
+      expect(guide.textContent).toContain(term);
+    }
+    // An absent period and a failed lookup are named as DIFFERENT states.
+    expect(guide.textContent).toContain("기준 기간을 불러오지 못했습니다");
+    expect(guide.textContent).toContain("값이 0이라는");
+    // `freshness_status` is written FRESH on ingestion success and never demoted, so
+    // the guide must not describe a collection time as a currency claim.
+    expect(guide.textContent).not.toContain("최신");
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// Civic-dashboard refresh — the structural contracts this milestone added.
+// --------------------------------------------------------------------------- //
+
+describe("refresh: sections, headings, and shared primitives", () => {
+  /** The page's titled regions, in the order the reader meets them. */
+  const SECTIONS = [
+    "transparency-sources",
+    "transparency-datasets",
+    "transparency-gaps",
+    "transparency-facility-mapping",
+    "transparency-methodology",
+  ];
+
+  it("names every card section as a region, so the outline is walkable", async () => {
+    await renderDashboard();
+    for (const testId of SECTIONS) {
+      const section = screen.getByTestId(testId);
+      // The shared SectionCard primitive, not this file's former private copy:
+      // a titled card is a <section> whose accessible name comes from its heading.
+      expect(section.tagName, testId).toBe("SECTION");
+      const labelledBy = section.getAttribute("aria-labelledby");
+      expect(labelledBy, `${testId} names itself`).not.toBeNull();
+      const heading = document.getElementById(labelledBy!)!;
+      expect(heading.tagName, `${testId} heading level`).toBe("H2");
+      expect(heading.textContent!.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("gives the overview a visible, non-sr-only heading of its own", async () => {
+    await renderDashboard();
+    const overview = screen.getByTestId("transparency-overview");
+    expect(overview.tagName).toBe("SECTION");
+    const heading = document.getElementById(overview.getAttribute("aria-labelledby")!)!;
+    expect(heading.textContent).toBe("자료 현황 요약");
+    // Before the refresh this was the one block on the page a sighted reader could
+    // not name — its only heading was sr-only.
+    expect(heading.className).not.toContain("sr-only");
+  });
+
+  it("keeps the sections in their documented reading order", async () => {
+    const { container } = await renderDashboard();
+    const order = ["transparency-notice", "transparency-overview", ...SECTIONS];
+    const nodes = order.map((testId) => screen.getByTestId(testId));
+    for (let index = 1; index < nodes.length; index += 1) {
+      const position = nodes[index - 1].compareDocumentPosition(nodes[index]);
+      expect(
+        Boolean(position & Node.DOCUMENT_POSITION_FOLLOWING),
+        `${order[index]} follows ${order[index - 1]}`,
+      ).toBe(true);
+    }
+    // The h1 precedes all of them and there is still exactly one.
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+  });
+
+  it("adds no second h1, fieldset, or live region duplicate", async () => {
+    const { container } = await renderDashboard();
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(container.querySelectorAll("fieldset")).toHaveLength(0);
+    // Exactly one result count and one freshness announcement — never two copies of
+    // the same fact racing to be announced.
+    expect(screen.getAllByTestId("transparency-result-count")).toHaveLength(1);
+    expect(screen.getAllByTestId("transparency-freshness-status")).toHaveLength(1);
+  });
+});
+
+describe("refresh: the current-condition summary", () => {
+  it("says plainly that nothing is filtered before the reader touches a control", async () => {
+    await renderDashboard();
+    const summary = screen.getByTestId("transparency-filter-summary");
+    expect(summary.textContent).toContain("현재 조건");
+    expect(summary.textContent).toContain("검색어와 필터를 적용하지 않았습니다");
+    // No fabricated condition, and no claim that the catalog is complete.
+    expect(summary.textContent).not.toContain("전부");
+  });
+
+  it("names the active search term and both filters, not merely that filtering is on", async () => {
+    await renderDashboard();
+    fireEvent.change(searchInput(), { target: { value: "반입량" } });
+    fireEvent.change(screen.getByTestId("transparency-filter-category"), {
+      target: { value: "landfill" },
+    });
+    fireEvent.change(screen.getByTestId("transparency-filter-frequency"), {
+      target: { value: "MONTHLY" },
+    });
+    const summary = screen.getByTestId("transparency-filter-summary");
+    expect(summary.textContent).toContain("검색어 · 반입량");
+    expect(summary.textContent).toContain("자료 분야 · 수도권매립지");
+    expect(summary.textContent).toContain("갱신 주기 · 월간");
+  });
+
+  it("reports state and is never a second way to change it", async () => {
+    await renderDashboard();
+    fireEvent.change(searchInput(), { target: { value: "반입량" } });
+    const summary = screen.getByTestId("transparency-filter-summary");
+    // A FilterChip is a <button aria-pressed>; this summary must not become one.
+    expect(summary.querySelectorAll("button")).toHaveLength(0);
+    expect(summary.querySelectorAll("input")).toHaveLength(0);
+    expect(summary.querySelectorAll("select")).toHaveLength(0);
+  });
+
+  it("clears back to the unfiltered statement", async () => {
+    await renderDashboard();
+    fireEvent.change(searchInput(), { target: { value: "기상청" } });
+    expect(screen.getByTestId("transparency-filter-summary").textContent).toContain(
+      "검색어 · 기상청",
+    );
+    fireEvent.click(screen.getByTestId("transparency-search-clear"));
+    expect(screen.getByTestId("transparency-filter-summary").textContent).toContain(
+      "검색어와 필터를 적용하지 않았습니다",
+    );
+  });
+
+  it("holds the polite result count, still outside every disclosure", async () => {
+    await renderDashboard();
+    const count = screen.getByTestId("transparency-result-count");
+    expect(count.getAttribute("role")).toBe("status");
+    expect(count.closest("details")).toBeNull();
+    expect(screen.getByTestId("transparency-filter-summary").contains(count)).toBe(true);
+  });
+
+  it("is not rendered at all for an empty registry, so no condition is implied", async () => {
+    render(<TransparencyDashboard data={{ ...data, sources: [] } as unknown as LoadedData} />);
+    await screen.findByTestId("transparency-sources-empty");
+    expect(screen.queryByTestId("transparency-filter-summary")).toBeNull();
+    expect(screen.queryByTestId("transparency-result-count")).toBeNull();
+  });
+});
+
+describe("refresh: provenance badges", () => {
+  it("states reported vs derived with the shared badge, keeping the exact wording", async () => {
+    await renderDashboard();
+    const rows = screen.getByTestId("transparency-datasets").querySelectorAll("tbody tr");
+    const population = [...rows].find((row) => row.textContent!.startsWith("인구"))!;
+    const perCapita = [...rows].find((row) => row.textContent!.includes("1인당 발생량"))!;
+
+    const reported = population.querySelector(".wep-badge")!;
+    expect(reported.getAttribute("data-status")).toBe("reported");
+    expect(reported.textContent).toBe("직접 보고값");
+
+    const derived = perCapita.querySelector(".wep-badge")!;
+    expect(derived.getAttribute("data-status")).toBe("derived");
+    expect(derived.textContent).toBe("공식 자료 기반 계산값");
+  });
+
+  it("marks an absent reference period as missing — neutral, never amber, never zero", async () => {
+    await renderDashboard();
+    fireEvent.change(searchInput(), { target: { value: "기상청" } });
+    const badge = screen.getByTestId("transparency-source-noperiod");
+    expect(badge.getAttribute("data-status")).toBe("missing");
+    // The state survives a grayscale render: the label is text.
+    expect(badge.textContent).toBe("기준 기간 정보 없음");
+    expect(badge.className).toContain("wep-badge-missing");
+    // Amber is a caution about a value that EXISTS; absence is not a caution.
+    expect(badge.className).not.toContain("wep-badge-caveat");
+  });
+
+  it("does not badge a period that WAS served — a value needs no status", async () => {
+    await renderDashboard();
+    fireEvent.change(searchInput(), { target: { value: "sgis" } });
+    const card = screen.getAllByTestId("transparency-source-card")[0];
+    expect(card.textContent).toContain("2024");
+    expect(within(card).queryByTestId("transparency-source-noperiod")).toBeNull();
+  });
+
+  it("keeps a failed freshness lookup out of the missing badge entirely", async () => {
+    api.fetchDataFreshness.mockRejectedValue(new Error("network"));
+    render(<TransparencyDashboard data={data} />);
+    await screen.findByTestId("transparency-freshness-error");
+    fireEvent.change(searchInput(), { target: { value: "sgis" } });
+    // A request that failed says nothing about whether a period exists, so it must
+    // not borrow the badge that means "no value was served".
+    expect(screen.queryByTestId("transparency-source-noperiod")).toBeNull();
+    expect(screen.getAllByTestId("transparency-source-card")[0].textContent).toContain(
+      "기준 기간을 불러오지 못했습니다",
+    );
+  });
+
+  it("marks a switched-off registry row as excluded, with its served wording", async () => {
+    await renderDashboard();
+    fireEvent.change(searchInput(), { target: { value: "Future" } });
+    const badge = screen.getByTestId("transparency-source-disabled");
+    expect(badge.getAttribute("data-status")).toBe("excluded");
+    expect(badge.textContent).toBe("사용 안 함");
+    // An enabled source carries no badge — the marker is for the exceptional state.
+    fireEvent.change(searchInput(), { target: { value: "sgis" } });
+    expect(screen.queryByTestId("transparency-source-disabled")).toBeNull();
+    expect(screen.getAllByTestId("transparency-source-card")[0].textContent).toContain("사용 중");
+  });
+
+  it("grades no source: no score, percentage, or ranking anywhere in the catalog", async () => {
+    await renderDashboard();
+    // `textContent` concatenates adjacent labels with no separator, which manufactures
+    // Korean substrings that were never rendered — 수집 시점 followed by 수집 기록 없음
+    // reads as "…시점수집…" and contains 점수. Joining element boundaries with a space
+    // scans what a reader actually sees.
+    const spaced = (node: Node): string =>
+      node.nodeType === Node.TEXT_NODE
+        ? (node.textContent ?? "")
+        : [...node.childNodes].map(spaced).join(" ");
+    const text = spaced(screen.getByTestId("transparency-source-list"));
+    for (const token of ["점수", "등급", "순위", "신뢰도", "%"]) {
+      expect(text, `catalog leaks "${token}"`).not.toContain(token);
+    }
+  });
+});
+
+describe("refresh: known gaps", () => {
+  it("separates the three kinds of gap instead of listing them as one failure", async () => {
+    await renderDashboard();
+    const gaps = await screen.findByTestId("transparency-gaps");
+    expect(within(gaps).getByTestId("transparency-cost")).toBeDefined();
+    expect(within(gaps).getByTestId("transparency-gap-unmapped")).toBeDefined();
+    expect(within(gaps).getByTestId("transparency-gap-period")).toBeDefined();
+    // None of them is an alert: a gap is a documented limitation, not an error.
+    expect(gaps.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("counts the sources with no served reference period from the served records", async () => {
+    await renderDashboard();
+    const gap = screen.getByTestId("transparency-gap-period");
+    // 5 registered, 1 with a served period → 4 without.
+    expect(gap.textContent).toContain("등록된 출처 5건");
+    expect(gap.textContent).toContain("4건");
+    // And it says explicitly what that does NOT mean.
+    expect(gap.textContent).toContain("자료를 내지 않았다는 뜻이 아니라");
+  });
+
+  it("shows no count at all while the freshness join is unresolved", async () => {
+    api.fetchDataFreshness.mockReturnValue(new Promise(() => {}));
+    render(<TransparencyDashboard data={data} />);
+    const gap = await screen.findByTestId("transparency-gap-period");
+    expect(gap.textContent).toContain("확인하는 중");
+    expect(gap.textContent).not.toMatch(/\d건/);
+  });
+
+  it("never reports an unfetched gap count as a measured zero", async () => {
+    api.fetchDataFreshness.mockRejectedValue(new Error("network"));
+    render(<TransparencyDashboard data={data} />);
+    await screen.findByTestId("transparency-freshness-error");
+    const gap = screen.getByTestId("transparency-gap-period");
+    expect(gap.textContent).toContain("0건이라는 뜻이 아닙니다");
+    expect(gap.textContent).not.toMatch(/[^0]\d*건 가운데/);
+  });
+
+  it("states the unmapped facilities exist rather than being absent", async () => {
+    await renderDashboard();
+    const gap = await screen.findByTestId("transparency-gap-unmapped");
+    await waitFor(() => expect(gap.textContent).toContain("30개"));
+    expect(gap.textContent).toContain("집계에는 그대로 포함됩니다");
+  });
+});
+
+describe("refresh: table semantics and bounded overflow", () => {
+  it("gives every table a caption, column scopes, and a row header", async () => {
+    const { container } = await renderDashboard();
+    await screen.findByTestId("unmapped-facility-table");
+    const tables = container.querySelectorAll("table");
+    expect(tables.length).toBeGreaterThanOrEqual(2);
+    for (const table of tables) {
+      expect(table.querySelector("caption"), "every table names itself").not.toBeNull();
+      const headers = [...table.querySelectorAll("thead th")];
+      expect(headers.length).toBeGreaterThan(0);
+      for (const header of headers) {
+        expect(header.getAttribute("scope")).toBe("col");
+      }
+      // Each body row leads with a row header, so a cell is announced with the
+      // record it belongs to rather than as a bare number.
+      for (const row of table.querySelectorAll("tbody tr")) {
+        expect(row.querySelector("th")?.getAttribute("scope")).toBe("row");
+      }
+    }
+  });
+
+  it("keeps each table's horizontal scroll inside its own wrapper", async () => {
+    await renderDashboard();
+    const unmapped = await screen.findByTestId("unmapped-facility-table");
+    const datasets = screen.getByTestId("transparency-datasets").querySelector("table")!;
+    for (const table of [unmapped, datasets]) {
+      const wrapper = table.closest("div")!;
+      expect(wrapper.className).toContain("overflow-x-auto");
+    }
+  });
+
+  it("drops no unmapped record and invents no reason for one", async () => {
+    await renderDashboard();
+    const table = await screen.findByTestId("unmapped-facility-table");
+    const rows = table.querySelectorAll("tbody tr");
+    // Both served facilities are listed, including the one with no recorded reason.
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector("th")!.textContent).toBe("가나 소각장");
+    expect(rows[1].querySelector("th")!.textContent).toBe("다라 매립장");
+    expect(table.textContent).toContain("주소 정제 실패");
+    expect(table.textContent).toContain("실패 사유 기록 없음");
+  });
+
+  it("gives the pager buttons names that stand on their own", async () => {
+    api.fetchFacilityMappingTransparency.mockResolvedValue({
+      ...mapping,
+      unmapped: { ...mapping.unmapped, total: 30 },
+    });
+    await renderDashboard();
+    await screen.findByTestId("transparency-unmapped-pagination");
+    const previous = screen.getByTestId("transparency-unmapped-prev");
+    const next = screen.getByTestId("transparency-unmapped-next");
+    expect(previous.getAttribute("aria-label")).toBe("이전 페이지");
+    expect(next.getAttribute("aria-label")).toBe("다음 페이지");
+    // Native buttons that expose their boundary rather than hiding it.
+    expect(previous.tagName).toBe("BUTTON");
+    expect((previous as HTMLButtonElement).disabled).toBe(true);
+    expect((next as HTMLButtonElement).disabled).toBe(false);
+  });
 });
