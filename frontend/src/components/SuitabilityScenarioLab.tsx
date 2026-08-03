@@ -45,6 +45,8 @@ import {
   type ScenarioPercents,
 } from "../lib/scenario";
 import { stabilityBadgeLabel } from "../lib/suitability";
+import InfoBanner from "./ui/InfoBanner";
+import SectionCard from "./ui/SectionCard";
 
 /** The applied scenario the page needs to build the custom tile URL + detail fetches. */
 export interface AppliedScenario {
@@ -257,95 +259,138 @@ export default function SuitabilityScenarioLab({
 
   const appliedWeights = result?.canonical_weights ?? null;
 
+  // The stored profile the editor is being compared against, as integer percents —
+  // read straight off the run through the existing `decimalWeightsToPercents`, the
+  // same function the preset buttons use. It is REFERENCE CONTEXT only: it is never
+  // applied, never sent, and never mixed into the draft.
+  const storedReference = useMemo(() => {
+    const stored = run.weight_profiles?.[compareProfile];
+    return stored ? decimalWeightsToPercents(stored) : null;
+  }, [run.weight_profiles, compareProfile]);
+
   // Phase 7: the accessible name now matches the visible sub-view tab
   // (가중치 바꿔보기). It previously read 가중치 실험실, the pre-Phase-1 name, so a
   // screen-reader user heard a region name that no visible control used.
   return (
-    <section aria-label="가중치 바꿔보기" data-testid="scenario-lab" className="flex flex-col gap-4">
-      <ScenarioWarning />
+    <section aria-label="가중치 바꿔보기" data-testid="scenario-lab" className="flex flex-col gap-3">
+      <ScenarioOverview compareProfile={compareProfile} storedReference={storedReference} />
 
-      <ScenarioPresetButtons presets={presets} onLoad={loadPreset} />
+      <SectionCard
+        title="가중치 조정"
+        description="네 항목의 비율을 바꿔 보고, 합계가 정확히 100%가 되면 적용할 수 있습니다."
+        testId="scenario-editor"
+      >
+        <ScenarioPresetButtons presets={presets} onLoad={loadPreset} />
 
-      <ScenarioWeightEditor draft={draft} onChange={setComponent} />
+        <div className="mt-3">
+          <ScenarioWeightEditor
+            draft={draft}
+            applied={applied}
+            storedReference={storedReference}
+            compareProfile={compareProfile}
+            onChange={setComponent}
+          />
+        </div>
 
-      <ScenarioValidation total={total} diff={diff} valid={valid} normalizeNote={normalizeNote} />
+        <div className="mt-3">
+          <ScenarioValidation
+            total={total}
+            diff={diff}
+            valid={valid}
+            normalizeNote={normalizeNote}
+          />
+        </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        <button
-          type="button"
-          onClick={doNormalize}
-          data-testid="scenario-normalize"
-          className="min-h-[38px] rounded bg-slate-100 px-3 py-1 text-sm text-slate-700 md:min-h-0"
-        >
-          100%로 비율 정규화
-        </button>
-        <button
-          type="button"
-          onClick={resetToStoredProfile}
-          data-testid="scenario-reset-stored"
-          className="min-h-[38px] rounded bg-slate-100 px-3 py-1 text-sm text-slate-700 md:min-h-0"
-        >
-          현재 저장 프로파일과 동일하게 재설정
-        </button>
-        <button
-          type="button"
-          onClick={revertToApplied}
-          disabled={!applied}
-          data-testid="scenario-revert-applied"
-          className="min-h-[38px] rounded bg-slate-100 px-3 py-1 text-sm text-slate-700 disabled:opacity-40 md:min-h-0"
-        >
-          마지막 적용값으로 되돌리기
-        </button>
-      </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={doNormalize}
+            data-testid="scenario-normalize"
+            className="wep-btn-quiet"
+          >
+            100%로 비율 정규화
+          </button>
+          <button
+            type="button"
+            onClick={resetToStoredProfile}
+            data-testid="scenario-reset-stored"
+            className="wep-btn-quiet"
+          >
+            현재 저장 프로파일과 동일하게 재설정
+          </button>
+          <button
+            type="button"
+            onClick={revertToApplied}
+            disabled={!applied}
+            data-testid="scenario-revert-applied"
+            className="wep-btn-quiet disabled:opacity-40"
+          >
+            마지막 적용값으로 되돌리기
+          </button>
+        </div>
+      </SectionCard>
 
-      <ScenarioComparisonSelector
-        value={compareProfile}
-        options={runProfiles}
-        onChange={changeCompareProfile}
-      />
+      <SectionCard
+        title="시나리오 적용"
+        description="적용을 눌러야 계산합니다. 값을 바꾸는 동안에는 서버에 아무것도 보내지 않습니다."
+        testId="scenario-apply-panel"
+      >
+        <ScenarioComparisonSelector
+          value={compareProfile}
+          options={runProfiles}
+          onChange={changeCompareProfile}
+        />
 
-      <ScenarioApplyControls valid={valid} loading={loading} onApply={applyScenario} />
+        <div className="mt-2">
+          <ScenarioApplyControls valid={valid} loading={loading} onApply={applyScenario} />
+        </div>
 
-      {errorDetail && (
-        <p
-          role="alert"
-          data-testid="scenario-error"
-          className="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-800"
-        >
-          {errorDetail}
-        </p>
-      )}
+        {errorDetail && (
+          <div className="mt-2">
+            {/* A genuine, actionable form/request error that has just occurred — the
+                one place `role="alert"` belongs in this view. */}
+            <InfoBanner tone="error" role="alert" testId="scenario-error">
+              <p>{errorDetail}</p>
+            </InfoBanner>
+          </div>
+        )}
 
-      {loading && (
-        <p role="status" data-testid="scenario-loading" className="text-xs text-slate-500">
-          시나리오 계산 중…
-        </p>
-      )}
+        {loading && (
+          <p role="status" data-testid="scenario-loading" className="mt-2 text-xs text-ink-subtle">
+            시나리오 계산 중…
+          </p>
+        )}
 
-      {stale && (
-        <p
-          role="status"
-          data-testid="scenario-stale-notice"
-          className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800"
-        >
-          {STALE_MESSAGE} 새 가중치를 반영하려면 다시 「시나리오 적용」을 눌러 주세요.
-        </p>
-      )}
+        {stale && (
+          <p
+            role="status"
+            data-testid="scenario-stale-notice"
+            className="mt-2 rounded-card border border-warn-border bg-warn-surface p-2 text-xs text-ink"
+          >
+            {STALE_MESSAGE} 새 가중치를 반영하려면 다시 「시나리오 적용」을 눌러 주세요.
+          </p>
+        )}
 
-      {!result && !loading && (
-        <p
-          role="status"
-          data-testid="scenario-no-applied"
-          className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600"
-        >
-          아직 사용자 시나리오가 적용되지 않았습니다. 지도는 저장된 후보 상태를 표시합니다.
-          가중치를 조정한 뒤 「시나리오 적용」을 누르면 사용자 가정 기반 점수가 지도에 반영됩니다.
-        </p>
-      )}
+        {!result && !loading && (
+          <p
+            role="status"
+            data-testid="scenario-no-applied"
+            className="mt-2 rounded-card border border-hairline bg-surface-muted p-2 text-xs text-ink-muted"
+          >
+            아직 사용자 시나리오가 적용되지 않았습니다. 지도는 저장된 후보 상태를 표시합니다.
+            가중치를 조정한 뒤 「시나리오 적용」을 누르면 사용자 가정 기반 점수가 지도에 반영됩니다.
+          </p>
+        )}
+      </SectionCard>
 
       {result && (
         <>
-          <ScenarioSummary result={result} appliedWeights={appliedWeights} stale={stale} />
+          <ScenarioSummary
+            result={result}
+            appliedWeights={appliedWeights}
+            stale={stale}
+            selected={scenarioSelected}
+          />
           <ScenarioTopCandidates
             result={result}
             selectedId={scenarioSelected?.candidate_id ?? null}
@@ -367,20 +412,53 @@ export default function SuitabilityScenarioLab({
 // Sub-components
 // --------------------------------------------------------------------------- //
 
-function ScenarioWarning() {
+/**
+ * The scenario explanation, plus the 현재 운영 기준 the editor is measured against.
+ *
+ * Naming this view's four states apart is the point: 현재 운영 기준 (the stored
+ * profile), 사용자가 조정한 가중치 (the draft), 적용된 시나리오 결과 (the applied
+ * result), and 비교 기준 (the profile the result is compared to). None of them is
+ * an official policy weighting, and the wording never says 새 공식 기준 / 확정 기준 /
+ * 정책 가중치.
+ */
+function ScenarioOverview({
+  compareProfile,
+  storedReference,
+}: {
+  compareProfile: SuitabilityProfile;
+  storedReference: ScenarioPercents | null;
+}) {
   return (
-    <div
-      role="note"
-      data-testid="scenario-warning"
-      className="rounded border border-indigo-300 bg-indigo-50 p-3 text-xs text-indigo-900"
-    >
-      <p className="font-semibold">사용자 가정 기반 시나리오</p>
-      <p className="mt-1">
-        사용자가 입력한 가중치로 기존 분석 실행의 Z/R/E/D 구성점수를 재결합한 임시 비교
-        결과입니다. 공식 분석 실행, 전문가 판단, 법적 적격성, 인허가 가능성 또는 최종 입지
-        결정을 의미하지 않습니다.
-      </p>
-    </div>
+    <SectionCard title="가중치 바꿔보기" testId="scenario-overview">
+      <div
+        role="note"
+        data-testid="scenario-warning"
+        className="rounded-card border border-info-border bg-info-surface p-3 text-xs text-ink"
+      >
+        <p className="font-semibold">사용자 가정 기반 시나리오</p>
+        <p className="mt-1 text-ink-muted">
+          사용자가 입력한 가중치로 기존 분석 실행의 Z/R/E/D 구성점수를 재결합한 임시 비교
+          결과입니다. 공식 분석 실행, 전문가 판단, 법적 적격성, 인허가 가능성 또는 최종 입지
+          결정을 의미하지 않습니다.
+        </p>
+      </div>
+      {storedReference && (
+        <div className="mt-2" data-testid="scenario-stored-reference">
+          <p className="text-[11px] font-medium text-ink-subtle">
+            현재 운영 기준 — {PROFILE_LABEL[compareProfile] ?? compareProfile}
+          </p>
+          <p className="mt-0.5 text-xs tabular-nums text-ink-muted">
+            {SCENARIO_COMPONENTS.map(
+              (component) =>
+                `${SCENARIO_COMPONENT_META[component].label} ${storedReference[component]}%`,
+            ).join(" · ")}
+          </p>
+          <p className="mt-0.5 text-[11px] text-ink-subtle">
+            아래에서 바꾸는 값은 <strong>사용자 설정</strong>이며, 이 운영 기준을 대체하지 않습니다.
+          </p>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
@@ -393,7 +471,9 @@ function ScenarioPresetButtons({
 }) {
   return (
     <section aria-label="프리셋 가중치">
-      <h3 className="mb-1 text-xs font-semibold text-slate-700">저장된 프로파일 불러오기 (프리셋)</h3>
+      <h3 className="mb-1 text-xs font-semibold text-ink-muted">
+        저장된 프로파일 불러오기 (프리셋)
+      </h3>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="프리셋 선택">
         {presets.map((preset) => (
           <button
@@ -401,13 +481,13 @@ function ScenarioPresetButtons({
             type="button"
             onClick={() => onLoad(preset.percents)}
             data-testid={`scenario-preset-${preset.key}`}
-            className="min-h-[36px] rounded bg-slate-100 px-2.5 py-1 text-xs text-slate-700 md:min-h-0"
+            className="wep-btn-quiet"
           >
             {preset.label}
           </button>
         ))}
       </div>
-      <p className="mt-1 text-[11px] text-slate-500">
+      <p className="mt-1 text-[11px] text-ink-subtle">
         프리셋은 저장된 프로파일 값을 편집란에 불러오기만 합니다. 공식·전문가 승인 값이 아니며,
         적용하려면 「시나리오 적용」을 눌러야 합니다.
       </p>
@@ -415,16 +495,36 @@ function ScenarioPresetButtons({
   );
 }
 
+/**
+ * The four weight controls.
+ *
+ * Semantics are UNCHANGED and load-bearing: a paired `range` + `number` input per
+ * component, integer `step={1}` in `[0, 100]`, each with the accessible name
+ * `"<code> · <label> 가중치 슬라이더 | 퍼센트 입력"` that `e2e/scenario.spec.ts` and
+ * `e2e/citizenFlows.spec.ts` locate them by. No decimal precision is introduced —
+ * the whole editor works in integer percents so a valid total of exactly 100 always
+ * maps to canonical 8-dp weights that sum to exactly 1 (`lib/scenario.ts`).
+ *
+ * What the refresh adds is CONTEXT, not control: the stored 운영 기준 value for the
+ * component and a "변경됨 / 적용됨" marker, so the reader can see which of the four
+ * they have moved and how far from the operating assumption they are.
+ */
 function ScenarioWeightEditor({
   draft,
+  applied,
+  storedReference,
+  compareProfile,
   onChange,
 }: {
   draft: ScenarioPercents;
+  applied: ScenarioPercents | null;
+  storedReference: ScenarioPercents | null;
+  compareProfile: SuitabilityProfile;
   onChange: (component: ScenarioComponent, value: number) => void;
 }) {
   return (
-    <fieldset className="m-0 rounded-md border border-slate-200 p-2">
-      <legend className="px-1 text-xs font-semibold text-slate-600">
+    <fieldset className="m-0 rounded-card border border-hairline p-2">
+      <legend className="px-1 text-xs font-semibold text-ink-muted">
         구성요소 가중치 (Z/R/E/D, 합계 100%)
       </legend>
       <div className="flex flex-col gap-3">
@@ -434,13 +534,21 @@ function ScenarioWeightEditor({
           const sliderId = `scenario-slider-${component}`;
           const inputId = `scenario-input-${component}`;
           const name = `${meta.code} · ${meta.label}`;
+          const reference = storedReference?.[component] ?? null;
+          const changedFromStored = reference !== null && reference !== value;
+          const changedFromApplied = applied !== null && applied[component] !== value;
           return (
             <div key={component} className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <label htmlFor={sliderId} className="text-sm text-slate-700">
+              <div className="flex items-center justify-between gap-2">
+                <label htmlFor={sliderId} className="min-w-0 text-sm text-ink">
                   {name}
                 </label>
-                <span className="text-xs font-medium text-slate-800" data-testid={`scenario-value-${component}`}>
+                {/* The numeric value beside the slider — the control is never the
+                    only carrier of its own value. Exactly `NN%`, nothing else. */}
+                <span
+                  className="flex-none text-xs font-semibold text-ink"
+                  data-testid={`scenario-value-${component}`}
+                >
                   {value}%
                 </span>
               </div>
@@ -467,13 +575,23 @@ function ScenarioWeightEditor({
                   aria-label={`${name} 가중치 퍼센트 입력`}
                   onChange={(e) => onChange(component, Number(e.target.value))}
                   data-testid={inputId}
-                  className="w-16 rounded border border-slate-300 px-1 py-0.5 text-right text-sm"
+                  className="w-16 rounded-input border border-hairline-strong px-1 py-0.5 text-right text-sm"
                 />
-                <span aria-hidden className="text-xs text-slate-400">
+                <span aria-hidden className="text-xs text-ink-subtle">
                   %
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500">{meta.explanation}</p>
+              <p className="text-[11px] text-ink-subtle">{meta.explanation}</p>
+              {reference !== null && (
+                <p
+                  className="text-[11px] text-ink-subtle"
+                  data-testid={`scenario-reference-${component}`}
+                >
+                  {PROFILE_LABEL[compareProfile] ?? compareProfile} 기준 {reference}%
+                  {changedFromStored ? " · 사용자 설정으로 변경됨" : " · 기준과 동일"}
+                  {changedFromApplied ? " · 아직 적용되지 않음" : ""}
+                </p>
+              )}
             </div>
           );
         })}
@@ -495,15 +613,28 @@ function ScenarioValidation({
 }) {
   const diffText = diff === 0 ? "정확히 100%" : diff > 0 ? `100% 초과 +${diff}` : `100% 부족 ${diff}`;
   return (
+    // A polite live region, NOT `role="alert"`: the total changes on every keystroke,
+    // so an assertive role would interrupt a screen reader continuously. An invalid
+    // total is a state of the editor, not an error that has just occurred — and it is
+    // never silently repaired (only the explicit 정규화 action changes values).
+    // Validity is carried by the word 적용 가능 / the explanation sentence and a ✓ vs
+    // ! glyph, so it never depends on the green/amber tint alone.
     <div
       role="status"
       data-testid="scenario-total-status"
-      className={`rounded p-2 text-xs ${
-        valid ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"
+      className={`rounded-card border p-2 text-xs ${
+        valid
+          ? "border-success-border bg-success-surface text-ink"
+          : "border-warn-border bg-warn-surface text-ink"
       }`}
     >
-      <span data-testid="scenario-total">현재 합계: {total}%</span> · {diffText} ·{" "}
-      {valid ? "적용 가능" : "합계가 정확히 100%여야 적용할 수 있습니다"}
+      <span aria-hidden className="mr-1 font-semibold">
+        {valid ? "✓" : "!"}
+      </span>
+      <span className="font-semibold" data-testid="scenario-total">
+        현재 합계: {total}%
+      </span>{" "}
+      · {diffText} · {valid ? "적용 가능" : "합계가 정확히 100%여야 적용할 수 있습니다"}
       {normalizeNote && (
         <span data-testid="scenario-normalize-note" className="mt-1 block">
           {normalizeNote}
@@ -524,7 +655,7 @@ function ScenarioComparisonSelector({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor="scenario-compare-select" className="text-xs font-semibold text-slate-700">
+      <label htmlFor="scenario-compare-select" className="text-xs font-semibold text-ink-muted">
         비교 대상 저장 프로파일
       </label>
       <select
@@ -532,7 +663,7 @@ function ScenarioComparisonSelector({
         data-testid="scenario-compare-select"
         value={value}
         onChange={(e) => onChange(e.target.value as SuitabilityProfile)}
-        className="rounded border border-slate-300 px-2 py-1 text-sm"
+        className="rounded-input border border-hairline-strong px-2 py-1 text-sm"
       >
         {options.map((option) => (
           <option key={option} value={option}>
@@ -540,6 +671,9 @@ function ScenarioComparisonSelector({
           </option>
         ))}
       </select>
+      <p className="text-[11px] text-ink-subtle">
+        사용자 설정 결과의 순위를 이 저장 프로파일의 순위와 비교합니다.
+      </p>
     </div>
   );
 }
@@ -560,68 +694,127 @@ function ScenarioApplyControls({
       disabled={!valid || loading}
       data-testid="scenario-apply"
       aria-disabled={!valid || loading}
-      className="min-h-[44px] rounded bg-indigo-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 md:min-h-0"
+      className="wep-btn-primary min-h-[44px] w-full md:min-h-0"
     >
       {loading ? "적용 중…" : "시나리오 적용"}
     </button>
   );
 }
 
+/**
+ * 적용된 시나리오 결과 — a concise summary of the applied result.
+ *
+ * Every value is read straight off the served `UserScenarioPreview`; the only
+ * derived string is the rank movement of the selected candidate, and that comes
+ * from the existing, unit-tested `rankMovementText`. No "improvement" is computed
+ * or claimed: a rank rise is stated as what it is — 현재 사용자 설정에서는 순위가
+ * 상승했습니다 — never as this candidate being a better site.
+ */
 function ScenarioSummary({
   result,
   appliedWeights,
   stale,
+  selected,
 }: {
   result: UserScenarioPreview;
   appliedWeights: UserScenarioWeights | null;
   stale: boolean;
+  selected: UserScenarioCandidateDetail | null;
 }) {
   const pct = (w: string | undefined): string =>
     w == null ? "—" : `${Math.round(Number(w) * 100)}%`;
+  const comparisonLabel = PROFILE_LABEL[result.compare_profile] ?? result.compare_profile;
   return (
-    <section
-      aria-label="시나리오 요약"
-      data-testid="scenario-summary"
-      className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-700"
+    <SectionCard
+      title="적용된 시나리오 결과"
+      description="사용자 설정 기준의 임시 결과입니다."
+      testId="scenario-summary"
     >
-      <p className="text-sm font-semibold text-slate-900">사용자 가정 기반 시나리오</p>
-      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
-        <dt className="text-slate-500">분석 실행</dt>
-        <dd>#{result.run_id}</dd>
-        <dt className="text-slate-500">기준 연도</dt>
-        <dd>{result.reference_year}</dd>
-        <dt className="text-slate-500">방법 버전</dt>
-        <dd>{result.method_version}</dd>
-        <dt className="text-slate-500">시나리오 해시</dt>
-        <dd title={result.scenario_hash}>
-          <code>{result.scenario_hash_short}…</code>
-        </dd>
-        <dt className="text-slate-500">비교 프로파일</dt>
-        <dd>{PROFILE_LABEL[result.compare_profile] ?? result.compare_profile}</dd>
-        <dt className="text-slate-500">순위 산정 대상</dt>
-        <dd>{result.ranking_population.toLocaleString()}개</dd>
-        <dt className="text-slate-500">적용 가중치 Z/R/E/D</dt>
-        <dd>
-          {pct(appliedWeights?.zoning)} / {pct(appliedWeights?.road)} /{" "}
-          {pct(appliedWeights?.equity)} / {pct(appliedWeights?.demand)}
-        </dd>
-        <dt className="text-slate-500">상태 분포</dt>
-        <dd>
-          {statusLabel("ELIGIBLE")} {result.candidate_count_eligible.toLocaleString()} ·{" "}
-          {statusLabel("REVIEW_REQUIRED")} {result.candidate_count_review.toLocaleString()} ·{" "}
-          {statusLabel("EXCLUDED")} {result.candidate_count_excluded.toLocaleString()}
-        </dd>
-      </dl>
-      {/* Phase 7: the primary <dt>s read `분석 실행` / `순위 산정 대상`; the raw
-          screening enum they used to carry inline is demoted here rather than
-          deleted — the same "codes are demoted, never deleted" rule Phases 3, 5,
-          and 6 applied on their own surfaces. */}
-      <p className="mt-2 text-[11px] text-slate-400" data-diagnostic data-testid="scenario-summary-diagnostic">
-        기술 정보: 순위 산정 대상 = 상태 ELIGIBLE 후보 구역 수
-      </p>
-      {stale && <p className="mt-2 text-amber-700">{STALE_MESSAGE}</p>}
-      <p className="mt-2 text-[11px] text-slate-500">{result.scenario_disclaimer}</p>
-    </section>
+      <div className="text-xs text-ink-muted">
+        {/* The applied user weights, first — this is what the map is now drawing. */}
+        <div
+          className="rounded-card border border-primary-border bg-primary-soft p-2"
+          data-testid="scenario-applied-weights"
+        >
+          <p className="text-[11px] font-medium text-ink-subtle">사용자 설정 가중치</p>
+          <p className="mt-0.5 text-xs font-semibold tabular-nums text-ink">
+            {SCENARIO_COMPONENTS.map(
+              (component) =>
+                `${SCENARIO_COMPONENT_META[component].label} ${pct(appliedWeights?.[component])}`,
+            ).join(" · ")}
+          </p>
+        </div>
+
+        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+          <dt className="text-ink-subtle">비교 기준</dt>
+          <dd className="text-ink">{comparisonLabel}</dd>
+          <dt className="text-ink-subtle">순위 산정 대상</dt>
+          <dd className="tabular-nums text-ink">{result.ranking_population.toLocaleString()}개</dd>
+          <dt className="text-ink-subtle">상태 분포</dt>
+          <dd className="tabular-nums text-ink">
+            {statusLabel("ELIGIBLE")} {result.candidate_count_eligible.toLocaleString()} ·{" "}
+            {statusLabel("REVIEW_REQUIRED")} {result.candidate_count_review.toLocaleString()} ·{" "}
+            {statusLabel("EXCLUDED")} {result.candidate_count_excluded.toLocaleString()}
+          </dd>
+          <dt className="text-ink-subtle">분석 실행</dt>
+          <dd className="text-ink">#{result.run_id}</dd>
+          <dt className="text-ink-subtle">기준 연도</dt>
+          <dd className="tabular-nums text-ink">{result.reference_year}</dd>
+        </dl>
+
+        {/* SELECTED CANDIDATE — the baseline-versus-scenario comparison, using only
+            the served comparison score/rank and `rankMovementText`. */}
+        {selected && (
+          <div
+            className="mt-2 rounded-card border border-hairline bg-surface-muted p-2"
+            data-testid="scenario-selected-comparison"
+          >
+            <p className="text-[11px] font-medium text-ink-subtle">
+              선택한 후보 구역 — {selected.sigungu_region_name ?? "(지역 미배정)"}
+            </p>
+            <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
+              <dt className="text-ink-subtle">사용자 설정</dt>
+              <dd className="tabular-nums text-ink">
+                {selected.custom_score ?? "-"}점 · {selected.custom_rank ?? "-"}위
+              </dd>
+              <dt className="text-ink-subtle">{comparisonLabel}</dt>
+              <dd className="tabular-nums text-ink">
+                {selected.comparison_score ?? "-"}점 · {selected.comparison_rank ?? "-"}위
+              </dd>
+            </dl>
+            <p className="mt-1 text-ink" data-testid="scenario-selected-movement">
+              {rankMovementText(selected.comparison_rank, selected.custom_rank)}
+              {selected.rank_change_direction === "up"
+                ? " — 현재 사용자 설정에서는 순위가 상승했습니다."
+                : selected.rank_change_direction === "down"
+                  ? " — 현재 사용자 설정에서는 순위가 하락했습니다."
+                  : ""}
+            </p>
+            <p className="mt-0.5 text-[11px] text-ink-subtle">
+              순위 변화는 가중치를 바꾼 결과이며, 이 구역이 더 좋은 입지라는 뜻이 아닙니다.
+            </p>
+          </div>
+        )}
+
+        {/* The raw screening enum and the version/hash identifiers are demoted here
+            rather than deleted — the same "codes are demoted, never deleted" rule
+            Phases 3, 5, and 6 applied on their own surfaces. */}
+        <details className="mt-2" data-testid="scenario-summary-technical">
+          <summary className="cursor-pointer text-[11px] text-ink-subtle">기술 정보</summary>
+          <p
+            className="mt-1 text-[11px] break-all text-ink-subtle"
+            data-diagnostic
+            data-testid="scenario-summary-diagnostic"
+          >
+            순위 산정 대상 = 상태 ELIGIBLE 후보 구역 수 · 방법 버전 {result.method_version} ·
+            시나리오 해시 {result.scenario_hash_short}… · 분석 규칙 {result.policy_version}
+          </p>
+        </details>
+
+        {stale && <p className="mt-2 text-warn">{STALE_MESSAGE}</p>}
+        <p className="mt-2 text-[11px] text-ink-subtle">{result.scenario_disclaimer}</p>
+      </div>
+    </SectionCard>
   );
 }
 
@@ -642,10 +835,13 @@ function ScenarioTopCandidates({
   onSelect: (candidateId: number) => void;
 }) {
   return (
-    <section aria-label="사용자 시나리오 상위 후보" data-testid="scenario-top-candidates">
-      <h3 className="mb-1 text-xs font-semibold text-slate-700">사용자 시나리오 상위 후보</h3>
+    <SectionCard
+      title="사용자 설정 기준 상위 후보"
+      description="현재 사용자 설정에서 점수가 높은 순서이며, 최적지·추천지 판정이 아닙니다."
+      testId="scenario-top-candidates"
+    >
       {result.top_candidates.length === 0 ? (
-        <p className="text-xs text-slate-500">표시할 스크리닝 통과 후보가 없습니다.</p>
+        <p className="text-xs text-ink-subtle">표시할 스크리닝 통과 후보가 없습니다.</p>
       ) : (
         <ul className="flex flex-col gap-1">
           {result.top_candidates.map((c) => {
@@ -659,24 +855,36 @@ function ScenarioTopCandidates({
                   onClick={() => onSelect(c.candidate_id)}
                   data-testid="scenario-top-row"
                   aria-pressed={isSelected}
-                  className={`w-full rounded border p-2 text-left text-xs ${
-                    isSelected ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-white"
+                  className={`w-full rounded-card border p-2 text-left text-xs ${
+                    isSelected
+                      ? "border-primary-border bg-primary-soft font-semibold"
+                      : "border-hairline bg-surface"
                   }`}
                 >
-                  <span className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="font-semibold tabular-nums text-ink">
                       {c.custom_rank}위 · {c.custom_score}점
                     </span>
-                    <span className="text-slate-500">{c.sigungu_region_name ?? ""}</span>
+                    <span className="min-w-0 truncate text-ink-muted">
+                      {c.sigungu_region_name ?? ""}
+                    </span>
                   </span>
-                  <span className="mt-0.5 block text-slate-600" data-testid="scenario-rank-move">
+                  <span className="mt-0.5 block text-ink-muted" data-testid="scenario-rank-move">
                     {movement}
                     {directionText(c.rank_change_direction) &&
                       ` (${directionText(c.rank_change_direction)})`}
                   </span>
-                  <span className="mt-0.5 block text-[11px] text-slate-500">
-                    Z {c.zoning_score ?? "-"} · R {c.road_score ?? "-"} · E {c.equity_score ?? "-"} ·
-                    D {c.demand_score ?? "-"}
+                  {/* Component scores with their Korean names, never bare letters. */}
+                  <span className="mt-0.5 block text-[11px] tabular-nums text-ink-subtle">
+                    {SCENARIO_COMPONENTS.map((component) => {
+                      const scores: Record<ScenarioComponent, string | null> = {
+                        zoning: c.zoning_score,
+                        road: c.road_score,
+                        equity: c.equity_score,
+                        demand: c.demand_score,
+                      };
+                      return `${SCENARIO_COMPONENT_META[component].label} ${scores[component] ?? "-"}`;
+                    }).join(" · ")}
                     {badge ? ` · ${badge}` : ""}
                   </span>
                   <span className="sr-only">{c.candidate_key}</span>
@@ -686,7 +894,7 @@ function ScenarioTopCandidates({
           })}
         </ul>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -706,78 +914,98 @@ function ScenarioCandidateDetail({
           : "잠정 점수 없음 (구성요소 부족)"
         : `${statusLabel("EXCLUDED")} — 점수·순위 없음`;
   return (
-    <section
-      aria-label="사용자 시나리오 후보 상세"
-      data-testid="scenario-candidate-detail"
-      className="rounded border border-indigo-200 bg-white p-3 text-xs text-slate-700"
-    >
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-900">후보 상세 (사용자 시나리오)</h3>
-        <button
-          type="button"
-          onClick={onClear}
-          data-testid="scenario-detail-clear"
-          className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
-        >
-          닫기
+    <SectionCard
+      title="선택한 후보 구역 (사용자 설정)"
+      headerAside={
+        <button type="button" onClick={onClear} data-testid="scenario-detail-clear" className="wep-btn-quiet">
+          선택 해제
         </button>
-      </div>
-      <p className="mt-1">
-        <span className="font-medium">{detail.sigungu_region_name ?? ""}</span> · 상태{" "}
-        {statusLabel(detail.status)}
-      </p>
-      <p className="mt-0.5" data-testid="scenario-detail-score">
-        점수: {scoreLine}
-      </p>
-      <p className="mt-0.5" data-testid="scenario-detail-movement">
-        {rankMovementText(detail.comparison_rank, detail.custom_rank)}
-      </p>
-      <table className="mt-2 w-full border-collapse text-[11px]">
-        <caption className="sr-only">구성요소별 가중 기여</caption>
-        <thead>
-          <tr className="text-left text-slate-500">
-            <th scope="col">구성</th>
-            <th scope="col">점수</th>
-            <th scope="col">가중치</th>
-            <th scope="col">기여</th>
-          </tr>
-        </thead>
-        <tbody>
-          {detail.contributions.map((row) => (
-            <tr key={row.component}>
-              <td>{SCENARIO_COMPONENT_META[row.component as ScenarioComponent]?.code ?? row.component}</td>
-              <td>{row.component_score ?? "—"}</td>
-              <td>{Math.round(Number(row.weight) * 100)}%</td>
-              <td>{row.weighted_contribution ?? "—"}</td>
+      }
+      testId="scenario-candidate-detail"
+    >
+      <div className="text-xs text-ink-muted">
+        <p>
+          <span className="font-semibold text-ink">{detail.sigungu_region_name ?? ""}</span> · 상태{" "}
+          {statusLabel(detail.status)}
+        </p>
+        <p className="mt-0.5 tabular-nums text-ink" data-testid="scenario-detail-score">
+          점수: {scoreLine}
+        </p>
+        <p className="mt-0.5" data-testid="scenario-detail-movement">
+          {rankMovementText(detail.comparison_rank, detail.custom_rank)}
+        </p>
+        {/* Weighted contribution per component, with the citizen-facing name beside
+            its code — never a bare Z/R/E/D column. The values are the ones the API
+            computed; nothing is summed or re-derived here. */}
+        <table className="mt-2 w-full border-collapse text-[11px]">
+          <caption className="sr-only">구성요소별 가중 기여</caption>
+          <thead>
+            <tr className="text-left text-ink-subtle">
+              <th scope="col">구성요소</th>
+              <th scope="col" className="text-right">
+                점수
+              </th>
+              <th scope="col" className="text-right">
+                가중치
+              </th>
+              <th scope="col" className="text-right">
+                기여
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {detail.stable_count != null && (
-        <p className="mt-2 text-[11px] text-slate-500">
-          저장된 안정성: {stabilityBadgeLabel(detail.stability_class, detail.stable_count) ?? "-"} (저장된
-          run 기준이며 사용자 시나리오의 안정성 평가가 아닙니다)
-        </p>
-      )}
-      {detail.status === "EXCLUDED" && detail.exclusion_reasons.length > 0 && (
-        <p className="mt-1 text-[11px] text-rose-700">
-          제외 사유: {detail.exclusion_reasons.join(", ")} — 사용자 가중치는 배제를 뒤집지 않습니다.
-        </p>
-      )}
-      {detail.status === "REVIEW_REQUIRED" && detail.review_reasons.length > 0 && (
-        <p className="mt-1 text-[11px] text-amber-700">검토 사유: {detail.review_reasons.join(", ")}</p>
-      )}
-      <p className="mt-2 text-[11px] text-slate-400">{detail.scenario_disclaimer}</p>
-      <p className="mt-1 text-[11px] text-slate-400">{detail.screening_disclaimer}</p>
-    </section>
+          </thead>
+          <tbody>
+            {detail.contributions.map((row) => {
+              const meta = SCENARIO_COMPONENT_META[row.component as ScenarioComponent];
+              return (
+                <tr key={row.component}>
+                  <td className="py-0.5">
+                    {meta ? `${meta.label}(${meta.code})` : row.component}
+                  </td>
+                  <td className="py-0.5 text-right tabular-nums text-ink">
+                    {row.component_score ?? "—"}
+                  </td>
+                  <td className="py-0.5 text-right tabular-nums">
+                    {Math.round(Number(row.weight) * 100)}%
+                  </td>
+                  <td className="py-0.5 text-right tabular-nums text-ink">
+                    {row.weighted_contribution ?? "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {detail.stable_count != null && (
+          <p className="mt-2 text-[11px] text-ink-subtle">
+            저장된 안정성: {stabilityBadgeLabel(detail.stability_class, detail.stable_count) ?? "-"}{" "}
+            (저장된 run 기준이며 사용자 시나리오의 안정성 평가가 아닙니다)
+          </p>
+        )}
+        {detail.status === "EXCLUDED" && detail.exclusion_reasons.length > 0 && (
+          <p className="mt-1 text-[11px] text-danger">
+            제외 사유: {detail.exclusion_reasons.join(", ")} — 사용자 가중치는 배제를 뒤집지 않습니다.
+          </p>
+        )}
+        {detail.status === "REVIEW_REQUIRED" && detail.review_reasons.length > 0 && (
+          <p className="mt-1 text-[11px] text-warn">
+            검토 사유: {detail.review_reasons.join(", ")}
+          </p>
+        )}
+        <p className="mt-2 text-[11px] text-ink-subtle">{detail.scenario_disclaimer}</p>
+        <p className="mt-1 text-[11px] text-ink-subtle">{detail.screening_disclaimer}</p>
+      </div>
+    </SectionCard>
   );
 }
 
 function ScenarioMethodology() {
   return (
-    <details data-testid="scenario-methodology" className="rounded border border-slate-200 p-2 text-xs">
-      <summary className="cursor-pointer font-semibold text-slate-700">방법론 및 한계</summary>
-      <ul className="mt-1 list-disc pl-4 text-slate-600">
+    <details
+      data-testid="scenario-methodology"
+      className="rounded-card border border-hairline bg-surface p-2 text-xs"
+    >
+      <summary className="cursor-pointer font-semibold text-ink">방법론 및 한계</summary>
+      <ul className="mt-1 list-disc pl-4 text-ink-muted">
         <li>고정된 한 개 분석 실행의 저장된 Z/R/E/D 구성점수만 재결합합니다.</li>
         <li>구역 상태 판정, 배제·검토 사유, 안정성은 재계산되지 않습니다.</li>
         <li>순위는 완전한 ELIGIBLE 후보에 대해 custom_score 내림차순·candidate_key 오름차순으로 산정됩니다.</li>

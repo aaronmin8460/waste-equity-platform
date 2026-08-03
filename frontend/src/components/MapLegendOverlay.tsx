@@ -74,6 +74,13 @@ interface SuitabilityLegendProps {
   /** Bilingual labels for each status. */
   statusLabels: Record<SuitabilityStatus, string>;
   /**
+   * Served candidate count per status, so the control that hides a status also
+   * says how much it hides. Optional: before the summary loads there is no count,
+   * and a count must never be invented (a missing one simply renders nothing —
+   * never a `0`, which would claim the run found no such cell).
+   */
+  statusCounts?: Record<SuitabilityStatus, number> | null;
+  /**
    * Whether the selected run carries CRITIC/stability results. When false, the
    * stability control + outline legend are hidden (an old run has no stable data).
    */
@@ -202,6 +209,7 @@ function SuitabilityLegend({
   statusVisibility,
   onToggleStatus,
   statusLabels,
+  statusCounts = null,
   stabilityAvailable,
   stableOnly,
   onToggleStableOnly,
@@ -238,7 +246,17 @@ function SuitabilityLegend({
           </p>
         </div>
       )}
-      <div className="flex flex-col gap-1 text-xs text-slate-600" data-testid="status-filters">
+      {/* The status filter. A labelled `role="group"` of native checkboxes, so a
+          screen-reader user hears what the three boxes belong to before hearing
+          them. These drive the page's ONE canonical `statusVisibility` state — the
+          sidebar reports that state in words but adds no second control, so the
+          screen never carries two controls for one piece of state. */}
+      <div
+        className="flex flex-col gap-1 text-xs text-ink-muted"
+        role="group"
+        aria-label="지도에 표시할 후보 상태"
+        data-testid="status-filters"
+      >
         {(Object.keys(statusVisibility) as SuitabilityStatus[]).map((st) => (
           <label key={st} className="flex items-center gap-2">
             <input
@@ -257,7 +275,17 @@ function SuitabilityLegend({
                 border: swatch[st].dashed ? "1.5px dashed #b45309" : "1px solid #cbd5e1",
               }}
             />
-            <span>{statusLabels[st]}</span>
+            {/* The label stays its own node holding ONLY the status name, so the
+                status text is exactly the shared plain-Korean label. */}
+            <span className="min-w-0 flex-1">{statusLabels[st]}</span>
+            {statusCounts ? (
+              <span
+                className="flex-none tabular-nums text-ink-subtle"
+                data-testid={`status-filter-count-${st}`}
+              >
+                {statusCounts[st].toLocaleString()}
+              </span>
+            ) : null}
           </label>
         ))}
       </div>

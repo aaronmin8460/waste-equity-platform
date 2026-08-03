@@ -9,7 +9,8 @@ A change to any item here is a product decision, not a styling decision.
 The file spans the whole refresh. §1–§9 are the shared contracts; §10–§11 record
 the two decisions the **civic-dashboard foundation** milestone took deliberately;
 §12–§13 add what the **지역 부담 dashboard** milestone contracted and confirm it
-changed no existing expectation (see `equity-dashboard.md`).
+changed no existing expectation (see `equity-dashboard.md`); §14–§15 do the same
+for the **후보지 분석 dashboard** milestone (see `suitability-dashboard.md`).
 
 ## 1. Primary navigation labels (frozen strings)
 
@@ -255,3 +256,89 @@ whose name CONTAINS a frozen nav label (§1) makes that locator ambiguous — an
 a genuine ambiguity for a screen-reader user scanning by name, not merely a test
 artefact. The component was renamed; the test was left alone. Any future control
 that references an area must name the action, not repeat the area's frozen label.
+
+## 14. The 후보지 분석 workspace and its one-control rule
+
+Added by the suitability-dashboard milestone
+(`docs/ui-refresh/suitability-dashboard.md`). The score sidebar is now six
+presentational components under `frontend/src/components/suitability/`, and these
+facts travel with them:
+
+* **The status-visibility control lives ONCE, in the floating legend.**
+  `status-toggle-{ELIGIBLE,REVIEW_REQUIRED,EXCLUDED}` and `stable-only-toggle` are
+  the only controls for that state anywhere on the screen; the sidebar's
+  후보 상태 요약 REPORTS it in words (`지도 표시 중` / `지도에서 숨김`, and a sentence
+  when 안정 후보만 보기 is on) and adds no second control. Three files contract those
+  test ids — `components/MapLegendOverlay.test.tsx`, `e2e/integration.spec.ts`, and
+  the live `e2e/landCoverLayer.spec.ts` — so relocating them is a contract change
+  that must move those tests with it, not a styling edit. The legend's per-status
+  count (`statusCounts`) is OPTIONAL and `null` until the summary loads: a count is
+  never fabricated as `0`.
+* **Status swatch colors are passed in, never re-declared.**
+  `CANDIDATE_STATUS_COLORS` in `app/page.tsx` is built from `CANDIDATE_SCORE_PALETTE_5[3]`,
+  `CANDIDATE_REVIEW_COLOR`, and `CANDIDATE_EXCLUDED_COLOR` (`lib/metrics.ts`) and
+  handed to the sidebar summary. No suitability component contains a color literal,
+  so the summary, the legend, and the MapLibre fill cannot drift.
+* **The suitability map insight strip is the legend's SIBLING in the one bottom
+  overlay column**, exactly like the equity strip (§4). It renders at `lg`+ only,
+  states 해석 / 주의 / 현재 기준·출처, carries **no** `role="alert"`, and shows no
+  score, rank, or count — so it cannot render a missing value as a zero. Version
+  strings appear only inside its `기술 정보` disclosure, in a `[data-diagnostic]`
+  node.
+* **The selected-candidate summary has an explicit empty state.**
+  `candidate-detail-empty` names both selection paths; it never renders a sample
+  candidate, a placeholder score, or a `0`. A missing component score renders `-`
+  with the sentence `점수가 -인 항목은 자료가 없다는 뜻이며 0점이 아닙니다`; a review
+  candidate shows `참고용 임시 점수` + `순위 없음`; an EXCLUDED candidate shows its
+  reasons, no score, no rank, and is NOT styled or roled as an error.
+* **The ranked list stays neutral.** Its heading is `점수가 높은 후보 구역` and
+  `SCORE_RANK_FRAMING` sits directly under it. 최적 / 최고 / 추천 / 건설 권고 must not
+  appear next to a rank, in either sub-view.
+* **The scenario view names its four weights apart** — 현재 운영 기준 / 사용자 설정 /
+  적용된 시나리오 결과 / 비교 기준 — and must never say 새 공식 기준, 확정 기준, or
+  정책 가중치. The weight controls keep integer `step={1}` in `[0,100]` and their
+  accessible names `"<code> · <label> 가중치 슬라이더 | 퍼센트 입력"`, which
+  `e2e/scenario.spec.ts` and `e2e/citizenFlows.spec.ts` locate them by. The total
+  validation stays `role="status"`, never `role="alert"`.
+* **`role="alert"` on these two sub-views is reserved for two genuine errors**: the
+  suitability meta-load failure (`suitability-error`) and the scenario preview
+  request failure (`scenario-error`).
+* **The suitability `<fieldset>`s are suitability-only.** The profile selector is a
+  fieldset, and so is the scenario weight editor. The "exactly three fieldsets"
+  assertions in `e2e/accessibility.spec.ts`, `e2e/phase4EquityMap.spec.ts`,
+  `app/accessibility.test.tsx`, `app/page.phase4.test.tsx`, and
+  `app/page.equityDashboard.test.tsx` are all on the 지역 부담 view and must stay
+  true there.
+
+Enforced by: `app/page.suitabilityDashboard.test.tsx`, `app/page.phase0.test.tsx`,
+`app/accessibility.test.tsx`, `app/terminology.audit.test.tsx`,
+`components/MapLegendOverlay.test.tsx`, `components/SuitabilityScenarioLab.test.tsx`,
+`lib/suitability.test.ts`, `e2e/suitabilityDashboard.spec.ts`, `e2e/scenario.spec.ts`,
+`e2e/citizenFlows.spec.ts`, `e2e/integration.spec.ts`.
+
+## 15. The 후보지 분석 milestone changed no test expectation
+
+Like §13 and unlike §10, this milestone has no deliberate contract change to
+record: every pre-existing unit and e2e assertion passes unmodified.
+
+Two decisions are worth keeping, because both look like styling choices and are
+not:
+
+1. **`CriticMethodNote` kept its heading `CRITIC 데이터 기반 가중치` and still prints
+   the run's raw decimal weights.** A first pass replaced both with plain-Korean
+   equivalents; `app/accessibility.test.tsx` asserts the heading string AND that
+   the note contains the run's actual `0.31`, which exists to prove the note shows
+   run-specific CRITIC weights rather than a constant. Rather than relax that, the
+   note now carries BOTH: `namedWeights` (Korean names + percentages) as the
+   primary line, and the served decimals demoted to a `[data-diagnostic]` line.
+   Codes are demoted, never deleted.
+2. **`candidate-counts` moved from a sentence to the `<dl>` of status rows.** The
+   test id is on the list itself, so `terminology.audit.test.tsx` and
+   `app/page.phase0.test.tsx` still read the three plain status names and still
+   find no raw enum — with no duplicated, screen-reader-only copy of the sentence
+   beside the visible rows.
+
+One behaviour changed, in `lib/suitability.ts` `weightPercent`: a **blank** weight
+string now renders `-` instead of `0%`. `Number("")` is `0`, so the lifted version
+would have printed a confident `0%` for a missing weight. No call site passes a
+blank today; the change is covered by `lib/suitability.test.ts`.
