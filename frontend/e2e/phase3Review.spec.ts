@@ -119,9 +119,15 @@ for (const vp of VIEWPORTS) {
       await calculate(page);
       await capture(page, `cost-results-hero-${vp.label}`);
 
-      await openAndCapture(page, "facility-cost-funding-section", "facility-cost-funding", {
-        name: `cost-results-funding-open-${vp.label}`,
-      });
+      // 비용 구성 is visible section content since the civic-dashboard refresh
+      // (docs/ui-refresh/facility-cost-dashboard.md §4), so it is captured in
+      // place rather than opened.
+      const funding = page.getByTestId("facility-cost-funding");
+      await expect(funding).toBeVisible();
+      await funding.scrollIntoViewIfNeeded();
+      await capture(page, `cost-results-funding-${vp.label}`);
+      await page.getByTestId("facility-cost-results-view").scrollIntoViewIfNeeded();
+
       await openAndCapture(page, "facility-cost-exclusions", "facility-cost-missing", {
         name: `cost-results-exclusions-open-${vp.label}`,
       });

@@ -24,11 +24,24 @@
  */
 
 import { useId } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 export interface SectionCardProps {
   /** Visible card title. Omit for an untitled container. */
   title?: string;
+  /**
+   * Fixed id for the heading, overriding the generated one. Use only when another
+   * surface must address the heading by a stable id (a documented focus target).
+   * `aria-labelledby` follows it, so the accessible name is unaffected.
+   */
+  headingId?: string;
+  /**
+   * Makes the heading a PROGRAMMATIC focus target: it also receives
+   * `tabIndex={-1}`, so `.focus()` works while the heading never becomes a Tab
+   * stop. Added for the facility-cost setup step the results view returns focus to
+   * (docs/ui-refresh/facility-cost-dashboard.md).
+   */
+  headingRef?: RefObject<HTMLHeadingElement | null>;
   /** Short supporting line under the title. */
   description?: ReactNode;
   /**
@@ -47,6 +60,8 @@ export interface SectionCardProps {
 
 export default function SectionCard({
   title,
+  headingId,
+  headingRef,
   description,
   headerAside,
   headingLevel = 2,
@@ -55,7 +70,8 @@ export default function SectionCard({
   className,
   testId,
 }: SectionCardProps) {
-  const headingId = useId();
+  const generatedHeadingId = useId();
+  const resolvedHeadingId = headingId ?? generatedHeadingId;
   const Heading = `h${headingLevel}` as const;
 
   const classes = ["wep-card", flush ? "p-0" : "", className].filter(Boolean).join(" ");
@@ -63,7 +79,14 @@ export default function SectionCard({
   const header = title ? (
     <div className={`flex items-start justify-between gap-3 ${flush ? "p-4 pb-3" : "mb-3"}`}>
       <div className="min-w-0">
-        <Heading id={headingId} className="text-sm font-semibold text-ink">
+        <Heading
+          id={resolvedHeadingId}
+          ref={headingRef}
+          // A ref is only ever handed in to focus the heading programmatically, so
+          // it is made focusable at the same time — and never a Tab stop.
+          tabIndex={headingRef ? -1 : undefined}
+          className="text-sm font-semibold text-ink"
+        >
           {title}
         </Heading>
         {description ? <p className="mt-0.5 text-xs text-ink-subtle">{description}</p> : null}
@@ -83,7 +106,7 @@ export default function SectionCard({
   }
 
   return (
-    <section className={classes} aria-labelledby={headingId} data-testid={testId}>
+    <section className={classes} aria-labelledby={resolvedHeadingId} data-testid={testId}>
       {header}
       {flush ? children : <div>{children}</div>}
     </section>

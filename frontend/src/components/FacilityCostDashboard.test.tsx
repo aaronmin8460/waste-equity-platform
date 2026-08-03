@@ -744,7 +744,6 @@ describe("results — detail accordions", () => {
     await renderPanel();
     await calculateToResults();
     for (const testId of [
-      "facility-cost-funding-section",
       "facility-cost-region-section",
       "facility-cost-assumptions",
       "facility-cost-exclusions",
@@ -755,10 +754,24 @@ describe("results — detail accordions", () => {
     }
   });
 
+  it("shows the cost composition WITHOUT a disclosure to open", async () => {
+    // INTENTIONAL CONTRACT CHANGE (docs/ui-refresh/facility-cost-dashboard.md §4):
+    // 국비·지방비 구성 was the collapsed `facility-cost-funding-section`. It is the
+    // only decomposition of the headline cost on the screen, so it is now visible
+    // section content. The behaviour assertions below are the SAME ones the
+    // collapsed version carried; only the "it is a <details>" structure changed.
+    await renderPanel();
+    await calculateToResults();
+    expect(screen.queryByTestId("facility-cost-funding-section")).toBeNull();
+    const funding = screen.getByTestId("facility-cost-funding");
+    expect(funding.closest("details")).toBeNull();
+    expect(within(funding).getByTestId("fc-funding-total").textContent).toContain("120.75 억원");
+  });
+
   it("keeps the funding amounts exact and still refuses to imply approval", async () => {
     await renderPanel();
     await calculateToResults();
-    const funding = openSection("facility-cost-funding-section");
+    const funding = screen.getByTestId("facility-cost-funding");
     expect(screen.getByTestId("fc-funding-subsidy").textContent).toContain("36.225 억원");
     expect(screen.getByTestId("fc-funding-local").textContent).toContain("84.525 억원");
     expect(screen.getByTestId("fc-funding-total").textContent).toContain("120.75 억원");

@@ -62,9 +62,16 @@ const RAW_REASON_CODES = [
   "ACTUAL_TRANSPORT_COST",
 ];
 
-/** The collapsed detail sections, in the order Phase 3 fixes them in. */
+/**
+ * The collapsed detail sections, in their fixed order.
+ *
+ * `facility-cost-funding-section` was the seventh. The civic-dashboard refresh
+ * promoted the cost composition to VISIBLE section content
+ * (docs/ui-refresh/facility-cost-dashboard.md §4), so it is no longer a disclosure
+ * to open — the behaviour it protected (exact served amounts, no approval claim)
+ * is asserted below without opening anything.
+ */
 const RESULT_SECTIONS = [
-  "facility-cost-funding-section",
   "facility-cost-region-section",
   "facility-cost-assumptions",
   "facility-cost-exclusions",
@@ -186,8 +193,9 @@ for (const vp of VIEWPORTS) {
         "포함되지 않은 비용 5개",
       );
 
-      // Funding: exact served strings, and no implication of approval.
-      await openSection(page, "facility-cost-funding-section");
+      // Funding: exact served strings, and no implication of approval — now
+      // readable without expanding anything.
+      await expect(page.getByTestId("facility-cost-funding")).toBeVisible();
       await expect(page.getByTestId("fc-funding-subsidy")).toContainText("36.225 억원");
       await expect(page.getByTestId("fc-funding-local")).toContainText("84.525 억원");
       await expect(page.getByTestId("fc-funding-total")).toContainText("120.75 억원");
