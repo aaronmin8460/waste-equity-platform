@@ -46,10 +46,10 @@ Application bar + 후보지 분석 sub-view selector   (shared chrome — render
 └── 비용 살펴보기 workspace  (<main>, full width, map-free, normal document scrolling)
     └── max-w-6xl content column
         ├── PageHeader          시설 비용 살펴보기 + task line   (the view's single <h1>)
-        ├── 알림 InfoBanner      screening disclaimer → page disclaimer → three non-claims
-        ├── 분석에 포함되지 않은 항목 8가지   collapsed, now under TWO headings
         └── grid  lg:[minmax(0,1fr) 20rem]
-            ├── setup steps
+            ├── workflow column
+            │   ├── 알림 InfoBanner    screening disclaimer → page disclaimer → three non-claims
+            │   ├── 분석에 포함되지 않은 항목 8가지   collapsed, under TWO headings
             │   ├── 1. 처리할 지역     SearchableRegionPicker  (focus target #fc-step-regions)
             │   ├── 2. 처리 조건       waste stream · processing share · facility-type cards
             │   └── 3. 계산 가정       the four assumption VALUES, then 고급 설정 (collapsed)
@@ -314,10 +314,16 @@ Measured in Chrome with the mocked backend, on the setup and result screens:
 
 | Viewport | Page h-overflow | Calculate button (before scrolling) | Hero (result) | Nested scroll panes |
 | --- | --- | --- | --- | --- |
-| 1024 × 768 | none | fully inside the viewport | inside the first viewport | none |
-| 1280 × 800 | none | fully inside the viewport | inside the first viewport | none |
-| 1440 × 900 | none | fully inside the viewport | inside the first viewport | none |
-| 1920 × 1080 | none | fully inside the viewport | inside the first viewport | none |
+| 1024 × 768 | none | 544–588 of 768 | inside the first viewport | none |
+| 1280 × 800 | none | 544–588 of 800 | inside the first viewport | none |
+| 1440 × 900 | none | 544–588 of 900 | inside the first viewport | none |
+| 1920 × 1080 | none | 544–588 of 1080 | inside the first viewport | none |
+
+> **These are the post-repair numbers.** As this milestone shipped, the button sat
+> at 794–838 at 1024×768 — 70px below the fold — and at 752–796 at the three larger
+> targets, i.e. 4px inside an 800px viewport. The final integration milestone found
+> and fixed the cause; see §16 below and
+> `docs/ui-refresh/final-integration-regression.md`.
 
 Unlike the map views, the cost view scrolls the **document** — that is expected for
 a long report, and the new spec asserts both that the document actually scrolls and
@@ -393,11 +399,13 @@ infrastructure (`baseline.md` §7).
 
 ## 14. Remaining risks
 
-* **The sticky rail's height budget is not enormous.** At 1024×768 the calculate
-  button clears the fold, but adding two more rows to 현재 설정 or two more
-  readiness items would put it at risk again. The e2e assertion catches it; the
-  fix, if it ever fires, is to move content below the button rather than to relax
-  the assertion.
+* **~~The sticky rail's height budget is not enormous.~~** *Resolved by the final
+  integration milestone — see §16.* The original text read: "At 1024×768 the
+  calculate button clears the fold, but adding two more rows to 현재 설정 or two
+  more readiness items would put it at risk again." The first half of that was
+  wrong as written: the button did **not** clear the fold at 1024×768. The budget
+  is now ~180px rather than negative, and the assertion that guards it is
+  deterministic.
 * **`is_partial` is now load-bearing copy.** If the backend ever serves
   `is_partial: false` alongside a non-empty `missing_components`, the banner
   disappears while the exclusions remain. That is the honest reading of the two
@@ -413,6 +421,86 @@ infrastructure (`baseline.md` §7).
   own milestones.
 * **`DerivedPanel` / `SourcePanel`** (the equity 출처와 계산 방법 disclosure) were
   again not restyled — unchanged from the previous two milestones' deferral.
+  *(Reviewed and partly resolved by the final integration milestone; see
+  `final-integration-regression.md` §9.)*
 * **Mobile.** No mobile-specific work was done, per scope.
 * **Deployment.** This milestone is **not deployed**. OCI currently runs the
   land-cover release; the whole UI refresh has not been shipped there.
+
+## 16. The 1024×768 first-screen repair (final integration milestone)
+
+Added after this milestone shipped, in `fix/final-ui-integration-regression`. It is
+recorded here because §12 and §14 above described a contract this view did not
+actually meet.
+
+### The defect
+
+At 1024×768, with `window.scrollY === 0`, 비용 계산하기 measured **794–838** against
+a 768px viewport — 70px clipped. The 계산 준비 상태 checklist ended at 778 (also
+clipped), and the `role="status"` line that states *why* the action is disabled sat
+at 846–862, entirely below the fold. Reproduced on unmodified `main` at `28bdb6a`
+and again at `98372d7`; recorded as a suspected flake in `landfill-dashboard.md`
+§10 and `transparency-dashboard.md` §11.
+
+### Root cause
+
+**`position: sticky` cannot pull an element above its static position**, and the
+rail's static position was below the fold.
+
+`FacilityCostSetup` rendered the standing scope notice — the `알림` banner plus the
+분석에 포함되지 않은 항목 8가지 disclosure — full-width **above** the two-column grid.
+At 1024 that block spent 250px (notice 214→386, disclosure 398→444, margins), so
+the grid, and therefore the `lg:sticky lg:top-6 lg:self-start` rail, began at
+y = 464. The rail's own card is 415px tall, ending at 879. Sticky only engages once
+the static position has scrolled above `top: 24px`, so on the as-loaded page the
+rail was ordinary flow content and offered no help at all — the exact state the
+first-screen contract is about.
+
+The same cause explains why the three larger targets looked fine and were not:
+they measured 752–796, i.e. **4px** inside an 800px viewport, and their status line
+(804–820) was already below the fold. Nothing measured that, so nothing failed.
+
+### The repair
+
+`FacilityCostNotice` moved from above the grid into the grid's **workflow column**,
+as its first block. One JSX move plus the removal of the grid's now-redundant
+`mt-5`. Nothing else changed: the notice keeps its content, wording, test ids, and
+its position in document order (still the first block under the `<h1>`, still above
+`1. 처리할 지역`); the workflow sequence 처리할 지역 → 처리 조건 → 계산 가정 →
+현재 설정·계산 준비 상태 → 비용 계산하기 is intact; no validation rule, default,
+payload, or API call was touched.
+
+The rail now starts at the top of the workspace, so it is **identical at all four
+desktop targets**:
+
+| | before (1024×768) | after (all four targets) |
+| --- | --- | --- |
+| 현재 설정 card | 464 → 879 | 214 → 629 |
+| 계산 준비 상태 | 702 → 778 | 452 → 528 |
+| 비용 계산하기 | 794 → **838** | 544 → **588** |
+| `role="status"` line | 846 → 862 | 596 → 612 |
+| margin to a 768px fold | **−70px** | **+180px** |
+
+Sub-`lg` widths are unaffected: the columns still stack and the summary is still
+ordinary flow content reached by scrolling (390×844 and 768×1024 both re-measured).
+
+### The test repair
+
+The assertion was also nondeterministic. It returned to the top with
+`page.mouse.wheel(0, -2000)` — dispatched, never awaited — so the bounding box
+could be read mid-scroll, and against a partly-scrolled page a clipped button
+measures as if it fitted. That is why the real defect survived several green
+full-suite runs.
+
+`e2e/facilityCostDashboard.spec.ts` now has `scrollToTop()`
+(`window.scrollTo(0, 0)` + `expect.poll` on `window.scrollY` → `0`) and
+`expectActionOnFirstScreen()`, which asserts, at each of the four viewports:
+`scrollY === 0`, button top ≥ 0, button bottom ≤ viewport height, button height
+≥ 44px (the target size is a floor, not something to shrink to fit), the button is
+the element returned by `elementFromPoint` at its own centre (so nothing overlaps
+it), 계산 준비 상태 and the status line are both `toBeInViewport()`, and there is no
+page-level horizontal overflow. It runs once on the as-loaded page and again after
+scrolling through all three setup steps and returning.
+
+Verified to fail on the pre-repair layout — 838 against 768 at 1024×768, and the
+status line out of viewport at 1280×800 — and `--repeat-each=10` passes 260/260.

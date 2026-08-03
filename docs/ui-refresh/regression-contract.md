@@ -15,7 +15,9 @@ for the **후보지 분석 dashboard** milestone (see `suitability-dashboard.md`
 one deliberate change (see `facility-cost-dashboard.md`); §18–§19 add what the
 **매립지 현황 dashboard** milestone contracted and confirm it changed no existing
 expectation (see `landfill-dashboard.md`); §20–§21 do the same for the
-**데이터·출처 dashboard** milestone (see `transparency-dashboard.md`).
+**데이터·출처 dashboard** milestone (see `transparency-dashboard.md`); §22–§24 record
+what the **final UI integration** milestone established across all six areas at once
+(see `final-integration-regression.md`).
 
 ## 1. Primary navigation labels (frozen strings)
 
@@ -663,3 +665,98 @@ Two decisions are worth keeping, because both look like styling choices and are 
    2×2 grid cost ~145px of the first viewport and pushed the catalog's first card to
    772px — below the fold. Four across puts it at 674px. Content added between the
    page header and the catalog controls must be measured against that ~94px margin.
+
+## 22. The six-view integration contract
+
+Added by the final UI integration milestone
+(`docs/ui-refresh/final-integration-regression.md`). The six refreshed areas are now
+verified **together**, and these facts are enforced across the whole application
+rather than per area:
+
+* **Six user-facing views, one table.** `e2e/finalUiIntegration.spec.ts` enumerates
+  지역 부담 · 후보지 점수 · 가중치 바꿔보기 · 비용 살펴보기 · 매립지 현황 · 데이터·출처
+  with, for each: the deep link, the mount marker, the exact `<h1>`, the exact
+  primary-navigation label, the `aria-pressed` nav button, the map count, and
+  whether the sub-view selector belongs there. A new view must join that table; it
+  may not be added by relaxing a row.
+* **The map counts are 1 / 1 / 1 / 0 / 0 / 0**, in that order, and are asserted at
+  1024×768, 1280×800, 1440×900, 1920×1080, 768×1024, and 390×844.
+* **Contracted singletons stay singletons.** `SINGLETON_TESTIDS` in that spec lists
+  the shell chrome, the one map, and each area's owned top-level surfaces; each must
+  appear **at most once** in the live document in every view and after every
+  navigation. This is what catches a retained map, a second cost form, a second
+  source catalog, a duplicated navigation, a doubled sub-view selector, and a stale
+  panel left mounted under a new view — as one failure naming the offending id.
+  It is deliberately **not** "no `data-testid` repeats": `score-class-row`,
+  `land-cover-legend-row`, `facility-cost-facility-type-card`, region chips, and
+  catalog items legitimately repeat, and a blanket rule would report list rendering
+  as a defect.
+* **No view leaves its owned components behind.** `VIEW_OWNED_TESTIDS` maps each
+  view to the surfaces it owns; every other view asserts their absence (count 0,
+  not merely hidden).
+* **No live region is duplicated or nested.** In every view, no `data-testid` on a
+  `role="status"` / `role="alert"` / `aria-live` node appears twice, and no live
+  region has another live region as an ancestor.
+* **A served no-data answer is still missing after integration.** The 수도권매립지
+  404 `NO_DATA_AVAILABLE` path renders its empty state with no `role="alert"`, no
+  KPI row, and none of `0 t` / `0톤` / `0원` / `0 원` / `0.0` anywhere in
+  `#main-content`.
+* **Text scans join element boundaries with a space.** Korean labels concatenate
+  across elements into words that were never rendered (수집 시점 + 수집 기록 없음 →
+  a phantom `점수`). Any forbidden-token scan must collect per-element text nodes
+  and join them with a separator, never read a subtree's `textContent`. Weakening
+  the scan to hide a *real* leak is a different thing and is not permitted.
+* **Browser back/forward restore the deep-linked view.** In-app mode changes mirror
+  with `history.replaceState` and by design add no history entries (§3); two real
+  document navigations do, and back/forward across them restore the full view
+  contract on both sides.
+
+## 23. The one deliberate change in the final integration milestone
+
+**The 비용 살펴보기 scope notice moved into the setup workflow column.**
+
+* Before: `FacilityCostNotice` rendered full-width **above** the two-column grid, so
+  the `lg:sticky` action rail's static position started at y = 464 at 1024×768 and
+  its 415px card ended at 879 — 비용 계산하기 clipped at 838 of 768.
+  `position: sticky` never rescues that: it cannot pull an element above its static
+  position, so the rail did nothing until the citizen had already scrolled.
+* After: the notice is the first block of the grid's workflow column. The rail
+  starts at the top of the workspace and the action measures 544–588 at all four
+  desktop targets.
+* Preserved: the notice's content, wording, test ids
+  (`facility-cost-notice`, `facility-cost-completeness`,
+  `suitability-screening-disclaimer`, `facility-cost-disclaimer`), its position in
+  document order as the first block under the `<h1>`, the setup sequence
+  처리할 지역 → 처리 조건 → 계산 가정 → 현재 설정·계산 준비 상태 → 비용 계산하기, and
+  every validation rule, default, payload, and request.
+
+**The first-screen assertion is now deterministic and stronger.** `page.mouse.wheel`
+is gone from it. `scrollToTop()` polls `window.scrollY` to `0` before anything is
+measured, and `expectActionOnFirstScreen()` additionally asserts the 44px target
+size, non-overlap via `elementFromPoint`, and that both 계산 준비 상태 and the
+`role="status"` line are in the viewport. Content added to the rail above the button
+— or to the workflow column above the grid — must be checked against it. The fix, if
+it ever fires again, is to move content, not to relax the assertion.
+
+**`DerivedPanel` lost its amber container.** It carried
+`border-amber-300 bg-amber-50`, and `.mobile-collapsible` force-opens
+출처와 계산 방법 at md+, so a strong yellow card sat permanently among the refreshed
+white surfaces on every desktop 지역 부담 screen. Amber is this system's caveat tone
+(§6, §16, §18), and 파생 지표 is neutral provenance that the same screen already
+states neutrally via `DataStatusBadge status="derived"`. The container moved to
+`bg-surface-muted` + `border-hairline` + `text-ink-muted`; the metric's own `caveat`
+keeps the warn role, now as `text-warn`. No wording, formula, source, value,
+structure, or test id changed.
+
+`SourcePanel` was deliberately **left unchanged**: its `slate-50` / `slate-200`
+resolve to `#f8fafc` / `#e2e8f0`, i.e. the same value as `--color-surface-muted` and
+within 1/255 of `--color-hairline`, so it has no visible conflict to repair.
+
+## 24. What the final integration milestone did NOT change
+
+No analytical calculation, cost formula, scoring rule, landfill calculation, source
+registry record, API endpoint, payload, migration, or dataset. No backend, database,
+ingestion, Docker, or Caddy file is touched. No existing test expectation was
+weakened: the two changed assertions in `e2e/facilityCostDashboard.spec.ts` are both
+**strictly stronger** than what they replaced, and every other pre-existing unit and
+e2e assertion passes unmodified.
