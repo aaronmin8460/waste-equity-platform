@@ -1182,3 +1182,290 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
     expect(partial.textContent).toContain("연간 합계가 아닙니다");
   });
 });
+
+/**
+ * Civic-dashboard refresh contracts (docs/ui-refresh/landfill-dashboard.md).
+ *
+ * PRESENTATION and INFORMATION ARCHITECTURE only. Every assertion above still runs
+ * unmodified: no served value, unit, period rule, denominator, filter option, URL
+ * key, or request is asserted differently here, because this milestone changed
+ * none of them.
+ */
+describe("LandfillDashboard — civic dashboard refresh", () => {
+  it("titles the workflow with one section per question, under one h1", () => {
+    const { container } = renderDashboard();
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(container.querySelector("h1")?.textContent).toBe("수도권매립지 반입 현황");
+    // Six titled regions, in the order a reader needs them: what am I asking →
+    // what is the answer → how did it move → what is it made of → the exact
+    // figures → where it came from and what it does not mean.
+    for (const title of [
+      "조건 선택",
+      "핵심 지표",
+      "월별 추이",
+      "반입 구성",
+      "지역별 정확한 값",
+      "근거와 한계",
+    ]) {
+      expect(
+        screen.getAllByRole("heading", { name: title, level: 2 }),
+        `missing section heading ${title}`,
+      ).toHaveLength(1);
+    }
+    // The description under the h1 still states the scope without claiming a
+    // real-time figure or a resident bill.
+    expect(screen.getByText(/수도권매립지로 반입된 공식 반입량과 반입수수료/)).toBeDefined();
+  });
+
+  it("keeps the standing scope notice visible in every state, never as an alert", () => {
+    for (const props of [
+      {},
+      { data: null, unavailable: null },
+      { data: null, unavailable: noDataState() },
+      { data: null, unavailable: genuineError() },
+    ]) {
+      cleanup();
+      renderDashboard(props);
+      const banner = screen.getByTestId("landfill-limitation");
+      expect(banner.className).toContain("wep-banner-info");
+      expect(banner.getAttribute("role")).toBeNull();
+      // The metropolitan-only sentence is never behind a disclosure.
+      expect(banner.closest("details")).toBeNull();
+      expect(banner.textContent).toContain(
+        "광역지자체 단위 자료이며 시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다.",
+      );
+    }
+  });
+
+  it("restates the four selected conditions without duplicating a control", () => {
+    renderDashboard({ year: 2023, month: 7, origin: "41", waste: "생활" });
+    const selection = screen.getByTestId("landfill-selection");
+    const text = selection.textContent ?? "";
+    expect(text).toContain("2023");
+    expect(text).toContain("7월");
+    expect(text).toContain("경기도");
+    expect(text).toContain("생활");
+    // The summary reports state; it never becomes a second set of controls.
+    expect(selection.querySelectorAll("select, input, button")).toHaveLength(0);
+  });
+
+  it("spells the selected year without 년 so it cannot stand in for the served period", () => {
+    // `기준 기간 …년` is the SERVED period, and several specs wait for it to prove
+    // that new values have arrived. Echoing it from filter state would satisfy that
+    // wait while the previous period's numbers were still on screen.
+    renderDashboard({ year: 2026, data: null, unavailable: null });
+    expect(screen.getByTestId("landfill-selection").textContent).not.toContain("2026년");
+    expect(screen.getByTestId("landfill-selection").textContent).toContain("2026");
+  });
+
+  it("names the default selection rather than inventing one", () => {
+    renderDashboard({ year: null, month: null, origin: null, waste: null });
+    const text = screen.getByTestId("landfill-selection").textContent ?? "";
+    expect(text).toContain("최신 완결연도");
+    expect(text).toContain("연간");
+    // 전체 appears for both the origin and the waste filter.
+    expect(text.match(/전체/g)).toHaveLength(2);
+  });
+
+  it("states the outcome for the current selection, with no fabricated count", () => {
+    renderDashboard();
+    const status = screen.getByTestId("landfill-selection-status");
+    expect(screen.getByTestId("landfill-selection-badge").getAttribute("data-status")).toBe(
+      "reported",
+    );
+    expect(status.textContent).toContain("기준 기간 2024년 연간");
+    // A result count is never fabricated: the summary reports provenance, not size.
+    expect(status.textContent).not.toMatch(/\d+\s*건/);
+  });
+
+  it("says a request is in flight rather than showing a zero", () => {
+    renderDashboard({ data: null, unavailable: null });
+    const status = screen.getByTestId("landfill-selection-status");
+    expect(status.textContent).toContain("불러오는 중");
+    // Nothing numeric, and no provenance claim about data that has not arrived.
+    expect(status.textContent).not.toMatch(/\d/);
+    expect(screen.queryByTestId("landfill-selection-badge")).toBeNull();
+    expect(screen.queryByTestId("landfill-kpis")).toBeNull();
+  });
+
+  it("marks a no-data answer with the neutral missing badge, never amber", () => {
+    renderDashboard({ data: null, unavailable: noDataState() });
+    const badge = screen.getByTestId("landfill-selection-badge");
+    // Neutral gray is the no-data role; amber cautions about a value that exists
+    // (docs/ui-refresh/design-tokens.md §"Missing data").
+    expect(badge.getAttribute("data-status")).toBe("missing");
+    expect(badge.className).toContain("wep-badge-missing");
+    expect(badge.className).not.toContain("wep-badge-caveat");
+    // The state is carried by text as well as colour, and says it is not a zero.
+    expect(badge.textContent).toBe("자료 없음");
+    expect(screen.getByTestId("landfill-selection-status").textContent).toContain(
+      "값이 0이라는 뜻이 아닙니다",
+    );
+  });
+
+  it("claims nothing about the data when only the request failed", () => {
+    renderDashboard({ data: null, unavailable: genuineError() });
+    // A failed request says nothing about whether records exist, so no data-status
+    // badge is asserted at all — the actionable statement is the alert.
+    expect(screen.queryByTestId("landfill-selection-badge")).toBeNull();
+    expect(screen.getByTestId("landfill-selection-status").textContent).toContain(
+      "자료를 불러오지 못해",
+    );
+    expect(screen.getByTestId("landfill-error").getAttribute("role")).toBe("alert");
+  });
+
+  it("makes 총 반입량 the one dominant result on the screen", () => {
+    renderDashboard();
+    const heroValue = screen.getByTestId("landfill-kpi-quantity").querySelector("dd");
+    expect(heroValue?.className).toContain("text-3xl");
+    expect(heroValue?.textContent).toBe("1,071,548 t");
+    // …and it is the ONLY hero: the other three stay at the secondary size.
+    for (const testId of [
+      "landfill-kpi-fee",
+      "landfill-kpi-effective-fee",
+      "landfill-kpi-per-capita",
+    ]) {
+      expect(
+        screen.getByTestId(testId).querySelector("dd")?.className,
+        `${testId} must not also be a hero`,
+      ).not.toContain("text-3xl");
+    }
+    // The grid still holds four cards and no more.
+    expect(screen.getByTestId("landfill-kpis").children).toHaveLength(4);
+  });
+
+  it("states provenance per card, because this row mixes reported with derived", () => {
+    renderDashboard();
+    const statusOf = (testId: string) =>
+      screen.getByTestId(testId).querySelector("dt [data-status]")?.getAttribute("data-status");
+    expect(statusOf("landfill-kpi-quantity")).toBe("reported");
+    expect(statusOf("landfill-kpi-fee")).toBe("reported");
+    // 톤당 실효 수수료 and the per-capita conversion are this platform's arithmetic,
+    // never an officially published figure.
+    expect(statusOf("landfill-kpi-effective-fee")).toBe("derived");
+    expect(statusOf("landfill-kpi-per-capita")).toBe("derived");
+    // The badge label is text, so provenance survives a grayscale render.
+    expect(
+      screen.getByTestId("landfill-kpi-effective-fee").querySelector("dt [data-status]")
+        ?.textContent,
+    ).toBe("계산값");
+  });
+
+  it("switches the per-capita card to the missing badge when no value was served", () => {
+    renderDashboard({
+      data: data({
+        fee_per_capita: perCapita({
+          fee_per_capita_krw: null,
+          population: null,
+          unavailable_reason: "NO_METROPOLITAN_POPULATION",
+        }),
+      }),
+    });
+    const card = screen.getByTestId("landfill-kpi-per-capita");
+    const badge = card.querySelector("dt [data-status]");
+    expect(badge?.getAttribute("data-status")).toBe("missing");
+    expect(badge?.textContent).toBe("자료 없음");
+    // The value slot still carries the served reason, never a zero.
+    expect(screen.getByTestId("landfill-per-capita-unavailable").textContent).toBe(
+      "해당 광역지자체 인구 데이터 없음",
+    );
+    expect(card.textContent).not.toContain("0원");
+  });
+
+  it("renders an official measured zero as a zero, and a missing value as neither", () => {
+    // The two must stay distinguishable on the same screen: a reported 0 is a fact,
+    // an absent denominator is not a zero fee.
+    renderDashboard({
+      data: data({
+        total_quantity_kg: "0",
+        total_quantity_tons: "0.000000",
+        origin_shares: [
+          originShare("KR-SGIS-11", "11", "서울시", {
+            quantity_kg: "0",
+            quantity_tons: "0.000000",
+            fee_per_capita: perCapita({
+              fee_per_capita_krw: null,
+              population: null,
+              unavailable_reason: "NO_MATCHING_POPULATION_PERIOD",
+            }),
+          }),
+        ],
+      }),
+    });
+    // Official zero: shown as 0, and the row is NOT dropped from the table.
+    expect(screen.getByTestId("landfill-kpi-quantity").querySelector("dd")?.textContent).toBe(
+      "0 t",
+    );
+    const row = screen.getAllByTestId("landfill-region-row")[0];
+    expect(row.textContent).toContain("0 t");
+    // Missing: its served reason, in neutral gray — never amber, never 0원.
+    const unavailable = within(row).getByTestId("landfill-row-unavailable");
+    expect(unavailable.textContent).toBe("동일 기간 인구 데이터 없음");
+    expect(unavailable.className).not.toContain("text-warn");
+    expect(row.textContent).not.toContain("0원/인");
+  });
+
+  it("keeps the exact-value table bounded to its own horizontal scroll", () => {
+    renderDashboard();
+    const section = screen.getByTestId("landfill-region-table");
+    const table = section.querySelector("table")!;
+    expect(table.parentElement?.className).toContain("overflow-x-auto");
+    // Exactly one scroll container in the section, and it is the table's.
+    expect(section.querySelectorAll(".overflow-x-auto")).toHaveLength(1);
+    // The section states the zero-versus-missing rule where the values are read.
+    expect(section.textContent).toContain("0이 아니라 자료 없음");
+  });
+
+  it("groups the two trend charts under one heading that scopes them", () => {
+    renderDashboard();
+    const trends = screen.getByTestId("landfill-trends");
+    // Both charts live in the section, and the heading states the scope they share.
+    expect(within(trends).getByTestId("landfill-trend-quantity")).toBeDefined();
+    expect(within(trends).getByTestId("landfill-trend-fee")).toBeDefined();
+    expect(trends.textContent).toContain("월 필터와 무관");
+  });
+
+  it("names the two breakdowns descriptively and never as a ranking", () => {
+    renderDashboard();
+    const composition = screen.getByTestId("landfill-composition");
+    expect(within(composition).getByTestId("landfill-origin-comparison")).toBeDefined();
+    expect(within(composition).getByTestId("landfill-waste-composition")).toBeDefined();
+    const text = composition.textContent ?? "";
+    expect(text).toContain("출발 지역별 반입량");
+    expect(text).toContain("폐기물 종류별 반입량");
+    // A larger quantity is a quantity, not blame, fault, or a verdict.
+    for (const forbidden of ["최다", "최악", "1위", "책임", "위험", "과도"]) {
+      expect(text, `composition implies a verdict via "${forbidden}"`).not.toContain(forbidden);
+    }
+  });
+
+  it("mounts no map, no sidebar, and no sub-view control in this area", () => {
+    const { container } = renderDashboard();
+    expect(container.querySelector("[data-testid='map-container']")).toBeNull();
+    expect(container.querySelector(".maplibregl-canvas")).toBeNull();
+    expect(container.querySelector("[data-testid='suitability-subviews']")).toBeNull();
+    expect(container.querySelector("aside")).toBeNull();
+    expect(container.querySelector("nav")).toBeNull();
+    expect(container.querySelector("main")).toBeNull();
+    // The equity metric fieldsets are equity's; this view introduces none.
+    expect(container.querySelector("fieldset")).toBeNull();
+  });
+
+  it("leaks no forbidden technical token from any refreshed section", () => {
+    renderDashboard({
+      data: data({
+        fee_per_capita: perCapita({
+          fee_per_capita_krw: null,
+          population: null,
+          unavailable_reason: "NO_MATCHING_POPULATION_PERIOD",
+        }),
+      }),
+    });
+    const clone = screen.getByTestId("landfill-dashboard").cloneNode(true) as HTMLElement;
+    for (const node of Array.from(clone.querySelectorAll("[data-diagnostic]"))) node.remove();
+    const primary = clone.textContent ?? "";
+    for (const token of FORBIDDEN_PRIMARY_TOKENS) {
+      expect(primary.includes(token), `refreshed surface leaks "${token}"`).toBe(false);
+    }
+  });
+});

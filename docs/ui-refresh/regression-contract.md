@@ -12,7 +12,9 @@ the two decisions the **civic-dashboard foundation** milestone took deliberately
 changed no existing expectation (see `equity-dashboard.md`); §14–§15 do the same
 for the **후보지 분석 dashboard** milestone (see `suitability-dashboard.md`);
 §16–§17 add what the **비용 살펴보기 dashboard** milestone contracted and record its
-one deliberate change (see `facility-cost-dashboard.md`).
+one deliberate change (see `facility-cost-dashboard.md`); §18–§19 add what the
+**매립지 현황 dashboard** milestone contracted and confirm it changed no existing
+expectation (see `landfill-dashboard.md`).
 
 ## 1. Primary navigation labels (frozen strings)
 
@@ -450,3 +452,112 @@ Enforced by: `components/FacilityCostDashboard.test.tsx`,
 This is the milestone's only changed expectation. Like §10 it records an
 information-architecture decision rather than masking a regression: the assertions
 that protected the *behaviour* are unchanged and still enforced.
+
+## 18. The 매립지 현황 workflow and its official-data contract
+
+Added by the landfill milestone (`docs/ui-refresh/landfill-dashboard.md`). The
+landfill view is now eight presentational components plus `shared.ts` under
+`frontend/src/components/landfill/`, and these facts travel with them:
+
+* **`app/page.tsx` remains the ONE owner of the landfill workflow state.**
+  `flowYear`, `flowMonth`, `flowOrigin`, `flowWaste`, the `flowKey`-tagged
+  `flowResult`, `flowYears`, `flowWasteOptions`, `flowMaxMonth`, the three parallel
+  requests, and the URL mirroring all still live there. `LandfillDashboard.tsx`
+  holds no state and never did; every component in `landfill/` is presentational,
+  and the one derivation the dashboard performs (`outcome`) is a four-way union
+  read off props it already received. There is no second filter representation, no
+  second request state, and no landfill calculation inside a visual component.
+* **The `<h1>` stays `수도권매립지 반입 현황`.** It is `PageHeader`'s heading now, but
+  the string is frozen: `e2e/civicShell.spec.ts` compares it exactly, and the nav
+  label 매립지 현황 (§1) is a different, also-frozen string. The area title and the
+  view title are deliberately not the same words here — the view names the specific
+  dataset, which is the geographic-scope statement.
+* **The standing scope notice is exactly ONE `InfoBanner tone="info"`, always
+  visible, never an alert, never inside a disclosure.** `landfill-limitation`
+  carries the metropolitan-only sentence verbatim in every state — populated,
+  loading, no-data, and failure. On a populated screen it is still the only
+  `.wep-banner` on the page: a permanent caveat repeated in a second coloured panel
+  stops being read.
+* **Four filters, four native `<select>`s, unchanged.**
+  `landfill-{year,month,origin,waste}-select` keep their options, their order, their
+  defaults, their setters, and the rule that changing 연도 clears 기간. The reader's
+  own selection is always folded into the option list, because a native `<select>`
+  whose `value` matches no `<option>` renders blank and would erase the control's
+  own state. The option lists stay page-owned so the filters remain operable through
+  a failed or empty response. 기간 must not become a `SegmentedControl`: it is 13
+  options, not 2–4, and splitting it would create a second representation of one
+  filter.
+* **`landfill-selection` reports state and is never a control.** The 현재 선택
+  summary restates the four asked-for conditions plus one outcome sentence. It
+  contains zero `select` / `input` / `button` elements (asserted in both suites),
+  fabricates no result count, and shows no number before a response arrives. The
+  year is spelled `2026`, **not** `2026년`: `기준 기간 …년` is the SERVED period and
+  several specs wait for it as proof that new values arrived, so echoing it from
+  filter state would satisfy that wait while stale numbers were still on screen.
+* **`landfill-partial-year` stays in the headline section, above the KPIs.** 현재 선택
+  states what was asked; the partial-year marker qualifies what was served and must
+  sit beside the numbers it qualifies. It keeps `text-warn` — it cautions about
+  values that exist — and it must never be softened into an annual total.
+* **Provenance is per KPI card, in text.** 총 반입량 and 공식 반입수수료 carry
+  `DataStatusBadge status="reported"`; 톤당 실효 수수료 and the per-capita conversion
+  carry `derived`, and the per-capita card switches to `missing` when no value was
+  served. A section-level badge cannot replace them: this row genuinely mixes the
+  two kinds. 총 반입량 is the single `KpiCard size="hero"`, and `landfill-kpis` still
+  holds exactly four cards.
+* **Four data states stay distinct, and none is amber-by-default.** An official
+  measured `0` renders as `0 t` and its row is never dropped; a value that was not
+  served shows its plain-Korean reason in neutral no-data gray (the per-capita table
+  cell moved off `text-warn`); the backend's 404 answer is an `EmptyState` with no
+  `role`, no zeros, and the served `available_years`; a request failure is
+  `InfoBanner tone="error"` + `role="alert"`. On a failure, 현재 선택 shows **no**
+  data-status badge — a failed request says nothing about whether records exist.
+* **`role="alert"` on this view is reserved for the one genuine failure**
+  (`landfill-error`). `landfill-loading` and `landfill-no-data-live` stay
+  `role="status"`; `landfill-live` (period + total quantity) stays outside every
+  `<details>`; the scope banner, the selection summary, the partial-year marker, and
+  every section header carry no live-region role.
+* **The exact-value table owns the only horizontal scroll on the page.** Its
+  `overflow-x-auto` container is the direct parent of the `<table>`, and the new spec
+  enumerates every overflowing element to assert nothing else scrolls sideways. The
+  table keeps its `<caption>`, four `scope="col"` headers, and `scope="row"` region
+  cells.
+* **Trend gaps stay gaps.** A month with no served value draws no bar and gets no
+  row in the accessible table — never a zero bar, never an interpolation, never a
+  carried-forward value. The chart's bar count and its exact table's row count are
+  asserted equal.
+* **Breakdown headings stay descriptive, never evaluative.** 출발 지역별 반입량 and
+  폐기물 종류별 반입량; 최다 / 최악 / 1위 / 책임 / 위험 / 과도 are asserted absent. A
+  larger quantity is a quantity, not blame.
+* **`lib/displayNumber.ts` is not used here.** The landfill view has always formatted
+  through `lib/landfill.ts`, and routing its figures through a second formatter would
+  change displayed values.
+
+Enforced by: `components/LandfillDashboard.test.tsx`,
+`e2e/landfillDashboard.spec.ts`, `e2e/phase5LandfillDashboard.spec.ts`,
+`e2e/phase7FinalRegression.spec.ts`, `e2e/responsive.spec.ts`,
+`e2e/integration.spec.ts`, `e2e/civicShell.spec.ts`, `app/shell.test.tsx`,
+`app/page.phase7.test.tsx`, `app/page.test.tsx`, `app/accessibility.test.tsx`.
+
+## 19. The 매립지 현황 milestone changed no test expectation
+
+Like §13 and §15, and unlike §10 and §17, this milestone has no deliberate contract
+change to record: **every pre-existing unit and e2e assertion passes unmodified**,
+including all 57 in `LandfillDashboard.test.tsx` and all 37 in
+`e2e/phase5LandfillDashboard.spec.ts`. No shared primitive was changed either — the
+landfill view uses only props `SectionCard`, `KpiCard`, `InfoBanner`, `EmptyState`,
+`Accordion`, `Skeleton`, and `DataStatusBadge` already had.
+
+Two decisions are worth keeping, because both look like styling choices and are not:
+
+1. **현재 선택 is a footer row of the 조건 선택 card, not a card of its own.**
+   `e2e/phase5LandfillDashboard.spec.ts` measures that `landfill-limitation`,
+   `landfill-filters`, and `landfill-kpi-quantity` are all fully inside the first
+   viewport at 1280×800 before any scrolling. After the refresh the KPI row's bottom
+   edge sits at 722.5px of 800; a separate summary card would have spent most of that
+   margin for no informational gain. Content added between the banner and the KPI row
+   must be checked against that assertion.
+2. **`DataStatusBadge` is not used inside the exact-value table's per-capita cell.**
+   `.wep-badge` is `white-space: nowrap`, and the longest served reason
+   (`일부 지역의 동일 기간 인구가 없어 합계를 계산할 수 없습니다`) would widen the column
+   far past the table. The cell keeps the served reason as neutral-gray text, which
+   states the same thing in the same place without the width hazard.
