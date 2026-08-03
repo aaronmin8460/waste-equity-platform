@@ -12,6 +12,7 @@
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DATA_STATUS_META } from "../../lib/glossary";
@@ -84,6 +85,42 @@ describe("SectionCard", () => {
     expect(screen.getByTestId("card").textContent).toContain("2024년");
     // …but the region is still named by the title alone.
     expect(screen.getByRole("region", { name: "반입량" })).toBeDefined();
+  });
+
+  it("accepts a fixed heading id and keeps it as the accessible name source", () => {
+    // Added for the facility-cost setup step the results view returns focus to
+    // (docs/ui-refresh/facility-cost-dashboard.md).
+    render(
+      <SectionCard title="1. 처리할 지역" headingId="fc-step-regions" testId="card">
+        <p>본문</p>
+      </SectionCard>,
+    );
+    const card = screen.getByTestId("card");
+    expect(card.getAttribute("aria-labelledby")).toBe("fc-step-regions");
+    expect(document.getElementById("fc-step-regions")?.textContent).toBe("1. 처리할 지역");
+    // No ref was handed in, so the heading is not made focusable.
+    expect(document.getElementById("fc-step-regions")?.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("makes a ref'd heading a programmatic focus target, never a Tab stop", () => {
+    function Host() {
+      const ref = useRef<HTMLHeadingElement | null>(null);
+      return (
+        <>
+          <button type="button" onClick={() => ref.current?.focus()}>
+            이동
+          </button>
+          <SectionCard title="제목" headingRef={ref} testId="card">
+            <p>본문</p>
+          </SectionCard>
+        </>
+      );
+    }
+    render(<Host />);
+    const heading = screen.getByRole("heading", { name: "제목" });
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    fireEvent.click(screen.getByRole("button", { name: "이동" }));
+    expect(document.activeElement).toBe(heading);
   });
 
   it("is a bordered surface with no shadow utility", () => {
