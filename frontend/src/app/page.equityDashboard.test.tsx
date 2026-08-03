@@ -378,9 +378,29 @@ describe("map workspace", () => {
     expect((wrapper?.getAttribute("class") ?? "").split(/\s+/)).toContain("map-pane");
   });
 
+  it("mounts the insight as ONE disclosure, collapsed, so the map starts unobstructed", async () => {
+    const { container } = await renderLoaded();
+    const strip = screen.getByTestId("equity-insight-strip") as HTMLDetailsElement;
+    expect(strip.tagName).toBe("DETAILS");
+    expect(strip.open).toBe(false);
+    // The compact bar prints exactly the frozen label, and there is no second
+    // disclosure or leftover always-expanded copy of the panel over the map.
+    expect(screen.getByTestId("equity-insight-summary").textContent).toContain(
+      "해석 · 주의 · 출처 보기",
+    );
+    expect(container.querySelectorAll("details.map-insight")).toHaveLength(1);
+    // …and the legend keeps its own, separate disclosure class (it force-opens at
+    // md+; this one must never share that behaviour).
+    expect(container.querySelectorAll("details.map-legend.map-insight")).toHaveLength(0);
+  });
+
   it("carries a neutral interpretation, a standing caution, and the served provenance", async () => {
     await renderLoaded();
     const strip = screen.getByTestId("equity-insight-strip");
+    // Opened the way a reader opens it — the content below is what the disclosure
+    // reveals, unchanged from when the card was permanently expanded.
+    fireEvent.click(screen.getByTestId("equity-insight-summary"));
+    expect((strip as HTMLDetailsElement).open).toBe(true);
     expect(strip.textContent).toContain("해석");
     expect(strip.textContent).toContain("주의");
     expect(strip.textContent).toContain("자료 기준·출처");
@@ -395,6 +415,7 @@ describe("map workspace", () => {
 
   it("routes to the existing 데이터·출처 area from the source block", async () => {
     await renderLoaded();
+    fireEvent.click(screen.getByTestId("equity-insight-summary"));
     fireEvent.click(screen.getByTestId("insight-open-sources"));
     await waitFor(() =>
       expect(screen.getByTestId("mode-transparency").getAttribute("aria-pressed")).toBe("true"),

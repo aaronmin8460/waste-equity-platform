@@ -703,9 +703,27 @@ describe("후보지 점수 — map workspace", () => {
     expect(legend.parentElement!.parentElement).toBe(strip.parentElement!.parentElement);
   });
 
+  it("mounts the insight as ONE disclosure, collapsed, so the map starts unobstructed", async () => {
+    const { container } = await enterScore();
+    const strip = screen.getByTestId("suitability-insight-strip") as HTMLDetailsElement;
+    expect(strip.tagName).toBe("DETAILS");
+    expect(strip.open).toBe(false);
+    expect(screen.getByTestId("suitability-insight-summary").textContent).toContain(
+      "해석 · 주의 · 출처 보기",
+    );
+    // Exactly one bar over the map — the 기술 정보 disclosure is nested inside it,
+    // and the legend keeps its own, separate (force-open-at-md+) class.
+    expect(container.querySelectorAll("details.map-insight")).toHaveLength(1);
+    expect(container.querySelectorAll("details.map-legend.map-insight")).toHaveLength(0);
+  });
+
   it("states a neutral interpretation, a standing caution, and the current basis", async () => {
     await enterScore();
     const strip = screen.getByTestId("suitability-insight-strip");
+    // Opened the way a reader opens it — the content below is what the disclosure
+    // reveals, unchanged from when the card was permanently expanded.
+    fireEvent.click(screen.getByTestId("suitability-insight-summary"));
+    expect((strip as HTMLDetailsElement).open).toBe(true);
     expect(screen.getByTestId("suitability-insight-interpretation").textContent).toContain(
       "상대적 스크리닝 점수",
     );
@@ -729,6 +747,7 @@ describe("후보지 점수 — map workspace", () => {
 
   it("routes to the existing 데이터·출처 area, which mounts no map", async () => {
     await enterScore();
+    fireEvent.click(screen.getByTestId("suitability-insight-summary"));
     fireEvent.click(screen.getByTestId("suitability-insight-open-sources"));
     await waitFor(() =>
       expect(screen.getByTestId("mode-transparency").getAttribute("aria-pressed")).toBe("true"),
@@ -865,7 +884,10 @@ describe("가중치 바꿔보기 — applying a scenario", () => {
     expect(window.location.search).toContain("view=scenario");
     expect(window.location.search).toContain("v=1");
 
-    const strip = screen.getByTestId("suitability-insight-strip");
+    const strip = screen.getByTestId("suitability-insight-strip") as HTMLDetailsElement;
+    // The scenario view's disclosure also starts collapsed; its content is the same.
+    expect(strip.open).toBe(false);
+    fireEvent.click(screen.getByTestId("suitability-insight-summary"));
     expect(strip.textContent).toContain("사용자가 조정한 가중치");
     expect(screen.getByTestId("suitability-insight-caution").textContent).toContain(
       "공식 분석 실행이 아닙니다",
