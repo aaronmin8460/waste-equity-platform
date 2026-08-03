@@ -10,7 +10,9 @@ The file spans the whole refresh. §1–§9 are the shared contracts; §10–§1
 the two decisions the **civic-dashboard foundation** milestone took deliberately;
 §12–§13 add what the **지역 부담 dashboard** milestone contracted and confirm it
 changed no existing expectation (see `equity-dashboard.md`); §14–§15 do the same
-for the **후보지 분석 dashboard** milestone (see `suitability-dashboard.md`).
+for the **후보지 분석 dashboard** milestone (see `suitability-dashboard.md`);
+§16–§17 add what the **비용 살펴보기 dashboard** milestone contracted and record its
+one deliberate change (see `facility-cost-dashboard.md`).
 
 ## 1. Primary navigation labels (frozen strings)
 
@@ -342,3 +344,109 @@ One behaviour changed, in `lib/suitability.ts` `weightPercent`: a **blank** weig
 string now renders `-` instead of `0%`. `Number("")` is `0`, so the lifted version
 would have printed a confident `0%` for a missing weight. No call site passes a
 blank today; the change is covered by `lib/suitability.test.ts`.
+
+## 16. The 비용 살펴보기 workflow and its calculation contract
+
+Added by the facility-cost milestone (`docs/ui-refresh/facility-cost-dashboard.md`).
+The cost view is now nine presentational components under
+`frontend/src/components/facilityCost/`, and these facts travel with them:
+
+* **`FacilityCostDashboard.tsx` remains the ONE owner of the cost workflow state.**
+  `options`, `optionsError`, `scenario`, `advancedDefaults`, `result`, `calcError`,
+  `calculating`, `view`, `outputSig`, the monotonic `requestSeq`, and the setup
+  focus refs all still live there, and every component in `facilityCost/` is
+  presentational. There is no second form representation, no second result, no
+  duplicated validation, and no re-implementation of a cost formula in a visual
+  component. `validateScenario` moved to `facilityCost/shared.ts` **verbatim** —
+  same bounds (0–100 %, 1–366 days, the API-served multiplier range), same
+  messages.
+* **The results view stays DERIVED.** It renders only while `resultCurrent` holds,
+  a superseded in-flight response is still discarded by `requestSeq`, 설정 바꾸기 is
+  still pure view state that issues no request and clears no input, and a failed
+  calculation still stays on setup with `role="alert"` and the settings intact.
+* **The number contract is untouched.** Primary surfaces show
+  `lib/displayNumber.ts` approximations; 정밀값과 계산 기준 shows the served decimal
+  strings through `formatQuantity` only. No exact value is reconstructed from an
+  approximation, and `Number()` still appears in exactly two places that were
+  already there — the decorative funding bar's widths and the labelled derived
+  display share in the region table.
+* **A missing result is not a zero, and it is now SAID.** Before a calculation the
+  view renders an explicit instruction (`facility-cost-no-result`) stating that no
+  result is not a zero and that no example figure is being shown. It is replaced by
+  the in-flight state and by the error state, never shown alongside them, and no
+  KPI, skeleton value, or sample amount stands in for a result.
+* **`completeness.is_partial` must be stated when served.** A partial response
+  renders `facility-cost-partial` — an `InfoBanner tone="warning"` naming the
+  included and excluded item counts and stating the excluded ones are not zero. It
+  carries **no** `role="alert"`. The screen must never read as complete when the
+  response marks itself partial.
+* **Four data states are visually distinct, and none is amber-by-default.**
+  분석 제외 → `DataStatusBadge status="excluded"`; a value that was not served →
+  `status="missing"` (the neutral no-data gray, always with its text label);
+  a served unavailability reason → the plain-Korean reason in the value's place,
+  never `0`; a request failure → `InfoBanner tone="error"` + `role="alert"`.
+  `text-warn` is reserved for caveats about values that exist.
+* **The eight non-claims stay eight.** `COMPLETENESS_NOTICES` is the concatenation
+  of `EXCLUDED_ITEM_NOTICES` (5) and `NON_CLAIM_NOTICES` (3), so the count in the
+  disclosure summary cannot drift from the items inside it. The strings and their
+  order are frozen.
+* **The subsidy rate's provenance travels with the rate.**
+  `SUBSIDY_RATE_FORM_NOTE` is unchanged as a string and stays beside the selector;
+  it is now composed from `SUBSIDY_RATE_SOURCE_NOTE + SUBSIDY_RATE_NON_CLAIM` so
+  the source half can be shown beside the assumption list without a second wording.
+* **`role="alert"` on this view is reserved for two genuine errors**: the
+  options-load failure (`facility-cost-options-error`) and the calculation failure
+  (`facility-cost-error`), plus the out-of-range numeric message
+  (`facility-cost-validation`) the user has just caused. The calculate status line,
+  the calculating announcement, the stale notice, and the KPI block stay
+  `role="status"`; the standing disclaimers, the partial banner, and the readiness
+  checklist carry no live-region role.
+* **The primary action's height budget is a contract, not a preference.**
+  `e2e/facilityCost.spec.ts` measures that 비용 계산하기 is fully inside the viewport
+  before any scrolling at 1280×800 and 1440×900, and the new spec adds 1024×768 and
+  1920×1080. Content added to the sticky rail ABOVE the button must be checked
+  against it; that is why the four analytical assumptions are listed in setup step
+  3 rather than in the rail.
+* **The cost view scrolls the document, and only the document.** The dashboard
+  subtree must contain zero nested vertical scroll containers; the region table's
+  own `overflow-x-auto` is the only bounded horizontal fallback, and the page never
+  scrolls horizontally.
+* **No action was invented.** The cost view has no export, report, or share action
+  to preserve (`ShareExportBar` / `ReportPreview` are mounted by the equity branch,
+  below the cost early-return in `page.tsx`), and no comparison calculation exists.
+  A test asserts the results view contains exactly one button — 설정 바꾸기.
+* **`SectionCard` gained `headingId` and `headingRef`.** Both optional, both
+  additive; a heading given a ref also gets `tabIndex={-1}` so it is a programmatic
+  focus target and never a Tab stop. It exists so setup step 1 can keep being
+  `#fc-step-regions`, the documented focus target 설정 바꾸기 returns to.
+
+Enforced by: `components/FacilityCostDashboard.test.tsx`,
+`components/ui/dashboardPrimitives.test.tsx`, `e2e/facilityCostDashboard.spec.ts`,
+`e2e/facilityCost.spec.ts`, `e2e/phase3CostResults.spec.ts`,
+`e2e/integration.spec.ts`, `app/shell.test.tsx`, `app/accessibility.test.tsx`,
+`app/page.suitabilityDashboard.test.tsx`.
+
+## 17. The one deliberate change in the 비용 살펴보기 milestone
+
+**비용 구성 (the funding composition) is no longer a collapsed disclosure.**
+
+* Before: `<Accordion label="국비·지방비 구성" testId="facility-cost-funding-section">`
+  wrapped the composition, so the only decomposition of the headline cost on the
+  screen had to be discovered and opened.
+* After: `facility-cost-funding` is visible content under a titled 비용 구성
+  section. `facility-cost-funding-section` no longer exists.
+* Preserved verbatim: the three exact served amounts and their test ids
+  (`fc-funding-subsidy`, `fc-funding-local`, `fc-funding-total`), their order, the
+  decorative `aria-hidden` bar, `fc-funding-scheme`, `fc-funding-rate-basis`, the
+  "보조금 승인을 의미하지 않으며" caption, the served note, and the rule that the
+  annualized cost is never summed into the total.
+* Three test files moved with it and **none was weakened**:
+  `components/FacilityCostDashboard.test.tsx` drops funding from "collapses every
+  detail section by default" and gains a test that the composition needs no
+  disclosure, keeping both behaviour assertions; `e2e/phase3CostResults.spec.ts`
+  drops it from `RESULT_SECTIONS` and asserts the same amounts in place;
+  `e2e/phase3Review.spec.ts` (opt-in capture) captures it in place.
+
+This is the milestone's only changed expectation. Like §10 it records an
+information-architecture decision rather than masking a regression: the assertions
+that protected the *behaviour* are unchanged and still enforced.
