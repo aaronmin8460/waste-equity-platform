@@ -1173,6 +1173,276 @@ describe("candidate integration", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Civic-dashboard refresh (docs/ui-refresh/facility-cost-dashboard.md).
+//
+// Everything below asserts the REFRESHED presentation. None of it relaxes an
+// existing calculation, formatting, or data-integrity assertion — the suites above
+// are unchanged apart from the one documented structural change (§4 of that doc).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("refresh — setup workflow", () => {
+  it("presents the setup as three numbered steps", async () => {
+    await renderPanel();
+    for (const heading of ["1. 처리할 지역", "2. 처리 조건", "3. 계산 가정"]) {
+      expect(screen.getByRole("heading", { name: heading }), heading).toBeDefined();
+    }
+    // Step 1 stays the programmatic focus target the results view returns to.
+    expect(screen.getByRole("heading", { name: "1. 처리할 지역" }).id).toBe("fc-step-regions");
+  });
+
+  it("groups the eight non-claims by kind without dropping or softening one", async () => {
+    await renderPanel();
+    const completeness = screen.getByTestId("facility-cost-completeness");
+    const text = completeness.textContent ?? "";
+    // The two headings the flat list was split into…
+    expect(text).toContain("이 계산에 포함되지 않은 비용");
+    expect(text).toContain("이 값이 아닌 것");
+    // …and every one of the eight original strings, verbatim.
+    for (const notice of [
+      "운영비 미포함",
+      "실제 운송비 미포함",
+      "토지·보상비 미포함",
+      "잔여 매립비용 미포함",
+      "후보지별 토목조건 미포함",
+      "실제 총사업비가 아님",
+      "실제 승인된 국고보조금이 아님",
+      "주민 개인의 실제 세금 청구액이 아님",
+    ]) {
+      expect(text, `non-claim missing: ${notice}`).toContain(notice);
+    }
+    expect(within(completeness).getAllByRole("listitem")).toHaveLength(8);
+    // The count in the summary still matches what the list holds.
+    expect(screen.getByTestId("facility-cost-completeness-summary").textContent).toContain("8가지");
+  });
+
+  it("lists the actual calculation assumptions, not only 기본값", async () => {
+    await renderPanel();
+    const current = screen.getByTestId("facility-cost-current-assumptions");
+    const text = current.textContent ?? "";
+    // The four assumptions that shape the number, readable without opening 고급 설정.
+    expect(text).toContain("300일");
+    expect(text).toContain("1.00");
+    expect(text).toContain("시·군 (30%)");
+    expect(text).toContain("capex-standard-v2022dec");
+    // They are stated OUTSIDE the collapsed accordion, not only inside it.
+    expect(current.closest("details")).toBeNull();
+    // Provenance travels with the subsidy rate wherever it is shown.
+    expect(current.parentElement?.textContent).toContain("국고보조금 업무처리지침");
+    // The pre-existing default/changed statement is unchanged in wording and id.
+    expect(screen.getByTestId("facility-cost-summary-advanced").textContent).toBe("기본값");
+    fireEvent.change(screen.getByTestId("facility-cost-operating-days"), {
+      target: { value: "320" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("facility-cost-current-assumptions").textContent).toContain("320일"),
+    );
+    expect(screen.getByTestId("facility-cost-summary-advanced").textContent).toBe(
+      "기본값에서 변경됨",
+    );
+  });
+
+  it("reports calculation readiness from existing state, never enabling a blocked action", async () => {
+    await renderPanel();
+    const readiness = () => screen.getByTestId("facility-cost-readiness").textContent ?? "";
+    const button = () => screen.getByTestId("facility-cost-calculate") as HTMLButtonElement;
+
+    expect(readiness()).toContain("한 곳 이상 선택하세요");
+    expect(readiness()).toContain("계산 가능한 지역 4곳");
+    expect(button().disabled).toBe(true);
+
+    selectRegion("KR-SGIS-11110");
+    await waitFor(() => expect(readiness()).toContain("1개 선택됨"));
+    expect(button().disabled).toBe(false);
+
+    // An out-of-range input is reported here too, in the same words as the field's
+    // own message — the readiness list adds no rule of its own.
+    fireEvent.change(screen.getByTestId("facility-cost-processing-share"), {
+      target: { value: "150" },
+    });
+    await waitFor(() => expect(button().disabled).toBe(true));
+    expect(readiness()).toContain("0–100");
+    expect(screen.getByTestId("facility-cost-validation").textContent).toContain("0–100");
+    // The checklist is a state of the form, not an error event.
+    expect(screen.getByTestId("facility-cost-readiness").getAttribute("role")).toBeNull();
+  });
+
+  it("shows an explicit pre-calculation state instead of a zero or a sample cost", async () => {
+    await renderPanel();
+    const empty = screen.getByTestId("facility-cost-no-result").textContent ?? "";
+    expect(empty).toContain("아직 계산한 결과가 없습니다");
+    expect(empty).toContain("비용 계산하기");
+    expect(empty).toContain("비용이 0이라는 뜻이 아니며");
+    // Nothing that looks like a result exists yet.
+    expect(screen.queryByTestId("facility-cost-results")).toBeNull();
+    expect(screen.queryByTestId("facility-cost-hero")).toBeNull();
+    expect(screen.queryByTestId("fc-standard-cost")).toBeNull();
+  });
+
+  it("replaces the pre-calculation state with the in-flight state, then with the error", async () => {
+    let resolve: (v: FacilityCostCalculate) => void = () => undefined;
+    h.calc.mockImplementationOnce(
+      () => new Promise<FacilityCostCalculate>((res) => (resolve = res)),
+    );
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-calculating")).toBeDefined());
+    // The instruction is gone while a real request is active — a skeleton and the
+    // instruction must not both claim the same slot.
+    expect(screen.queryByTestId("facility-cost-no-result")).toBeNull();
+    resolve(calcFixture());
+    await waitFor(() => expect(screen.getByTestId("facility-cost-results-view")).toBeDefined());
+
+    // A failed calculation shows the error, not the "nothing yet" instruction.
+    h.calc.mockRejectedValueOnce(new Error("boom"));
+    fireEvent.click(screen.getByTestId("facility-cost-edit-settings"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined());
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-error")).toBeDefined());
+    expect(screen.queryByTestId("facility-cost-no-result")).toBeNull();
+  });
+
+  it("says a held result will be replaced, only once one exists", async () => {
+    await renderPanel();
+    expect(screen.queryByTestId("facility-cost-replace-notice")).toBeNull();
+    await calculateToResults();
+    fireEvent.click(screen.getByTestId("facility-cost-edit-settings"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-setup-view")).toBeDefined());
+    expect(screen.getByTestId("facility-cost-replace-notice").textContent).toContain(
+      "이전 결과가 새 결과로 바뀝니다",
+    );
+    // …and it is a statement, not an alert.
+    expect(screen.getByTestId("facility-cost-replace-notice").getAttribute("role")).toBeNull();
+  });
+});
+
+describe("refresh — result hierarchy", () => {
+  it("groups the result into titled sections instead of one flat stack", async () => {
+    await renderPanel();
+    await calculateToResults();
+    for (const title of [
+      "핵심 결과",
+      "비용 구성",
+      "빠진 항목과 주의사항",
+      "분석에 사용한 공식 자료",
+      "계산 기준·출처·버전",
+    ]) {
+      expect(screen.getByRole("heading", { name: title }), title).toBeDefined();
+    }
+    // The one h1 is still the page title; the sections are h2s under the results h2.
+    const view = screen.getByTestId("facility-cost-results-view");
+    expect(view.querySelectorAll("h1")).toHaveLength(0);
+  });
+
+  it("labels the calculated figures as derived and the inputs as reported", async () => {
+    await renderPanel();
+    await calculateToResults();
+    const view = screen.getByTestId("facility-cost-results-view");
+    expect(view.querySelectorAll('[data-status="derived"]').length).toBeGreaterThan(0);
+    expect(view.querySelectorAll('[data-status="reported"]').length).toBeGreaterThan(0);
+    // The badge never enters the hero's accessible name — the label stays the
+    // served term and nothing else.
+    expect(screen.getByTestId("facility-cost-hero").querySelector("dt")?.textContent).toBe(
+      "주민 1인당 환산 지방비",
+    );
+  });
+
+  it("adds no action the workflow does not already have", async () => {
+    await renderPanel();
+    await calculateToResults();
+    // 설정 바꾸기 is the only real action on this screen; the cost view has no
+    // export, report, or share action to preserve and none was invented.
+    const buttons = screen.getByTestId("facility-cost-results-view").querySelectorAll("button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].getAttribute("data-testid")).toBe("facility-cost-edit-settings");
+  });
+});
+
+describe("refresh — partial, excluded, and missing states", () => {
+  it("states a partial result in plain Korean, as standing content", async () => {
+    await renderPanel();
+    await calculateToResults();
+    const partial = screen.getByTestId("facility-cost-partial");
+    const text = partial.textContent ?? "";
+    expect(text).toContain("일부 비용 항목이 포함되지 않았습니다");
+    // Counted from the served arrays: 1 included component, 5 excluded rows.
+    expect(text).toContain("포함된 비용 항목은 1개");
+    expect(text).toContain("포함되지 않은 항목은 5개");
+    expect(text).toContain("비용이 0이라는 뜻이 아닙니다");
+    // A standing caveat must not interrupt a screen reader on every render.
+    expect(partial.getAttribute("role")).toBeNull();
+  });
+
+  it("does not claim partial when the response does not", async () => {
+    h.calc.mockResolvedValue(
+      calcFixture({
+        completeness: {
+          is_partial: false,
+          included_components: ["STANDARD_CONSTRUCTION_COST"],
+          missing_components: [],
+        },
+      }),
+    );
+    await renderPanel();
+    await calculateToResults();
+    expect(screen.queryByTestId("facility-cost-partial")).toBeNull();
+    // …and it does not claim the result is COMPLETE either: the standing
+    // exclusions are still listed, because they are exclusions by rule.
+    expect(screen.getByTestId("facility-cost-exclusions-summary").textContent).toContain(
+      "포함되지 않은 비용 5개",
+    );
+  });
+
+  it("keeps the not-zero statement readable without expanding the disclosure", async () => {
+    await renderPanel();
+    await calculateToResults();
+    const disclosure = screen.getByTestId("facility-cost-exclusions");
+    const section = disclosure.closest("section") as HTMLElement;
+    // The count + the "this is not zero" sentence live OUTSIDE the collapsed
+    // disclosure, so the mandatory caveat is never hidden behind a click.
+    const outside = section.cloneNode(true) as HTMLElement;
+    outside.querySelector('[data-testid="facility-cost-exclusions"]')?.remove();
+    expect(outside.textContent).toContain("포함되지 않은 항목은 5개");
+    expect(outside.textContent).toContain("비용이 0이라는 뜻이 아닙니다");
+  });
+
+  it("marks an excluded term as excluded and a missing value as missing, never as a warning", async () => {
+    h.calc.mockResolvedValue(
+      calcFixture({
+        official_input: {
+          ...calcFixture().official_input,
+          regions: [
+            {
+              region_code: "KR-SGIS-11110",
+              region_name: "종로구",
+              generation_quantity_ton: "10500.000000",
+              population: null,
+            },
+          ],
+        },
+      }),
+    );
+    await renderPanel();
+    await calculateToResults();
+
+    openSection("facility-cost-exclusions");
+    const missing = screen.getByTestId("facility-cost-missing");
+    const rows = within(missing).getAllByTestId("facility-cost-missing-row");
+    // Every excluded term carries the excluded STATUS with its text label — an
+    // analytical exclusion is not a caution about a value that exists.
+    expect(missing.querySelectorAll('[data-status="excluded"]')).toHaveLength(rows.length);
+    expect(missing.textContent).toContain("미포함");
+
+    openSection("facility-cost-region-section");
+    const population = screen.getByTestId("fc-region-population-unavailable");
+    expect(population.getAttribute("data-status")).toBe("missing");
+    expect(population.textContent).toBe("공식 인구 미확정");
+    // Still never a fabricated zero, anywhere in the table.
+    expect(screen.getByTestId("facility-cost-region-table").textContent).not.toContain("0명");
+  });
+});
+
 describe("citizen deliberation removal", () => {
   it("no longer renders the client-only conditions/stance section at all", async () => {
     await renderPanel();
