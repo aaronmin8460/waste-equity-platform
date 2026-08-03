@@ -89,7 +89,22 @@ The four kinds of weight on this screen are now named apart, in this order:
 (the draft) → **적용된 시나리오 결과** → **비교 기준**. The wording 새 공식 기준 /
 확정 기준 / 정책 가중치 appears nowhere, and a unit test asserts their absence.
 
-### The map insight strip, and why it floats
+### The map insight, and why it floats — and is now collapsed by default
+
+**Follow-up (`feat/collapsible-map-insights`).** The strip described below was
+originally always expanded, in BOTH 후보지 점수 and 가중치 바꿔보기. It is now a native
+`<details>` disclosure that arrives **closed**, behind the same compact bar the equity
+map uses:
+
+```text
+[ 해석 · 주의 · 출처 보기 ▾ ]
+```
+
+Nothing was removed, reworded, reimplemented, or moved, in either variant. See §14 for
+the whole change; the paragraphs immediately below still describe why it floats at
+all, which did not change.
+
+### Why it floats
 
 Same forcing constraint as the equity strip: `regression-contract.md` §4 and four
 separate e2e specs assert that the map reaches the viewport bottom with nothing
@@ -402,3 +417,112 @@ sub-view control, still shows the screening disclaimer, and that returning to
   the existing sub-1024 behaviour is preserved as-is.
 * **Deployment.** This milestone is not deployed. OCI currently runs the
   land-cover release; the UI refresh has not been shipped there.
+
+## 14. Follow-up — the insight is collapsed by default, in both variants
+
+Shipped on `feat/collapsible-map-insights`, together with the identical change to
+`equity/EquityMapInsightStrip` (see `equity-dashboard.md` §12). The two overlays share
+one label constant (`MAP_INSIGHT_SUMMARY_LABEL` in `lib/glossary.ts`), one CSS class
+(`.map-insight` in `app/globals.css`), and one interaction — there is no second style
+system and no second implementation.
+
+### Before → after
+
+| | Before | After |
+| --- | --- | --- |
+| Default state (score AND scenario) | always expanded | **closed** |
+| Collapsed footprint | — | one bar, **163 × 42 px**, bottom-right |
+| Expanded footprint | full map width × ~180 px, permanently | ≤ **832 px** wide × ~201 px, only while opened |
+| Position | bottom band, left-aligned, full width | bottom band, **right-aligned** |
+| Element | `<section>` | `<details>` + `<summary>` |
+
+The compact label is exactly `해석 · 주의 · 출처 보기`. Its `▾` chevron is
+`aria-hidden` and rotates on `[open]`, so the accessible name equals the printed label.
+`data-testid="suitability-insight-summary"` names the bar; every pre-existing test ID
+is untouched.
+
+### Content preserved, per variant
+
+| Group | 후보지 점수 | 가중치 바꿔보기 |
+| --- | --- | --- |
+| 해석 (`suitability-insight-interpretation`) | the stored profile's relative-screening sentence | the applied-weights sentence, or the not-yet-applied prompt |
+| 주의 (`suitability-insight-caution`) | `결과 해석 한계` — 법적·공학적 적합 판정이 아닙니다 | `비교용 시나리오` — 공식 분석 실행이 아닙니다 |
+| 현재 기준·출처 (`suitability-insight-basis`) | 점수 반영 기준 · 자료 기준 시점 · 지도 표시 | 비교 기준 · **적용 가중치** · 자료 기준 시점 · 지도 표시 |
+| Visible statuses + stable-only (`suitability-insight-visibility`) | preserved, including `표시 중인 상태 없음` and `· 안정 후보만` | same |
+| 기술 정보 (`suitability-insight-technical`) | run id, policy version, derivation version, candidate-grid version | same |
+| Action (`suitability-insight-open-sources`) | `출처 자세히 보기` | same |
+
+The 기술 정보 `<details>` is **kept nested inside** the new outer disclosure rather than
+promoted or flattened; the version strings stay out of primary text exactly as before.
+`.map-insight > summary` uses the direct-child combinator, so the nested summary is
+untouched by the new styling.
+
+No scoring, weight, status-visibility, stable-only, tile, URL, or API behaviour
+changed. The component still computes nothing and renders no score, rank, or count.
+
+### The land-cover / legend overlay conflict
+
+The previously observed production defect — at ≤768 px viewport heights the bottom
+overlay stack rose over the top-left land-cover control, and the legend intercepted
+clicks meant for it — was caused by the tall always-expanded card lifting the legend.
+Measured at 1024×768, map height 640 px:
+
+| State | bottom-column top | land-cover control bottom | verdict |
+| --- | --- | --- | --- |
+| Before (always expanded) | **156 px** | 224 px | legend covers the control |
+| After, collapsed (the new default) | **454 px** | 224 px | clear by 230 px |
+| After, expanded, before the bound | 156 px | 224 px | still covered |
+| After, expanded, with the bound | **278 px** | 224 px | clear by 54 px |
+
+Collapsing by default resolves the defect in the default state outright. The one
+remaining case — the insight deliberately expanded at a short viewport — needed the
+smallest bounded-height correction: at `min-width: 768px and max-height: 820px` the
+legend body's cap drops from `46vh` to `30vh` (`app/globals.css`). That body is
+already an internally-scrollable container, so no class row, break, color, or count is
+lost — a scroll replaces a taller card. It is scoped by **height**, because vertical
+space is what the two stacks compete for; at ≥860 px heights they never meet and the
+legend keeps its full 46vh.
+
+`e2e/mapInsightDisclosure.spec.ts` now exercises `land-cover-layer-summary`,
+`land-cover-layer-toggle`, `status-toggle-ELIGIBLE`, and the MapLibre zoom buttons with
+real, unforced clicks at 1024×768 and 1440×900, with the insight both collapsed and
+expanded.
+
+**Known residual, pre-existing and out of scope:** at 1024×768 a *fully expanded*
+land-cover panel (its own body is capped at `52vh`) and the legend still share the
+map's left gutter, and the legend — later in DOM order at the same `z-10` — paints
+over its lower part. The panel's own interactive controls (its summary and its layer
+toggle) stay clear and clickable, which is what this task contracted. Resolving the
+deeper overlap requires re-laying-out the map overlay stacks and belongs to its own
+milestone.
+
+### Pointer-event behaviour, viewports, accessibility
+
+Identical to the equity disclosure — see `equity-dashboard.md` §12. In short: the
+full-width positioning row is `pointer-events-none` and only the `<details>` is
+`pointer-events-auto`; the card grows upward from the bottom-anchored column and never
+overlaps the legend, the zoom controls, the top-left layer stack, or the sidebar; it
+does not render below 1024 px; Enter and Space toggle it natively; the closed body is
+out of the tab order; focus is not trapped; the named region moved onto the body; no
+live region was added.
+
+### Tests added
+
+* `components/suitability/SuitabilityMapInsightStrip.test.tsx` — 12 new assertions
+  across both variants: collapsed by default, the shared label, one outer disclosure
+  with the technical one nested inside it, containment, the score interpretation, the
+  scenario interpretation, both caveats, the applied weights, stable-only, the
+  empty-visibility wording, close-and-re-gate, the routed action, no duplicate, no
+  live region.
+* `app/page.suitabilityDashboard.test.tsx` — one new integration test plus three
+  existing tests updated to open the disclosure before reading it.
+* `e2e/mapInsightDisclosure.spec.ts` (new, 60 tests, shared with equity) — both
+  suitability sub-views at 1024×768, 1280×800, 1440×900, 1920×1080; behaviour,
+  keyboard, hit testing, drag, control operability, and narrow regression.
+* `e2e/suitabilityDashboard.spec.ts` — open-state geometry added; one assertion
+  updated for the collapsed default.
+
+### Deployment scope
+
+Frontend only. No backend, database, migration, ingestion, Docker, Compose, Caddy, or
+infrastructure change, and no data change of any kind.

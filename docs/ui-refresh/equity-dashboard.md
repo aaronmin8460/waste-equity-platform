@@ -53,7 +53,22 @@ looking at* → *change the region* → *change the metric* → *compare* → *r
 round), because comparison is the narrower, more deliberate act and the ranking is
 the long scrolling list that ends the analysis block.
 
-### The map insight strip, and why it floats
+### The map insight, and why it floats — and is now collapsed by default
+
+**Follow-up (`feat/collapsible-map-insights`).** The strip described below was
+originally always expanded. It is now a native `<details>` disclosure that arrives
+**closed**, behind a compact bar at the map's bottom-right:
+
+```text
+[ 해석 · 주의 · 출처 보기 ▾ ]
+```
+
+Nothing was removed, reworded, reimplemented, or moved. Opening it reveals the same
+three groups, in the same order, with the same served strings. See §12 for the whole
+change; the paragraphs immediately below still describe why it floats at all, which
+did not change.
+
+### Why it floats
 
 The strip is an **overlay inside the map workspace**, not a band below the map.
 That is forced, not stylistic: `regression-contract.md` §4 and three separate e2e
@@ -304,3 +319,105 @@ expectation was changed anywhere in this milestone.
   existing sub-1024 behaviour is preserved as-is.
 * **Deployment.** This milestone is not deployed. OCI currently runs `39413a3`
   plus the later land-cover release; the UI refresh has not been shipped there.
+
+## 12. Follow-up — the insight is collapsed by default
+
+Shipped on `feat/collapsible-map-insights`, together with the identical change to
+`suitability/SuitabilityMapInsightStrip` (see `suitability-dashboard.md` §14). The
+two overlays now share one label, one CSS class, and one interaction.
+
+### Before → after
+
+| | Before | After |
+| --- | --- | --- |
+| Default state | always expanded | **closed** |
+| Collapsed footprint | — | one bar, **163 × 42 px**, bottom-right |
+| Expanded footprint | full map width × ~176 px, permanently | ≤ **832 px** wide × ~200 px, only while opened |
+| Share of the 1440×900 map covered by default | ~19% of the canvas width-band | **<1%** |
+| Position | bottom band, left-aligned, full width | bottom band, **right-aligned** |
+| Element | `<section>` | `<details>` + `<summary>` |
+
+The compact label is exactly `해석 · 주의 · 출처 보기`, frozen in
+`lib/glossary.ts` as `MAP_INSIGHT_SUMMARY_LABEL` — one constant, shared by both map
+overlays, so the two bars cannot drift apart. A `▾` chevron sits at the right of the
+bar and rotates 180° on `[open]`; it is `aria-hidden`, so the accessible name equals
+the printed label exactly.
+
+### Content preserved
+
+Every string, test ID, and behaviour survives the change untouched:
+
+* 해석 — the metric label, its unit, and the relative-shading sentence
+  (`insight-interpretation`);
+* 주의 — the standing `InfoBanner`, still `tone="warning"`, still **not**
+  `role="alert"` (`insight-caution`);
+* 자료 기준·출처 — the `DataStatusBadge`, the served reference period
+  (`insight-reference-period`), the served source lines (`insight-provenance`), and
+  the `출처 자세히 보기` action (`insight-open-sources`);
+* the "자료 없음은 0이 아니고…" caveat, verbatim;
+* the omit-rather-than-pad rule: no reference-period cell and no provenance list
+  when nothing was served.
+
+Nothing was duplicated. The sidebar remains the other home for the same facts, as
+before, and no second provenance implementation was created.
+
+### Structure
+
+It is still the **second child of the same bottom-anchored overlay column** as the
+legend (`page.tsx`) — only its cross-axis alignment changed, from full-width to
+`justify-end`. Because the column is anchored to `bottom`, opening the disclosure
+grows the card **upward** and lifts the legend with it, so the two can never overlap
+in either state. `regression-contract.md` §4 is therefore unchanged.
+
+### Pointer-event behaviour
+
+The full-width positioning row stays `pointer-events-none`; only the `<details>`
+itself is `pointer-events-auto`. Verified by hit testing, not by inspection: at every
+supported viewport, `document.elementFromPoint` returns the map canvas immediately to
+the left of the bar and at the map centre, in **both** the closed and the open state,
+and a real `mousedown`+`mousemove`+`mouseup` drag lands on `.maplibregl-canvas-container`
+with nothing else in the capture log. No test anywhere uses `{ force: true }`.
+
+### Viewport behaviour
+
+* **Desktop collapsed** — a 163 × 42 px bar at the bottom-right, inside the map,
+  above the OSM attribution, clear of the legend, of the MapLibre zoom controls
+  (top-right), of the top-left layer stack, and of the sidebar.
+* **Desktop expanded** — a card capped at 832 px, narrowed by the column to the
+  available map width at 1024 px (616 px there), keeping the existing
+  `grid-cols-1 lg:grid-cols-3` layout, growing upward, never scrolling internally.
+* **Below 1024 px** — unchanged: it does not render at all. Nothing in it is
+  mandatory-only-there; the sidebar carries the same reference period, the same
+  source lines, and the same no-data wording.
+
+### Accessibility
+
+Native `<details>`/`<summary>`, so Enter and Space toggle it, the expanded state is
+exposed by the platform, the closed body is out of the tab order, focus is never
+trapped, and the global `:focus-visible` ring applies unmodified. The named region
+(`aria-label="지도 해석 안내"`) moved from the outer element onto the disclosure body,
+where it describes exactly the content being revealed — a collapsed `<details>`
+exposes nothing, so a permanently-named empty landmark would have lied. No
+`aria-label` sits on the summary: it would replace the visible label in the
+accessible name. No live region was added; a `role="status"` inside a collapsed
+`<details>` would silently stop announcing.
+
+### Tests added
+
+* `components/equity/EquityMapInsightStrip.test.tsx` — 9 new assertions: one native
+  disclosure, the exact label, closed on first paint, containment of every group,
+  open → each group, close → re-gated, served values verbatim, omit-when-absent, no
+  duplicate and no live region.
+* `app/page.equityDashboard.test.tsx` — one new integration test (mounted collapsed,
+  one `details.map-insight`, not the legend's class) plus two existing tests updated
+  to open the disclosure before reading it.
+* `e2e/mapInsightDisclosure.spec.ts` (new, 60 tests) — geometry at 1024×768,
+  1280×800, 1440×900, 1920×1080; behaviour, keyboard, hit testing, drag, and
+  no-state-change at 1440×900; narrow regression at 390×844 and 768×1024.
+* `e2e/equityDashboard.spec.ts` — open-state geometry added; two assertions updated
+  for the collapsed default.
+
+### Deployment scope
+
+Frontend only. No backend, database, migration, ingestion, Docker, Compose, Caddy,
+or infrastructure change, and no data change of any kind.
