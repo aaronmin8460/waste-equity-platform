@@ -40,6 +40,28 @@ async function gotoView(page: Page, query: string): Promise<void> {
   await expect(page.getByTestId("mode-switch")).toBeVisible();
 }
 
+/**
+ * Open a view that mounts a map, and wait for the MAP — not merely for the shell.
+ *
+ * `gotoView` waits for `mode-switch`, which `DashboardShell` renders immediately in
+ * every branch, including while the view's initial requests are still in flight. The
+ * map, by contrast, only mounts once that data resolves. Every map assertion in this
+ * file therefore raced the load and relied on Playwright's default 5s budget, which
+ * is not enough under full-suite concurrency: the 1920×1080 map-count assertion was
+ * observed resolving to 0 elements for the whole 5s in one run of the complete
+ * suite, while the same file passes 170/170 with `--repeat-each=10` in isolation.
+ *
+ * 15s is the budget the rest of the repository already uses for this exact wait
+ * (`e2e/equityDashboard.spec.ts`, `e2e/finalUiIntegration.spec.ts`). This changes
+ * only how long the test is willing to wait; every assertion below is unchanged, and
+ * the map-FREE views deliberately keep `gotoView` + `toHaveCount(0)`, which must not
+ * be given extra patience.
+ */
+async function gotoMapView(page: Page, query: string): Promise<void> {
+  await gotoView(page, query);
+  await expect(page.getByTestId("map-container")).toBeVisible({ timeout: 15000 });
+}
+
 test.beforeEach(async ({ page }) => {
   await mockBackend(page);
 });
@@ -125,7 +147,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
     });
 
     test("fills the viewport height and scrolls the sidebar, not the page", async ({ page }) => {
-      await gotoView(page, "/?v=1&mode=equity");
+      await gotoMapView(page, "/?v=1&mode=equity");
 
       // The shell is a full-height desktop tool: the document itself does not scroll.
       const documentScrolls = await page.evaluate(
@@ -153,10 +175,10 @@ for (const vp of DESKTOP_VIEWPORTS) {
     });
 
     test("mounts exactly one map, and none on the map-free areas", async ({ page }) => {
-      await gotoView(page, "/?v=1&mode=equity");
+      await gotoMapView(page, "/?v=1&mode=equity");
       await expect(page.getByTestId("map-container")).toHaveCount(1);
 
-      await gotoView(page, "/?v=1&mode=suitability&view=score");
+      await gotoMapView(page, "/?v=1&mode=suitability&view=score");
       await expect(page.getByTestId("map-container")).toHaveCount(1);
 
       for (const query of [
@@ -202,7 +224,7 @@ test.describe("minimum supported width 1024px", () => {
       await expectNoHorizontalOverflow(page, `${query} at 1024px`);
     }
 
-    await gotoView(page, "/?v=1&mode=equity");
+    await gotoMapView(page, "/?v=1&mode=equity");
     const mapBox = (await page.getByTestId("map-container").boundingBox())!;
     // A usable map beside the fixed 384px control column.
     expect(mapBox.width).toBeGreaterThan(400);
