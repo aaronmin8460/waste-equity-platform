@@ -412,9 +412,17 @@ infrastructure (`baseline.md` §7).
 workflow reachable, with the action on the first screen") failed once in the
 full-suite run on this branch — `box.y + box.height` = **838** against a 768 viewport,
 the same figure the landfill milestone recorded at `db96118`
-(`landfill-dashboard.md` §10, flake 2). It passes **26/26** when
-`e2e/facilityCostDashboard.spec.ts` is run alone on this branch, and the same
-full-suite failure reproduces on unmodified `main` — see §14.
+(`landfill-dashboard.md` §10, flake 2).
+
+It was measured on both branches:
+
+* on this branch, it passes **26/26** when `e2e/facilityCostDashboard.spec.ts` is run
+  alone, and failed **1 of 1** full-suite runs;
+* on unmodified `main` at `28bdb6a`, the full suite was run **twice**: the first run
+  passed 427/427, the second reproduced the **identical** failure — same file, same
+  line, same 838-against-768 measurement.
+
+So it fires on `main` too, at roughly the same rate, and only under four-worker load.
 
 The root cause is already traced and written down: line 148 of that spec is
 `await page.mouse.wheel(0, -2000)`, which dispatches the wheel event without waiting
@@ -483,6 +491,12 @@ milestone report. `npm run lint`, `npm run typecheck`, `npm test`, `npm run buil
 `npm run test:e2e` all from `frontend/`. The repository has **no CI workflow**
 (`find .github` returns nothing), so local validation is the available automated
 verification.
+
+Feature-branch results: lint clean, typecheck clean, **1094 unit tests passed / 7
+skipped** (was 1068 / 7), build succeeded, and **476 Playwright tests passed / 89
+skipped** in 8.1 minutes with the single pre-existing facility-cost failure described
+in §11. The 89 skips are the live-backend specs, which self-skip without
+`E2E_BACKEND_URL`, plus the two opt-in capture suites.
 
 ## 15. Deferred work
 
