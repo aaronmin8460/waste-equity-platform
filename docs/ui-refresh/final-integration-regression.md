@@ -490,7 +490,40 @@ e2e/landCoverPerformance.spec.ts
 The skip count is **unchanged** from the previous milestone, so this branch neither
 added nor silenced a live-backend test.
 
-## 14. CI
+## 14. Post-merge validation
+
+The branch was pushed, merged into the latest `main` with `--no-ff`
+(`ecf1d7f`, no conflicts), and `main` pushed to `origin` (`98372d7..ecf1d7f`).
+Everything below was then re-run **from merged `main`**, not carried over from the
+feature branch:
+
+| Check | Result |
+| --- | --- |
+| `npm run lint` | **pass**, exit 0 |
+| `npm run typecheck` | **pass**, exit 0 |
+| `npm test` | **1094 passed, 7 skipped, 0 failed**, 31.04s |
+| `npm run build` | **pass**, exit 0 |
+| `npx playwright test e2e/facilityCostDashboard.spec.ts --repeat-each=10` | **260 passed, 0 failed**, 3.6m |
+| `npm run test:e2e` (clean server on port 3000) | **494 passed, 89 skipped, 0 failed**, 9.8m |
+
+Identical to the feature-branch results in §13, including the unchanged 89
+live-backend skips. Merged `main` therefore has 0 relevant lint, TypeScript, unit,
+build, and Playwright failures.
+
+Repository state after the merge:
+
+```text
+current branch  main
+local HEAD      ecf1d7ff0d5678ca173864ecad26d896296149dd
+origin/main     ecf1d7ff0d5678ca173864ecad26d896296149dd
+working tree    clean except untracked docs/SUITABILITY_SITE_CLUSTERS_SPEC.md
+```
+
+*(This section is itself a documentation-only commit merged after `ecf1d7f`; the
+full validation above was re-run once more at the final `main` HEAD with the same
+results.)*
+
+## 15. CI
 
 ```text
 No CI workflow exists in this repository; local validation is the available
@@ -499,7 +532,7 @@ automated verification.
 
 `find .github -maxdepth 3 -type f` returns nothing.
 
-## 15. Deployment readiness
+## 16. Deployment readiness
 
 The frontend is deployment-ready from the UI side:
 
@@ -521,7 +554,7 @@ operation was performed here. Points to carry into it, from the deployment memor
 * `/ready` returning 404 and the static lifecycle reading `NOT_RUN` are pre-existing
   non-defects.
 
-## 16. Remaining risks
+## 17. Remaining risks
 
 * **The cost rail's budget is healthy but finite.** ~180px at 1024×768. Content added
   to the rail above the button, *or to the workflow column above the grid*, must be
