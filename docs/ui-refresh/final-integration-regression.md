@@ -519,9 +519,47 @@ origin/main     ecf1d7ff0d5678ca173864ecad26d896296149dd
 working tree    clean except untracked docs/SUITABILITY_SITE_CLUSTERS_SPEC.md
 ```
 
-*(This section is itself a documentation-only commit merged after `ecf1d7f`; the
-full validation above was re-run once more at the final `main` HEAD with the same
-results.)*
+### One further failure, found by the final re-run, investigated and fixed
+
+The whole validation set was re-run once more at the final `main` HEAD. That run
+surfaced a failure the two previous full runs had not:
+
+```text
+e2e/civicShell.spec.ts:155 › desktop 1920×1080 › mounts exactly one map, …
+expect(locator).toHaveCount(expected) failed
+Locator: getByTestId('map-container')   Expected: 1   Received: 0
+13 × locator resolved to 0 elements
+```
+
+It was **not** dismissed as a flake. Evidence gathered before deciding:
+
+* **Isolation:** `e2e/civicShell.spec.ts --repeat-each=10` → **170 passed**, 5.6m.
+  So it is not a code defect — the map does mount.
+* **Baseline:** the full suite at unmodified `main` `98372d7` → **477 passed, 89
+  skipped, 0 failed**, 8.3m. One clean run there settles nothing on its own, but it
+  shows the fragility is not constant.
+* **Mechanism, read from the spec:** `gotoView()` waits for `mode-switch`, which
+  `DashboardShell` renders **immediately in every branch**, including while the
+  view's initial requests are still in flight. The map mounts only once that data
+  resolves. Every map assertion in the file therefore raced the load on Playwright's
+  default **5s** budget. The failing run took 11.2m against the baseline's 8.3m — the
+  17 new integration tests each load all six views, so the suite genuinely applies
+  more concurrent load to the dev server than before.
+
+Rather than call a load-sensitive 5s wait "flaky", the wait was corrected.
+`gotoMapView()` waits for `map-container` itself with the **15s** budget the rest of
+the repository already uses for exactly this (`e2e/equityDashboard.spec.ts`,
+`e2e/finalUiIntegration.spec.ts`), and the three map-dependent tests use it. This
+changes only how long the test is willing to wait — **every assertion is unchanged**,
+including `toHaveCount(1)`. The map-free views deliberately keep `gotoView` +
+`toHaveCount(0)`, which must not be given extra patience, since a longer wait there
+could only ever mask a map mounting late.
+
+Re-verified: `--repeat-each=5` → **85 passed**, 3.0m; lint and typecheck exit 0.
+
+*(§14 is itself documentation merged after `ecf1d7f`, together with the
+`civicShell.spec.ts` wait fix; the numbers in the table above were re-confirmed at
+the final `main` HEAD.)*
 
 ## 15. CI
 
