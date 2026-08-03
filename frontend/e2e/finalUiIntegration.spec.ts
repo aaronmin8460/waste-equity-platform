@@ -1,0 +1,496 @@
+import { expect, test, type Page } from "@playwright/test";
+import { mockBackend } from "./mockBackend";
+
+/**
+ * FINAL UI INTEGRATION — the six refreshed areas verified TOGETHER.
+ *
+ * The six civic-dashboard milestones each shipped with a deep per-area spec, and
+ * `phase7FinalRegression.spec.ts` already owns the four-area shell tour, the
+ * byte-for-byte nav labels, the map-presence rule, and the landfill URL round trip.
+ * This file deliberately does NOT repeat those. It owns the things that can only be
+ * wrong once all six are merged into one application:
+ *
+ *   1. the six USER-FACING views (four areas, three suitability sub-views) enumerated
+ *      as one table, so a contract is stated once for all of them rather than six
+ *      times in six files;
+ *   2. duplication — after navigating the whole app, no view may leave a second copy
+ *      of ANY element behind. `expectNoDuplicateTestIds` compares every
+ *      `data-testid` in the live document, which catches a retained map, a second
+ *      cost form, a second source catalog, a second navigation, a second sub-view
+ *      selector, and a stale panel from the previous view in one assertion instead
+ *      of an ever-growing list of named absences;
+ *   3. staleness — the previous view's owned components are gone from the DOM, not
+ *      merely hidden, including across browser back/forward;
+ *   4. the repaired 비용 살펴보기 first-screen action, asserted here as a CROSS-VIEW
+ *      fact (it must survive arriving at the cost view by clicking through the app,
+ *      not only by deep link — `facilityCostDashboard.spec.ts` owns the deep-linked
+ *      geometry in full detail);
+ *   5. the 데이터·출처 heading/label distinction, which is a whole-app fact: the two
+ *      strings are deliberately different and both must be present at once;
+ *   6. that a representative MISSING-DATA response still renders as missing after
+ *      integration — never as a fabricated 0.
+ *
+ * Self-mocked through `mockBackend`, so no backend, database, tile server, or
+ * government API is touched. Structure, geometry, and behaviour only — never a data
+ * value. Deliberately NO pixel snapshots (docs/ui-refresh/baseline.md §7).
+ */
+
+const DESKTOP_VIEWPORTS = [
+  { name: "1024×768", width: 1024, height: 768 },
+  { name: "1280×800", width: 1280, height: 800 },
+  { name: "1440×900", width: 1440, height: 900 },
+  { name: "1920×1080", width: 1920, height: 1080 },
+];
+
+/** The two smaller viewports are REGRESSION checks, not a mobile redesign. */
+const RESPONSIVE_VIEWPORTS = [
+  { name: "768×1024", width: 768, height: 1024 },
+  { name: "390×844", width: 390, height: 844 },
+];
+
+/**
+ * Every user-facing view, with the contract that identifies it.
+ *
+ * `h1` and `navLabel` are compared EXACTLY. For 데이터·출처 they are deliberately
+ * different strings (regression-contract §20) and this table is where that is
+ * visible at a glance.
+ */
+interface View {
+  name: string;
+  url: string;
+  /** Present once the view has finished mounting. */
+  ready: string;
+  /** Exact `<h1>` text. */
+  h1: string;
+  /** Exact primary-navigation label of the area this view belongs to. */
+  navLabel: string;
+  /** The nav button test id that must read `aria-pressed="true"`. */
+  navTestId: string;
+  /** Exactly how many `MapView`s this view mounts. */
+  maps: number;
+  /** Whether the 후보지 분석 sub-view selector belongs on this view. */
+  subviews: boolean;
+  /** The sub-view button that must read `aria-pressed="true"`, when applicable. */
+  activeSubview?: string;
+}
+
+const VIEWS: View[] = [
+  {
+    name: "지역 부담",
+    url: "/?v=1&mode=equity",
+    ready: "region-select",
+    h1: "지역 부담",
+    navLabel: "지역 부담",
+    navTestId: "mode-equity",
+    maps: 1,
+    subviews: false,
+  },
+  {
+    name: "후보지 점수",
+    url: "/?v=1&mode=suitability&view=score",
+    ready: "suitability-summary",
+    h1: "후보지 분석",
+    navLabel: "후보지 분석",
+    navTestId: "mode-suitability",
+    maps: 1,
+    subviews: true,
+    activeSubview: "suitability-view-score",
+  },
+  {
+    name: "가중치 바꿔보기",
+    url: "/?v=1&mode=suitability&view=scenario",
+    ready: "scenario-lab",
+    h1: "후보지 분석",
+    navLabel: "후보지 분석",
+    navTestId: "mode-suitability",
+    maps: 1,
+    subviews: true,
+    activeSubview: "suitability-view-scenario",
+  },
+  {
+    name: "비용 살펴보기",
+    url: "/?v=1&mode=suitability&view=cost",
+    ready: "facility-cost-dashboard",
+    h1: "시설 비용 살펴보기",
+    navLabel: "후보지 분석",
+    navTestId: "mode-suitability",
+    maps: 0,
+    subviews: true,
+    activeSubview: "suitability-view-cost",
+  },
+  {
+    name: "매립지 현황",
+    url: "/?v=1&mode=flow",
+    ready: "landfill-dashboard",
+    h1: "수도권매립지 반입 현황",
+    navLabel: "매립지 현황",
+    navTestId: "mode-flow",
+    maps: 0,
+    subviews: false,
+  },
+  {
+    name: "데이터·출처",
+    url: "/?v=1&mode=transparency",
+    ready: "transparency-dashboard",
+    h1: "데이터와 출처",
+    navLabel: "데이터·출처",
+    navTestId: "mode-transparency",
+    maps: 0,
+    subviews: false,
+  },
+];
+
+/** The components each view OWNS — they must not survive into another view. */
+const VIEW_OWNED_TESTIDS: Record<string, string[]> = {
+  "지역 부담": ["region-select", "region-ranking", "region-comparison", "share-export"],
+  "후보지 점수": ["suitability-summary"],
+  "가중치 바꿔보기": ["scenario-lab"],
+  "비용 살펴보기": ["facility-cost-dashboard", "facility-cost-form"],
+  "매립지 현황": ["landfill-dashboard", "landfill-filters"],
+  "데이터·출처": ["transparency-dashboard", "transparency-sources"],
+};
+
+async function openView(page: Page, view: View): Promise<void> {
+  await page.goto(view.url);
+  await expect(page.getByTestId(view.ready), `${view.name} mounted`).toBeVisible({
+    timeout: 15000,
+  });
+}
+
+async function expectNoHorizontalOverflow(page: Page, where: string): Promise<void> {
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(scrollWidth, `${where}: no page-level horizontal overflow`).toBeLessThanOrEqual(
+    clientWidth + 1,
+  );
+}
+
+/**
+ * The elements that must exist AT MOST ONCE in the whole document.
+ *
+ * Deliberately a curated list rather than "no `data-testid` repeats": several ids
+ * legitimately mark repeated rows (`score-class-row`, `land-cover-legend-row`,
+ * `facility-cost-facility-type-card`, region chips, catalog items), so a blanket
+ * uniqueness rule would report list rendering as a defect. Every id below is a
+ * SINGLETON by contract — the shell chrome, the one map, and each area's owned
+ * top-level surfaces — so a second occurrence means a duplicated control or a stale
+ * view left mounted underneath the new one.
+ */
+const SINGLETON_TESTIDS = [
+  "app-shell",
+  "top-navigation",
+  "app-brand",
+  "mode-switch",
+  "mode-equity",
+  "mode-suitability",
+  "mode-flow",
+  "mode-transparency",
+  "suitability-subviews",
+  "suitability-view-score",
+  "suitability-view-scenario",
+  "suitability-view-cost",
+  "map-container",
+  "region-select",
+  "region-ranking",
+  "region-comparison",
+  "share-export",
+  "suitability-summary",
+  "scenario-lab",
+  "facility-cost-dashboard",
+  "facility-cost-form",
+  "facility-cost-setup-summary",
+  "facility-cost-calculate",
+  "landfill-dashboard",
+  "landfill-filters",
+  "transparency-dashboard",
+  "transparency-sources",
+  "transparency-overview",
+];
+
+/**
+ * No contracted singleton appears twice in the live document.
+ *
+ * This is the integration assertion the per-area suites structurally cannot make:
+ * each of them only ever renders its own area. A retained map, a second cost form, a
+ * second source catalog, a duplicated navigation, a doubled sub-view selector, and a
+ * stale panel from the previously-visited view all show up here as one failure with
+ * the offending id named.
+ */
+async function expectNoDuplicateTestIds(page: Page, where: string): Promise<void> {
+  const duplicates = await page.evaluate((ids: string[]) => {
+    return ids
+      .map((id) => ({ id, n: document.querySelectorAll(`[data-testid="${id}"]`).length }))
+      .filter((entry) => entry.n > 1)
+      .map((entry) => `${entry.id}×${entry.n}`);
+  }, SINGLETON_TESTIDS);
+  expect(duplicates, `${where}: no contracted singleton is rendered twice`).toEqual([]);
+}
+
+/** The shell invariants every view shares, stated once. */
+async function expectViewContract(page: Page, view: View): Promise<void> {
+  await expect(page.getByTestId("top-navigation"), `${view.name}: one app bar`).toHaveCount(1);
+  await expect(page.getByTestId("mode-switch"), `${view.name}: one nav group`).toHaveCount(1);
+  await expect(page.locator("#main-content"), `${view.name}: one main target`).toHaveCount(1);
+  await expect(page.locator("h1"), `${view.name}: one page-level h1`).toHaveCount(1);
+  await expect(page.locator("h1"), `${view.name}: exact h1`).toHaveText(view.h1);
+
+  // The four frozen navigation labels, all four present at once, compared exactly.
+  for (const other of ["지역 부담", "후보지 분석", "매립지 현황", "데이터·출처"]) {
+    await expect(
+      page.getByRole("button", { name: other, exact: true }),
+      `${view.name}: nav label ${other}`,
+    ).toHaveCount(1);
+  }
+  await expect(page.getByTestId(view.navTestId)).toHaveAttribute("aria-pressed", "true");
+
+  await expect(page.getByTestId("map-container"), `${view.name}: map count`).toHaveCount(view.maps);
+  await expect(
+    page.getByTestId("suitability-subviews"),
+    `${view.name}: sub-view selector`,
+  ).toHaveCount(view.subviews ? 1 : 0);
+  if (view.activeSubview) {
+    await expect(page.getByTestId(view.activeSubview)).toHaveAttribute("aria-pressed", "true");
+  }
+
+  // Nothing another view owns is left behind.
+  for (const [owner, ids] of Object.entries(VIEW_OWNED_TESTIDS)) {
+    if (owner === view.name) continue;
+    for (const id of ids) {
+      await expect(page.getByTestId(id), `${view.name}: no stale ${id} from ${owner}`).toHaveCount(
+        0,
+      );
+    }
+  }
+
+  await expectNoDuplicateTestIds(page, view.name);
+}
+
+test.beforeEach(async ({ page }) => {
+  await mockBackend(page);
+});
+
+// --------------------------------------------------------------------------- //
+// 1. Every view, at every desktop target
+// --------------------------------------------------------------------------- //
+
+for (const vp of DESKTOP_VIEWPORTS) {
+  test.describe(`integrated app at ${vp.name}`, () => {
+    test.use({ viewport: { width: vp.width, height: vp.height } });
+
+    test("holds the shell, heading, map, and sub-view contract in all six views", async ({
+      page,
+    }) => {
+      for (const view of VIEWS) {
+        await openView(page, view);
+        await expectViewContract(page, view);
+        await expectNoHorizontalOverflow(page, `${view.name} @ ${vp.name}`);
+      }
+    });
+
+    test("keeps 비용 계산하기 on the first screen when reached by navigating", async ({ page }) => {
+      // Arrive the way a citizen does — through the app, not by deep link — because
+      // the sub-view switch keeps <main> mounted and only swaps its subtree.
+      await openView(page, VIEWS[1]); // 후보지 점수
+      await page.getByTestId("suitability-view-cost").click();
+      await expect(page.getByTestId("facility-cost-form")).toBeVisible();
+
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+
+      const geometry = await page.evaluate(() => {
+        const el = document.querySelector<HTMLElement>('[data-testid="facility-cost-calculate"]')!;
+        const box = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return {
+          scrollY: window.scrollY,
+          top: box.top,
+          bottom: box.bottom,
+          covered: hit !== null && !el.contains(hit),
+        };
+      });
+      expect(geometry.scrollY, "measured at the top of the document").toBe(0);
+      expect(geometry.top, "action starts on screen").toBeGreaterThanOrEqual(0);
+      expect(geometry.bottom, `action fits ${vp.height}px`).toBeLessThanOrEqual(vp.height);
+      expect(geometry.covered, "action is not overlapped").toBe(false);
+      // The context explaining the action's state is on the same screen.
+      await expect(page.getByTestId("facility-cost-readiness")).toBeInViewport();
+      await expect(page.getByTestId("facility-cost-calculate-status")).toBeInViewport();
+    });
+  });
+}
+
+// --------------------------------------------------------------------------- //
+// 2. Basic responsive regression (NOT a mobile redesign)
+// --------------------------------------------------------------------------- //
+
+for (const vp of RESPONSIVE_VIEWPORTS) {
+  test.describe(`responsive regression at ${vp.name}`, () => {
+    test.use({ viewport: { width: vp.width, height: vp.height } });
+
+    test("keeps every view single-h1, duplication-free, and free of page-level side scroll", async ({
+      page,
+    }) => {
+      for (const view of VIEWS) {
+        await openView(page, view);
+        await expect(page.locator("h1"), `${view.name}: one h1`).toHaveCount(1);
+        await expect(page.locator("#main-content")).toHaveCount(1);
+        await expect(page.getByTestId("top-navigation")).toHaveCount(1);
+        await expect(page.getByTestId("map-container")).toHaveCount(view.maps);
+        await expectNoDuplicateTestIds(page, `${view.name} @ ${vp.name}`);
+        await expectNoHorizontalOverflow(page, `${view.name} @ ${vp.name}`);
+      }
+    });
+  });
+}
+
+// --------------------------------------------------------------------------- //
+// 3. URL restoration and round trips across the whole app
+// --------------------------------------------------------------------------- //
+
+test.describe("URL state survives integration at 1440×900", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("restores every documented deep link directly", async ({ page }) => {
+    for (const view of VIEWS) {
+      await openView(page, view);
+      await expect(page.getByTestId(view.navTestId)).toHaveAttribute("aria-pressed", "true");
+      if (view.activeSubview) {
+        await expect(page.getByTestId(view.activeSubview)).toHaveAttribute("aria-pressed", "true");
+      }
+    }
+  });
+
+  test("navigating away and back leaves no trace of the previous view", async ({ page }) => {
+    // equity → cost → transparency, all through the UI. In-app mode changes mirror
+    // state with `history.replaceState` (regression-contract §3), so they add no
+    // history entries by design; what is asserted here is that each hop fully
+    // replaces the previous view rather than layering on top of it.
+    await openView(page, VIEWS[0]);
+    await page.getByTestId("mode-suitability").click();
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+    await page.getByTestId("suitability-view-cost").click();
+    await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
+    await expectViewContract(page, VIEWS[3]);
+
+    await page.getByTestId("mode-transparency").click();
+    await expect(page.getByTestId("transparency-dashboard")).toBeVisible();
+    await expectViewContract(page, VIEWS[5]);
+
+    // …and back to where we started, with the equity workspace whole again.
+    await page.getByTestId("mode-equity").click();
+    await expect(page.getByTestId("region-select")).toBeVisible();
+    await expectViewContract(page, VIEWS[0]);
+  });
+
+  test("browser back and forward restore the deep-linked view", async ({ page }) => {
+    // Two real document navigations DO create history entries, so this exercises the
+    // browser's own back/forward against the `?v=1&mode=…&view=…` restoration path.
+    await openView(page, VIEWS[0]); // 지역 부담
+    await openView(page, VIEWS[3]); // 비용 살펴보기
+
+    await page.goBack();
+    await expect(page.getByTestId("region-select")).toBeVisible({ timeout: 15000 });
+    await expectViewContract(page, VIEWS[0]);
+
+    await page.goForward();
+    await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible({ timeout: 15000 });
+    await expectViewContract(page, VIEWS[3]);
+  });
+
+  test("round-trips the three sub-views without doubling the selector or the map", async ({
+    page,
+  }) => {
+    await openView(page, VIEWS[1]);
+    for (const step of ["cost", "score", "scenario", "cost", "scenario", "score"] as const) {
+      await page.getByTestId(`suitability-view-${step}`).click();
+      const expected = VIEWS.find((v) => v.activeSubview === `suitability-view-${step}`)!;
+      await expect(page.getByTestId(expected.ready)).toBeVisible();
+      await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+      await expect(page.getByTestId("map-container")).toHaveCount(expected.maps);
+      await expect(page.locator("h1")).toHaveCount(1);
+      await expectNoDuplicateTestIds(page, `sub-view ${step}`);
+    }
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 4. Terminology, live regions, and missing data after integration
+// --------------------------------------------------------------------------- //
+
+test.describe("integrated semantics at 1440×900", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("keeps the 데이터·출처 nav label and the 데이터와 출처 heading distinct", async ({
+    page,
+  }) => {
+    await openView(page, VIEWS[5]);
+    // Both strings are present on the same screen and are NOT the same string.
+    await expect(page.locator("h1")).toHaveText("데이터와 출처");
+    await expect(page.getByTestId("mode-transparency")).toHaveText("데이터·출처");
+    expect("데이터와 출처").not.toBe("데이터·출처");
+    // …and the heading is not silently unified into the nav label anywhere.
+    await expect(page.getByRole("heading", { name: "데이터·출처", exact: true })).toHaveCount(0);
+  });
+
+  test("never doubles a live region, in any view", async ({ page }) => {
+    for (const view of VIEWS) {
+      await openView(page, view);
+      const live = await page.evaluate(() => {
+        const nodes = Array.from(
+          document.querySelectorAll('[role="status"], [role="alert"], [aria-live]'),
+        );
+        const counts = new Map<string, number>();
+        for (const node of nodes) {
+          const id = node.getAttribute("data-testid");
+          if (!id) continue;
+          counts.set(id, (counts.get(id) ?? 0) + 1);
+        }
+        return {
+          duplicated: [...counts.entries()].filter(([, n]) => n > 1).map(([id]) => id),
+          // A live region nested inside another live region is announced twice.
+          nested: nodes
+            .filter((n) => n.parentElement?.closest('[role="status"], [role="alert"]'))
+            .map((n) => n.getAttribute("data-testid") ?? n.tagName.toLowerCase()),
+        };
+      });
+      expect(live.duplicated, `${view.name}: no duplicated live region`).toEqual([]);
+      expect(live.nested, `${view.name}: no nested live region`).toEqual([]);
+    }
+  });
+
+  test("renders a served no-data answer as missing, never as a fabricated zero", async ({
+    page,
+  }) => {
+    // `mockBackend` reproduces the backend's real 404 NO_DATA_AVAILABLE path for the
+    // 수도권매립지 endpoints — the representative missing-data fixture in this repo,
+    // because it carries no `evidence` object and so labels nothing as official.
+    await openView(page, VIEWS[4]);
+
+    const noData = page.getByTestId("landfill-no-data");
+    await expect(noData).toBeVisible();
+    // An unavailable official record is an empty state, not an error alert.
+    await expect(noData).not.toHaveAttribute("role", "alert");
+    // No headline number was invented to fill the screen.
+    await expect(page.getByTestId("landfill-kpis")).toHaveCount(0);
+    await expect(page.getByTestId("landfill-kpi-quantity")).toHaveCount(0);
+
+    const invented = await page.evaluate(() => {
+      const main = document.querySelector("#main-content")!;
+      // Join across element boundaries with a space: Korean labels concatenate into
+      // words that were never rendered (수집 시점 + 수집 기록 없음 → "…점수집…"), and a
+      // naive textContent scan would report a phantom match.
+      const text = Array.from(main.querySelectorAll<HTMLElement>("*"))
+        .map((el) =>
+          Array.from(el.childNodes)
+            .filter((n) => n.nodeType === Node.TEXT_NODE)
+            .map((n) => n.textContent ?? "")
+            .join(" "),
+        )
+        .join(" ");
+      return ["0 t", "0톤", "0원", "0 원", "0.0"].filter((token) => text.includes(token));
+    });
+    expect(invented, "no zero stands in for an unavailable official value").toEqual([]);
+  });
+});
