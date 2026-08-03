@@ -14,7 +14,8 @@ for the **후보지 분석 dashboard** milestone (see `suitability-dashboard.md`
 §16–§17 add what the **비용 살펴보기 dashboard** milestone contracted and record its
 one deliberate change (see `facility-cost-dashboard.md`); §18–§19 add what the
 **매립지 현황 dashboard** milestone contracted and confirm it changed no existing
-expectation (see `landfill-dashboard.md`).
+expectation (see `landfill-dashboard.md`); §20–§21 do the same for the
+**데이터·출처 dashboard** milestone (see `transparency-dashboard.md`).
 
 ## 1. Primary navigation labels (frozen strings)
 
@@ -561,3 +562,104 @@ Two decisions are worth keeping, because both look like styling choices and are 
    (`일부 지역의 동일 기간 인구가 없어 합계를 계산할 수 없습니다`) would widen the column
    far past the table. The cell keeps the served reason as neutral-gray text, which
    states the same thing in the same place without the width hazard.
+
+## 20. The 데이터·출처 catalog and its source-of-truth contract
+
+Added by the transparency milestone (`docs/ui-refresh/transparency-dashboard.md`).
+The area is now twelve presentational components plus `shared.ts` under
+`frontend/src/components/transparency/`, and these facts travel with them:
+
+* **`TransparencyDashboard.tsx` remains the ONE owner of this area's state.**
+  `freshness`, `freshnessState`, `policy`, `run`, `costOptions`, `mapping`,
+  `mappingError`, `page`, `knownUnmappedTotal`, `query`, `areaFilter`,
+  `frequencyFilter`, the three `useId`s, the search `ref`, both effects, the four
+  `useMemo` derivations, and both clear handlers all still live there. Every
+  component in `transparency/` is presentational: **no second source registry, no
+  second filter state, no second request, no second pagination state, and no
+  source classification outside `lib/dataSources.ts`.**
+* **`lib/dataSources.ts` is the registry's only interpreter.** The Korean rendering
+  per exact `source_id`, the subject-area assignment, the frequency labels, the
+  ordering, the search text, the filters, the link safety check, the collection-date
+  slice, and the four overview counts stay there. A presentational component may not
+  re-derive any of them, and an unrecognised `source_id` must keep falling back to
+  the served strings verbatim rather than acquiring an invented Korean name.
+* **The `<h1>` stays `데이터와 출처`,** now rendered by `PageHeader`. It is a different
+  string from the frozen nav label `데이터·출처` (§1) and both are compared exactly —
+  `e2e/civicShell.spec.ts`, `e2e/phase6DataSourcesDashboard.spec.ts`, and
+  `app/terminology.audit.test.tsx`.
+* **This file's private `SectionCard` copy is gone.** All five card sections use the
+  shared `components/ui/SectionCard`, so each is a `<section aria-labelledby>` named
+  by its own `h2`; the overview is a `<section aria-labelledby>` with a **visible**
+  `h2`. A future edit must not reintroduce a local card wrapper.
+* **The section order is frozen:** `transparency-notice` → `transparency-overview` →
+  `transparency-sources` → `transparency-datasets` → `transparency-gaps` →
+  `transparency-facility-mapping` → `transparency-methodology`. Two suites compare
+  document positions.
+* **`transparency-filter-summary` REPORTS state and is never a control.** It contains
+  zero `button`, `input`, and `select` elements (asserted in both suites), it is
+  built from `Chip` (a `<span>`) and never `FilterChip` (a `<button aria-pressed>`),
+  and it is absent entirely for an empty registry. Nothing focusable may be inserted
+  between `transparency-search`, `transparency-search-clear`,
+  `transparency-filter-category`, and `transparency-filter-frequency` — the Phase 6
+  spec walks exactly that Tab order.
+* **`DataStatusBadge` is used only where a value is or is not there**, and never as a
+  grade. `reported` / `derived` in the dataset table carry the pre-existing wording
+  `직접 보고값` / `공식 자료 기반 계산값` as their `label` override; `missing` marks an
+  absent reference period; `excluded` marks `enabled: false`. A **served** period gets
+  no badge, and a **failed freshness request** gets no badge — it is a statement about
+  the request, not about the data, and it keeps its own sentence. No source is scored,
+  ranked, graded, or given a percentage: a unit test scans the rendered catalog for
+  점수 / 등급 / 순위 / 신뢰도 / `%`.
+* **Five outcomes stay distinct, and exactly one is an alert.** loading
+  (`role="status"` + `aria-hidden` skeleton) · catalog · registry served no records
+  (`EmptyState`, no role, no controls, no count) · search matched nothing (a different
+  `EmptyState`, with a recovery action) · request failure (`InfoBanner tone="error"` +
+  `role="alert"` + a `[data-diagnostic]` code line). An official measured `0`
+  (`without_address`) stays a rendered `0` with no badge.
+* **The three gaps stay three.** `transparency-cost` (from `MISSING_COMPONENT_META`),
+  `transparency-gap-unmapped`, and `transparency-gap-period`. The third prints a
+  number only once the freshness join resolves; while it is loading or after it fails
+  it prints none, and says so.
+* **Every table announces its structure**: a `<caption>`, `scope="col"` on every
+  header, and a `<th scope="row">` leading every body row. Each table's
+  `overflow-x-auto` wrapper is the direct parent of its `<table>` and is the only
+  horizontal scroll on the page; nothing in this view scrolls vertically inside the
+  document.
+* **Pagination stays native buttons with standalone names** (`aria-label="이전 페이지"`
+  / `"다음 페이지"`) and is deliberately **not** a `<nav>` — the shell owns the single
+  navigation landmark. The `unmapped.page === page` gate and the `knownUnmappedTotal`
+  that keeps the pager operable through a failure are unchanged.
+* **No live region sits inside a `<details>`,** and the raw technical identifiers stay
+  behind the 기술 정보 disclosure in `[data-diagnostic]` nodes — demoted, never
+  deleted.
+* **The catalog filters are still NOT written to the URL.** `?v=1&mode=transparency`
+  behaves exactly as before, so existing shared links are unaffected.
+
+Enforced by: `components/TransparencyDashboard.test.tsx`,
+`e2e/transparencyDashboard.spec.ts`, `e2e/phase6DataSourcesDashboard.spec.ts`,
+`e2e/citizenFlows.spec.ts`, `e2e/civicShell.spec.ts`, `e2e/desktopNavigation.spec.ts`,
+`e2e/phase7FinalRegression.spec.ts`, `app/shell.test.tsx`,
+`app/accessibility.test.tsx`, `app/terminology.audit.test.tsx`, `lib/dataSources.test.ts`.
+
+## 21. The 데이터·출처 milestone changed no test expectation
+
+Like §13, §15, and §19, and unlike §10 and §17, this milestone has no deliberate
+contract change to record: **every pre-existing unit and e2e assertion passes
+unmodified**, including all 53 in `TransparencyDashboard.test.tsx` and all 108 in
+`e2e/phase6DataSourcesDashboard.spec.ts`. No shared primitive was changed either — the
+transparency view uses only props `PageHeader`, `SectionCard`, `KpiCard`,
+`DataStatusBadge`, `InfoBanner`, `Chip`, `EmptyState`, `Accordion`, and `Skeleton`
+already had, and `lib/dataSources.ts` was not touched.
+
+Two decisions are worth keeping, because both look like styling choices and are not:
+
+1. **The provenance wording did not change when the badge did.** `DataStatusBadge`
+   renders `공식 값` / `계산값` by default, but the dataset table passes
+   `직접 보고값` / `공식 자료 기반 계산값` as its `label` override. Three suites compare
+   those strings, and they are also the longer, more explicit wording for a screen
+   whose whole subject is that distinction. The badge supplies the semantic; the page
+   keeps its own words.
+2. **The overview KPI grid is `lg:grid-cols-4`, not `xl:grid-cols-4`.** At 1024×768 a
+   2×2 grid cost ~145px of the first viewport and pushed the catalog's first card to
+   772px — below the fold. Four across puts it at 674px. Content added between the
+   page header and the catalog controls must be measured against that ~94px margin.
