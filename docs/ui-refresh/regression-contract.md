@@ -17,7 +17,8 @@ one deliberate change (see `facility-cost-dashboard.md`); §18–§19 add what t
 expectation (see `landfill-dashboard.md`); §20–§21 do the same for the
 **데이터·출처 dashboard** milestone (see `transparency-dashboard.md`); §22–§24 record
 what the **final UI integration** milestone established across all six areas at once
-(see `final-integration-regression.md`).
+(see `final-integration-regression.md`); §25 records the **collapsible map insight**
+follow-up (see `equity-dashboard.md` §12 and `suitability-dashboard.md` §14).
 
 ## 1. Primary navigation labels (frozen strings)
 
@@ -71,12 +72,15 @@ Enforced by: `lib/urlState.test.ts`, `app/shell.test.tsx`, `app/page.selection.t
 * The map pane still fills the viewport bottom at desktop with no strip below it, and
   the floating legend stays inside the map bounds.
 * **Map-workspace overlays are the page's, and they stack.** The legend and the
-  지역 부담 insight strip are children of ONE bottom-anchored flex column inside
-  `.map-pane`, not two separately-anchored cards — hand-tuned `bottom-*` offsets
-  overlap as soon as either grows a line of Korean text at a narrower width.
-  `MapLegendOverlay` therefore owns no positioning of its own. Anything added to
-  that band joins the column; nothing in it may be placed in flow **below** the
-  map, which would shorten the canvas and break the bullet above.
+  지역 부담 / 후보지 분석 insight disclosure are children of ONE bottom-anchored flex
+  column inside `.map-pane`, not two separately-anchored cards — hand-tuned
+  `bottom-*` offsets overlap as soon as either grows a line of Korean text at a
+  narrower width. `MapLegendOverlay` therefore owns no positioning of its own.
+  Anything added to that band joins the column; nothing in it may be placed in flow
+  **below** the map, which would shorten the canvas and break the bullet above. The
+  insight is right-aligned within that column (`justify-end`) and the legend keeps
+  the map's left edge, but the insight is still structurally BELOW the legend, so
+  opening it lifts the legend rather than covering it (§25).
 * `MapView` stays the DIRECT child of the `.map-pane` wrapper — overlays are its
   siblings (`app/page.phase4.test.tsx`, `app/responsive.test.tsx` both read
   `map-container.parentElement`).
@@ -760,3 +764,73 @@ ingestion, Docker, or Caddy file is touched. No existing test expectation was
 weakened: the two changed assertions in `e2e/facilityCostDashboard.spec.ts` are both
 **strictly stronger** than what they replaced, and every other pre-existing unit and
 e2e assertion passes unmodified.
+
+## 25. The map insight disclosures are closed by default
+
+Added by the collapsible-map-insight follow-up (`equity-dashboard.md` §12,
+`suitability-dashboard.md` §14). Both map overlays —
+`components/equity/EquityMapInsightStrip.tsx` and
+`components/suitability/SuitabilityMapInsightStrip.tsx`, the latter in **both** its
+score and its scenario variant — are native `<details>` disclosures that render
+**closed**. A future phase may restyle them; making either open by default is a
+product decision, not a styling one.
+
+* **One shared, frozen label.** Both bars print exactly `해석 · 주의 · 출처 보기`,
+  from the single `MAP_INSIGHT_SUMMARY_LABEL` constant in `lib/glossary.ts`. The
+  chevron beside it is `aria-hidden`, so the accessible name equals the visible
+  label; no `aria-label` may be placed on either `<summary>`.
+* **One shared class, with its own contract.** `.map-insight` genuinely collapses at
+  every width it renders at. It is deliberately NOT `.map-legend` and NOT
+  `.mobile-collapsible`, both of which force their body open at md+. Reusing either
+  would silently pin the insight open again.
+* **All provenance and caveat information remains reachable.** Collapsing hides
+  nothing permanently: 해석, the 주의 banner, the served reference period, the source
+  lines, the profile / applied weights / visible statuses / stable-only note, the
+  reference year, the policy, derivation, and candidate-grid versions, and the
+  `출처 자세히 보기` action are all one click away, and the sidebar independently
+  carries the same facts. Nothing in either disclosure may become the ONLY home for a
+  mandatory disclosure. Neither carries `role="alert"`, and neither may host a live
+  region — a `role="status"` inside a collapsed `<details>` stops announcing.
+* **The map legend and the top-left layer controls must remain independently
+  operable.** The legend, the MapLibre zoom controls, `wetland-layer-control`, and
+  `land-cover-layer-control` each take their own clicks with the insight both
+  collapsed and expanded, at every supported viewport. The full-width positioning row
+  around each disclosure stays `pointer-events-none`; only the visible `<details>` is
+  `pointer-events-auto`.
+* **Tests must not use forced clicks to conceal overlay collisions.** `{ force: true }`
+  is banned in the map-overlay specs. An overlay collision is a defect to fix in the
+  layout, not an obstacle to click through — this rule is what surfaced the
+  legend-over-land-cover conflict, and the bounded-height correction that resolved it
+  (`suitability-dashboard.md` §14).
+
+Enforced by: `components/equity/EquityMapInsightStrip.test.tsx`,
+`components/suitability/SuitabilityMapInsightStrip.test.tsx`,
+`app/page.equityDashboard.test.tsx`, `app/page.suitabilityDashboard.test.tsx`,
+`e2e/mapInsightDisclosure.spec.ts`, `e2e/equityDashboard.spec.ts`,
+`e2e/suitabilityDashboard.spec.ts`.
+
+### The one deliberate expectation change
+
+Four pre-existing assertions were updated, none weakened:
+
+1. `e2e/equityDashboard.spec.ts` — `insight-reference-period` / `insight-provenance`
+   were asserted visible on arrival. They are now asserted **hidden** on arrival and
+   visible after one click, which is strictly more specific than before.
+2. `e2e/equityDashboard.spec.ts` and `e2e/suitabilityDashboard.spec.ts` — the
+   `insight-open-sources` routing tests now open the disclosure first, as a reader
+   does. Same for the three unit tests that read the panel's content.
+3. The open-state height bound is `< 40%` of the map height rather than the collapsed
+   state's `< 1/3`: the expanded card is transient and carries a ~40px summary bar the
+   always-expanded card did not have. The collapsed bar is still held to `< 1/3`, and
+   is measured at 42px.
+4. The bottom overlay column's geometry assertions gained open-state counterparts
+   rather than losing their closed-state ones.
+5. `e2e/accessibility.spec.ts:65` now waits for `map-container` with the repository's
+   15s budget before reading its attributes. That file set **no** timeout anywhere, so
+   it asserted at Playwright's default 5s while the map mounts only after the view's
+   initial requests resolve. `e2e/mapInsightDisclosure.spec.ts` adds ~5.1 min of load
+   (full mocked suite 8.3 min → 12.0 min), which made that pre-existing race fire once
+   at 390×844; it passed in isolation and at 1440×900 in the same run. This is the
+   same mechanism, and the same correction, already recorded for `civicShell.spec.ts`
+   in `final-integration-regression.md`. Every assertion is unchanged — only the
+   patience is.

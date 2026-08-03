@@ -747,6 +747,103 @@ body {
   }
 }
 
+/* SHORT-VIEWPORT BOUND on the legend body — a map-overlay collision fix, not a
+   styling preference.
+
+   The map's LEFT gutter carries two overlays that grow toward each other: the
+   top-left layer stack (wetland + land-cover controls) grows DOWN from `top-2`, and
+   the bottom overlay column (legend, then the insight disclosure) grows UP from
+   `bottom-8`. At 768–800px viewport heights the map is only ~640–672px tall, and a
+   46vh legend plus an EXPANDED insight card left the column tall enough to rise over
+   the land-cover control — Playwright reported the legend's own markup intercepting
+   clicks aimed at `land-cover-layer-summary` (e2e/mapInsightDisclosure.spec.ts).
+
+   Collapsing both insight cards by default already removes that in the DEFAULT state.
+   This bounds the one remaining case — the insight expanded at a short viewport — by
+   capping the legend body a little tighter there. The legend body is ALREADY an
+   internally-scrollable container (`max-h-[40vh] … md:max-h-[46vh]`), so no class row,
+   no break, no color, and no count is lost: a scroll replaces a taller card. Nothing
+   analytical is hidden, and no data behaviour changes.
+
+   Scoped by HEIGHT, not width: it is vertical space the two stacks compete for, and
+   at ≥860px heights they never meet, so the legend keeps its full 46vh there. */
+@media (min-width: 768px) and (max-height: 820px) {
+  .map-legend > .map-legend-body {
+    max-height: 30vh;
+  }
+}
+
+/* Collapsed-by-default 지역 부담 map insight
+   (components/equity/EquityMapInsightStrip.tsx).
+
+   The 해석 / 주의 / 자료 기준·출처 card used to be permanently expanded across the
+   whole width of the map's bottom band. It is now a native <details>: closed, it is
+   a compact ~40px bar in the bottom-RIGHT of the map; open, it is the same card as
+   before. No content changed — only whether it is showing.
+
+   IMPORTANT — this is a THIRD disclosure class, deliberately not `.map-legend` and
+   deliberately not `.mobile-collapsible`. Both of those force their body OPEN at
+   md+, because a legend key and an analytical option must not be hidden on desktop.
+   This one's contract is the opposite: it genuinely collapses at every width it
+   renders at, which is `.wep-accordion`'s contract on a floating overlay surface.
+   Sharing any of those classes would silently pin it open again.
+
+   Nothing here is mandatory-only-here: the reference period, the source lines, and
+   the no-data wording all also appear in the sidebar, so collapsing it hides no
+   required disclosure (repo AGENTS.md, docs/ui-refresh/equity-dashboard.md §2).
+
+   Toggling it never resizes the MapLibre canvas — like the legend, the card is an
+   absolutely-positioned overlay, not part of the map container's box. Because the
+   overlay column is anchored to `bottom`, opening it grows the card UPWARD and
+   lifts the legend above it rather than covering it. */
+.map-insight {
+  /* Closed: only as wide as its own label, so it reads as a small control and
+     leaves the map visible. `max-width` keeps it inside the map at every width. */
+  width: fit-content;
+  max-width: 100%;
+}
+.map-insight > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  /* 40px — a compact control bar, not a panel. */
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  border-radius: var(--radius-card);
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+}
+.map-insight > summary::-webkit-details-marker {
+  display: none;
+}
+.map-insight-chevron {
+  transition: transform 0.15s ease;
+}
+.map-insight[open] > summary .map-insight-chevron {
+  transform: rotate(180deg);
+}
+/* Open: a bounded card. `max-width` is the desktop cap; `width: 100%` lets the
+   surrounding overlay column shrink it to the available map width at 1024px, where
+   the map is only ~624px wide, instead of pushing anything past the map edge. */
+.map-insight[open] {
+  width: 100%;
+  max-width: 52rem; /* 832px */
+}
+.map-insight[open] > summary {
+  border-bottom: 1px solid var(--color-hairline);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.map-insight-body {
+  padding: 0.75rem;
+}
+
 /* Dynamic-viewport height fallbacks for the SHELL (root <main>).
    The shell carries a static fallback class *before* its `dvh` class in markup
    (`min-h-screen min-h-dvh`, `md:h-screen md:h-dvh`) so an engine WITHOUT `dvh`

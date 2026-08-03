@@ -84,6 +84,8 @@ for (const vp of VIEWPORTS) {
       expect(mapBox.height, "map is the dominant surface").toBeGreaterThan(vp.height * 0.75);
       expect(mapBox.width, "map keeps a meaningful width").toBeGreaterThan(400);
 
+      // Collapsed, the insight is a compact bar; opened, it is a bounded card. Both
+      // states stay inside the map bounds and neither collapses the canvas.
       const strip = page.getByTestId("equity-insight-strip");
       await expect(strip).toBeVisible();
       const stripBox = (await strip.boundingBox())!;
@@ -94,6 +96,18 @@ for (const vp of VIEWPORTS) {
       expect(stripBox.y + stripBox.height).toBeLessThanOrEqual(mapBox.y + mapBox.height + 2);
       // …and it does not collapse the map: it covers at most a third of its height.
       expect(stripBox.height).toBeLessThan(mapBox.height / 3);
+
+      await page.getByTestId("equity-insight-summary").click();
+      const openBox = (await strip.boundingBox())!;
+      expect(openBox.x).toBeGreaterThanOrEqual(mapBox.x - 2);
+      expect(openBox.x + openBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width + 2);
+      expect(openBox.y).toBeGreaterThanOrEqual(mapBox.y - 2);
+      expect(openBox.y + openBox.height).toBeLessThanOrEqual(mapBox.y + mapBox.height + 2);
+      // Looser than the collapsed bound above: the expanded card is a transient,
+      // user-opened state and carries a summary bar the old always-open card lacked.
+      expect(openBox.height, "the expanded card still leaves the map dominant").toBeLessThan(
+        mapBox.height * 0.4,
+      );
     });
 
     test("stacks the legend clear of the strip and of the attribution", async ({ page }) => {
@@ -102,17 +116,32 @@ for (const vp of VIEWPORTS) {
       const legendBox = (await page.getByTestId("map-legend").boundingBox())!;
       const stripBox = (await page.getByTestId("equity-insight-strip").boundingBox())!;
 
-      // One bottom overlay column: the legend sits directly above the strip and the
-      // two never overlap, whatever either one's height turns out to be.
+      // One bottom overlay column: the legend sits directly above the insight and the
+      // two never overlap, whatever either one's height turns out to be. The insight
+      // is right-aligned in that band; the legend keeps the map's left edge.
       expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(stripBox.y + 1);
-      // Both stay inside the map, anchored to its left edge.
       expect(legendBox.x).toBeGreaterThanOrEqual(mapBox.x - 2);
       expect(legendBox.x).toBeLessThan(mapBox.x + 24);
       expect(legendBox.y).toBeGreaterThanOrEqual(mapBox.y - 2);
-      // The OSM attribution is never covered.
+      expect(stripBox.x + stripBox.width, "insight sits at the map's right edge").toBeGreaterThan(
+        mapBox.x + mapBox.width - 40,
+      );
+
+      // Opening it grows the card UPWARD and lifts the legend, so the disclosure can
+      // never cover the legend in either state.
+      await page.getByTestId("equity-insight-summary").click();
+      const openLegendBox = (await page.getByTestId("map-legend").boundingBox())!;
+      const openStripBox = (await page.getByTestId("equity-insight-strip").boundingBox())!;
+      expect(openLegendBox.y + openLegendBox.height).toBeLessThanOrEqual(openStripBox.y + 1);
+      expect(openLegendBox.y, "the legend rides above the expanded card").toBeGreaterThanOrEqual(
+        mapBox.y - 2,
+      );
+
+      // The OSM attribution is never covered, open or closed.
       const attribBox = await page.locator(".maplibregl-ctrl-attrib").boundingBox();
       if (attribBox) {
         expect(stripBox.y + stripBox.height).toBeLessThanOrEqual(attribBox.y + 2);
+        expect(openStripBox.y + openStripBox.height).toBeLessThanOrEqual(attribBox.y + 2);
       }
     });
 
@@ -148,6 +177,10 @@ for (const vp of VIEWPORTS) {
       // The reference period and the metric source are on screen, not in a tooltip.
       await expect(page.getByTestId("equity-summary-reference-period")).toBeVisible();
       await expect(page.getByTestId("selected-region-metric-source").first()).toBeVisible();
+      // The map insight is collapsed by default, so its copy of the same facts is
+      // one click away — never a tooltip, and never the only home for them.
+      await expect(page.getByTestId("insight-reference-period")).toBeHidden();
+      await page.getByTestId("equity-insight-summary").click();
       await expect(page.getByTestId("insight-reference-period")).toBeVisible();
       await expect(page.getByTestId("insight-provenance")).toBeVisible();
     });
@@ -225,6 +258,7 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
 
   test("routes to the existing 데이터·출처 area from the map source block", async ({ page }) => {
     await openEquity(page);
+    await page.getByTestId("equity-insight-summary").click();
     await page.getByTestId("insight-open-sources").click();
     await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
     // The map is unmounted on that area, so exactly one map is ever mounted.

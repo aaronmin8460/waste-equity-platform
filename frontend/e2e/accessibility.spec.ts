@@ -65,6 +65,13 @@ for (const vp of VIEWPORTS) {
     test("labels the map as a region with a linked textual description", async ({ page }) => {
       await page.goto("/");
       const map = page.getByTestId("map-container");
+      // The map mounts only once the view's initial requests resolve, so this raced
+      // Playwright's default 5s expect budget under a loaded dev server. Same
+      // mechanism, and same correction, as the `civicShell.spec.ts` map wait
+      // (docs/ui-refresh/final-integration-regression.md): give it the 15s budget the
+      // rest of the repository already uses for exactly this. Every assertion below
+      // is unchanged — this only changes how long the test is willing to wait.
+      await expect(map).toBeVisible({ timeout: 15000 });
       await expect(map).toHaveAttribute("role", "region");
       await expect(map).toHaveAttribute("aria-label", /지도/);
       await expect(map).toHaveAttribute("aria-describedby", "map-accessible-description");

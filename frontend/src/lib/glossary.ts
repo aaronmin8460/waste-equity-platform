@@ -90,6 +90,18 @@ export const SUITABILITY_SCREENING_SHORT_LABEL = "광역 분석 스크리닝 · 
 /** Title for the standing disclaimer banner. */
 export const SUITABILITY_SCREENING_DISCLAIMER_TITLE = "광역 분석 스크리닝";
 
+/**
+ * The visible label on the collapsed map-insight bar, shared by BOTH map overlays
+ * (`equity/EquityMapInsightStrip`, `suitability/SuitabilityMapInsightStrip`).
+ *
+ * Frozen, and one string rather than two: it names the three groups it hides, in the
+ * order they appear when opened, and nothing else — no counts, no state word, and no
+ * visually-hidden addition, so the accessible name always equals the printed label.
+ * It lives here because both overlays must print the identical bar; a per-component
+ * copy is how the two would drift apart.
+ */
+export const MAP_INSIGHT_SUMMARY_LABEL = "해석 · 주의 · 출처 보기";
+
 // --------------------------------------------------------------------------- //
 // Candidate status — the three screening outcomes.
 // --------------------------------------------------------------------------- //
