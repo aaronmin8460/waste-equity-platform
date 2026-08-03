@@ -379,20 +379,41 @@ guard is untouched and it was not modified.
 Deliberately no pixel snapshots — the repository has no visual-regression
 infrastructure (`baseline.md` §7).
 
-### A pre-existing flake, so the next validator does not blame this milestone
+### Two pre-existing flakes, so the next validator does not blame this milestone
 
-`src/app/page.phase7.test.tsx` — the landfill **filter URL-state** suite — fails
-intermittently under full-suite concurrency (`npm test`), never in isolation. It was
-measured on this branch (1 failure in 3 full runs, at the `scope`/`top` assertion)
-and on unmodified `main` at `db96118` (**1 failure in the first run and 2 in the
-second, clean in the third**, at a different assertion in the same file). Every one
-of its 11 assertions passes 8/8 when the file is run alone, on both branches.
+Both were measured on this branch **and** on unmodified `main` at `db96118`. Neither
+is caused by this work, and neither was "fixed" by relaxing an assertion.
 
-It is a timing sensitivity in that file's `waitFor`-on-`window.location.search`
-pattern under load, not a landfill-rendering fault, and this milestone neither
-introduced it nor touched `app/page.tsx`, `lib/urlState.ts`, or any URL logic. It is
-recorded here rather than fixed because fixing it is a change to a suite outside this
-milestone's scope.
+**1. `src/app/page.phase7.test.tsx` (the landfill filter URL-state suite).** Fails
+intermittently under full-suite concurrency (`npm test`), never in isolation.
+Measured on this branch — 1 failure in 3 full runs, at the `scope`/`top` assertion —
+and on `main` — **1 failure in the first run and 2 in the second, clean in the
+third**, at a different assertion in the same file. All 11 of its assertions pass
+8/8 when the file is run alone, on both branches. It is a timing sensitivity in that
+file's `waitFor`-on-`window.location.search` pattern under load; this milestone
+touched neither `app/page.tsx` nor `lib/urlState.ts`.
+
+**2. `e2e/facilityCostDashboard.spec.ts:126` at 1024×768** ("keeps the whole setup
+workflow reachable, with the action on the first screen"). Failed 2 of 4 full-suite
+runs on this branch (`box.y + box.height` = 838 against a 768 viewport) and 0 of 1 on
+`main`. It is **not** a layout change from this work: the test passes **40/40**
+(`--repeat-each=10` × 4 viewports) in isolation on this branch, and this milestone
+changes no facility-cost file, no shared primitive, and no global CSS.
+
+The root cause was traced. Line 148 is `await page.mouse.wheel(0, -2000)`, which
+dispatches the wheel event but does not wait for the scroll to settle, and the
+sticky rail is measured on the very next line. The assertion therefore depends on
+where the scroll happens to come to rest. Replacing it with a deterministic
+`window.scrollTo(0, 0)` plus an `expect.poll` on `window.scrollY` makes the 1024×768
+case fail **3/3** — i.e. with the page genuinely at the top, 비용 계산하기 does not
+fit above the fold at 1024×768, and the test has been passing only because the wheel
+left the page partially scrolled, where `lg:sticky` pulls the button up.
+
+That experiment was **reverted**, and the spec is committed unchanged. Making it
+honest requires either changing the 비용 살펴보기 setup layout or re-stating what
+`facility-cost-dashboard.md` §14 promises at 1024×768 — both are 비용 살펴보기 product
+decisions, and this milestone is explicitly scoped out of that view. It is recorded
+here so the finding is not lost.
 
 ## 11. Deliberately not built
 
