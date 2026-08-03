@@ -442,10 +442,25 @@ function FacilityCostBody({
 
 /**
  * The setup workflow: a constrained centred container holding a two-column grid —
- * the three setup steps on the left, and a compact summary on the right that sticks
- * while the left column scrolls, so the primary action is reachable without
- * scrolling to the bottom of a long form. Below `lg` the columns stack and the
- * summary returns to normal document flow.
+ * the standing scope notice and the three setup steps on the left, and a compact
+ * summary on the right that sticks while the left column scrolls, so the primary
+ * action is reachable without scrolling to the bottom of a long form. Below `lg` the
+ * columns stack and the summary returns to normal document flow.
+ *
+ * WHY THE SCOPE NOTICE IS INSIDE THE LEFT COLUMN (final integration milestone).
+ * It used to sit full-width ABOVE the grid, which made it part of the sticky rail's
+ * STATIC position: at 1024×768 the banner plus its exclusion disclosure spent 250px
+ * before the grid even began, so the rail started at y=464 and its 415px-tall card
+ * ended at y=879 — 111px below the fold, with 비용 계산하기 clipped at 838. Sticky
+ * positioning cannot rescue that: `position: sticky` only ever pulls an element
+ * DOWN-page toward `top`, never above its static position, so the rail was of no
+ * help until the citizen had already scrolled — which is exactly the state the
+ * first-screen contract is about (docs/ui-refresh/regression-contract.md §16).
+ *
+ * Moving the notice into the scrolling workflow column starts the grid — and so the
+ * rail — at the top of the workspace. The notice is unchanged in content, wording,
+ * prominence order (still the first block under the `<h1>`, still above step 1), and
+ * test ids; only the column it occupies changed.
  */
 function FacilityCostSetup({
   options,
@@ -490,17 +505,21 @@ function FacilityCostSetup({
 
   return (
     <div className="mx-auto w-full max-w-6xl" data-testid="facility-cost-form">
-      <FacilityCostNotice />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="flex flex-col gap-3">
+          <div>
+            <FacilityCostNotice />
+          </div>
 
-      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <FacilityCostSetupPanel
-          options={options}
-          scenario={scenario}
-          regionOptions={regionOptions}
-          update={update}
-          validationMessage={validationMessage}
-          headingRef={headingRef}
-        />
+          <FacilityCostSetupPanel
+            options={options}
+            scenario={scenario}
+            regionOptions={regionOptions}
+            update={update}
+            validationMessage={validationMessage}
+            headingRef={headingRef}
+          />
+        </div>
 
         <FacilityCostSetupSummary
           options={options}
