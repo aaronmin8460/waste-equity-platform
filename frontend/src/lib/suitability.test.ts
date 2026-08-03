@@ -4,8 +4,11 @@ import {
   classifyEquityRaw,
   geometryBounds,
   isDegenerateBounds,
+  namedWeightRows,
+  namedWeights,
   stabilityBadgeLabel,
   topCandidateCellLabel,
+  weightPercent,
 } from "./suitability";
 
 describe("geometryBounds (map movement to a selected candidate)", () => {
@@ -145,5 +148,47 @@ describe("stabilityBadgeLabel (text-first stability badges)", () => {
     expect(stabilityBadgeLabel("STABLE", null)).toBeNull();
     expect(stabilityBadgeLabel(null, 3)).toBeNull();
     expect(stabilityBadgeLabel("UNKNOWN", 3)).toBeNull();
+  });
+});
+
+describe("weight formatting (presentation only — never a recomputed weight)", () => {
+  it("renders a served decimal weight as a whole percent", () => {
+    expect(weightPercent("0.4")).toBe("40%");
+    expect(weightPercent("0.31")).toBe("31%");
+    expect(weightPercent("0.40000000")).toBe("40%");
+    // An official zero stays a zero — it is a served value, not a missing one.
+    expect(weightPercent("0")).toBe("0%");
+  });
+
+  it("renders an absent or unparseable weight as '-', never a fabricated 0%", () => {
+    expect(weightPercent(undefined)).toBe("-");
+    expect(weightPercent("")).toBe("-");
+    expect(weightPercent("n/a")).toBe("-");
+  });
+
+  it("always pairs a component code with its Korean name, in the shared order", () => {
+    const line = namedWeights({ zoning: "0.4", road: "0.3", equity: "0.2", demand: "0.1" });
+    expect(line).toBe(
+      "용도지역 호환성(Z) 40% · 도로 근접성 대리지표(R) 30% · 기존 지역 부담(E) 20% · 폐기물 처리 수요(D) 10%",
+    );
+    // The codes only ever appear inside their parenthetical, never standing alone.
+    expect(line).not.toMatch(/(?:^|\s)[ZRED](?:\s|$)/);
+  });
+
+  it("keeps the row form and the sentence form in step", () => {
+    const weights = { zoning: "0.31", road: "0.19", equity: "0.28", demand: "0.22" };
+    const rows = namedWeightRows(weights);
+    expect(rows.map((row) => row.component)).toEqual(["zoning", "road", "equity", "demand"]);
+    expect(rows.map((row) => `${row.label} ${row.percent}`).join(" · ")).toBe(
+      namedWeights(weights),
+    );
+  });
+
+  it("renders a missing component's weight as '-' rather than dropping the row", () => {
+    const rows = namedWeightRows({ zoning: "0.4" });
+    expect(rows).toHaveLength(4);
+    expect(rows[0].percent).toBe("40%");
+    expect(rows[1].percent).toBe("-");
+    expect(namedWeightRows(undefined).every((row) => row.percent === "-")).toBe(true);
   });
 });

@@ -7,7 +7,12 @@
  *  - `geometryBounds` moves the map to a selected candidate.
  *  - `topCandidateCellLabel` distinguishes grid cells with tied scores.
  *  - `classifyEquityRaw` keeps an official measured zero distinct from missing data.
+ *  - `weightPercent` / `namedWeights` FORMAT a served weight vector for display.
+ *    They round for presentation only; the served decimal strings are never
+ *    altered, re-normalized, or used to recompute a score.
  */
+
+import { COMPONENT_ORDER, codeWithName, type ScoreComponent } from "./glossary";
 
 /**
  * Longitude/latitude bounds of any GeoJSON geometry (Point/Polygon/MultiPolygon).
@@ -112,4 +117,44 @@ export function stabilityBadgeLabel(
     default:
       return null;
   }
+}
+
+/**
+ * A served weight component (a decimal string in [0,1]) as a whole percent, e.g.
+ * `"0.35"` → `"35%"`. Presentation only: an unparseable or absent value renders
+ * `"-"` rather than a fabricated `0%`.
+ */
+export function weightPercent(value: string | undefined): string {
+  // An absent or blank weight is MISSING, not zero: `Number("")` is 0, so an empty
+  // string is screened out before the numeric check rather than being rendered as
+  // a confident `0%` (repo AGENTS.md — a missing value is never a fabricated zero).
+  if (value == null || value.trim() === "") return "-";
+  const n = Number(value);
+  return Number.isFinite(n) ? `${Math.round(n * 100)}%` : "-";
+}
+
+/**
+ * The four Z/R/E/D weights as one line, each code shown WITH its Korean name —
+ * "용도지역 호환성(Z) 40% · 도로 근접성 대리지표(R) 30% · …", never a bare letter.
+ * Order is the shared `COMPONENT_ORDER`, so every surface lists them identically.
+ */
+export function namedWeights(weights: Record<string, string> | undefined): string {
+  const w = weights ?? {};
+  return COMPONENT_ORDER.map((c) => `${codeWithName(c)} ${weightPercent(w[c])}`).join(" · ");
+}
+
+/**
+ * The same four weights as structured rows, for a surface that lays them out
+ * rather than printing one sentence. Same source, same order, same rounding —
+ * so a table and a sentence can never disagree.
+ */
+export function namedWeightRows(
+  weights: Readonly<Partial<Record<ScoreComponent, string>>> | undefined,
+): { component: ScoreComponent; label: string; percent: string }[] {
+  const w = weights ?? {};
+  return COMPONENT_ORDER.map((component) => ({
+    component,
+    label: codeWithName(component),
+    percent: weightPercent(w[component]),
+  }));
 }

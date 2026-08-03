@@ -58,11 +58,8 @@ import {
   type ReportingBoundaryCollection,
   type ReportingPerCapitaEnvelope,
   type ReportingWasteStatisticsEnvelope,
-  type SuitabilityPolicy,
   type SuitabilityProfile,
-  type SuitabilityRun,
   type SuitabilityStatus,
-  type SuitabilitySummary,
   type UserScenarioCandidateDetail,
   type WasteStatisticsItem,
 } from "../lib/api";
@@ -102,7 +99,6 @@ import type { LandfillUnavailableState } from "../lib/landfill";
 import { landfillUnavailableFromAll } from "../lib/landfill";
 import DashboardShell from "../components/DashboardShell";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
-import LandCoverCellPanel from "../components/LandCoverCellPanel";
 import LandCoverLayerControl from "../components/LandCoverLayerControl";
 import type { ClassLevel } from "../lib/landCover";
 import { landCoverErrorKind, validateActiveRelease } from "../lib/landCover";
@@ -118,6 +114,12 @@ import {
   mergeAvailableClasses,
 } from "../lib/landCoverLayer";
 import MapLegendOverlay from "../components/MapLegendOverlay";
+import SuitabilityMapInsightStrip from "../components/suitability/SuitabilityMapInsightStrip";
+import SuitabilityScreeningNotice from "../components/suitability/SuitabilityScreeningNotice";
+import SuitabilitySidebar, {
+  type SuitabilityMeta,
+} from "../components/suitability/SuitabilitySidebar";
+import { STATUS_LABELS } from "../components/suitability/shared";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import TransparencyDashboard from "../components/TransparencyDashboard";
 import WetlandLayerControl from "../components/WetlandLayerControl";
@@ -127,7 +129,6 @@ import RegionRanking from "../components/RegionRanking";
 import RegionComparison, { type ComparisonValue } from "../components/RegionComparison";
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
-import InfoBanner from "../components/ui/InfoBanner";
 import PageHeader from "../components/ui/PageHeader";
 import Skeleton from "../components/ui/Skeleton";
 import {
@@ -150,25 +151,13 @@ import {
 } from "../lib/exports";
 import { buildComparisonReport, buildEquityReport, type ReportModel } from "../lib/report";
 import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario";
-import { classifyEquityRaw, stabilityBadgeLabel } from "../lib/suitability";
+import { namedWeightRows } from "../lib/suitability";
 import {
-  COMPONENT_META,
-  COMPONENT_ORDER,
   MODE_LABELS,
   MODE_ORIENTATION,
-  PROFILE_META,
-  SUITABILITY_SCREENING_DISCLAIMER,
-  SUITABILITY_SCREENING_DISCLAIMER_TITLE,
   SUITABILITY_SCREENING_SHORT_LABEL,
-  UNMODELED_SUITABILITY_FACTORS,
-  UNMODELED_SUITABILITY_NOTE,
-  UNMODELED_SUITABILITY_TITLE,
   accountingBasisLabel,
-  codeWithName,
   plainError,
-  profileLabel,
-  statusExplanation,
-  statusLabel,
   type DashboardArea,
   type DataStatus,
 } from "../lib/glossary";
@@ -186,51 +175,19 @@ const MapView = dynamic(() => import("../components/MapView"), { ssr: false });
  */
 type DashboardMode = MapMode | "flow" | "transparency";
 
-// Plain-Korean score-basis (weight-profile) options. The primary label is the
-// citizen phrasing; `method` is the short detail line shown under it. Both come
-// from the central glossary so wording stays consistent across the app.
-const PROFILES: { key: SuitabilityProfile; label: string; method: string }[] = [
-  { key: "baseline", label: PROFILE_META.baseline.primary, method: PROFILE_META.baseline.detail ?? "" },
-  { key: "equal", label: PROFILE_META.equal.primary, method: PROFILE_META.equal.detail ?? "" },
-  {
-    key: "equity_focused",
-    label: PROFILE_META.equity_focused.primary,
-    method: PROFILE_META.equity_focused.detail ?? "",
-  },
-  {
-    key: "access_focused",
-    label: PROFILE_META.access_focused.primary,
-    method: PROFILE_META.access_focused.detail ?? "",
-  },
-  { key: "critic", label: PROFILE_META.critic.primary, method: PROFILE_META.critic.detail ?? "" },
-];
-
-// Old runs that predate CRITIC/stability carry no such results.
-const OLD_RUN_NO_CRITIC_MESSAGE =
-  "이 분석 실행에는 데이터 분포 기준·안정성 결과가 없습니다. 새 버전의 분석 실행이 필요합니다.";
-
-// Plain-Korean primary status labels for legend/popup. The raw code stays in the
-// detail layer (STATUS_META[...].code) where it is genuinely needed for diagnostics.
-const STATUS_LABELS: Record<SuitabilityStatus, string> = {
-  ELIGIBLE: statusLabel("ELIGIBLE"),
-  REVIEW_REQUIRED: statusLabel("REVIEW_REQUIRED"),
-  EXCLUDED: statusLabel("EXCLUDED"),
-};
-
-/** A weight component value (decimal string in [0,1]) as a whole percent. */
-function weightPercent(value: string | undefined): string {
-  const n = Number(value);
-  return Number.isFinite(n) ? `${Math.round(n * 100)}%` : "-";
-}
-
 /**
- * The four Z/R/E/D weights rendered with their Korean names as percentages, e.g.
- * "용도지역 호환성(Z) 40% · 도로 근접성 대리지표(R) 30% · …" — never bare single-letter codes.
+ * The candidate status → representative swatch color, built from the SAME
+ * `lib/metrics.ts` constants the MapLibre candidate fill and `MapLegendOverlay`
+ * read. The suitability sidebar's status summary receives this map rather than
+ * hard-coding colors, so the summary, the legend, and the map cells can never
+ * drift apart. Eligible cells are score-shaded, so the representative swatch is
+ * the same mid class the legend's ELIGIBLE checkbox uses.
  */
-function namedWeights(w: Record<string, string> | undefined): string {
-  const weights = w ?? {};
-  return COMPONENT_ORDER.map((c) => `${codeWithName(c)} ${weightPercent(weights[c])}`).join(" · ");
-}
+const CANDIDATE_STATUS_COLORS: Record<SuitabilityStatus, string> = {
+  ELIGIBLE: CANDIDATE_SCORE_PALETTE_5[3],
+  REVIEW_REQUIRED: CANDIDATE_REVIEW_COLOR,
+  EXCLUDED: CANDIDATE_EXCLUDED_COLOR,
+};
 
 export interface LoadedData {
   boundaries: RegionBoundaryCollection;
@@ -244,12 +201,6 @@ export interface LoadedData {
   reportingStats: ReportingWasteStatisticsEnvelope;
   reportingPerCapita: ReportingPerCapitaEnvelope;
   sources: DataSourceItem[];
-}
-
-interface SuitabilityMeta {
-  policy: SuitabilityPolicy;
-  run: SuitabilityRun;
-  summary: SuitabilitySummary;
 }
 
 export default function Home() {
@@ -1663,7 +1614,7 @@ export default function Home() {
                 </p>
               )
             ) : (
-              <SuitabilityPanel
+              <SuitabilitySidebar
                 suit={suit}
                 suitError={suitError}
                 profile={profile}
@@ -1673,6 +1624,12 @@ export default function Home() {
                 selected={selected}
                 clearSelected={() => setSelected(null)}
                 onSelect={onCandidateClick}
+                // The canonical map-display state, REPORTED by the sidebar (the
+                // controls that change it stay in the floating legend, so there is
+                // exactly one status-visibility control on the screen).
+                statusVisibility={statusVisibility}
+                stableOnly={stableOnly && stabilityAvailable}
+                statusColors={CANDIDATE_STATUS_COLORS}
               />
             )}
           </>
@@ -1818,6 +1775,17 @@ export default function Home() {
                 statusVisibility={statusVisibility}
                 onToggleStatus={toggleStatus}
                 statusLabels={STATUS_LABELS}
+                // Served counts only — null until the summary loads, so the filter
+                // never shows a fabricated 0 beside a status.
+                statusCounts={
+                  suit
+                    ? {
+                        ELIGIBLE: suit.summary.candidate_count_eligible,
+                        REVIEW_REQUIRED: suit.summary.candidate_count_review,
+                        EXCLUDED: suit.summary.candidate_count_excluded,
+                      }
+                    : null
+                }
                 stabilityAvailable={stabilityAvailable}
                 stableOnly={stableOnly}
                 onToggleStableOnly={toggleStableOnly}
@@ -1839,6 +1807,38 @@ export default function Home() {
               metricStatus={metricDataStatus}
               referencePeriod={metricReferencePeriod}
               metricProvenance={metricProvenance}
+              onOpenSources={() => changeMode("transparency")}
+            />
+          ) : null}
+          {/* The suitability counterpart. It joins the SAME bottom overlay column,
+              so it can never collide with the legend above it, and it renders only
+              once the run/policy are loaded — there is no version string, run id, or
+              basis to state before then, and it must not print a placeholder. */}
+          {mode === "suitability" && suit ? (
+            <SuitabilityMapInsightStrip
+              variant={suitabilityView === "scenario" ? "scenario" : "score"}
+              profile={
+                suitabilityView === "scenario"
+                  ? (appliedScenario?.compareProfile ?? "baseline")
+                  : profile
+              }
+              scenarioWeights={
+                appliedScenario
+                  ? namedWeightRows(appliedScenario.weights).map((row) => ({
+                      label: row.label,
+                      percent: row.percent,
+                    }))
+                  : null
+              }
+              visibleStatuses={(Object.keys(statusVisibility) as SuitabilityStatus[]).filter(
+                (status) => statusVisibility[status],
+              )}
+              stableOnly={stableOnly && stabilityAvailable}
+              runId={suit.run.id}
+              referenceYear={suit.run.reference_year}
+              policyVersion={suit.policy.policy_version}
+              derivationVersion={suit.policy.derivation_version}
+              candidateGridVersion={suit.policy.candidate_grid_version}
               onOpenSources={() => changeMode("transparency")}
             />
           ) : null}
@@ -1918,701 +1918,6 @@ function CollapsibleSection({
           padding there; on mobile the visible summary already provides it. */}
       <div className="mobile-collapsible-body flex flex-col gap-4 px-4 pb-4 md:pt-4">{children}</div>
     </details>
-  );
-}
-
-// --------------------------------------------------------------------------- //
-// Suitability panel
-// --------------------------------------------------------------------------- //
-
-// Text-first stability badge. Stability is always conveyed by the label text (the
-// count and meaning), with color only as a secondary cue — never color alone.
-function StabilityBadge({
-  stabilityClass,
-  stableCount,
-}: {
-  stabilityClass: string;
-  stableCount: number;
-}) {
-  const label = stabilityBadgeLabel(stabilityClass, stableCount);
-  if (label === null) return null;
-  const styles: Record<string, string> = {
-    STABLE: "border-pink-600 bg-pink-50 text-pink-800",
-    CONDITIONALLY_STABLE: "border-amber-500 bg-amber-50 text-amber-800",
-    WEIGHT_SENSITIVE: "border-slate-400 bg-slate-100 text-slate-600",
-  };
-  return (
-    <span
-      data-testid="stability-badge"
-      className={`inline-block rounded border px-1 text-[10px] font-semibold ${
-        styles[stabilityClass] ?? styles.WEIGHT_SENSITIVE
-      }`}
-    >
-      {label}
-    </span>
-  );
-}
-
-// Run-specific CRITIC methodology note: candidate population, method version, the
-// actual Z/R/E/D weights, any zero-variance criteria, and the mandatory disclaimer.
-function CriticMethodNote({ run }: { run: SuitabilityRun }) {
-  const w = run.weight_profiles.critic;
-  if (!w) return null;
-  const deriv = run.weight_derivation as Record<string, unknown>;
-  const pop = deriv.population_candidate_count;
-  const methodVersion = deriv.method_version;
-  const zeroVar = (deriv.zero_variance_criteria as string[] | undefined) ?? [];
-  return (
-    <div
-      className="mt-2 rounded border border-sky-200 bg-sky-50 p-2 text-[11px] text-slate-600"
-      data-testid="critic-method-note"
-    >
-      <p className="font-medium text-slate-700">CRITIC 데이터 기반 가중치</p>
-      <p className="mt-0.5">
-        방법: CRITIC · 대상 후보 {pop != null ? formatCount(Number(pop)) : "-"}개 (자료가 완전한
-        스크리닝 통과 후보)
-        {/* Phase 7: the raw method-version identifier is demoted out of the visible
-            sentence, matching how Phase 6 moved the analysis version strings into a
-            technical layer. The value itself is unchanged and still rendered. */}
-        {methodVersion ? (
-          <span className="ml-1 break-all text-slate-400" data-diagnostic>
-            (방법 버전 {String(methodVersion)})
-          </span>
-        ) : null}
-      </p>
-      <p className="mt-0.5 tabular-nums">
-        가중치: Z {w.zoning} · R {w.road} · E {w.equity} · D {w.demand}
-      </p>
-      {zeroVar.length > 0 && (
-        <p className="mt-0.5" data-testid="critic-zero-variance">
-          분산 0(정보 없음)으로 가중치 0인 기준: {zeroVar.join(", ")}
-        </p>
-      )}
-      <p className="mt-0.5">
-        가중치는 이 실행의 완전한 스크리닝 통과 후보 점수의 분산·상관관계로 계산되며, 조닝/도로/형평성/수요의
-        규범적 중요도가 아닌 선택된 데이터·분석 범위의 구조를 나타냅니다. 전문가 판단·법적 우선순위·보편적
-        정책 중요도가 아닙니다.
-      </p>
-    </div>
-  );
-}
-
-// Weight-sensitivity stability summary: stable/conditional/sensitive counts, the
-// top-10% cutoff, the three compared profiles, and the sensitivity disclaimer.
-function StabilitySummary({ summary }: { summary: SuitabilitySummary }) {
-  return (
-    <section
-      className="rounded border border-slate-300 bg-slate-50 p-3 text-xs text-slate-700"
-      data-testid="stability-summary"
-    >
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">
-        기준을 바꿔도 상위권을 유지하는 정도
-      </h2>
-      <dl className="space-y-0.5" data-testid="stability-counts">
-        <div>
-          <dt className="inline font-medium">안정 후보: </dt>
-          <dd className="inline">{formatCount(summary.candidate_count_stable)}</dd>
-        </div>
-        <div>
-          <dt className="inline font-medium">조건부 안정 후보: </dt>
-          <dd className="inline">{formatCount(summary.candidate_count_conditionally_stable)}</dd>
-        </div>
-        <div>
-          <dt className="inline font-medium">가중치 민감 후보: </dt>
-          <dd className="inline">{formatCount(summary.candidate_count_weight_sensitive)}</dd>
-        </div>
-        <div>
-          <dt className="inline font-medium">상위 기준: </dt>
-          <dd className="inline">
-            상위 10%, rank ≤ {summary.stability_top_cutoff_rank ?? "-"}
-          </dd>
-        </div>
-        <div>
-          <dt className="inline font-medium">비교 방식: </dt>
-          <dd className="inline">baseline / equal / critic</dd>
-        </div>
-      </dl>
-      <p className="mt-1 text-[11px] text-slate-500">
-        안정 후보는 세 비교 방식 모두에서 상위 10%에 포함된 후보입니다. 가중치 변화에 덜 민감하다는
-        뜻이며 최종 입지, 허가 가능성 또는 법적 적격성을 의미하지 않습니다.
-      </p>
-    </section>
-  );
-}
-
-/**
- * The Phase 0 standing analytical-screening disclaimer for the map sub-views (후보지
- * 점수 / 가중치 바꿔보기). Rendered at the TOP of the suitability sidebar rather than as
- * a full-width header row, because the map sub-views guarantee the map starts
- * immediately below the sub-view bar and fills the viewport (e2e/desktopNavigation +
- * responsive); a full-width band there would open a gap above the map and shrink it
- * below its dominant height. In the sidebar it is visible near the top of the view on
- * both desktop and mobile (the sidebar stacks above the map on mobile) without
- * obstructing the map. It is a neutral `InfoBanner` (tone `info`, never
- * `role="alert"`) with a text severity label, inside an aria-labelled landmark. The
- * 비용 살펴보기 (cost) sub-view has no sidebar, so it renders the SAME shared string in
- * its own top notice (FacilityCostDashboard). It never appears in the equity map.
- */
-function SuitabilityScreeningNotice() {
-  return (
-    <section aria-label="후보지 분석 안내" data-testid="suitability-screening-notice">
-      <InfoBanner
-        tone="info"
-        title={SUITABILITY_SCREENING_DISCLAIMER_TITLE}
-        testId="suitability-screening-disclaimer"
-      >
-        <p>{SUITABILITY_SCREENING_DISCLAIMER}</p>
-      </InfoBanner>
-    </section>
-  );
-}
-
-/**
- * "현재 분석에 포함되지 않은 항목" — the Phase 0 disclosure of the physical /
- * environmental / legal conditions the current regional screening does NOT yet
- * evaluate. A compact, collapsible native <details> (keyboard reachable); the title
- * and the core limitation stay discoverable while collapsed. It lists the shared
- * `UNMODELED_SUITABILITY_FACTORS` and states that a missing value is NEVER treated as
- * 0 or as a safe condition — it shows no fake value, placeholder score, or completion
- * percentage. Rendered in the score-view methodology AND the candidate detail panel.
- */
-function UnmodeledFactorsDisclosure({ testId }: { testId: string }) {
-  return (
-    <details
-      className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"
-      data-testid={testId}
-    >
-      <summary className="cursor-pointer text-sm font-semibold text-slate-800">
-        {UNMODELED_SUITABILITY_TITLE}
-      </summary>
-      <ul className="mt-2 list-disc space-y-0.5 pl-4" data-testid={`${testId}-list`}>
-        {UNMODELED_SUITABILITY_FACTORS.map((factor) => (
-          <li key={factor}>{factor}</li>
-        ))}
-      </ul>
-      <p className="mt-2 text-[11px] text-slate-500">{UNMODELED_SUITABILITY_NOTE}</p>
-    </details>
-  );
-}
-
-function SuitabilityPanel({
-  suit,
-  suitError,
-  profile,
-  setProfile,
-  runProfiles,
-  stabilityAvailable,
-  selected,
-  clearSelected,
-  onSelect,
-}: {
-  suit: SuitabilityMeta | null;
-  suitError: string | null;
-  profile: SuitabilityProfile;
-  setProfile: (p: SuitabilityProfile) => void;
-  runProfiles: SuitabilityProfile[];
-  stabilityAvailable: boolean;
-  selected: CandidateDetail | null;
-  clearSelected: () => void;
-  onSelect: (id: number) => void;
-}) {
-  if (suitError) {
-    return (
-      <section
-        className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-slate-700"
-        data-testid="suitability-error"
-      >
-        <h2 className="mb-1 text-sm font-semibold text-slate-800">후보지 점수</h2>
-        <p>{suitError}</p>
-      </section>
-    );
-  }
-  if (suit === null) {
-    return (
-      <p className="text-sm text-slate-600" data-testid="suitability-loading">
-        후보지 분석을 불러오는 중…
-      </p>
-    );
-  }
-  const s = suit.summary;
-  return (
-    <>
-      {/* Screen-reader status: announced when the weight profile changes and when
-          the candidate summary updates (both change this text). Kept concise to
-          avoid verbose repetition; the same counts are shown visibly below. */}
-      <p role="status" className="sr-only" data-testid="suitability-live">
-        점수 반영 기준 {profileLabel(profile)}. {statusLabel("ELIGIBLE")}{" "}
-        {formatCount(s.candidate_count_eligible)}개, {statusLabel("REVIEW_REQUIRED")}{" "}
-        {formatCount(s.candidate_count_review)}개.
-      </p>
-      <section
-        className="rounded border border-slate-300 bg-slate-50 p-3 text-xs break-words text-slate-700"
-        data-testid="suitability-summary"
-      >
-        <h2 className="mb-1 text-sm font-semibold text-slate-800">후보지 점수 요약</h2>
-        <p className="mb-2 font-medium text-amber-800">
-          이 결과는 공공자료를 이용한 1차 비교이며 실제 입지 결정이 아닙니다. &apos;통과&apos;는 법적
-          적격을 의미하지 않습니다.
-        </p>
-        <dl className="space-y-1">
-          <div>
-            <dt className="inline font-medium">후보 구역: </dt>
-            <dd className="inline" data-testid="candidate-counts">
-              전체 {formatCount(s.candidate_count_total)} · {statusLabel("ELIGIBLE")}{" "}
-              {formatCount(s.candidate_count_eligible)} · {statusLabel("REVIEW_REQUIRED")}{" "}
-              {formatCount(s.candidate_count_review)} · {statusLabel("EXCLUDED")}{" "}
-              {formatCount(s.candidate_count_excluded)}
-            </dd>
-          </div>
-        </dl>
-        {/* Phase 0: what each screening status means, from the shared glossary. A
-            compact <details> (keyboard reachable) so the meaning is one click away in
-            the same place the counts appear; the labels themselves are already plain. */}
-        <details className="mt-2" data-testid="status-explanations">
-          <summary className="cursor-pointer font-medium text-slate-600">상태 설명 보기</summary>
-          <dl className="mt-1 space-y-1 text-[11px] text-slate-600">
-            {(["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"] as SuitabilityStatus[]).map((st) => (
-              <div key={st} data-testid={`status-explanation-${st}`}>
-                <dt className="inline font-semibold">{statusLabel(st)}: </dt>
-                <dd className="inline">{statusExplanation(st)}</dd>
-              </div>
-            ))}
-          </dl>
-        </details>
-        {/* Technical run/version provenance moved behind a disclosure (progressive
-            disclosure) — the citizen sees the counts first; the analyst opens this. */}
-        <details className="mt-2">
-          <summary className="cursor-pointer font-medium text-slate-600">분석 정보 자세히 보기</summary>
-          <dl className="mt-1 space-y-1 text-[11px] text-slate-500">
-            <div>
-              <dt className="inline font-medium">분석 실행: </dt>
-              <dd className="inline">
-                #{suit.run.id} · 기준연도 {suit.run.reference_year} · 경계 {suit.run.boundary_vintage}
-              </dd>
-            </div>
-            <div>
-              <dt className="inline font-medium">버전: </dt>
-              <dd className="inline">
-                분석 규칙 {suit.policy.policy_version} · 계산 방식 {suit.policy.derivation_version} ·
-                분석 구역 {suit.policy.candidate_grid_version}
-              </dd>
-            </div>
-          </dl>
-        </details>
-      </section>
-
-      <section aria-label="점수 반영 기준" data-testid="profile-selector">
-        <h2 className="mb-2 text-sm font-semibold text-slate-800">점수 반영 기준</h2>
-        <div className="flex flex-col gap-1">
-          {PROFILES.filter((p) => runProfiles.includes(p.key)).map((p) => {
-            // Display the ACTUAL run weights (run-specific for critic), falling back
-            // to the policy static weights only for a pre-CRITIC run whose stored
-            // weight_profiles were never populated. Never a fixed critic constant.
-            const w =
-              (suit.run.weight_profiles ?? {})[p.key] ?? suit.policy.weight_profiles[p.key] ?? {};
-            return (
-              <label key={p.key} className="flex items-start gap-2 text-sm text-slate-700">
-                <input
-                  type="radio"
-                  name="profile"
-                  className="mt-1"
-                  checked={profile === p.key}
-                  onChange={() => setProfile(p.key)}
-                  data-testid={`profile-radio-${p.key}`}
-                />
-                <span>
-                  {p.label}
-                  <span className="mt-0.5 block text-[11px] text-slate-500">{p.method}</span>
-                  <span className="mt-0.5 block text-[11px] text-slate-400">{namedWeights(w)}</span>
-                </span>
-              </label>
-            );
-          })}
-        </div>
-        {/* Distinguish the fixed policy-assumption bases from the data-distribution one. */}
-        <p className="mt-1 text-xs text-slate-500">
-          기본·모두 똑같이·지역 부담 중심·도로 근접성 중심은 <strong>운영 가정</strong>으로 정한 고정
-          비율이며 전문가 AHP 결과가 아닙니다. <strong>데이터 분포 기준</strong>은 이 분석 실행의 후보
-          점수 분포에서 자동 계산된 비율입니다.
-        </p>
-        {stabilityAvailable ? (
-          <CriticMethodNote run={suit.run} />
-        ) : (
-          <p
-            className="mt-1 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-slate-600"
-            data-testid="critic-unavailable"
-          >
-            {OLD_RUN_NO_CRITIC_MESSAGE}
-          </p>
-        )}
-      </section>
-
-      {stabilityAvailable ? (
-        <StabilitySummary summary={s} />
-      ) : (
-        <section
-          className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"
-          data-testid="stability-unavailable"
-        >
-          <h2 className="mb-1 text-sm font-semibold text-slate-800">
-            기준을 바꿔도 상위권을 유지하는 정도
-          </h2>
-          <p>{OLD_RUN_NO_CRITIC_MESSAGE}</p>
-        </section>
-      )}
-
-      {stabilityAvailable && s.top_stable_candidates.length > 0 && (
-        <section aria-label="안정 후보" data-testid="stable-candidates">
-          <h2 className="mb-2 text-sm font-semibold text-slate-800">
-            기준을 바꿔도 상위권인 후보지
-          </h2>
-          <ol className="flex flex-col gap-1 text-xs text-slate-700">
-            {s.top_stable_candidates.map((c) => {
-              const isSelected = selected?.candidate_id === Number(c.candidate_id);
-              return (
-                <li key={String(c.candidate_id)}>
-                  <button
-                    type="button"
-                    aria-current={isSelected ? "true" : undefined}
-                    onClick={() => onSelect(Number(c.candidate_id))}
-                    className={`w-full rounded px-2 py-1 text-left ${
-                      isSelected ? "bg-sky-100 ring-2 ring-sky-500" : "bg-slate-50 hover:bg-slate-100"
-                    }`}
-                    data-testid="stable-candidate-item"
-                  >
-                    {isSelected && (
-                      <span className="mr-1 font-semibold text-sky-700">✓ 선택됨</span>
-                    )}
-                    <span className="font-medium">#{String(c.rank)}</span> ·{" "}
-                    {String(c.sigungu ?? "")} · {String(c.total_score)}점{" "}
-                    <StabilityBadge
-                      stabilityClass={String(c.stability_class)}
-                      stableCount={Number(c.stable_count)}
-                    />
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      )}
-
-      {/* The status filter + score legend now float over the map (MapLegendOverlay);
-          they are no longer duplicated in this panel. The map's candidate layer and
-          the floating checkboxes share the same canonical statusVisibility state. */}
-
-      <section aria-label="상위 후보" data-testid="top-candidates">
-        <h2 className="mb-2 text-sm font-semibold text-slate-800">
-          상위 후보지 · {profileLabel(profile)} 기준
-        </h2>
-        {s.top_candidates.length === 0 ? (
-          <p className="text-xs text-slate-500">이 프로파일의 순위 후보가 없습니다.</p>
-        ) : (
-          <ol className="flex flex-col gap-1 text-xs text-slate-700">
-            {s.top_candidates.map((c) => {
-              const isSelected = selected?.candidate_id === Number(c.candidate_id);
-              return (
-              <li key={String(c.candidate_id)}>
-                <button
-                  type="button"
-                  aria-current={isSelected ? "true" : undefined}
-                  onClick={() => onSelect(Number(c.candidate_id))}
-                  className={`w-full rounded px-2 py-1 text-left ${
-                    isSelected
-                      ? "bg-sky-100 ring-2 ring-sky-500"
-                      : "bg-slate-50 hover:bg-slate-100"
-                  }`}
-                  data-testid="top-candidate-item"
-                >
-                  {/* Selection is conveyed by text + a ring, never color alone. */}
-                  {isSelected && (
-                    <span className="mr-1 font-semibold text-sky-700" data-testid="top-candidate-selected">
-                      ✓ 선택됨
-                    </span>
-                  )}
-                  <span className="font-medium">#{String(c.rank)}</span> ·{" "}
-                  {String(c.sigungu ?? "")} · {String(c.total_score)}점{" "}
-                  {c.stability_class != null && c.stable_count != null && (
-                    <StabilityBadge
-                      stabilityClass={String(c.stability_class)}
-                      stableCount={Number(c.stable_count)}
-                    />
-                  )}
-                </button>
-              </li>
-              );
-            })}
-          </ol>
-        )}
-        <div className="mt-1 text-xs text-slate-500" data-testid="candidate-vector-note">
-          <p>
-            전체 후보 구역 {formatCount(s.candidate_count_total)}개가 모두 지도에 표시됩니다. 표시
-            개수 제한 없이 전체 자료를 볼 수 있고, 화면에 보이는 부분만 빠르게 불러옵니다.
-          </p>
-          <p className="mt-0.5">
-            {statusLabel("ELIGIBLE")} {formatCount(s.candidate_count_eligible)} ·{" "}
-            {statusLabel("REVIEW_REQUIRED")} {formatCount(s.candidate_count_review)} ·{" "}
-            {statusLabel("EXCLUDED")} {formatCount(s.candidate_count_excluded)} — 상태 필터는 지도에
-            함께 적용됩니다. 공공자료 기반 1차 비교이며 실제 입지 결정이 아닙니다.
-          </p>
-          <details className="mt-1">
-            <summary className="cursor-pointer text-slate-500">자세히 보기</summary>
-            <p className="mt-1 text-[11px] text-slate-400">
-              지도는 화면에 필요한 부분만 벡터 타일(MVT)로 전송해 빠르게 표시합니다.
-            </p>
-          </details>
-        </div>
-      </section>
-
-      <ReasonSummary title="현재 기준에서 제외된 사유" counts={s.exclusion_reason_counts} />
-      <ReasonSummary title="추가 확인이 필요한 사유" counts={s.review_reason_counts} />
-
-      {s.coverage_notes.length > 0 && (
-        <section
-          className="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-slate-700"
-          data-testid="coverage-warnings"
-        >
-          <h2 className="mb-1 text-sm font-semibold text-slate-800">
-            자료 공백 안내
-          </h2>
-          <ul className="list-disc space-y-1 pl-4">
-            {s.coverage_notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-          <p className="mt-1">
-            자료가 없는 항목은 공백이며 &quot;해당 없음&quot;을 확인한 것이 아닙니다.
-          </p>
-        </section>
-      )}
-
-      {selected && (
-        <CandidateDetailPanel detail={selected} clearSelected={clearSelected} />
-      )}
-
-      <section className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        <h2 className="mb-1 text-sm font-semibold text-slate-800">계산 방법과 가정</h2>
-        <ul className="list-disc space-y-1 pl-4">
-          {s.assumptions.map((a) => (
-            <li key={a}>{a}</li>
-          ))}
-        </ul>
-        <p className="mt-2 font-medium text-amber-800" data-testid="suitability-disclaimer">
-          {s.disclaimer}
-        </p>
-      </section>
-
-      {/* Phase 0: what the current regional screening does NOT yet evaluate. */}
-      <UnmodeledFactorsDisclosure testId="suitability-unmodeled-factors" />
-    </>
-  );
-}
-
-function ReasonSummary({ title, counts }: { title: string; counts: Record<string, number> }) {
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  if (entries.length === 0) return null;
-  return (
-    <section className="text-xs text-slate-700">
-      <h2 className="mb-1 text-sm font-semibold text-slate-800">{title}</h2>
-      <ul className="flex flex-col gap-0.5">
-        {entries.map(([reason, count]) => (
-          <li key={reason} className="flex justify-between gap-2">
-            <span className="min-w-0 truncate">{reason}</span>
-            <span className="text-slate-500">{formatCount(count)}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function CandidateDetailPanel({
-  detail,
-  clearSelected,
-}: {
-  detail: CandidateDetail;
-  clearSelected: () => void;
-}) {
-  const eq = detail.raw_components?.equity as Record<string, unknown> | undefined;
-  const dem = detail.raw_components?.demand as Record<string, unknown> | undefined;
-  const equityKind = classifyEquityRaw(eq);
-  return (
-    <section
-      className="rounded border border-sky-300 bg-sky-50 p-3 text-xs break-words text-slate-700"
-      data-testid="candidate-detail"
-    >
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-800">후보 구역 상세</h2>
-        <button type="button" onClick={clearSelected} className="text-slate-400 hover:text-slate-700">
-          닫기 ✕
-        </button>
-      </div>
-      <p className="mt-1">
-        <strong>{detail.sigungu_region_name ?? "(지역 미배정)"}</strong> · {statusLabel(detail.status)}
-      </p>
-      {/* Phase 0: the plain meaning of this candidate's screening status, so the
-          reader is not left to infer it from the label alone. */}
-      <p className="mt-0.5 text-[11px] text-slate-500" data-testid="candidate-status-explanation">
-        {statusExplanation(detail.status)}
-      </p>
-      <p className="mt-0.5 font-mono text-[11px] break-all text-slate-400">
-        구역 식별키 {detail.candidate_key}
-      </p>
-      {detail.status === "EXCLUDED" ? (
-        <div className="mt-1" data-testid="candidate-exclusion-reasons">
-          <p className="font-medium">제외 사유:</p>
-          <ul className="list-disc pl-4">
-            {detail.exclusion_reasons.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-          <p className="mt-1 text-slate-500">제외 셀은 점수·순위가 없습니다.</p>
-        </div>
-      ) : (
-        <>
-          <p className="mt-1">
-            {detail.status === "ELIGIBLE" ? (
-              <>
-                점수 <strong>{detail.total_score}</strong> · 순위 {detail.rank ?? "-"}
-              </>
-            ) : (
-              <>
-                잠정 점수 <strong>{detail.provisional_score ?? "-"}</strong> · 순위 없음 (검토 필요)
-              </>
-            )}
-          </p>
-          <p className="mt-1 tabular-nums" data-testid="candidate-selected-weights">
-            선택 프로파일 <strong>{detail.profile}</strong> — 가중치 Z {detail.weights.zoning} · R{" "}
-            {detail.weights.road} · E {detail.weights.equity} · D {detail.weights.demand}
-          </p>
-          {/* Component labels are the Phase 0 citizen-facing terms from the central
-              glossary ("용도지역 호환성", "도로 근접성 대리지표", …); the raw scores
-              and their meaning are unchanged. */}
-          <table className="mt-1 w-full text-left">
-            <caption className="sr-only">구성요소별 점수</caption>
-            <tbody>
-              <tr>
-                <td>{COMPONENT_META.zoning.primary}</td>
-                <td>{detail.zoning_score ?? "-"}</td>
-              </tr>
-              <tr>
-                <td>{COMPONENT_META.road.primary}</td>
-                <td>{detail.road_score ?? "-"}</td>
-              </tr>
-              <tr>
-                <td>{COMPONENT_META.equity.primary}</td>
-                <td>{detail.equity_score ?? "-"}</td>
-              </tr>
-              <tr>
-                <td>{COMPONENT_META.demand.primary}</td>
-                <td>{detail.demand_score ?? "-"}</td>
-              </tr>
-            </tbody>
-          </table>
-          {detail.review_reasons.length > 0 && (
-            <p className="mt-1" data-testid="candidate-review-reasons">
-              검토 사유: {detail.review_reasons.join(", ")}
-            </p>
-          )}
-          <p className="mt-1">
-            최근접 도로: {detail.nearest_road_distance_m ?? "-"} m ·{" "}
-            {String(detail.nearest_road_provenance?.official_layer_code ?? "")} (근접성 대리지표, 차량
-            진입 보장 아님)
-          </p>
-          {eq && (
-            <div className="mt-1" data-testid="candidate-equity-raw">
-              <p>
-                형평성 원자료(소재 시설 부담): <strong>{String(eq.located_burden_kg_per_capita)}</strong>{" "}
-                {String(eq.unit)} · {accountingBasisLabel(String(eq.accounting_basis))} · {String(eq.source_id)} (
-                {String(eq.reference_period)})
-              </p>
-              <p className="text-slate-500" data-testid="equity-score-direction">
-                점수 방향: 시설 부담이 낮을수록 형평성 점수가 높습니다. 형평성 점수{" "}
-                <strong>{detail.equity_score ?? "-"}</strong>.
-              </p>
-              {equityKind === "PARTIAL" && (
-                <p className="text-amber-700" data-testid="equity-partial">
-                  일부 시설 처리량 결측 {String(eq.missing_throughput_count)}건 — 부담이 과소집계이며
-                  추정하지 않습니다.
-                </p>
-              )}
-              {equityKind === "OFFICIAL_ZERO" && (
-                <p className="text-slate-500" data-testid="equity-zero-note">
-                  소재 시설 {String(eq.facility_count_located)}개 · 결측 0건. 값 0은 공식 측정값 0이며
-                  결측이 아닙니다.
-                </p>
-              )}
-              {equityKind === "MEASURED_VALUE" && (
-                <p className="text-slate-500" data-testid="equity-measured-note">
-                  소재 시설 {String(eq.facility_count_located)}개 · 결측 0건 (측정값).
-                </p>
-              )}
-            </div>
-          )}
-          {dem && (
-            <div className="mt-1" data-testid="candidate-demand-raw">
-              <p>
-                수요 원자료: {String(dem.household_per_capita_kg_per_year)} {String(dem.unit)} ·{" "}
-                {accountingBasisLabel(String(dem.accounting_basis))} · {String(dem.source_id)} (
-                {String(dem.reference_period)})
-              </p>
-              <p className="text-slate-500" data-testid="demand-score-direction">
-                점수 방향: 1인당 발생량이 높을수록 수요 점수가 높습니다. 수요 점수{" "}
-                <strong>{detail.demand_score ?? "-"}</strong>.
-              </p>
-            </div>
-          )}
-          <div className="mt-2" data-testid="candidate-sensitivity">
-            <p className="font-medium">프로파일별 민감도 (sensitivity):</p>
-            <ul className="pl-2">
-              {Object.keys(detail.profile_totals).map((p) => (
-                <li key={p}>
-                  {p}: 점수 {detail.profile_totals[p] ?? "-"} · 순위 {detail.profile_ranks[p] ?? "-"}
-                </li>
-              ))}
-            </ul>
-          </div>
-          {detail.status === "ELIGIBLE" && detail.stable_count != null ? (
-            <div className="mt-2" data-testid="candidate-stability">
-              <p className="font-medium">
-                가중치 민감도 안정성:{" "}
-                <StabilityBadge
-                  stabilityClass={String(detail.stability_class)}
-                  stableCount={detail.stable_count}
-                />
-              </p>
-              <ul className="pl-2">
-                {["baseline", "equal", "critic"].map((p) => (
-                  <li key={p}>
-                    {p}: {detail.stability_membership[p] ? "상위 10% 포함" : "미포함"}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-0.5 text-[11px] text-slate-500">
-                안정성은 세 비교 방식(baseline·equal·critic) 상위 10% 포함 여부를 나타내는 민감도
-                지표이며, 최종 입지·허가·법적 적격성을 의미하지 않습니다.
-              </p>
-            </div>
-          ) : (
-            <p className="mt-2 text-[11px] text-slate-500" data-testid="candidate-stability-na">
-              안정성 평가 대상 아님 (스크리닝 통과 후보만 평가)
-            </p>
-          )}
-        </>
-      )}
-      {/* Phase 1B-LC5A: this cell's land-cover composition, as a clearly separated
-          descriptive section. It owns its own fetch/loading/error state, so a
-          land-cover failure never hides the suitability details above. Rendered for
-          every status (including EXCLUDED) because the statistics describe the cell,
-          not its screening outcome. */}
-      <LandCoverCellPanel candidateKey={detail.candidate_key} />
-      {/* Phase 0: the same "not yet included" disclosure, so a reader inspecting one
-          candidate sees the screening's limits without leaving the panel. */}
-      <div className="mt-2">
-        <UnmodeledFactorsDisclosure testId="candidate-unmodeled-factors" />
-      </div>
-      <p className="mt-2 text-slate-500">{detail.disclaimer}</p>
-    </section>
   );
 }
 
