@@ -34,6 +34,12 @@ from waste_equity_backend.models import (
     FacilityStandardCost,
     IngestionRun,
     LandfillInboundMonthly,
+    MunicipalCostGeography,
+    MunicipalCostGeographyComponent,
+    MunicipalCostIndicatorValue,
+    MunicipalCostSourceFile,
+    MunicipalWasteContract,
+    MunicipalWasteQuantity,
     RawApiResponse,
     Region,
     RegionalPopulation,
@@ -64,6 +70,15 @@ METADATA_TABLES = [
     EnvironmentalLandCoverCellStatVersion.__table__,
     EnvironmentalLandCoverCellStatistic.__table__,
     EnvironmentalLandCoverCellClassArea.__table__,
+    # The six municipal waste-cost tables are all non-spatial (the registry
+    # references ``regions`` by id and stores no geometry of its own), so the
+    # read-only API over them is fully exercisable here.
+    MunicipalCostGeography.__table__,
+    MunicipalCostGeographyComponent.__table__,
+    MunicipalCostSourceFile.__table__,
+    MunicipalWasteContract.__table__,
+    MunicipalWasteQuantity.__table__,
+    MunicipalCostIndicatorValue.__table__,
 ]
 
 # A copy of `regions` minus the geometry column, in its own MetaData so the

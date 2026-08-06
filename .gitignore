@@ -72,3 +72,9 @@ data/samples/*.json
 *.sqlite3
 *.db
 *.db-journal
+
+# Raw municipal-cost workbooks (never committed) and the local audit artifacts
+# generated from them.
+data/import/municipal-costs/
+data/raw/municipal-costs/
+artifacts/municipal-costs/

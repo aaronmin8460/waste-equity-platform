@@ -102,7 +102,10 @@ def _table_snapshot(engine: Engine) -> dict[str, int]:
 def test_head_is_single_and_includes_0020() -> None:
     _upgrade()
     script = ScriptDirectory.from_config(_config())
-    assert script.get_current_head() == "0020"
+    # There is exactly one head — the assertion this test exists for. The head is
+    # deliberately not pinned to a revision id: later additive migrations advance
+    # it, and pinning would turn every future migration into a false failure here.
+    assert len(script.get_heads()) == 1
     revisions = {s.revision for s in script.walk_revisions()}
     assert {"0020", "0019", "0018"}.issubset(revisions)
 
