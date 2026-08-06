@@ -24,6 +24,8 @@ from .land_cover_ingestion import run_land_cover_coverage_report, run_land_cover
 from .landfill_inbound import run_landfill_inbound
 from .mois_population_contract import EARLIEST_SUPPORTED_MONTH
 from .mois_population_ingestion import run_mois_population_ingestion
+from .municipal_cost_ingestion import DEFAULT_SOURCE_DIR as MUNICIPAL_COSTS_DEFAULT_DIR
+from .municipal_cost_ingestion import run_municipal_cost_ingestion
 from .probes import (
     airkorea,
     kma,
@@ -76,6 +78,7 @@ LAND_COVER_CONTRACT_VALIDATE = "land-cover-contract-validate"
 LAND_COVER_INGEST = "land-cover-ingest"
 LAND_COVER_COVERAGE = "land-cover-coverage"
 LAND_COVER_CELL_STATS = "land-cover-cell-stats"
+MUNICIPAL_COSTS_INGEST = "municipal-costs-ingest"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -103,6 +106,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                 LAND_COVER_INGEST,
                 LAND_COVER_COVERAGE,
                 LAND_COVER_CELL_STATS,
+                MUNICIPAL_COSTS_INGEST,
             ]
         ),
     )
@@ -333,6 +337,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help=(
             "Last YYYY-MM to ingest (mois-population-ingest). Defaults to the latest "
             "month the official MOIS page reports as published."
+        ),
+    )
+    parser.add_argument(
+        "--source-dir",
+        help=(
+            "municipal-costs-ingest: local root of the Git-ignored municipal "
+            f"waste-cost workbooks (default {MUNICIPAL_COSTS_DEFAULT_DIR})."
+        ),
+    )
+    parser.add_argument(
+        "--report-path",
+        help=(
+            "municipal-costs-ingest: local path to write the JSON report (never committed to Git)."
         ),
     )
     parser.add_argument(
@@ -624,6 +641,35 @@ def run_land_cover_ingest(args: argparse.Namespace) -> int:
     return 0 if report.status in ("SUCCEEDED", "PARTIAL") else 1
 
 
+def run_municipal_costs(args: argparse.Namespace) -> int:
+    """Audit (--dry-run) or load (--write) the 2024 municipal waste-cost workbooks.
+
+    Reads only local, Git-ignored workbooks: no network access, no credentials,
+    and no source file is modified or resaved. A dry run makes zero database
+    writes; a write is content-addressed and idempotent. Nothing is ever written
+    to ``landfill_inbound_monthly`` or to the official landfill indicator.
+    """
+
+    if not args.dry_run and not args.write:
+        raise IngestionError("municipal-costs-ingest requires either --dry-run or --write")
+    report = run_municipal_cost_ingestion(
+        source_dir=args.source_dir or MUNICIPAL_COSTS_DEFAULT_DIR,
+        year=int(args.year) if args.year else 2024,
+        write=bool(args.write),
+    )
+    summary = report.sanitized_summary()
+    print(json.dumps(summary, ensure_ascii=False))
+    for path in (args.report_path, args.report_json):
+        if not path:
+            continue
+        from pathlib import Path
+
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    return 0 if report.status in ("SUCCEEDED", "DRY_RUN_OK") else 1
+
+
 def run_land_cover_coverage(args: argparse.Namespace) -> int:
     """Run the read-only capital-region land-cover coverage proof.
 
@@ -791,6 +837,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_land_cover_coverage(args)
         if args.source == LAND_COVER_CELL_STATS:
             return run_land_cover_cell_stats(args)
+        if args.source == MUNICIPAL_COSTS_INGEST:
+            return run_municipal_costs(args)
         payload = PROBES[args.source](settings)
     except MissingCredentialsError as exc:
         print(str(exc), file=sys.stderr)

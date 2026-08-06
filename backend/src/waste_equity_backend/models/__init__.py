@@ -15,6 +15,14 @@ from .facilities import WasteTreatmentFacility
 from .facility_cost import FacilityStandardCost
 from .landfill_inbound import LandfillInboundMonthly
 from .metadata import DatasetFreshness, DataSource, IngestionRun, RawApiResponse, RegionalPopulation
+from .municipal_cost import (
+    MunicipalCostGeography,
+    MunicipalCostGeographyComponent,
+    MunicipalCostIndicatorValue,
+    MunicipalCostSourceFile,
+    MunicipalWasteContract,
+    MunicipalWasteQuantity,
+)
 from .regions import Region, RegionCodeMap
 from .reporting_geography import (
     ReportingRegionWasteStatistics,
@@ -45,6 +53,12 @@ __all__ = [
     "FacilityStandardCost",
     "IngestionRun",
     "LandfillInboundMonthly",
+    "MunicipalCostGeography",
+    "MunicipalCostGeographyComponent",
+    "MunicipalCostIndicatorValue",
+    "MunicipalCostSourceFile",
+    "MunicipalWasteContract",
+    "MunicipalWasteQuantity",
     "RawApiResponse",
     "Region",
     "RegionCodeMap",

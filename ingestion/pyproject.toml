@@ -9,6 +9,8 @@ description = "API probes and production ingestion jobs for Waste Equity Platfor
 requires-python = ">=3.11"
 dependencies = [
   "geoalchemy2>=0.15",
+  # Read-only XLSX parsing for the local municipal waste-cost workbooks.
+  "openpyxl>=3.1",
   "httpx>=0.27",
   "psycopg[binary]>=3.1",
   "pydantic>=2.7",
@@ -27,6 +29,7 @@ dev = [
   "ruff>=0.5",
   "mypy>=1.10",
   "types-shapely>=2.0",
+  "types-openpyxl>=3.1",
 ]
 
 [project.scripts]
