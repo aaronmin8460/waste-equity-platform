@@ -1635,6 +1635,162 @@ export function fetchLandfillTrends(query: LandfillTrendsQuery = {}): Promise<La
 }
 
 // --------------------------------------------------------------------------- //
+// 2024 municipal waste collection/transport contract payments (Step 2 backend).
+//
+// A SEPARATE analytical dataset from the official Sudokwon Landfill inbound fee
+// above. Different accounting basis, different providers (each 기초지자체 publishes
+// its own contract disclosure), and a different spatial grain (시·군·구, not 시·도).
+// It is served under the `/api/v1/landfill` prefix for dashboard placement only —
+// `meta.is_official_landfill_fee` is always `false`, and the two indicators must
+// never be summed, differenced, or ratio'd against each other.
+//
+// Every money field is an exact decimal string kept as a string, and `null` always
+// means "no defensible value exists" — never 0. 41 of the 66 municipalities are
+// null in the published 2024 release.
+// --------------------------------------------------------------------------- //
+
+/** Metropolitan SGIS sido code: 11 서울, 28 인천, 41 경기. */
+export type MunicipalCostSido = "11" | "28" | "41";
+export type MunicipalCostStatus = "AVAILABLE" | "PARTIAL" | "UNAVAILABLE";
+export type MunicipalCostSort =
+  | "payment_per_capita_desc"
+  | "total_payment_desc"
+  | "region_name_asc";
+
+/** One constituent 일반구 behind a derived city population. */
+export interface MunicipalCostPopulationComponent {
+  region_code: string;
+  region_name: string;
+  population: number;
+}
+
+/** One workbook that resolved to this municipality. */
+export interface MunicipalCostSourceRef {
+  filename: string;
+  dataset_role: string; // DATA_A | DATA_B
+  layout_family: string;
+  primary_classification: string;
+  resolution_basis: string;
+  sha256: string;
+}
+
+/** Tonnage evidence — reported for transparency, never an input to the indicator. */
+export interface MunicipalCostQuantityCoverage {
+  observation_count: number;
+  measured_count: number;
+  measured_zero_count: number;
+  missing_count: number;
+  repeated_municipal_block_count: number;
+  months_covered: number;
+  waste_categories: string[];
+}
+
+export interface MunicipalCostRow {
+  municipality_key: string;
+  display_name: string;
+  metropolitan_code: string;
+  metropolitan_name: string;
+  /** Canonical `regions` code, or null for the seven Gyeonggi cities stored only as 일반구. */
+  direct_region_code: string | null;
+  boundary_vintage: string;
+  population: number | null;
+  /** DIRECT_REGION_POPULATION | DERIVED_SUM_OF_CONSTITUENT_WARDS */
+  population_method: string;
+  population_definition: string | null;
+  population_components: MunicipalCostPopulationComponent[];
+  total_eligible_payment_krw: string | null;
+  eligible_contract_count: number;
+  payment_per_capita_krw: string | null;
+  status: MunicipalCostStatus;
+  evidence_status: string;
+  reason_codes: string[];
+  /** Plain-Korean explanation, served by the backend — one entry per reason code. */
+  limitations: string[];
+  source_files: MunicipalCostSourceRef[];
+  has_data_a: boolean;
+  has_data_b: boolean;
+  quantity_coverage: MunicipalCostQuantityCoverage;
+}
+
+export interface MunicipalCostSourceCoverage {
+  discovered_file_count: number;
+  accepted_file_count: number;
+  rejected_file_count: number;
+  data_a_file_count: number;
+  data_b_file_count: number;
+  municipalities_with_data_a: number;
+  municipalities_with_data_b: number;
+  municipalities_with_no_source_file: number;
+}
+
+export interface MunicipalCostRejectedSource {
+  filename: string;
+  dataset_role: string;
+  reason_codes: string[];
+  explanation: string | null;
+}
+
+export interface MunicipalCostMeta {
+  indicator_code: string;
+  display_name: string;
+  description: string;
+  reference_year: number;
+  unit: string; // KRW/인
+  accounting_basis: string;
+  methodology_version: string;
+  geography_policy: string;
+  population_policy: string;
+  numerator_definition: string;
+  /** The served statement of how this differs from the official landfill fee. */
+  difference_from_official_landfill_fee: string;
+  /** Always false. The UI surfaces this distinction; it never paraphrases it away. */
+  is_official_landfill_fee: boolean;
+  /**
+   * Scope counts, computed over the selected metropolitan BEFORE the status filter,
+   * so a filtered response still reports honest denominators.
+   */
+  expected_count: number;
+  available_count: number;
+  partial_count: number;
+  unavailable_count: number;
+  returned_count: number;
+  rejected_source_file_count: number;
+  rejected_source_files: MunicipalCostRejectedSource[];
+  source_coverage: MunicipalCostSourceCoverage;
+  caveats: string[];
+}
+
+export interface MunicipalCostResponse {
+  meta: MunicipalCostMeta;
+  sido_filter: string | null;
+  status_filter: string | null;
+  sort: string;
+  municipalities: MunicipalCostRow[];
+}
+
+export interface MunicipalCostQuery {
+  /** Only 2024 is published in this release; any other year is a 422. */
+  year?: number;
+  sido?: MunicipalCostSido | null;
+  status?: MunicipalCostStatus | null;
+  sort?: MunicipalCostSort;
+}
+
+/** The one reference year this release publishes. */
+export const MUNICIPAL_COST_YEAR = 2024;
+
+export function fetchMunicipalCosts(
+  query: MunicipalCostQuery = {},
+): Promise<MunicipalCostResponse> {
+  const params = new URLSearchParams();
+  params.set("year", String(query.year ?? MUNICIPAL_COST_YEAR));
+  if (query.sido != null) params.set("sido", query.sido);
+  if (query.status != null) params.set("status", query.status);
+  if (query.sort != null) params.set("sort", query.sort);
+  return fetchJson<MunicipalCostResponse>(`/api/v1/landfill/municipal-costs?${params.toString()}`);
+}
+
+// --------------------------------------------------------------------------- //
 // Facility cost model (Phase 4 backend). Standard-construction-cost ANALYSIS —
 // never an actual project budget, an approved subsidy, or a personal tax bill.
 // All money values arrive as exact decimal strings and are kept as strings.

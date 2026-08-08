@@ -184,6 +184,21 @@ export function homeApiMock(actual: Api): Api {
     fetchLandfillSummary: vi.fn().mockRejectedValue(landfillUnavailable()),
     fetchLandfillTrends: vi.fn().mockRejectedValue(landfillUnavailable()),
     fetchLandfillComposition: vi.fn().mockRejectedValue(landfillUnavailable()),
+    // 2024 municipal collection/transport payments, rejected for the SAME reason the
+    // three landfill fetchers are: a synthetic 66-row response would fabricate
+    // payments and populations under this dataset's
+    // LOCAL_GOVERNMENT_SOURCE_INPUTS_DERIVED_VALUE evidence label, which repo-root
+    // AGENTS.md forbids. It cannot be stubbed with the 404 the landfill endpoints
+    // use — this endpoint has no "no record" path, it always returns all 66
+    // municipalities with the unavailable ones carried as nulls — so the honest
+    // stub is a genuine failure, and the section renders its explicit error state
+    // with no fabricated values. Rows and metadata are exercised for real in
+    // components/landfill/MunicipalCostSection.test.tsx.
+    fetchMunicipalCosts: vi
+      .fn()
+      .mockRejectedValue(
+        new actual.ApiError(500, null, "Backend request failed with status 500"),
+      ),
     // Facility cost lens (Phase 5). Options is a synthetic layout fixture so the
     // cost sub-view renders its form; the calculate endpoint is not invoked by
     // these tests (no service region is selected), so it rejects.

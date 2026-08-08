@@ -23,7 +23,14 @@ import type { MetricKey } from "./metrics";
 import { METRICS } from "./metrics";
 import type { DashboardArea, SuitabilitySubview } from "./glossary";
 import type { ScopeSelection } from "./ranking";
-import type { LandfillOrigin, SuitabilityProfile, SuitabilityStatus } from "./api";
+import type {
+  LandfillOrigin,
+  MunicipalCostSido,
+  MunicipalCostSort,
+  MunicipalCostStatus,
+  SuitabilityProfile,
+  SuitabilityStatus,
+} from "./api";
 
 export const URL_STATE_VERSION = "1";
 
@@ -42,6 +49,24 @@ const TOP_NS: readonly number[] = [5, 10, 20];
 const METRIC_KEYS = new Set<string>(METRICS.map((m) => m.key));
 /** 매립지 현황 origin: the three capital-region SGIS sido codes (see api.ts). */
 const LANDFILL_ORIGINS: readonly LandfillOrigin[] = ["11", "28", "41"];
+/**
+ * 수집·운반 계약 지급액 filters. The three closed sets the BACKEND accepts — a value
+ * outside them is a 422 there, so it is dropped with a warning here rather than
+ * being sent.
+ */
+const MUNICIPAL_COST_SIDOS: readonly MunicipalCostSido[] = ["11", "28", "41"];
+const MUNICIPAL_COST_STATUSES: readonly MunicipalCostStatus[] = [
+  "AVAILABLE",
+  "PARTIAL",
+  "UNAVAILABLE",
+];
+const MUNICIPAL_COST_SORTS: readonly MunicipalCostSort[] = [
+  "payment_per_capita_desc",
+  "total_payment_desc",
+  "region_name_asc",
+];
+/** The served default ordering; a link carrying it adds no parameter. */
+export const MUNICIPAL_COST_DEFAULT_SORT: MunicipalCostSort = "payment_per_capita_desc";
 
 /** Max comparison regions (a hard product bound, mirrored by the UI). */
 export const MAX_COMPARE = 3;
@@ -95,6 +120,18 @@ export interface AppUrlState {
   landfillMonth: number | null;
   landfillOrigin: LandfillOrigin | null;
   landfillWaste: string | null;
+  /**
+   * 시·군·구 수집·운반 계약 지급액 filters — a SEPARATE dataset that shares the 매립지
+   * 현황 area, so its keys are prefixed `mc` and never collide with the four above.
+   *
+   * `null` means 전체 for both filters, which is the product default; `sort` has a
+   * non-null default (`payment_per_capita_desc`) and so is written only when it
+   * differs. The reference year is deliberately NOT part of the URL: the release
+   * publishes exactly one year and the backend rejects any other with a 422.
+   */
+  municipalCostSido: MunicipalCostSido | null;
+  municipalCostStatus: MunicipalCostStatus | null;
+  municipalCostSort: MunicipalCostSort;
 }
 
 export interface DecodedUrlState {
@@ -254,6 +291,29 @@ export function decodeUrlState(search: string): DecodedUrlState {
     else warnings.push("잘못된 폐기물 종류 설정은 무시했습니다.");
   }
 
+  // 수집·운반 계약 지급액 filters. Closed sets, so an unknown token is dropped with a
+  // warning rather than forwarded to the backend as a 422.
+  const mcSido = params.get("mcSido");
+  if (mcSido !== null) {
+    if ((MUNICIPAL_COST_SIDOS as readonly string[]).includes(mcSido))
+      state.municipalCostSido = mcSido as MunicipalCostSido;
+    else warnings.push("알 수 없는 지급액 지역 설정은 무시했습니다.");
+  }
+
+  const mcStatus = params.get("mcStatus");
+  if (mcStatus !== null) {
+    if ((MUNICIPAL_COST_STATUSES as readonly string[]).includes(mcStatus))
+      state.municipalCostStatus = mcStatus as MunicipalCostStatus;
+    else warnings.push("알 수 없는 지급액 자료 상태 설정은 무시했습니다.");
+  }
+
+  const mcSort = params.get("mcSort");
+  if (mcSort !== null) {
+    if ((MUNICIPAL_COST_SORTS as readonly string[]).includes(mcSort))
+      state.municipalCostSort = mcSort as MunicipalCostSort;
+    else warnings.push("알 수 없는 지급액 정렬 설정은 무시했습니다.");
+  }
+
   return { state, warnings };
 }
 
@@ -324,6 +384,12 @@ export function encodeUrlState(state: AppUrlState): string {
     if (state.landfillMonth !== null) params.set("month", String(state.landfillMonth));
     if (state.landfillOrigin !== null) params.set("origin", state.landfillOrigin);
     if (state.landfillWaste !== null) params.set("waste", state.landfillWaste);
+    // The municipal-payment filters share the area but not the keys: `mc`-prefixed
+    // so a shared 매립지 현황 link carries both datasets' selections unambiguously.
+    if (state.municipalCostSido !== null) params.set("mcSido", state.municipalCostSido);
+    if (state.municipalCostStatus !== null) params.set("mcStatus", state.municipalCostStatus);
+    if (state.municipalCostSort !== MUNICIPAL_COST_DEFAULT_SORT)
+      params.set("mcSort", state.municipalCostSort);
   }
 
   return `?${params.toString()}`;
