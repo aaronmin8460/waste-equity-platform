@@ -245,6 +245,47 @@ function genuineError(
   };
 }
 
+/**
+ * Loading-state props for the 2024 municipal contract-payment section.
+ *
+ * That section is a SEPARATE dataset with its own suite
+ * (`landfill/MunicipalCostSection.test.tsx`). Holding it at its loading state here
+ * keeps these tests describing the official landfill dashboard only, while still
+ * proving the two coexist — and supplies no municipal fixture values that could be
+ * mistaken for this file's official-landfill ones.
+ */
+function municipalCostProps() {
+  return {
+    data: null,
+    error: null,
+    sido: null,
+    setSido: noop,
+    status: null,
+    setStatus: noop,
+    sort: "payment_per_capita_desc" as const,
+    setSort: noop,
+  };
+}
+
+/**
+ * Elements matching `selector` that belong to the OFFICIAL landfill view.
+ *
+ * The dashboard now also hosts the 2024 municipal contract-payment section — a
+ * deliberately separate dataset with its own banner and its own three filters. The
+ * counting assertions below are about the official view's own restraint (one
+ * banner, four selects), so they exclude that subtree rather than being loosened.
+ */
+function outsideMunicipalSection(root: ParentNode, selector: string): Element[] {
+  const municipal = root.querySelector("[data-testid='municipal-cost-section']");
+  return Array.from(root.querySelectorAll(selector)).filter(
+    (element) => !municipal || !municipal.contains(element),
+  );
+}
+
+function officialLandfillBanners(): Element[] {
+  return outsideMunicipalSection(document, ".wep-banner");
+}
+
 function renderDashboard(props: Partial<Parameters<typeof LandfillDashboard>[0]> = {}) {
   return render(
     <LandfillDashboard
@@ -263,6 +304,7 @@ function renderDashboard(props: Partial<Parameters<typeof LandfillDashboard>[0]>
       availableYears={[2023, 2024, 2025]}
       wasteOptions={["생활"]}
       maxMonth={12}
+      municipalCost={municipalCostProps()}
       {...props}
     />,
   );
@@ -571,6 +613,7 @@ describe("LandfillDashboard", () => {
         setOrigin={noop}
         waste={null}
         setWaste={noop}
+        municipalCost={municipalCostProps()}
       />,
     );
     const qtyTable = screen.getByTestId("landfill-trend-quantity-table");
@@ -705,13 +748,18 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
     expect(text).toContain("공식 자료가 있는 기간만 표시");
     expect(text).toContain("부분 자료");
     expect(text).toContain("0이 아니라 자료 없음");
-    // Exactly one banner: the caveat is not repeated in a second coloured panel.
-    expect(document.querySelectorAll(".wep-banner")).toHaveLength(1);
+    // Exactly one banner IN THE OFFICIAL LANDFILL VIEW: the caveat is not repeated
+    // in a second coloured panel. The 수집·운반 계약 지급액 section below owns one
+    // banner of its own — the statement that it is a DIFFERENT dataset — which is
+    // not a repetition of this caveat and is excluded here rather than counted.
+    expect(officialLandfillBanners()).toHaveLength(1);
   });
 
   it("keeps the four native selects, each with an accessible label", () => {
     const { container } = renderDashboard();
-    const selects = container.querySelectorAll("select");
+    // Scoped to the official landfill view: the separate municipal-payment section
+    // owns three controls of its own (see its own suite).
+    const selects = outsideMunicipalSection(container, "select");
     expect(selects).toHaveLength(4);
     for (const testId of [
       "landfill-year-select",
@@ -1467,5 +1515,63 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     for (const token of FORBIDDEN_PRIMARY_TOKENS) {
       expect(primary.includes(token), `refreshed surface leaks "${token}"`).toBe(false);
     }
+  });
+});
+
+/**
+ * The two datasets share this screen. These tests own the BOUNDARY between them —
+ * that the municipal contract-payment section is present, is separate, and neither
+ * borrows nor blocks the official landfill values. Its own behaviour is covered by
+ * `landfill/MunicipalCostSection.test.tsx`.
+ */
+describe("LandfillDashboard — the separate municipal contract-payment section", () => {
+  it("renders the municipal section as its own region after the official content", () => {
+    renderDashboard();
+    const dashboard = screen.getByTestId("landfill-dashboard");
+    const official = screen.getByTestId("landfill-evidence");
+    const municipal = screen.getByTestId("municipal-cost-section");
+    expect(dashboard.contains(municipal)).toBe(true);
+    // Its own named <section>, not nested inside any official-landfill card.
+    expect(municipal.tagName).toBe("SECTION");
+    expect(official.contains(municipal)).toBe(false);
+    // And it comes after the official content in reading order.
+    expect(official.compareDocumentPosition(municipal) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("names the municipal section by its own unit and year, not as a landfill fee", () => {
+    renderDashboard();
+    const heading = within(screen.getByTestId("municipal-cost-section")).getByRole("heading", {
+      level: 2,
+    });
+    expect(heading.textContent).toContain("시·군·구별 생활폐기물 수집·운반 계약 지급액");
+    expect(heading.textContent).toContain("2024년");
+    // The official view keeps its own title untouched.
+    expect(screen.getByText("수도권매립지 반입 현황")).toBeDefined();
+  });
+
+  it("still renders when the official landfill request found no record", () => {
+    // The two datasets come from different providers and fail independently. A
+    // fresh database answers the landfill endpoints with 404 NO_DATA_AVAILABLE;
+    // that must not take the municipal section down with it.
+    renderDashboard({ data: null, unavailable: noDataState() });
+    expect(screen.getByTestId("landfill-no-data")).toBeDefined();
+    expect(screen.getByTestId("municipal-cost-section")).toBeDefined();
+  });
+
+  it("still renders when the official landfill request failed outright", () => {
+    renderDashboard({ data: null, unavailable: genuineError() });
+    expect(screen.getByTestId("landfill-error")).toBeDefined();
+    expect(screen.getByTestId("municipal-cost-section")).toBeDefined();
+  });
+
+  it("leaves the official landfill values untouched", () => {
+    // The regional table is the official view's exact-value surface; the municipal
+    // section must add no row to it and change no figure in it.
+    renderDashboard();
+    const officialTable = screen.getByTestId("landfill-region-table");
+    expect(within(officialTable).queryByTestId("municipal-cost-row")).toBeNull();
+    expect(officialTable.textContent).not.toContain("수집·운반");
   });
 });

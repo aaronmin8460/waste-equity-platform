@@ -57,6 +57,8 @@ import LandfillMethodology from "./landfill/LandfillMethodology";
 import LandfillRegionTable from "./landfill/LandfillRegionTable";
 import { LandfillError, LandfillLoading, LandfillNoData } from "./landfill/LandfillStates";
 import LandfillTrendSection from "./landfill/LandfillTrendSection";
+import type { MunicipalCostSectionProps } from "./landfill/MunicipalCostSection";
+import MunicipalCostSection from "./landfill/MunicipalCostSection";
 import {
   HEADER_SUMMARY,
   LIMITATION_NOTICE,
@@ -127,6 +129,16 @@ export interface LandfillDashboardProps {
    * reading as a second navigation row.)
    */
   orientation?: React.ReactNode;
+  /**
+   * The 2024 municipal collection/transport contract-payment section — a SEPARATE
+   * analytical dataset from the official inbound fee above (see
+   * `landfill/MunicipalCostSection.tsx`).
+   *
+   * Passed as one prop object rather than spread into this interface so the two
+   * datasets' props cannot be confused at a call site, and so the official
+   * landfill contract above stays exactly as it was.
+   */
+  municipalCost: MunicipalCostSectionProps;
 }
 
 export default function LandfillDashboard({
@@ -144,6 +156,7 @@ export default function LandfillDashboard({
   wasteOptions,
   maxMonth,
   orientation,
+  municipalCost,
 }: LandfillDashboardProps) {
   // What the filter summary states. Derived from the props the page already hands
   // down — no second request state, and no classification of its own.
@@ -203,6 +216,15 @@ export default function LandfillDashboard({
         {data === null && unavailable === null && <LandfillLoading />}
 
         {data && <LandfillBody data={data} />}
+
+        {/* The 2024 municipal contract-payment comparison — a DIFFERENT dataset,
+            rendered OUTSIDE the official-data branch above on purpose. The two are
+            fetched independently and fail independently: an official 404 (which is
+            what a fresh database returns) must not take this section down with it,
+            and a failure here must not blank the official values. Its own banner
+            states the distinction, and its heading names the unit and the year so
+            the boundary between the two is visible without reading either. */}
+        <MunicipalCostSection {...municipalCost} />
       </div>
     </div>
   );

@@ -25,6 +25,9 @@ const BASE: AppUrlState = {
   landfillMonth: null,
   landfillOrigin: null,
   landfillWaste: null,
+  municipalCostSido: null,
+  municipalCostStatus: null,
+  municipalCostSort: "payment_per_capita_desc",
 };
 
 describe("decodeUrlState — version gate", () => {
@@ -170,6 +173,9 @@ describe("encode → decode round trip", () => {
       landfillMonth: null,
       landfillOrigin: null,
       landfillWaste: null,
+      municipalCostSido: null,
+      municipalCostStatus: null,
+      municipalCostSort: "payment_per_capita_desc",
     };
     const { state, warnings } = decodeUrlState(encodeUrlState(full));
     expect(warnings).toEqual([]);
@@ -338,6 +344,88 @@ describe("landfill filters — round trip", () => {
     expect(state.landfillMonth).toBeUndefined();
     expect(state.landfillOrigin).toBeUndefined();
     expect(state.landfillWaste).toBeUndefined();
+    expect(warnings).toEqual([]);
+  });
+});
+
+describe("municipal-payment filters", () => {
+  it("omits every default so a default 매립지 현황 link carries no mc parameter", () => {
+    const q = encodeUrlState(FLOW);
+    expect(q).not.toContain("mcSido=");
+    expect(q).not.toContain("mcStatus=");
+    // `payment_per_capita_desc` is the served default ordering.
+    expect(q).not.toContain("mcSort=");
+  });
+
+  it("serialises the three when they differ from the default", () => {
+    const q = encodeUrlState({
+      ...FLOW,
+      municipalCostSido: "41",
+      municipalCostStatus: "PARTIAL",
+      municipalCostSort: "region_name_asc",
+    });
+    expect(q).toContain("mcSido=41");
+    expect(q).toContain("mcStatus=PARTIAL");
+    expect(q).toContain("mcSort=region_name_asc");
+  });
+
+  it("keeps the mc keys out of every other area", () => {
+    const q = encodeUrlState({
+      ...BASE,
+      mode: "equity",
+      municipalCostSido: "41",
+      municipalCostStatus: "PARTIAL",
+      municipalCostSort: "region_name_asc",
+    });
+    expect(q).not.toContain("mcSido=");
+    expect(q).not.toContain("mcStatus=");
+    expect(q).not.toContain("mcSort=");
+  });
+
+  it("does not collide with the landfill origin key", () => {
+    // Both datasets share the area and both use SGIS sido codes; a shared link must
+    // carry the two selections independently.
+    const q = encodeUrlState({ ...FLOW, landfillOrigin: "11", municipalCostSido: "41" });
+    const { state } = decodeUrlState(q);
+    expect(state.landfillOrigin).toBe("11");
+    expect(state.municipalCostSido).toBe("41");
+  });
+
+  it("round-trips a full municipal-payment selection", () => {
+    const { state, warnings } = decodeUrlState(
+      encodeUrlState({
+        ...FLOW,
+        municipalCostSido: "28",
+        municipalCostStatus: "UNAVAILABLE",
+        municipalCostSort: "total_payment_desc",
+      }),
+    );
+    expect(warnings).toEqual([]);
+    expect(state.municipalCostSido).toBe("28");
+    expect(state.municipalCostStatus).toBe("UNAVAILABLE");
+    expect(state.municipalCostSort).toBe("total_payment_desc");
+  });
+
+  it("drops an out-of-set value with a warning rather than forwarding a 422", () => {
+    const sido = decodeUrlState("?v=1&mode=flow&mcSido=99");
+    expect(sido.state.municipalCostSido).toBeUndefined();
+    expect(sido.warnings.length).toBe(1);
+
+    const status = decodeUrlState("?v=1&mode=flow&mcStatus=MAYBE");
+    expect(status.state.municipalCostStatus).toBeUndefined();
+    expect(status.warnings.length).toBe(1);
+
+    const sort = decodeUrlState("?v=1&mode=flow&mcSort=bogus");
+    expect(sort.state.municipalCostSort).toBeUndefined();
+    expect(sort.warnings.length).toBe(1);
+  });
+
+  it("leaves a link written before the municipal filters existed fully valid", () => {
+    const { state, warnings } = decodeUrlState("?v=1&mode=flow&year=2024");
+    expect(state.landfillYear).toBe(2024);
+    expect(state.municipalCostSido).toBeUndefined();
+    expect(state.municipalCostStatus).toBeUndefined();
+    expect(state.municipalCostSort).toBeUndefined();
     expect(warnings).toEqual([]);
   });
 });

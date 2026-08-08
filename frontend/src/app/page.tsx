@@ -27,6 +27,7 @@ import {
   fetchLandfillComposition,
   fetchLandfillSummary,
   fetchLandfillTrends,
+  fetchMunicipalCosts,
   fetchPopulation,
   fetchReportingBoundaries,
   fetchReportingPerCapita,
@@ -53,6 +54,10 @@ import {
   type FacilityBurdenEnvelope,
   type FacilityItem,
   type LandfillOrigin,
+  type MunicipalCostResponse,
+  type MunicipalCostSido,
+  type MunicipalCostSort,
+  type MunicipalCostStatus,
   type PopulationItem,
   type RegionBoundaryCollection,
   type ReportingBoundaryCollection,
@@ -97,6 +102,8 @@ import type { LandfillDashboardData } from "../components/LandfillDashboard";
 import LandfillDashboard from "../components/LandfillDashboard";
 import type { LandfillUnavailableState } from "../lib/landfill";
 import { landfillUnavailableFromAll } from "../lib/landfill";
+import type { MunicipalCostErrorState } from "../lib/municipalCost";
+import { municipalCostErrorFrom } from "../lib/municipalCost";
 import DashboardShell from "../components/DashboardShell";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import LandCoverLayerControl from "../components/LandCoverLayerControl";
@@ -141,6 +148,7 @@ import {
   encodeUrlState,
   shareableUrl,
   MAX_COMPARE,
+  MUNICIPAL_COST_DEFAULT_SORT,
   type AppUrlState,
 } from "../lib/urlState";
 import { downloadCsv, safeFilename } from "../lib/csv";
@@ -295,6 +303,34 @@ export default function Home() {
   const flowMatchesFilters = flowResult?.key === flowKey;
   const flowData = flowMatchesFilters ? flowResult.data : null;
   const flowUnavailable = flowMatchesFilters ? flowResult.unavailable : null;
+
+  // 시·군·구 수집·운반 계약 지급액 — a SEPARATE dataset sharing the 매립지 현황 area. Its
+  // three filters are held apart from the four official-landfill ones above and are
+  // sent to the backend as `sido` / `status` / `sort`; nothing is filtered or
+  // re-sorted client-side, so the server's nulls-last ordering is preserved.
+  const [mcSido, setMcSido] = useState<MunicipalCostSido | null>(null);
+  const [mcStatus, setMcStatus] = useState<MunicipalCostStatus | null>(null);
+  const [mcSort, setMcSort] = useState<MunicipalCostSort>(MUNICIPAL_COST_DEFAULT_SORT);
+  /**
+   * The municipal-payment outcome, TAGGED with the filter combination it describes,
+   * for the same reason `flowResult` is: values only ever render when their key
+   * matches the current filters, so a filter change makes the previous selection's
+   * rows disappear in the SAME render that requests the new ones, and a late
+   * response from an abandoned filter state is unrenderable on its own terms.
+   *
+   * `error` is a genuine request failure only. This endpoint has NO "no record"
+   * path — it returns all 66 municipalities for the published year, with the
+   * unavailable ones carried as null rows — so a missing value never reaches here.
+   */
+  const [mcResult, setMcResult] = useState<{
+    key: string;
+    data: MunicipalCostResponse | null;
+    error: MunicipalCostErrorState | null;
+  } | null>(null);
+  const mcKey = JSON.stringify([mcSido, mcStatus, mcSort]);
+  const mcMatchesFilters = mcResult?.key === mcKey;
+  const mcData = mcMatchesFilters ? mcResult.data : null;
+  const mcError = mcMatchesFilters ? mcResult.error : null;
   const [suit, setSuit] = useState<SuitabilityMeta | null>(null);
   const [suitError, setSuitError] = useState<string | null>(null);
   const [selected, setSelected] = useState<CandidateDetail | null>(null);
@@ -535,6 +571,44 @@ export default function Home() {
     // does not change how often this runs — it only keeps the tag written into
     // `flowResult` in step with the request that produced it.
   }, [mode, flowKey, flowYear, flowMonth, flowOrigin, flowWaste]);
+
+  // 시·군·구 수집·운반 계약 지급액: one request per filter combination, issued only in
+  // the 매립지 현황 area.
+  //
+  // Deliberately a SEPARATE effect from the official landfill one above, not a
+  // fourth entry in its `Promise.allSettled`. The two are different datasets from
+  // different providers and they must fail independently: folding this request into
+  // that set would let a municipal failure blank the official values (which are
+  // accepted only when all requests succeed), and an official 404 — what a database
+  // without landfill rows returns — would take this section down with it.
+  //
+  // Filtering and ordering are BACKEND parameters. The server places nulls last on
+  // both value sorts, so re-sorting the served array here would let an unavailable
+  // municipality be ordered as if it were the cheapest.
+  useEffect(() => {
+    if (mode !== "flow") return;
+    let cancelled = false;
+    // Nothing is cleared here: the rows stop rendering the moment `mcKey` changes
+    // (they are keyed, see `mcResult`), so the loading state covers every filter
+    // transition rather than only the first load.
+    fetchMunicipalCosts({ sido: mcSido, status: mcStatus, sort: mcSort })
+      .then((data) => {
+        if (cancelled) return;
+        setMcResult({ key: mcKey, data, error: null });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        // Routed through `plainError` like every other path, so a raw backend
+        // string never reaches a citizen; the code survives in the diagnostic line.
+        setMcResult({ key: mcKey, data: null, error: municipalCostErrorFrom(cause) });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `mcKey` is derived from the three filters listed alongside it, so including it
+    // does not change how often this runs — it only keeps the tag written into
+    // `mcResult` in step with the request that produced it.
+  }, [mode, mcKey, mcSido, mcStatus, mcSort]);
 
   const retry = useCallback(() => {
     setError(null);
@@ -1108,6 +1182,11 @@ export default function Home() {
       landfillMonth: flowMonth,
       landfillOrigin: flowOrigin,
       landfillWaste: flowWaste,
+      // 수집·운반 계약 지급액 filters — same rule, `mc`-prefixed keys so the two
+      // datasets sharing this area cannot collide in a shared link.
+      municipalCostSido: mcSido,
+      municipalCostStatus: mcStatus,
+      municipalCostSort: mcSort,
     }),
     [
       mode,
@@ -1131,6 +1210,10 @@ export default function Home() {
       flowMonth,
       flowOrigin,
       flowWaste,
+      // Load-bearing for the same reason.
+      mcSido,
+      mcStatus,
+      mcSort,
     ],
   );
 
@@ -1187,6 +1270,12 @@ export default function Home() {
     if (state.landfillMonth !== undefined) setFlowMonth(state.landfillMonth);
     if (state.landfillOrigin !== undefined) setFlowOrigin(state.landfillOrigin);
     if (state.landfillWaste !== undefined) setFlowWaste(state.landfillWaste);
+    // 수집·운반 계약 지급액 filters. Set in the SAME batch as `mode`, so the effect
+    // above sees the fully restored filter set on its first run and issues one
+    // request, not one for the default and another for the restored state.
+    if (state.municipalCostSido !== undefined) setMcSido(state.municipalCostSido);
+    if (state.municipalCostStatus !== undefined) setMcStatus(state.municipalCostStatus);
+    if (state.municipalCostSort !== undefined) setMcSort(state.municipalCostSort);
     setUrlWarnings(warnings);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data]);
@@ -1358,6 +1447,18 @@ export default function Home() {
           availableYears={flowYears}
           wasteOptions={flowWasteOptions}
           maxMonth={flowMaxMonth}
+          // The 2024 municipal contract-payment dataset. One prop object, so the
+          // two datasets' state can never be crossed at this call site.
+          municipalCost={{
+            data: mcData,
+            error: mcError,
+            sido: mcSido,
+            setSido: setMcSido,
+            status: mcStatus,
+            setStatus: setMcStatus,
+            sort: mcSort,
+            setSort: setMcSort,
+          }}
         />
       </DashboardShell>
     );
