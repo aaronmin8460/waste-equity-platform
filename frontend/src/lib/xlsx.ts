@@ -93,6 +93,21 @@ function toMatrix<Row>(sheet: XlsxSheet<Row>): Cell[][] {
 }
 
 /**
+ * A sheet whose row type has been erased so sheets of DIFFERENT row types can
+ * share one workbook.
+ *
+ * Each sheet is self-contained — its columns only ever read its own rows — so
+ * the row type carries no information across sheet boundaries. Erasing it here,
+ * in one documented place, is what keeps every call site cast-free.
+ */
+export type AnyXlsxSheet = XlsxSheet<never>;
+
+/** Erase a sheet's row type so it can join a mixed-type workbook. */
+export function sealSheet<Row>(sheet: XlsxSheet<Row>): AnyXlsxSheet {
+  return sheet as unknown as AnyXlsxSheet;
+}
+
+/**
  * Write one or more sheets and trigger a download. Returns the filename used.
  *
  * The library is imported dynamically so it is not in the initial bundle.

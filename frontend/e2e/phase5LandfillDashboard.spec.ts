@@ -229,8 +229,22 @@ test.describe("desktop 1440×900 — states and interaction", () => {
       .toBeLessThanOrEqual(kpiBox.y);
     expect(bannerBox.height, "banner does not dominate the viewport").toBeLessThan(900 * 0.25);
 
-    // Exactly one banner on the screen.
-    await expect(page.locator(".wep-banner")).toHaveCount(1);
+    // Exactly one banner in the OFFICIAL LANDFILL section.
+    //
+    // This used to count `.wep-banner` across the whole dashboard, which was the
+    // same thing while the page held one dataset. It no longer is: the municipal
+    // contract-payment section renders its own warning banner — the notice that
+    // stops its 지급액 being read as a landfill fee — and that banner is required,
+    // not surplus. So the count is scoped to the section this test is about
+    // rather than relaxed.
+    const officialBanners = page.locator(
+      '[data-testid="landfill-dashboard"] .wep-banner:not([data-testid="municipal-cost-section"] .wep-banner)',
+    );
+    await expect(officialBanners).toHaveCount(1);
+    // …and the municipal section still carries its own distinct notice.
+    await expect(
+      page.getByTestId("municipal-cost-section").locator(".wep-banner"),
+    ).not.toHaveCount(0);
   });
 
   test("filters drive a load and never leave stale values on screen", async ({ page }) => {
@@ -540,7 +554,13 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(page.getByTestId("landfill-loading")).toBeVisible();
     await expect(page.getByTestId("landfill-kpis")).toHaveCount(0);
     await expect(page.getByTestId("landfill-region-table")).toHaveCount(0);
-    await expect(page.getByTestId("landfill-dashboard")).not.toContainText("2024년");
+    // Scoped to the official landfill results, not the whole dashboard: the
+    // municipal section's heading is "… 계약 지급액 — 2024년", a DIFFERENT dataset
+    // with its own fixed year that the landfill period filter does not scope.
+    // Asserting across the whole page made this test depend on a year that has
+    // nothing to do with the transition being tested.
+    await expect(page.getByTestId("landfill-filters")).not.toContainText("2024년");
+    await expect(page.getByTestId("municipal-cost-section")).toBeVisible();
     // The filter controls keep their context throughout.
     await expect(page.getByTestId("landfill-filters")).toBeVisible();
 

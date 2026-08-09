@@ -502,7 +502,50 @@ answer) and any population-wide statistic derived from top-N rows.
 
 ---
 
-## Phases 5–7 — NOT STARTED
+## Phase 5A — 폐기물 처리 현황 + XLSX
+
+`lib/landfillExport.ts` writes the official-fee workbook: three sheets
+(출발 지역별 / 폐기물 종류별 / 월별 추이), each with its own provenance preamble
+stating the period, destination, filters, `accounting_basis`, derivation
+version, and the served caveats.
+
+**The fee/payment separation is STRUCTURAL, not visual.** The workbook has no
+municipal contract-payment column at all, and this module exposes no function
+returning both datasets in one row — so no sheet can place them side by side and
+invite a third column that adds them. There is no "total cost" anywhere. A test
+asserts every sheet's headers contain none of 지급액 / 수집·운반 / 계약 / 합계
+비용 / 총 비용, and the preamble states outright that the two cannot be combined.
+
+Missing stays missing: an unserved share, effective fee, or per-capita value is
+a blank cell carrying its served `unavailable_reason`, while a genuinely
+measured `0` (February's zero tonnage) is still exported as `0`.
+
+### The two U4 failures are fixed
+
+Both long-standing `phase5LandfillDashboard` failures belonged to this page and
+are now resolved by **scoping, not relaxing**:
+
+- the banner count was `.wep-banner` across the whole dashboard; it now counts
+  the official-landfill section only, and *additionally* asserts the municipal
+  section still carries its own required warning banner;
+- the mid-flight "no stale 2024년" check was page-wide, which made it depend on
+  the municipal heading's fixed year; it now targets `landfill-filters`, the
+  surface the transition actually concerns.
+
+`e2e/phase5LandfillDashboard.spec.ts`: **37/37 passed** — the first time this
+suite has been fully green in the run.
+
+| Gate | Result |
+| --- | --- |
+| lint / typecheck / build | **PASS** |
+| `npm test` | **1286 passed / 7 skipped / 0 failed** (up from 1278) |
+| `e2e/phase5LandfillDashboard.spec.ts` | **37/37 PASS** |
+
+## Phase 5B / 5C — NOT STARTED
+
+Remaining: 후보지 분석 administrative-region selection map (5B) and the
+데이터·출처 modal with legacy-URL and history behaviour (5C). Phases 6 and 7 have
+not begun; **RELEASE READY: NO**, nothing pushed, nothing deployed.
 
 Phase 4 (후보지 심층 비교 + XLSX), Phase 5 (Page 2 + Page 3 + data modal),
 Phase 6 (release gate), and Phase 7 (OCI deployment) were not begun.

@@ -38,7 +38,7 @@
  * being read.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import type {
   LandfillComposition,
@@ -67,6 +67,8 @@ import {
 } from "./landfill/shared";
 import InfoBanner from "./ui/InfoBanner";
 import PageHeader from "./ui/PageHeader";
+import SectionCard from "./ui/SectionCard";
+import { downloadLandfillWorkbook } from "../lib/landfillExport";
 
 export interface LandfillDashboardData {
   summary: LandfillSummary;
@@ -281,7 +283,62 @@ function LandfillBody({ data }: { data: LandfillDashboardData }) {
 
       <LandfillRegionTable summary={summary} originMax={originMax} periodLabel={periodLabel} />
 
+      {/* The export sits INSIDE the official-fee block, above the methodology and
+          well above the municipal section, so the workbook it produces is
+          unmistakably the landfill-fee dataset (spec §4). */}
+      <LandfillExport summary={summary} trends={trends} />
+
       <LandfillMethodology summary={summary} />
     </>
+  );
+}
+
+/**
+ * 반입 자료 내려받기 — the official-fee workbook only.
+ *
+ * Deliberately NOT a "download everything on this page" button. The municipal
+ * collection/transport contract payment is a different accounting basis, a
+ * different publisher, and a different spatial unit, so it is never written into
+ * this workbook (docs/YEOGIDA_UI_REDESIGN_SPEC.md §4). The button says which
+ * dataset it exports for exactly that reason.
+ */
+function LandfillExport({
+  summary,
+  trends,
+}: {
+  summary: LandfillSummary;
+  trends: LandfillTrends | null;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <SectionCard title="반입 자료 내려받기" testId="landfill-export">
+      <p className="text-xs leading-relaxed text-ink-muted" data-testid="landfill-export-scope">
+        수도권매립지 공식 반입량과 반입수수료를 출발 지역별·폐기물 종류별·월별 시트로 내려받습니다.
+        아래 시·군·구 수집·운반 계약 지급액은 회계 기준이 다른 별도 자료이므로 이 파일에 포함되지
+        않습니다.
+      </p>
+      <button
+        type="button"
+        className="wep-btn-quiet mt-2"
+        data-testid="landfill-export-xlsx"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          downloadLandfillWorkbook(summary, trends)
+            .catch(() => setError("파일을 만들지 못했습니다. 잠시 후 다시 시도해 주세요."))
+            .finally(() => setBusy(false));
+        }}
+      >
+        {busy ? "엑셀 파일 만드는 중…" : "엑셀(.xlsx) 내려받기"}
+      </button>
+      {error && (
+        <p className="mt-2 text-xs text-danger" role="alert" data-testid="landfill-export-error">
+          {error}
+        </p>
+      )}
+    </SectionCard>
   );
 }
