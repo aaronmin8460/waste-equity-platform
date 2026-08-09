@@ -45,8 +45,13 @@ export function rankDirectionLabel(
   if (direction === null || direction === undefined) return null;
   // The served enum is LOWERCASE ("up" | "down" | "same"); an uppercase compare
   // here would silently label every row null.
-  if (direction === "up") return `상승 (${Math.abs(delta ?? 0)}단계)`;
-  if (direction === "down") return `하락 (${Math.abs(delta ?? 0)}단계)`;
+  //
+  // The magnitude is only printed when one was actually served. `delta ?? 0`
+  // would render "상승 (0단계)" — a contradiction, and a fabricated zero in the
+  // one place a reader is most likely to trust it (repo AGENTS.md).
+  const steps = delta === null || delta === undefined ? null : Math.abs(delta);
+  if (direction === "up") return steps === null ? "상승" : `상승 (${steps}단계)`;
+  if (direction === "down") return steps === null ? "하락" : `하락 (${steps}단계)`;
   if (direction === "same") return "변화 없음";
   return null;
 }

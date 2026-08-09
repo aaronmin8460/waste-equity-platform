@@ -407,6 +407,10 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(page.getByTestId("mode-switch")).toBeVisible();
     const before = (await page.getByTestId("top-navigation").boundingBox())!;
 
+    // 데이터·출처 is a dialog and its backdrop correctly makes the nav behind it
+    // inert, so leaving means closing it rather than clicking through it.
+    await page.getByTestId("data-sources-dialog-close").click();
+    await expect(page.getByTestId("data-sources-dialog")).toHaveCount(0);
     await page.getByTestId("mode-flow").click();
     await expect(page.getByTestId("landfill-dashboard")).toBeVisible();
     const after = (await page.getByTestId("top-navigation").boundingBox())!;

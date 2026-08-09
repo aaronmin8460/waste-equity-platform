@@ -326,7 +326,9 @@ test.describe("suitability dashboard behaviour at 1440×900", () => {
     await page.getByTestId("suitability-insight-summary").click();
     await page.getByTestId("suitability-insight-open-sources").click();
     await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("map-container")).toHaveCount(0);
+    // A dialog over the previous destination (spec §8) — the map behind stays.
+    await expect(page.getByTestId("data-sources-dialog")).toBeVisible();
+    await expect(page.getByTestId("map-container")).toHaveCount(1);
   });
 });
 

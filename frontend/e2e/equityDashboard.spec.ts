@@ -275,7 +275,9 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
     await page.getByTestId("equity-insight-summary").click();
     await page.getByTestId("insight-open-sources").click();
     await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
-    // The map is unmounted on that area, so exactly one map is ever mounted.
-    await expect(page.getByTestId("map-container")).toHaveCount(0);
+    // 데이터·출처 is a DIALOG over this view (spec §8), so its map stays mounted —
+    // still exactly one, never a second.
+    await expect(page.getByTestId("data-sources-dialog")).toBeVisible();
+    await expect(page.getByTestId("map-container")).toHaveCount(1);
   });
 });

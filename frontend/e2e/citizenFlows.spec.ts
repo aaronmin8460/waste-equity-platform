@@ -362,7 +362,10 @@ test.describe("Task E — 데이터·출처 (transparency)", () => {
     const table = page.getByTestId("unmapped-facility-table");
     await expect(table).toContainText("주소 정제 실패");
     await expect(table).toContainText("실패 사유 기록 없음");
-    // No map in the transparency view.
-    await expect(page.getByTestId("map-container")).toHaveCount(0);
+    // The catalogue itself carries no map. 데이터·출처 is a dialog now, so the
+    // destination behind it may legitimately have one — the assertion is scoped
+    // to the dialog rather than to the whole page.
+    await expect(page.getByTestId("data-sources-dialog").getByTestId("map-container"))
+      .toHaveCount(0);
   });
 });

@@ -274,10 +274,12 @@ for (const vp of DESKTOP_VIEWPORTS) {
     });
 
     test("keeps the map-free pages full-width and map-free", async ({ page }) => {
+      // 데이터·출처 is deliberately absent: it is a DIALOG over the previous
+      // destination now (spec §8), so it is neither a page nor map-free, and it
+      // is covered by its own suites. These two remain genuine full-width pages.
       for (const [query, testId] of [
         ["/?v=1&mode=suitability&view=cost", "facility-cost-dashboard"],
         ["/?v=1&mode=flow", "landfill-dashboard"],
-        ["/?v=1&mode=transparency", "transparency-sources"],
       ] as const) {
         await gotoView(page, query);
         await expect(page.getByTestId("map-container"), query).toHaveCount(0);

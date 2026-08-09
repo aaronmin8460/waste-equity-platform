@@ -130,6 +130,11 @@ describe("missing stays missing", () => {
     expect(rankDirectionLabel("up", 3)).toContain("상승");
     expect(rankDirectionLabel("down", -2)).toContain("하락");
     expect(rankDirectionLabel("same", 0)).toBe("변화 없음");
+    // A served direction with NO served magnitude prints the direction alone.
+    // "상승 (0단계)" would be both self-contradictory and a fabricated zero.
+    expect(rankDirectionLabel("up", null)).toBe("상승");
+    expect(rankDirectionLabel("down", null)).toBe("하락");
+    expect(rankDirectionLabel("up", null)).not.toContain("0");
     expect(stabilityLabel("STABLE", 3)).toContain("3/3");
   });
 });

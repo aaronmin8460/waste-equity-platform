@@ -173,16 +173,24 @@ test.describe("a map exists only where the analysis needs one", () => {
   });
 
   test("map-free views mount zero maps", async ({ page }) => {
-    for (const url of [
-      "/?v=1&mode=suitability&view=cost",
-      "/?v=1&mode=flow",
-      "/?v=1&mode=transparency",
-    ]) {
+    // 데이터·출처 is deliberately not in this list: it is a DIALOG over the
+    // previous destination (spec §8), so whether a map is mounted depends on what
+    // it was opened over, not on the catalogue. Its own map-free contract is
+    // asserted dialog-scoped in the transparency suites. These two are genuine
+    // map-free pages.
+    for (const url of ["/?v=1&mode=suitability&view=cost", "/?v=1&mode=flow"]) {
       await page.goto(url);
       await expect(page.locator("#main-content")).toBeVisible();
       await expect(page.getByTestId("map-container"), url).toHaveCount(0);
       await expect(page.locator(".map-pane"), url).toHaveCount(0);
     }
+
+    // And the catalogue itself carries no map, wherever it is opened from.
+    await page.goto("/?v=1&mode=transparency");
+    const dialog = page.getByTestId("data-sources-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("map-container")).toHaveCount(0);
+    await expect(dialog.locator(".map-pane")).toHaveCount(0);
   });
 
   test("the desktop map fills to the viewport bottom with no empty strip", async ({ page }) => {

@@ -68,6 +68,8 @@ interface View {
   navTestId: string;
   /** Exactly how many `MapView`s this view mounts. */
   maps: number;
+  /** True when this destination renders as a dialog over the previous one. */
+  dialog?: boolean;
 }
 
 const VIEWS: View[] = [
@@ -120,10 +122,14 @@ const VIEWS: View[] = [
     name: "데이터·출처",
     url: "/?v=1&mode=transparency",
     ready: "transparency-dashboard",
-    h1: "데이터·출처",
+    // The dialog is layered over 지역 지표 when opened cold, so the page's single
+    // h1 is that destination's and one map stays mounted behind it (spec §8).
+    // The dialog's own title is an h2, asserted in app/page.dataDialog.test.tsx.
+    h1: "지역 지표",
+    dialog: true,
     navLabel: "데이터·출처",
     navTestId: "mode-transparency",
-    maps: 0,
+    maps: 1,
   },
 ];
 
@@ -222,7 +228,20 @@ async function expectViewContract(page: Page, view: View): Promise<void> {
   await expect(page.getByTestId("mode-switch"), `${view.name}: one nav group`).toHaveCount(1);
   await expect(page.locator("#main-content"), `${view.name}: one main target`).toHaveCount(1);
   await expect(page.locator("h1"), `${view.name}: one page-level h1`).toHaveCount(1);
-  await expect(page.locator("h1"), `${view.name}: exact h1`).toHaveText(view.h1);
+  if (view.dialog) {
+    // The dialog layers over WHICHEVER destination the reader was on, so the
+    // page's single h1 is that one — not a fixed string. What is pinned instead
+    // is the pair that actually matters: the h1 belongs to a real destination,
+    // and the dialog's own title is 데이터·출처 (an h2, never a second h1).
+    const heading = (await page.locator("h1").textContent())?.trim();
+    expect(NAV_LABELS, `${view.name}: h1 is a real destination`).toContain(heading);
+    const dialog = page.getByTestId("data-sources-dialog");
+    await expect(dialog).toHaveAttribute("aria-modal", "true");
+    await expect(dialog.getByRole("heading", { name: "데이터·출처" })).toBeVisible();
+    await expect(dialog.locator("h1")).toHaveCount(0);
+  } else {
+    await expect(page.locator("h1"), `${view.name}: exact h1`).toHaveText(view.h1);
+  }
 
   // The six frozen destination labels, all six present at once, compared exactly.
   for (const other of NAV_LABELS) {
@@ -233,7 +252,19 @@ async function expectViewContract(page: Page, view: View): Promise<void> {
   }
   await expect(page.getByTestId(view.navTestId)).toHaveAttribute("aria-pressed", "true");
 
-  await expect(page.getByTestId("map-container"), `${view.name}: map count`).toHaveCount(view.maps);
+  if (view.dialog) {
+    // A dialog's map count is whatever the destination BEHIND it mounts, which
+    // varies with where the reader came from — so an absolute number is not a
+    // property of this view. What is: the catalogue itself is map-free, and the
+    // app never ends up with two maps.
+    await expect(page.getByTestId("data-sources-dialog").getByTestId("map-container"))
+      .toHaveCount(0);
+    expect(await page.getByTestId("map-container").count()).toBeLessThanOrEqual(1);
+  } else {
+    await expect(page.getByTestId("map-container"), `${view.name}: map count`).toHaveCount(
+      view.maps,
+    );
+  }
   // The sub-view segmented bar is retired — the six destinations select `view`
   // directly (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.1).
   await expect(
@@ -252,7 +283,11 @@ async function expectViewContract(page: Page, view: View): Promise<void> {
   );
   expect(pressed, `${view.name}: exactly one pressed destination`).toEqual([view.navTestId]);
 
-  // Nothing another view owns is left behind.
+  // Nothing another view owns is left behind — except under a DIALOG, where the
+  // destination behind it is supposed to still be there. That underlay is the
+  // feature, not a leak (spec §8), so the sweep is skipped for the dialog view
+  // and its own suite asserts what it layers over instead.
+  if (view.dialog) return;
   for (const [owner, ids] of Object.entries(VIEW_OWNED_TESTIDS)) {
     if (owner === view.name) continue;
     for (const id of ids) {
@@ -369,9 +404,17 @@ test.describe("URL state survives integration at 1440×900", () => {
     await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
     await expectViewContract(page, VIEWS[3]);
 
+    // 데이터·출처 is the one destination that LAYERS rather than replaces: opening
+    // it deliberately keeps 후보지 분석 mounted behind so closing can return there.
+    // That is the feature, so the "fully replaces" rule does not apply to it, and
+    // `expectViewContract` skips the stale-content sweep for a dialog view.
     await page.getByTestId("mode-transparency").click();
-    await expect(page.getByTestId("transparency-dashboard")).toBeVisible();
+    await expect(page.getByTestId("data-sources-dialog")).toBeVisible();
     await expectViewContract(page, VIEWS[5]);
+    // Closing returns to the destination it was layered over — not to a default.
+    await page.getByTestId("data-sources-dialog-close").click();
+    await expect(page.getByTestId("data-sources-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
 
     // …and back to where we started, with the equity workspace whole again.
     await page.getByTestId("mode-equity").click();

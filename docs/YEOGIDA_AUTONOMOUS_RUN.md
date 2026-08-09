@@ -634,9 +634,92 @@ key is simply absent now — there are no symbol layers to need it.
 
 **Phase 5B status: PASS. Phase 5 is complete.**
 
-## Phases 6–7 — NOT STARTED
+## Phase 6 — release gate
 
-**RELEASE READY: NO**, nothing pushed, nothing deployed.
+### Diff safety (`origin/main...HEAD`)
+
+| Check | Result |
+| --- | --- |
+| New alembic migrations | **0** |
+| Files outside `frontend/` and `docs/` | **none** |
+| Backend, ingestion, data, deploy, scripts | **untouched** |
+
+### Missing → zero audit
+
+Every `Number(...)` in the redesign-added modules is immediately guarded by
+`Number.isFinite` and returns `null`, and the XLSX writer turns `null` into an
+empty cell. The audit found **one real fabricated zero** and it is fixed:
+`rankDirectionLabel` used `Math.abs(delta ?? 0)`, so a served direction with no
+served magnitude rendered "상승 (0단계)" — both self-contradictory and a zero the
+data never provided. It now prints the direction alone. Pinned by a test.
+
+No Figma sample value appears in production code (the run-48 figures exist only
+in the relativeGrade regression fixture, which is a test).
+
+### Contracts verified
+
+Brand 여기다 + 쓰레기 매립지 입지 추천 플랫폼, crosshair mark, Noto Sans KR,
+navy `#111A56`. Six destinations, in order, projected onto the unchanged
+`(mode, view)` state with `URL_STATE_VERSION` still `"1"`.
+
+### Suites repaired in this phase
+
+The 데이터·출처 page→dialog change rippled into 20 assertions across eight
+suites. All were consequences of one fact — **the destination behind the dialog
+stays mounted, which is the feature** — and each was restated rather than
+relaxed:
+
+- "map count 0 at 데이터·출처" → the dialog is open and the map behind is still
+  exactly one (never two);
+- the map count for the dialog view is no longer an absolute number at all,
+  because it depends on what the dialog was opened over; instead the *catalogue*
+  is asserted map-free and the app is asserted never to hold two maps;
+- the exact `<h1>` for the dialog view became "the h1 is one of the six real
+  destinations, and the dialog's own title is an h2 named 데이터·출처";
+- "returns to the collapsed default after navigating away" now navigates
+  genuinely away (폐기물 처리 현황) instead of through the dialog — opening an
+  overlay is not navigating away, so the old hop tested nothing;
+- specs that clicked the nav while the dialog was open now close it first,
+  because a modal's background is correctly inert;
+- viewport-relative width floors became dialog-relative.
+
+`e2e/phase7FinalRegression.spec.ts` "the skip link is the first focus target"
+failed once under full-suite load and passed on re-run — the documented
+load-dependent flake class, not a regression.
+
+### Gate
+
+| Gate | Result |
+| --- | --- |
+| `npm run lint` | **PASS** |
+| `npm run typecheck` | **PASS** |
+| `npm run build` | **PASS** |
+| `npm test` | **1308 passed / 7 skipped / 0 failed** |
+| Full Playwright | **570 passed / 89 skipped / 0 failed** |
+
+Responsive viewports exercised by the suite: 390, 430, 768, 1024, 1054, 1280,
+1440, 1920.
+
+The 89 skips are the live-backend specs, which `test.skip` themselves when
+`E2E_BACKEND_URL` is unset — the repository's standing convention, so that no
+mock is ever substituted for a spec asserting against real official data.
+
+**PHASE 6 STATUS: PASS. RELEASE READY: YES.**
+
+### Phase commit map
+
+| Phase | Commit |
+| --- | --- |
+| 1 global shell | `798378e` |
+| 2 지역 지표 + resizable sidebar | `f71f927` |
+| 3 A/B/C foundation | `1fafb67` |
+| 3 three-column workspace | `ab6f2c1` |
+| 3 insight-card gutter | `056019d` |
+| 4 scenario comparison + XLSX | `5138de5` |
+| 5A landfill XLSX + U4 | `fcee83d` |
+| 5C 데이터·출처 dialog | `37c9cc2` |
+| 5C catalogue grid | `3cf7b11` |
+| 5B admin-region map | `187c4a5` |
 
 Remaining: 후보지 분석 administrative-region selection map (5B) and the
 데이터·출처 modal with legacy-URL and history behaviour (5C). Phases 6 and 7 have
