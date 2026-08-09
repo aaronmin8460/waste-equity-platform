@@ -446,7 +446,10 @@ describe("one source of truth per control", () => {
     const { container } = await renderLoaded();
     const tokens = (container.querySelector("aside")?.getAttribute("class") ?? "").split(/\s+/);
     expect(tokens).toContain("md:overflow-y-auto");
-    expect(tokens).toContain("md:w-96");
     expect(tokens).toContain("md:flex-none");
+    // The fixed `md:w-96` was replaced by the reader-controlled 300–520 width
+    // (spec §3); independent scrolling is unchanged.
+    expect(tokens).toContain("wep-sidebar");
+    expect(tokens).not.toContain("md:w-96");
   });
 });

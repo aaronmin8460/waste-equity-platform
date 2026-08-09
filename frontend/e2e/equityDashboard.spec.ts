@@ -167,12 +167,26 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test("keeps the header and the current-selection summary visible without scrolling", async ({
+    test("keeps the header and BOTH choices actionable without scrolling", async ({ page }) => {
+      await openEquity(page);
+      await expect(page.locator("h1")).toBeInViewport();
+      // 지역 선택 then 지표 선택 now LEAD the column (spec §3), so these are what
+      // must be reachable without scrolling: they are what a reader acts on. The
+      // summary is the RESULT of those two choices and moved below them.
+      await expect(page.getByTestId("region-select")).toBeInViewport();
+      await expect(page.getByTestId("equity-metric-selector")).toBeInViewport();
+    });
+
+    test("keeps the selection summary's facts on screen, never only in a tooltip", async ({
       page,
     }) => {
       await openEquity(page);
-      await expect(page.locator("h1")).toBeInViewport();
-      await expect(page.getByTestId("selected-region-summary")).toBeInViewport();
+      const summary = page.getByTestId("selected-region-summary");
+      // The guarantee is that these facts have a real on-screen home in the
+      // column — not that they sit above the fold now that two choice cards
+      // precede them.
+      await summary.scrollIntoViewIfNeeded();
+      await expect(summary).toBeInViewport();
       await expect(page.getByTestId("equity-summary-status")).toBeVisible();
       // The reference period and the metric source are on screen, not in a tooltip.
       await expect(page.getByTestId("equity-summary-reference-period")).toBeVisible();

@@ -105,6 +105,7 @@ import { landfillUnavailableFromAll } from "../lib/landfill";
 import type { MunicipalCostErrorState } from "../lib/municipalCost";
 import { municipalCostErrorFrom } from "../lib/municipalCost";
 import DashboardShell from "../components/DashboardShell";
+import ResizableSidebar from "../components/ui/ResizableSidebar";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import LandCoverLayerControl from "../components/LandCoverLayerControl";
 import type { ClassLevel } from "../lib/landCover";
@@ -1398,7 +1399,7 @@ export default function Home() {
       >
         <div
           aria-hidden
-          className="flex w-full flex-col gap-4 border-b border-hairline bg-surface p-5 md:w-96 md:flex-none md:border-r md:border-b-0"
+          className="wep-sidebar flex w-full flex-col gap-4 border-b border-hairline bg-surface p-5 md:flex-none md:border-r md:border-b-0"
           data-testid="loading-skeleton-sidebar"
         >
           {/* Header block */}
@@ -1552,10 +1553,15 @@ export default function Home() {
     <DashboardShell destination={destination} onNavigate={navigate} variant="map">
       {/* The control column is a SUNKEN surface so each section inside it reads as a
           distinct `.wep-card` (the shell root is the application canvas, cards are
-          white surfaces — docs/ui-refresh/design-tokens.md §2). The layout classes
-          the responsive contract asserts — w-full, md:w-96, md:flex-none,
-          md:overflow-y-auto — are unchanged. */}
-      <aside className="flex w-full flex-col gap-3 border-b border-hairline bg-surface-sunken p-4 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
+          white surfaces — docs/ui-refresh/design-tokens.md §2).
+
+          `ResizableSidebar` renders the <aside> AND the drag handle beside it. The
+          fixed `md:w-96` (384px) is gone: the desktop width is now 300–520px,
+          default 360, remembered per reader (spec §3). It still stacks full-width on
+          phones and scrolls independently at md+, and the map beside it follows
+          through MapView's EXISTING container ResizeObserver — this adds no second
+          observer and never remounts the map. */}
+      <ResizableSidebar>
         {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
             데이터·출처, and 비용 살펴보기 already title themselves. The product name
             it replaced now lives in the app bar's brand block, so the same words no
@@ -1573,24 +1579,6 @@ export default function Home() {
 
         {mode === "equity" && (
           <>
-            {/* CURRENT SELECTION — one answer-first summary card.
-                Before this milestone the same facts lived in two adjacent cards
-                ("선택한 지표" and "선택한 지역"), each printing its own copy of
-                `metricProvenance`. They are merged here: region → value → what is
-                measured → when the data is from → source, with the provenance shown
-                once. The role="status" live region, the contracted test IDs, and the
-                "a missing value shows its served reason, never a 0" rule are
-                unchanged (docs/ui-refresh/equity-dashboard.md). */}
-            <EquityRegionSummary
-              metricLabel={metric.label}
-              unit={unit}
-              referencePeriod={metricReferencePeriod}
-              metricStatus={metricDataStatus}
-              metricProvenance={metricProvenance}
-              selected={selectedRegion}
-              onClear={() => setSelectedRegionCode(null)}
-            />
-
             {/* REGION SEARCH & SELECTION — the keyboard path to the same canonical
                 `selectedRegionCode`, now its own labelled section instead of a form
                 control wedged inside the summary above. `selectedRegion?.regionCode`
@@ -1613,21 +1601,29 @@ export default function Home() {
               onSelectMetric={selectMetric}
             />
 
-            {/* Comparison + ranking + share/export. All read the active metric's
-                served values, so they follow the metric automatically, and selecting
-                a region in either drives the ONE canonical selected-region state
-                (map + summary stay in sync). */}
-            <RegionComparison
-              regionOptions={regionOptions}
-              resolveValue={resolveComparisonValue}
+            {/* CURRENT SELECTION — the answer to the two choices above, so it now
+                sits BELOW them rather than opening the column (spec §3: 지역 선택 →
+                지표 선택 → the resulting context). Nothing about the card changed:
+                region → value → what is measured → when the data is from → source,
+                with the provenance printed once, the role="status" live region, the
+                contracted test IDs, and the "a missing value shows its served
+                reason, never a 0" rule (docs/ui-refresh/equity-dashboard.md). */}
+            <EquityRegionSummary
               metricLabel={metric.label}
               unit={unit}
-              selected={comparison}
-              setSelected={setComparison}
-              onSelectRegionOnMap={(code) => setSelectedRegionCode(code)}
-              maxCompare={MAX_COMPARE}
+              referencePeriod={metricReferencePeriod}
+              metricStatus={metricDataStatus}
+              metricProvenance={metricProvenance}
+              selected={selectedRegion}
+              onClear={() => setSelectedRegionCode(null)}
             />
 
+            {/* 지표 순위, then comparison, then share/export. All three read the
+                active metric's served values, so they follow the metric
+                automatically, and selecting a region in any of them drives the ONE
+                canonical selected-region state (map + summary stay in sync).
+                Ranking leads because it answers "where does this stand?" for every
+                region, while comparison answers a follow-up about a chosen few. */}
             <RegionRanking
               regions={rankableRegions}
               metricLabel={metric.label}
@@ -1639,6 +1635,17 @@ export default function Home() {
               setTopN={setTopN}
               selectedRegionCode={selectedRegionCode}
               onSelectRegion={(code) => setSelectedRegionCode(code)}
+            />
+
+            <RegionComparison
+              regionOptions={regionOptions}
+              resolveValue={resolveComparisonValue}
+              metricLabel={metric.label}
+              unit={unit}
+              selected={comparison}
+              setSelected={setComparison}
+              onSelectRegionOnMap={(code) => setSelectedRegionCode(code)}
+              maxCompare={MAX_COMPARE}
             />
 
             <ShareExportBar
@@ -1755,7 +1762,7 @@ export default function Home() {
           </>
         )}
 
-      </aside>
+      </ResizableSidebar>
 
       {/* The map wrapper. Its MapLibre child is `h-full` (100% of this box), so the
           box needs a *definite* height. The dedicated `.map-pane` class (globals.css)

@@ -650,6 +650,64 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Resizable 지역 지표 control column (components/ui/ResizableSidebar.tsx).
+
+   The width arrives as the `--wep-sidebar-width` custom property, set inline by
+   the component, and is READ ONLY inside the md+ block below. That is what makes
+   the phone layout structurally immune to the desktop width: below 768px the
+   property is never consumed, so the column is plainly `width: 100%` and no JS
+   branch has to remember to skip it.
+
+   The divider is a real 10px flex item — a comfortable pointer target — that
+   paints only a 1px hairline down its centre, so the visible seam stays as quiet
+   as the border it replaced. (The column's old `md:border-r` is gone; this line
+   IS that border now, which is why the map still starts immediately after it.)
+   It is hidden below md, so a phone has no handle and receives no pointer
+   handlers at all. */
+.wep-sidebar {
+  width: 100%;
+}
+.wep-sidebar-resizer {
+  display: none;
+}
+@media (min-width: 768px) {
+  .wep-sidebar {
+    width: var(--wep-sidebar-width, 360px);
+  }
+  .wep-sidebar-resizer {
+    display: block;
+    position: relative;
+    flex: none;
+    width: 10px;
+    align-self: stretch;
+    background: transparent;
+    /* The cursor is the affordance: the 10px band reads as a hairline until the
+       pointer is over it. */
+    cursor: col-resize;
+    /* Never let a drag select the sidebar text it starts next to. */
+    user-select: none;
+    /* Claim horizontal gestures so a trackpad drag resizes instead of scrolling. */
+    touch-action: none;
+  }
+  .wep-sidebar-resizer::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-50%);
+    background: var(--color-hairline);
+    transition: background-color 0.12s ease, width 0.12s ease;
+  }
+  /* Hover and keyboard focus both thicken and tint the line, so the handle is
+     discoverable by pointer AND visibly targeted when tabbed to. */
+  .wep-sidebar-resizer:hover::before,
+  .wep-sidebar-resizer:focus-visible::before {
+    width: 3px;
+    background: var(--color-primary);
+  }
+}
+
 /* Map pane sizing.
    Replaces the ambiguous stack of `h-[60vh] h-[60dvh] md:h-auto md:min-h-0
    md:flex-1` utilities that previously sized the map wrapper. Two problems it

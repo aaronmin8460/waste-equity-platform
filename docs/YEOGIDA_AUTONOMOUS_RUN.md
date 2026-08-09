@@ -229,4 +229,85 @@ Limitations, both recorded in `YEOGIDA_UI_UNSUPPORTED_REQUIREMENTS.md`:
 2. Two pre-existing `phase5LandfillDashboard` e2e failures inherited from
    `origin/main`, proven against a baseline worktree and scheduled for Phase 5.
 
+Commit: `798378e`.
+
+---
+
+## Phase 2 — Page 1 지역 지표 + resizable sidebar
+
+**Scope:** the 지역 지표 destination only. No analytical logic rewritten.
+
+### The resizable control column
+
+New `components/ui/ResizableSidebar.tsx` replaces the fixed `md:w-96` (384px).
+
+| Behaviour | Implementation |
+| --- | --- |
+| Bounds | min **300**, default **360**, max **520** |
+| Persistence | `localStorage["yeogida.equity.sidebarWidth"]`, validated + clamped on read |
+| Pointer | `pointerdown` + **pointer capture**, so a drag that crosses onto the map keeps working and the map never sees it |
+| Cursor | `col-resize` |
+| Hit target | a real **10px** flex band that paints only a 1px hairline down its centre |
+| Keyboard | ←/→ ±16px, **Home** → 300, **End** → 520 |
+| Double-click | restores 360 |
+| ARIA | focusable `role="separator"`, `aria-orientation="vertical"`, live `aria-valuenow/min/max/valuetext` |
+| Mobile | `.wep-sidebar-resizer` is `display: none` below 768px |
+
+Two design decisions worth keeping in mind for later phases:
+
+1. **The width is a CSS custom property, not an inline `width`.** An inline
+   width would beat every media query and pin the *phone* column to the desktop
+   size. `--wep-sidebar-width` is published by the component and read only
+   inside the `min-width: 768px` block, so "mobile ignores desktop resize" is
+   structural rather than a JS branch that could drift from the CSS.
+2. **No new `ResizeObserver`.** `MapView` already observes its own container and
+   coalesces bursts into one `map.resize()` per animation frame. Narrowing the
+   column widens the sibling `.map-pane`, that observer fires, and the canvas
+   follows. A second observer would double every resize during a drag. The width
+   state also lives inside `ResizableSidebar`, so a drag re-renders neither the
+   page nor the map subtree — the map is never remounted.
+
+### Panel hierarchy
+
+Reordered to the approved Figma hierarchy (spec §3):
+
+| Before | After |
+| --- | --- |
+| 선택 요약 → 지역 선택 → 지표 선택 → 비교 → 순위 → 공유 | **지역 선택 → 지표 선택 → 선택 요약 → 지표 순위 → 비교 → 공유** |
+
+The two *choices* now lead and the summary is presented as their *result*.
+Every component, prop, test id, and data path is unchanged — this is ordering
+only.
+
+### Validation
+
+| Gate | Result |
+| --- | --- |
+| `npm run lint` | **PASS** |
+| `npm run typecheck` | **PASS** |
+| `npm test` | **1222 passed / 7 skipped** (up from 1197; +24 sidebar tests) |
+| `npm run build` | **PASS** |
+| `e2e/equitySidebarResize.spec.ts` (new, 12 tests) | **PASS** |
+| Full Playwright suite | **568 passed / 89 skipped / 2 failed** (up from 552; the 2 are the same pre-existing `phase5LandfillDashboard` failures — see U4) |
+
+The new e2e spec covers what jsdom cannot: a real pointer drag, clamping at both
+bounds, the canvas tracking its pane after a resize, the map surviving repeated
+drags without remounting, keyboard operation with a visible focus ring,
+double-click reset, persistence across reload (plus corrupted- and
+out-of-range-store repair), no page-level horizontal scrolling at any drag
+position, selection preserved across a resize, the full range still usable at
+1024px, and no handle at all on a 390px phone.
+
+### One test re-pointed (not weakened)
+
+`equityDashboard.spec.ts` asserted the selection summary sat above the fold.
+The approved reorder moved it below the two choice cards, so that assertion was
+split in two rather than deleted:
+
+- **the header and BOTH choices** must be actionable without scrolling — the
+  stronger form of the original intent, since those are what a reader acts on;
+- **the summary's facts** must still have a real on-screen home, reachable in
+  the column and never only in a tooltip — the original guarantee, verbatim,
+  including the collapsed-map-insight checks.
+
 ---

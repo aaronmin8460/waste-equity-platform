@@ -115,14 +115,32 @@ describe("responsive application shell", () => {
     expect(container.querySelectorAll("main")).toHaveLength(1);
   });
 
-  it("makes the sidebar full-width on mobile and a fixed column on desktop", async () => {
+  it("makes the sidebar full-width on mobile and a RESIZABLE column on desktop", async () => {
     const { container } = await renderLoaded();
-    const tokens = classes(container.querySelector("aside"));
+    const aside = container.querySelector("aside");
+    const tokens = classes(aside);
     expect(tokens).toContain("w-full");
-    expect(tokens).toContain("md:w-96");
     expect(tokens).toContain("md:flex-none");
-    // No fixed 384px width forced on mobile.
+    // The fixed 384px desktop column is gone: the width is now reader-controlled
+    // (300–520, default 360) and carried by `.wep-sidebar` reading the custom
+    // property below — see components/ui/ResizableSidebar.tsx and spec §3.
+    expect(tokens).toContain("wep-sidebar");
+    expect(tokens).not.toContain("md:w-96");
     expect(tokens).not.toContain("w-96");
+    // The width must be a custom property, never an inline `width`, or it would
+    // beat the media query and pin the PHONE column to the desktop size too.
+    expect((aside as HTMLElement).style.width).toBe("");
+    expect((aside as HTMLElement).style.getPropertyValue("--wep-sidebar-width")).toBe("360px");
+  });
+
+  it("hides the desktop resize handle behind a class the phone layout never shows", async () => {
+    await renderLoaded();
+    // `.wep-sidebar-resizer` is `display: none` until 768px (globals.css), so a
+    // phone gets no handle and no drag behaviour. jsdom loads no stylesheet, so
+    // the contract asserted here is the class that owns that rule.
+    const resizer = screen.getByTestId("sidebar-resizer");
+    expect(resizer.className).toContain("wep-sidebar-resizer");
+    expect(resizer.getAttribute("role")).toBe("separator");
   });
 
   it("sizes the map wrapper via the dedicated .map-pane class (definite mobile height, flex fill at md+)", async () => {
