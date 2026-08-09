@@ -733,3 +733,84 @@ approved functionality is incomplete, so Phase 7 must not run against this
 branch. Nothing has been pushed and nothing has been deployed.
 
 ---
+
+---
+
+## Phase 7 — OCI production deployment
+
+| Item | Value |
+| --- | --- |
+| **DEPLOYED SHA** | `26d555fc83f7637d63b335223480e46226d3d173` |
+| **PREVIOUS PRODUCTION SHA** | `43ad1b5c955b443ad19955b875f26638cf551144` |
+| Host / project | `161.33.2.143` / `waste-equity-prod` |
+| Repository | `/home/ubuntu/waste-equity-platform` (unambiguous — the only repo with the right origin, and the working dir of all four running containers) |
+| Deployed at | 2026-08-09 19:24 UTC |
+
+### Pre-deploy safety
+
+- SSH verified non-interactively with `BatchMode=yes`.
+- All four containers healthy beforehand; `/health` reported `status: ok`,
+  `database: ok`.
+- Production DB at **`0021 (head)`**, and the migration diff between the previous
+  production SHA and the release is **0 files** — the release needs no schema
+  change, and none happened. `alembic current` is still `0021 (head)` after
+  deployment.
+- Release SHA confirmed present on the production clone before deploying
+  (`git cat-file -e`), so an exact commit was deployed rather than a branch head.
+
+Deployed with the repository's own `scripts/deployment/deploy.sh --ref <SHA>`.
+No ingestion, no database reset/restore/downgrade, no volume deletion, no second
+Compose project. Only `backend` and `frontend` were recreated; `database` and
+`caddy` were untouched.
+
+### Verification
+
+`deploy.sh`'s own smoke passed 7/7 (health, data-sources, suitability policies,
+frontend root, latest run, candidates, database-via-health).
+
+Independent checks against `https://waste-161-33-2-143.sslip.io`:
+
+| Check | Result |
+| --- | --- |
+| `GET /` | **200** |
+| `GET /health` | **200**, `status: ok`, `database: ok` |
+| `GET /api/v1/data-sources` | **200** |
+
+Browser smoke against the real production build:
+
+- 여기다 brand, subtitle, and the crosshair mark at 1440 / 1024 / 390.
+- All six destinations present at every width; **one nav row at 1024 and 1440**;
+  **zero horizontal page overflow** at all three.
+- Pages 1–5 all load.
+- Page 1: sidebar opens at exactly 360px, **End** resizes to exactly 520px, and
+  the map still reaches the viewport bottom afterwards (no blank strip).
+- Page 4: left and right panels present, collapse and reopen, map stays mounted,
+  candidate data renders.
+- Page 2: municipal section rendered as its own separate section; XLSX export
+  button present, labelled `엑셀(.xlsx) 내려받기`, with scope copy stating the
+  municipal payment is excluded.
+- Page 5: XLSX export present, labelled `엑셀(.xlsx) 내려받기 — 상위 10개`, scope
+  copy naming both the TOP-N and the full population.
+- 데이터·출처: the legacy `?v=1&mode=transparency` URL opens the dialog
+  (`aria-modal="true"`), it closes, and closing returns to the prior destination.
+
+Logs: zero 5xx, tracebacks, crash loops, restarts, or hydration errors across
+frontend, backend, and Caddy in the last 200 lines each.
+
+**PHASE 7 STATUS: PASS. PRODUCTION DEPLOYED: YES.**
+
+### Non-blocking limitations carried into production
+
+1. **U1/U2** — Figma was unreachable (403 / login wall) for the whole run, so
+   frame-level fidelity is unverified and the stable-candidate accent remains the
+   existing `#d81b60`. Everything shipped comes from the approved written spec.
+2. **U5** — 신규 통과 / 통과 → 제외 scenario metrics are omitted, not zero-filled:
+   a weight scenario cannot change official screening status, so those counts are
+   zero by construction and printing one would answer a question never asked.
+3. **U6** — population-wide scenario statistics are unavailable; every comparison
+   figure and the Page 5 workbook are explicitly TOP-N scoped in three places.
+4. **Stability wording** — a review instruction asserted the rule is "top 10
+   ranked positions". It is not: `policy.py:128` and the live API
+   (`top_fraction 0.10`, `top_cutoff_rank 1751` of 17,501) both define it as the
+   top 10 **percent**, 3/3 across baseline/equal/critic. The wording was left
+   correct rather than changed to match the instruction.
