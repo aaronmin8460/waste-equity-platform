@@ -723,8 +723,14 @@ export interface CandidateDetail extends CandidateProperties {
   disclaimer: string;
 }
 
-/** fetchJson variant that supports cancellation via an AbortSignal. */
-export async function fetchJsonSignal<T>(path: string, signal: AbortSignal): Promise<T> {
+/**
+ * fetchJson variant that supports cancellation via an AbortSignal.
+ *
+ * The signal is optional: the relative-grade threshold reads are four tiny,
+ * idempotent lookups whose results are cached per run+profile, so there is no
+ * in-flight request worth cancelling and no stale-response hazard.
+ */
+export async function fetchJsonSignal<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${apiBaseUrl()}${path}`, { cache: "no-store", signal });
   if (!response.ok) {
     let detail: UnavailableDataDetail | null = null;
@@ -761,11 +767,28 @@ export interface CandidateQuery {
   sido?: string;
   top?: number;
   limit?: number;
+  /**
+   * Pin the query to a specific analysis run instead of the latest. The
+   * relative-grade thresholds MUST be read from the same run the map is showing,
+   * or a run published mid-session would silently mix two populations.
+   */
+  runId?: number;
+  /**
+   * Page offset. With `top` set the endpoint orders by the profile's rank
+   * ASCENDING, so `limit=1&offset=k-1` addresses the k-th ranked candidate —
+   * which is how `lib/relativeGrade.ts` reads an exact order statistic without
+   * downloading the whole population.
+   */
+  offset?: number;
+  /** Inclusive score floor. `limit=1` + `total_matched` gives an exact band count. */
+  minScore?: number;
+  /** Inclusive score ceiling. */
+  maxScore?: number;
 }
 
 export function fetchSuitabilityCandidates(
   query: CandidateQuery,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<SuitabilityCandidateCollection> {
   const params = new URLSearchParams({ profile: query.profile });
   if (query.bbox) params.set("bbox", query.bbox);
@@ -774,6 +797,10 @@ export function fetchSuitabilityCandidates(
   if (query.sido) params.set("sido", query.sido);
   if (query.top !== undefined) params.set("top", String(query.top));
   if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.runId !== undefined) params.set("run_id", String(query.runId));
+  if (query.offset !== undefined) params.set("offset", String(query.offset));
+  if (query.minScore !== undefined) params.set("min_score", String(query.minScore));
+  if (query.maxScore !== undefined) params.set("max_score", String(query.maxScore));
   return fetchJsonSignal<SuitabilityCandidateCollection>(
     `/api/v1/suitability/candidates?${params.toString()}`,
     signal,

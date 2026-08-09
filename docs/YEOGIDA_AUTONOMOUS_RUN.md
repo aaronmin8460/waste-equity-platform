@@ -310,4 +310,105 @@ split in two rather than deleted:
   the column and never only in a tooltip — the original guarantee, verbatim,
   including the collapsed-map-insight checks.
 
+Commit: `f71f927`.
+
+---
+
+## Phase 3 — 후보지 심층 분석 — **PARTIAL / IN PROGRESS**
+
+> **Status: the A/B/C relative-grade foundation is complete, tested, and
+> committed. The three-column collapsible workspace is NOT implemented.**
+> Phase 3 is therefore **not** finished and must not be reported as PASS.
+
+### Delivered: 상대 점수 구간 (A/B/C)
+
+`frontend/src/lib/relativeGrade.ts` + `relativeGrade.test.ts` (20 tests).
+
+**The population problem, and how it was solved without a backend change.**
+The spec requires thresholds from the *complete* authoritative ELIGIBLE
+population — never a viewport, filter, or top-N slice. That population is
+**17,501** candidates at ~894 bytes/feature, i.e. ~15.6 MB of GeoJSON (measured
+against production), which is not a safe thing to download to compute two
+numbers.
+
+Instead the module reads the two **order statistics** directly. The existing
+`/suitability/candidates` endpoint already supports this:
+
+- `top=…` switches the filter to `status = ELIGIBLE` *with a rank for the
+  requested profile*, and orders by that rank **ascending**; `total_matched` on
+  that query is exactly N.
+- `limit=1&offset=k-1` returns the k-th ranked candidate, so its `total_score`
+  **is** the order statistic.
+- `min_score=` + `limit=1` returns an exact band count without listing anything.
+
+`top` is capped at 5000 by the API, but it bounds only `effective_limit`
+(`min(top, limit)`) — never the offset — so `top=5000&limit=1&offset=k-1`
+reaches any rank. Total cost: **four ~1 KB requests**, no new endpoint, no
+backend change, and the result is *exact* rather than sampled.
+
+**Percentile method (deterministic).** Nearest-rank on the ascending score
+order: `ascendingIndex(p) = ceil(p/100 × N)`, mapped to the API's descending
+rank as `N − i + 1`. No interpolation; every threshold is a score some candidate
+actually holds.
+
+**Verified against production** (`https://waste-161-33-2-143.sslip.io`,
+2026-08-10), run **48**, profile **baseline**:
+
+| Quantity | Value |
+| --- | --- |
+| Population N (complete ELIGIBLE, ranked) | **17,501** |
+| P25 (asc index 4,376 → desc rank 13,126) | **47.6779** |
+| P75 (asc index 13,126 → desc rank 4,376) | **57.811** |
+| A (`score ≥ P75`) | **4,914** |
+| B (`P25 ≤ score < P75`) | **8,403** |
+| C (`score < P25`) | **4,184** |
+| Sum | 17,501 ✓ |
+
+The bands are **not** 25/50/25. Because they are defined by *value*
+(`score ≥ P75`) rather than by position, score **ties** at a threshold enlarge
+the adjacent band. That is the truth about this distribution, so the module
+counts the bands via the backend rather than assuming quarters, and the test
+asserts `countA !== round(N/4)` so nobody "fixes" it back to an assumption.
+
+**Safety properties, each individually tested:** a non-ELIGIBLE candidate is
+never graded; a missing score is ungraded rather than a low grade; a population
+below 4, an unscored threshold candidate, a degenerate `P75 < P25`, bands that
+fail to partition N, and any request failure all resolve to `null` (grade
+disabled) instead of a fabricated threshold. Band labels are banned from using
+`적격 / 부적격 / 제외 / 통과 / 탈락`; the explanation *does* use those words, but
+only to deny them explicitly.
+
+### Not delivered in Phase 3
+
+- left collapsible panel / central map / right collapsible panel workspace
+- panel collapse + reopen controls and their MapLibre no-remount contract
+- mobile stacked/drawer representation
+- wiring the grade into the candidate list, legend, and selected-candidate panel
+- the Phase 3 layout tests
+
+`lib/relativeGrade.ts` is currently referenced only by its own test — it is a
+**foundation awaiting the layout work**, deliberately committed rather than
+discarded because the production verification behind its numbers is the
+expensive part.
+
+### Validation at this checkpoint
+
+| Gate | Result |
+| --- | --- |
+| `npm run lint` | **PASS** |
+| `npm run typecheck` | **PASS** |
+| `npm test` | **1242 passed / 7 skipped** (up from 1222; +20 grade tests) |
+| `npm run build` | **PASS** |
+
+---
+
+## Phases 4–7 — NOT STARTED
+
+Phase 4 (후보지 심층 비교 + XLSX), Phase 5 (Page 2 + Page 3 + data modal),
+Phase 6 (release gate), and Phase 7 (OCI deployment) were not begun.
+
+**RELEASE READY: NO.** Phase 6's own gate forbids marking a release ready while
+approved functionality is incomplete, so Phase 7 must not run against this
+branch. Nothing has been pushed and nothing has been deployed.
+
 ---
