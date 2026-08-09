@@ -20,6 +20,9 @@ import type {
 import type { LandfillUnavailableState } from "../lib/landfill";
 import { FORBIDDEN_PRIMARY_TOKENS } from "../lib/glossary";
 
+/** The <h1>, supplied by the page as the visible destination name (spec §2.2). */
+const TITLE = "폐기물 처리 현황";
+
 afterEach(cleanup);
 
 const CAVEAT =
@@ -289,6 +292,7 @@ function officialLandfillBanners(): Element[] {
 function renderDashboard(props: Partial<Parameters<typeof LandfillDashboard>[0]> = {}) {
   return render(
     <LandfillDashboard
+      title={TITLE}
       data={data()}
       unavailable={null}
       year={null}
@@ -313,7 +317,7 @@ function renderDashboard(props: Partial<Parameters<typeof LandfillDashboard>[0]>
 describe("LandfillDashboard", () => {
   it("renders the heading and the metropolitan-only limitation notice", () => {
     renderDashboard();
-    expect(screen.getByText("수도권매립지 반입 현황")).toBeDefined();
+    expect(screen.getByText(TITLE)).toBeDefined();
     // Phase 5: the supporting sentence states the scope without claiming a
     // real-time figure, a resident bill, or any flow outside the inbound dataset.
     const orientation = screen.getByText(/수도권매립지로 반입된 공식 반입량과 반입수수료/);
@@ -585,6 +589,7 @@ describe("LandfillDashboard", () => {
     cleanup();
     render(
       <LandfillDashboard
+        title={TITLE}
         data={{
           ...data(),
           trends: {
@@ -722,7 +727,7 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
   it("mounts exactly one h1, no map, and no second navigation", () => {
     const { container } = renderDashboard();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("h1")?.textContent).toBe("수도권매립지 반입 현황");
+    expect(container.querySelector("h1")?.textContent).toBe(TITLE);
     // The source declares metropolitan totals only — there is nothing map-shaped
     // it can honestly support, so this view mounts no map at any width.
     expect(container.querySelector("[data-testid='map-container']")).toBeNull();
@@ -1243,7 +1248,7 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
   it("titles the workflow with one section per question, under one h1", () => {
     const { container } = renderDashboard();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("h1")?.textContent).toBe("수도권매립지 반입 현황");
+    expect(container.querySelector("h1")?.textContent).toBe(TITLE);
     // Six titled regions, in the order a reader needs them: what am I asking →
     // what is the answer → how did it move → what is it made of → the exact
     // figures → where it came from and what it does not mean.
@@ -1548,7 +1553,7 @@ describe("LandfillDashboard — the separate municipal contract-payment section"
     expect(heading.textContent).toContain("시·군·구별 생활폐기물 수집·운반 계약 지급액");
     expect(heading.textContent).toContain("2024년");
     // The official view keeps its own title untouched.
-    expect(screen.getByText("수도권매립지 반입 현황")).toBeDefined();
+    expect(screen.getByText(TITLE)).toBeDefined();
   });
 
   it("still renders when the official landfill request found no record", () => {

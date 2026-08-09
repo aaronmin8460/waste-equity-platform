@@ -192,9 +192,18 @@ describe("mobile control collapsing", () => {
     expect(sidebarLegend).toBeNull();
   });
 
-  it("uses flex-wrap on the mode switcher so it never overflows narrow widths", async () => {
+  it("scrolls the six-destination nav track rather than wrapping or overflowing the page", async () => {
     const { container } = await renderLoaded();
     const group = container.querySelector('[data-testid="mode-switch"]');
-    expect(classes(group)).toContain("flex-wrap");
+    // Six Korean destination labels cannot wrap gracefully, and the spec requires
+    // one row from 1024px up, so `.wep-nav-track` scrolls horizontally instead
+    // (`overflow-x: auto` + `min-width: 0` in globals.css). jsdom never loads that
+    // stylesheet, so the contract asserted here is that the track still carries the
+    // class that owns the behaviour — and that nothing re-introduced `flex-wrap`,
+    // which would put the nav on two rows at 1024px.
+    expect(classes(group)).toContain("wep-nav-track");
+    expect(classes(group)).not.toContain("flex-wrap");
+    // All six destinations are present and reachable at this width.
+    expect(group?.querySelectorAll("button")).toHaveLength(6);
   });
 });

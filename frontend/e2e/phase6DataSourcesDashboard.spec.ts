@@ -75,7 +75,7 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText("데이터와 출처");
+      await expect(page.locator("h1")).toHaveText("데이터·출처");
       await expect(page.locator("#main-content")).toHaveCount(1);
       await expect(page.locator("main")).toHaveCount(1);
 
@@ -83,12 +83,16 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("map-container")).toHaveCount(0);
       await expect(page.locator(".maplibregl-canvas")).toHaveCount(0);
       await expect(page.locator("canvas")).toHaveCount(0);
-      // Nor an equity-style sidebar, nor the 후보지 분석 segmented control.
+      // Nor an equity-style sidebar, nor the retired sub-view segmented control.
       await expect(page.locator("aside")).toHaveCount(0);
       await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
-      for (const view of ["score", "scenario", "cost"]) {
-        await expect(page.getByTestId(`suitability-view-${view}`)).toHaveCount(0);
+      // NOTE: `suitability-view-cost` / `-scenario` are no longer sub-view segments
+      // that would leak into this view — they are two of the six GLOBAL destination
+      // buttons, so they are expected here, inside the nav group, exactly once.
+      for (const testId of ["suitability-view-cost", "suitability-view-scenario"]) {
+        await expect(page.getByTestId("mode-switch").getByTestId(testId)).toHaveCount(1);
       }
+      await expect(page.getByTestId("suitability-view-score")).toHaveCount(0);
 
       // Full-width: the dashboard spans essentially the whole viewport.
       const box = (await page.getByTestId("transparency-dashboard").boundingBox())!;
@@ -100,7 +104,7 @@ for (const vp of VIEWPORTS) {
     test("keeps the global navigation labels and position unchanged", async ({ page }) => {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
-      for (const label of ["지역 부담", "후보지 분석", "매립지 현황", "데이터·출처"]) {
+      for (const label of ["지역 지표", "폐기물 처리 현황", "후보지 분석", "후보지 심층 분석", "후보지 심층 비교", "데이터·출처"]) {
         await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(1);
       }
       // The nav sits above the dashboard content, as in every other area.

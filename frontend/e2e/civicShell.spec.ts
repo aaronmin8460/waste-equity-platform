@@ -22,8 +22,17 @@ const DESKTOP_VIEWPORTS = [
   { name: "1920×1080", width: 1920, height: 1080 },
 ];
 
-const MODE_LABELS = ["지역 부담", "후보지 분석", "매립지 현황", "데이터·출처"];
-const BRAND_NAME = "우리 동네 폐기물 지도";
+/** The SIX visible destinations of 여기다, in nav order (spec §2). */
+const MODE_LABELS = [
+  "지역 지표",
+  "폐기물 처리 현황",
+  "후보지 분석",
+  "후보지 심층 분석",
+  "후보지 심층 비교",
+  "데이터·출처",
+];
+const BRAND_NAME = "여기다";
+const BRAND_SUBTITLE = "쓰레기 매립지 입지 추천 플랫폼";
 
 async function expectNoHorizontalOverflow(page: Page, where: string): Promise<void> {
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
@@ -76,7 +85,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
       const brand = page.getByTestId("app-brand");
       await expect(brand).toBeVisible();
       await expect(brand).toContainText(BRAND_NAME);
-      await expect(brand).toContainText("Waste Equity Platform");
+      await expect(brand).toContainText(BRAND_SUBTITLE);
 
       // Brand and navigation share the bar's single row…
       const brandBox = (await brand.boundingBox())!;
@@ -91,7 +100,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
           .getByTestId("mode-switch")
           .evaluate((group, name) => group.textContent?.includes(name) ?? false, BRAND_NAME),
       ).toBe(false);
-      await expect(page.getByTestId("mode-switch").locator("button")).toHaveCount(4);
+      await expect(page.getByTestId("mode-switch").locator("button")).toHaveCount(6);
 
       await expectNoHorizontalOverflow(page, `brand at ${vp.name}`);
     });
@@ -119,11 +128,15 @@ for (const vp of DESKTOP_VIEWPORTS) {
     });
 
     test("preserves the exact navigation labels and one page-level h1", async ({ page }) => {
+      // Every `v=1` link resolves exactly where it did before; the destination it
+      // lands on simply has a new name, and the <h1> now equals that name (spec §2.2).
       for (const [query, expectedH1] of [
-        ["/?v=1&mode=equity", "지역 부담"],
-        ["/?v=1&mode=suitability&view=score", "후보지 분석"],
-        ["/?v=1&mode=flow", "수도권매립지 반입 현황"],
-        ["/?v=1&mode=transparency", "데이터와 출처"],
+        ["/?v=1&mode=equity", "지역 지표"],
+        ["/?v=1&mode=suitability&view=score", "후보지 심층 분석"],
+        ["/?v=1&mode=suitability&view=scenario", "후보지 심층 비교"],
+        ["/?v=1&mode=suitability&view=cost", "후보지 분석"],
+        ["/?v=1&mode=flow", "폐기물 처리 현황"],
+        ["/?v=1&mode=transparency", "데이터·출처"],
       ] as const) {
         await gotoView(page, query);
 

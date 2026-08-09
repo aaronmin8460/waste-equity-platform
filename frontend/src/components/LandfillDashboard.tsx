@@ -130,6 +130,14 @@ export interface LandfillDashboardProps {
    */
   orientation?: React.ReactNode;
   /**
+   * The view's single `<h1>`, supplied by the page so it always equals the visible
+   * navigation destination name (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.2). It was the
+   * literal "수도권매립지 반입 현황", which no longer matches the destination this
+   * dashboard renders for. That narrower scope statement is not lost — it stays in
+   * `HEADER_SUMMARY`, directly below the title.
+   */
+  title: string;
+  /**
    * The 2024 municipal collection/transport contract-payment section — a SEPARATE
    * analytical dataset from the official inbound fee above (see
    * `landfill/MunicipalCostSection.tsx`).
@@ -156,6 +164,7 @@ export default function LandfillDashboard({
   wasteOptions,
   maxMonth,
   orientation,
+  title,
   municipalCost,
 }: LandfillDashboardProps) {
   // What the filter summary states. Derived from the props the page already hands
@@ -177,7 +186,7 @@ export default function LandfillDashboard({
     <div className="w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8" data-testid="landfill-dashboard">
       <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-4">
         {/* The mode selector is rendered by the page above this component. */}
-        <PageHeader title="수도권매립지 반입 현황" description={HEADER_SUMMARY}>
+        <PageHeader title={title} description={HEADER_SUMMARY}>
           {orientation}
         </PageHeader>
 

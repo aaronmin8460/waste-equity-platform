@@ -33,17 +33,26 @@ export interface Described {
 // Top-level navigation (modes) and the one-line orientation for each.
 // --------------------------------------------------------------------------- //
 
-/** The four citizen-facing top-level areas. `transparency` is the new data mode. */
+/**
+ * The four ANALYTICAL areas. This is the backend/URL vocabulary (`mode=…`) and is
+ * deliberately unchanged by the 여기다 redesign — see {@link NAV_DESTINATIONS} for
+ * the six names a citizen actually sees.
+ */
 export type DashboardArea = "equity" | "suitability" | "flow" | "transparency";
 
+/**
+ * Area-level names. Three of the four are also a visible destination name; the
+ * suitability area is NOT — it spans three visible destinations, so use
+ * {@link destinationLabel} whenever a screen title or nav label is wanted.
+ */
 export const MODE_LABELS: Record<DashboardArea, string> = {
-  equity: "지역 부담",
+  equity: "지역 지표",
   suitability: "후보지 분석",
-  flow: "매립지 현황",
+  flow: "폐기물 처리 현황",
   transparency: "데이터·출처",
 };
 
-/** Short, task-oriented explanation shown at the top of each area. */
+/** Short, task-oriented explanation of an AREA. Prefer the per-destination copy. */
 export const MODE_ORIENTATION: Record<DashboardArea, string> = {
   equity: "지역별 폐기물 발생량과 처리시설 부담을 비교합니다.",
   suitability: "현재 확보된 공공자료로 500m 구역을 1차 비교합니다.",
@@ -57,11 +66,145 @@ export const MODE_ORIENTATION: Record<DashboardArea, string> = {
 
 export type SuitabilitySubview = "score" | "scenario" | "cost";
 
+/**
+ * Legacy sub-view names. The 여기다 redesign promoted all three sub-views to
+ * top-level visible destinations with new names (see {@link NAV_DESTINATIONS}),
+ * so these are NO LONGER RENDERED anywhere. They are retained because the
+ * `view=` URL parameter still carries the same three keys and the glossary audit
+ * asserts the registry is complete.
+ */
 export const SUBVIEW_LABELS: Record<SuitabilitySubview, string> = {
-  score: "후보지 점수",
-  scenario: "가중치 바꿔보기",
-  cost: "비용 살펴보기",
+  score: "후보지 심층 분석",
+  scenario: "후보지 심층 비교",
+  cost: "후보지 분석",
 };
+
+// --------------------------------------------------------------------------- //
+// The six visible destinations (여기다 redesign).
+//
+// A citizen sees SIX places. The application still has FOUR analytical modes and
+// a three-valued suitability sub-view. This registry is the single projection
+// between the two, and it is the reason the redesign needs no new backend mode
+// and no new URL-state version:
+//
+//   지역 지표          → mode=equity
+//   폐기물 처리 현황    → mode=flow
+//   후보지 분석         → mode=suitability & view=cost
+//   후보지 심층 분석    → mode=suitability & view=score
+//   후보지 심층 비교    → mode=suitability & view=scenario
+//   데이터·출처         → mode=transparency
+//
+// Every `?v=1` link that worked before resolves to exactly the same screen.
+//
+// ── About the test IDs ───────────────────────────────────────────────────────
+// They are the PRE-EXISTING ids, deliberately kept even though four of the six
+// names changed, so ~130 unit/e2e assertions keep addressing the same controls:
+//   mode-equity / mode-flow / mode-transparency  — a 1:1 area↔destination match;
+//   mode-suitability          — now 후보지 심층 분석. Clicking it still lands on
+//                               mode=suitability&view=score, exactly as before,
+//                               which is what every existing spec expects of it;
+//   suitability-view-cost     — now 후보지 분석;
+//   suitability-view-scenario — now 후보지 심층 비교.
+// `suitability-view-score` is retired (it is `mode-suitability`), and so is the
+// `suitability-subviews` segmented control: the six destinations select the
+// sub-view directly, and two controls writing one piece of state is exactly the
+// duplication docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.1 forbids.
+// --------------------------------------------------------------------------- //
+
+export type NavDestinationKey =
+  | "regional-indicators"
+  | "waste-treatment"
+  | "candidate-analysis"
+  | "candidate-deep-analysis"
+  | "candidate-deep-comparison"
+  | "data-sources";
+
+export interface NavDestination {
+  key: NavDestinationKey;
+  /** The visible nav label. Also the view's single `<h1>` (spec §2.2). */
+  label: string;
+  /** The analytical area this destination projects onto. */
+  mode: DashboardArea;
+  /** The suitability sub-view, or `null` for the three non-suitability areas. */
+  view: SuitabilitySubview | null;
+  /** Stable automation id — see the note above before changing one. */
+  testId: string;
+  /** One plain-Korean line of supporting copy, rendered under the `<h1>`. */
+  orientation: string;
+}
+
+export const NAV_DESTINATIONS: readonly NavDestination[] = [
+  {
+    key: "regional-indicators",
+    label: "지역 지표",
+    mode: "equity",
+    view: null,
+    testId: "mode-equity",
+    orientation: "지역별 폐기물 발생량과 처리시설 부담을 비교합니다.",
+  },
+  {
+    key: "waste-treatment",
+    label: "폐기물 처리 현황",
+    mode: "flow",
+    view: null,
+    testId: "mode-flow",
+    orientation: "수도권매립지 반입량과 지역별 흐름을 확인합니다.",
+  },
+  {
+    key: "candidate-analysis",
+    label: "후보지 분석",
+    mode: "suitability",
+    view: "cost",
+    testId: "suitability-view-cost",
+    orientation: "처리 대상 지역을 정하고 공식 표준공사비로 설치비를 살펴봅니다.",
+  },
+  {
+    key: "candidate-deep-analysis",
+    label: "후보지 심층 분석",
+    mode: "suitability",
+    view: "score",
+    testId: "mode-suitability",
+    orientation: "현재 확보된 공공자료로 500m 구역을 1차 비교합니다.",
+  },
+  {
+    key: "candidate-deep-comparison",
+    label: "후보지 심층 비교",
+    mode: "suitability",
+    view: "scenario",
+    testId: "suitability-view-scenario",
+    orientation: "점수 반영 기준을 바꾸어 두 가정의 순위를 비교합니다.",
+  },
+  {
+    key: "data-sources",
+    label: "데이터·출처",
+    mode: "transparency",
+    view: null,
+    testId: "mode-transparency",
+    orientation: "어떤 자료를 사용했고 무엇이 부족한지 확인합니다.",
+  },
+] as const;
+
+/**
+ * The destination a given analytical state renders as.
+ *
+ * `view` is only consulted for the suitability area, so a stale sub-view carried
+ * by another mode can never select the wrong destination. Falls back to the
+ * suitability score destination, matching the URL decoder's `view` default.
+ */
+export function destinationFor(
+  mode: DashboardArea,
+  view: SuitabilitySubview,
+): NavDestination {
+  const hit = NAV_DESTINATIONS.find((d) =>
+    d.mode === "suitability" ? mode === "suitability" && d.view === view : d.mode === mode,
+  );
+  return hit ?? NAV_DESTINATIONS[3];
+}
+
+/** The visible name for an analytical state — the nav label AND the view's `<h1>`. */
+export function destinationLabel(mode: DashboardArea, view: SuitabilitySubview): string {
+  return destinationFor(mode, view).label;
+}
 
 // --------------------------------------------------------------------------- //
 // Suitability screening disclaimers (Phase 0 transparency).

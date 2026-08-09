@@ -142,7 +142,8 @@ for (const vp of VIEWPORTS) {
       // the shared chrome rather than duplicating it.
       await expect(page.getByTestId("map-container")).toHaveCount(0);
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
-      await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+      // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
       await expect(page.locator("h1")).toHaveCount(1);
       await expect(page.locator("#main-content")).toHaveCount(1);
       await expect(page.getByTestId("facility-cost-disclaimer")).toContainText(
@@ -265,7 +266,7 @@ for (const vp of VIEWPORTS) {
       await expectNoHorizontalOverflow(page);
 
       // Back to the score view restores the screening panel and the map.
-      await page.getByTestId("suitability-view-score").click();
+      await page.getByTestId("mode-suitability").click();
       await expect(page.getByTestId("suitability-summary")).toBeVisible();
       await expect(page.getByTestId("map-container")).toBeVisible();
       await expect(page.getByTestId("facility-cost-dashboard")).toHaveCount(0);

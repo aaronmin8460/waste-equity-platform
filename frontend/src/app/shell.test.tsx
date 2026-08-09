@@ -54,7 +54,20 @@ async function enterSuitability() {
   await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
 }
 
-const MODE_TEST_IDS = ["mode-equity", "mode-suitability", "mode-flow", "mode-transparency"];
+/**
+ * The six visible destinations, in nav order. These are the PRE-EXISTING testids
+ * (see lib/glossary.ts): `mode-suitability` is 후보지 심층 분석 and
+ * `suitability-view-cost` / `-scenario` are 후보지 분석 / 후보지 심층 비교.
+ */
+const DESTINATION_TEST_IDS = [
+  "mode-equity",
+  "mode-flow",
+  "suitability-view-cost",
+  "mode-suitability",
+  "suitability-view-scenario",
+  "mode-transparency",
+];
+const MODE_TEST_IDS = DESTINATION_TEST_IDS;
 
 describe("one global navigation per view", () => {
   it("renders exactly one top navigation in every mode", async () => {
@@ -131,81 +144,104 @@ describe('the visible "무엇을 볼까요?" label is gone', () => {
   });
 });
 
-describe("후보지 분석 segmented control", () => {
-  it("appears only inside 후보지 분석", async () => {
+describe("the six destinations replace the sub-view segmented control", () => {
+  it("renders no sub-view bar in any area", async () => {
     const { container } = await renderLoaded();
     const subviews = () => container.querySelectorAll('[data-testid="suitability-subviews"]');
 
-    // 지역 부담: absent.
+    // The 여기다 redesign promoted the three suitability sub-views to top-level
+    // destinations. The old segmented control would now be a SECOND control writing
+    // the same `view` state (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.1), so it is gone —
+    // in every area, including the three suitability ones.
     expect(subviews()).toHaveLength(0);
 
     await enterSuitability();
-    expect(subviews()).toHaveLength(1);
+    expect(subviews()).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId("suitability-view-cost"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-dashboard")).toBeDefined());
+    expect(subviews()).toHaveLength(0);
 
     fireEvent.click(screen.getByTestId("mode-flow"));
     await waitFor(() => expect(screen.getByTestId("landfill-dashboard")).toBeDefined());
     expect(subviews()).toHaveLength(0);
-
-    fireEvent.click(screen.getByTestId("mode-transparency"));
-    await waitFor(() =>
-      expect(screen.getByTestId("mode-transparency").getAttribute("aria-pressed")).toBe("true"),
-    );
-    expect(subviews()).toHaveLength(0);
   });
 
-  it("renders exactly one control, in the same place, across score / scenario / cost", async () => {
+  it("keeps all six destinations in the one nav group, in every area", async () => {
     const { container } = await renderLoaded();
-    await enterSuitability();
 
-    /** The chrome position of the segmented control, as a DOM path signature. */
-    function chromeSignature() {
-      const groups = container.querySelectorAll('[data-testid="suitability-subviews"]');
-      expect(groups).toHaveLength(1);
-      const group = groups[0];
-      // Every sub-view button exists exactly once…
-      for (const testId of [
-        "suitability-view-score",
-        "suitability-view-scenario",
-        "suitability-view-cost",
-      ]) {
-        expect(container.querySelectorAll(`[data-testid="${testId}"]`), testId).toHaveLength(1);
-        // …and inside this one control, never duplicated into a sidebar copy.
-        expect(within(group as HTMLElement).getByTestId(testId)).toBeDefined();
+    function expectSixInOneGroup(label: string) {
+      const groups = container.querySelectorAll('[data-testid="mode-switch"]');
+      expect(groups, `${label}: nav group`).toHaveLength(1);
+      const group = groups[0] as HTMLElement;
+      expect(group.querySelectorAll("button"), `${label}: destinations`).toHaveLength(6);
+      for (const testId of DESTINATION_TEST_IDS) {
+        // Exactly once in the document…
+        expect(container.querySelectorAll(`[data-testid="${testId}"]`), `${label}: ${testId}`)
+          .toHaveLength(1);
+        // …and inside the one nav group, never duplicated into a sidebar copy.
+        expect(within(group).getByTestId(testId)).toBeDefined();
       }
-      const shell = container.querySelector('[data-testid="app-shell"]');
-      const main = container.querySelector("main");
-      return {
-        // It is shared chrome: a direct child of the shell, above <main> — not
-        // inside the sidebar for two sub-views and above a full-width page for the
-        // third (the Phase 0 "two unrelated rows" defect).
-        parentIsShell: group.parentElement === shell,
-        insideMain: main?.contains(group) ?? false,
-        indexInShell: Array.from(shell?.children ?? []).indexOf(group),
-      };
+      // It is shared chrome, above <main> — not inside any view's content.
+      expect(container.querySelector("main")?.contains(group) ?? false).toBe(false);
     }
 
-    const atScore = chromeSignature();
-    expect(atScore.parentIsShell).toBe(true);
-    expect(atScore.insideMain).toBe(false);
+    expectSixInOneGroup("지역 지표");
+
+    await enterSuitability();
+    expectSixInOneGroup("후보지 심층 분석");
 
     fireEvent.click(screen.getByTestId("suitability-view-scenario"));
     await waitFor(() => expect(screen.getByTestId("scenario-lab")).toBeDefined());
-    expect(chromeSignature()).toEqual(atScore);
+    expectSixInOneGroup("후보지 심층 비교");
 
     fireEvent.click(screen.getByTestId("suitability-view-cost"));
     await waitFor(() => expect(screen.getByTestId("facility-cost-dashboard")).toBeDefined());
-    expect(chromeSignature()).toEqual(atScore);
+    expectSixInOneGroup("후보지 분석");
   });
 
-  it("marks the active sub-view with aria-pressed", async () => {
+  it("marks exactly one destination pressed, and the three suitability ones apart", async () => {
     await renderLoaded();
+
+    /** The testid of the single pressed destination. */
+    function pressed() {
+      const on = DESTINATION_TEST_IDS.filter(
+        (id) => screen.getByTestId(id).getAttribute("aria-pressed") === "true",
+      );
+      expect(on).toHaveLength(1);
+      return on[0];
+    }
+
+    expect(pressed()).toBe("mode-equity");
+
     await enterSuitability();
-    expect(screen.getByTestId("suitability-view-score").getAttribute("aria-pressed")).toBe("true");
+    // The three suitability destinations share `mode`, so only a per-DESTINATION
+    // comparison keeps them apart — a mode-only one would press all three.
+    expect(pressed()).toBe("mode-suitability");
 
     fireEvent.click(screen.getByTestId("suitability-view-cost"));
     await waitFor(() => expect(screen.getByTestId("facility-cost-dashboard")).toBeDefined());
-    expect(screen.getByTestId("suitability-view-cost").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("suitability-view-score").getAttribute("aria-pressed")).toBe("false");
+    expect(pressed()).toBe("suitability-view-cost");
+
+    fireEvent.click(screen.getByTestId("suitability-view-scenario"));
+    await waitFor(() => expect(screen.getByTestId("scenario-lab")).toBeDefined());
+    expect(pressed()).toBe("suitability-view-scenario");
+  });
+
+  it("navigates straight between suitability sub-views without passing through score", async () => {
+    // The old flow needed two clicks (enter 후보지 분석, then pick a sub-view). The
+    // six destinations address `(mode, view)` in ONE click, from anywhere.
+    await renderLoaded();
+
+    fireEvent.click(screen.getByTestId("suitability-view-scenario"));
+    await waitFor(() => expect(screen.getByTestId("scenario-lab")).toBeDefined());
+
+    fireEvent.click(screen.getByTestId("mode-flow"));
+    await waitFor(() => expect(screen.getByTestId("landfill-dashboard")).toBeDefined());
+
+    fireEvent.click(screen.getByTestId("suitability-view-cost"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-dashboard")).toBeDefined());
+    expect(screen.queryByTestId("scenario-lab")).toBeNull();
   });
 });
 
@@ -359,13 +395,25 @@ describe("URL restore still drives the shared chrome", () => {
     expect(screen.queryByTestId("map-container")).toBeNull();
   });
 
-  it("restores the suitability sub-view from the URL", async () => {
+  it("restores the suitability sub-view from the URL as its own destination", async () => {
+    // `v=1` compatibility is unchanged: the same link resolves to the same screen,
+    // it is simply named 후보지 분석 in the navigation now.
     window.history.replaceState(null, "", "/?v=1&mode=suitability&view=cost");
     await renderLoaded();
     await waitFor(() => expect(screen.getByTestId("facility-cost-dashboard")).toBeDefined());
-    expect(screen.getByTestId("mode-suitability").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("suitability-view-cost").getAttribute("aria-pressed")).toBe("true");
-    // The segmented control is present for the restored sub-view too.
-    expect(screen.getByTestId("suitability-subviews")).toBeDefined();
+    // 후보지 심층 분석 shares the mode but is a DIFFERENT destination, so it is not pressed.
+    expect(screen.getByTestId("mode-suitability").getAttribute("aria-pressed")).toBe("false");
+    // No sub-view bar is reintroduced for a restored link.
+    expect(screen.queryByTestId("suitability-subviews")).toBeNull();
+  });
+
+  it("restores a bare mode=suitability link to 후보지 심층 분석", async () => {
+    // The decoder's `view` default is "score", so an older link with no `view`
+    // lands where it always did.
+    window.history.replaceState(null, "", "/?v=1&mode=suitability");
+    await renderLoaded();
+    await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
+    expect(screen.getByTestId("mode-suitability").getAttribute("aria-pressed")).toBe("true");
   });
 });

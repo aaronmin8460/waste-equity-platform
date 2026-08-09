@@ -10,15 +10,24 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { SUBVIEW_LABELS, type SuitabilitySubview } from "../../lib/glossary";
+import { type SuitabilitySubview } from "../../lib/glossary";
 import SegmentedControl from "./SegmentedControl";
 
 afterEach(cleanup);
 
+/**
+ * A local fixture, deliberately NOT the glossary's `SUBVIEW_LABELS`.
+ *
+ * This is a GENERIC primitive (RegionRanking and LandCoverCellPanel are its real
+ * consumers); it used to borrow the suitability sub-view labels, which coupled a
+ * primitive's tests to product vocabulary that has since been promoted into the
+ * top-level navigation. The keys stay `SuitabilitySubview` only to keep exercising
+ * the generic type parameter.
+ */
 const OPTIONS = [
-  { key: "score", label: SUBVIEW_LABELS.score, testId: "suitability-view-score" },
-  { key: "scenario", label: SUBVIEW_LABELS.scenario, testId: "suitability-view-scenario" },
-  { key: "cost", label: SUBVIEW_LABELS.cost, testId: "suitability-view-cost" },
+  { key: "score", label: "첫 번째", testId: "suitability-view-score" },
+  { key: "scenario", label: "두 번째", testId: "suitability-view-scenario" },
+  { key: "cost", label: "세 번째", testId: "suitability-view-cost" },
 ] as const satisfies readonly { key: SuitabilitySubview; label: string; testId: string }[];
 
 function renderControl(
@@ -39,16 +48,11 @@ function renderControl(
 describe("SegmentedControl", () => {
   it("renders every supplied option with its exact visible label", () => {
     renderControl();
-    expect(screen.getByTestId("suitability-view-score").textContent).toBe(SUBVIEW_LABELS.score);
-    expect(screen.getByTestId("suitability-view-scenario").textContent).toBe(
-      SUBVIEW_LABELS.scenario,
-    );
-    expect(screen.getByTestId("suitability-view-cost").textContent).toBe(SUBVIEW_LABELS.cost);
     expect([
       screen.getByTestId("suitability-view-score").textContent,
       screen.getByTestId("suitability-view-scenario").textContent,
       screen.getByTestId("suitability-view-cost").textContent,
-    ]).toEqual(["후보지 점수", "가중치 바꿔보기", "비용 살펴보기"]);
+    ]).toEqual(OPTIONS.map((o) => o.label));
   });
 
   it("renders native buttons, reachable by accessible name", () => {

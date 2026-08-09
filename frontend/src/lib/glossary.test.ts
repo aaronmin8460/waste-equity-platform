@@ -9,6 +9,9 @@ import {
   MISSING_REASON_EXPLANATIONS,
   MODE_LABELS,
   MODE_ORIENTATION,
+  NAV_DESTINATIONS,
+  destinationFor,
+  destinationLabel,
   PER_CAPITA_UNAVAILABLE_EXPLANATIONS,
   PROFILE_META,
   STABILITY_META,
@@ -41,6 +44,8 @@ function allPrimaryStrings(): string[] {
   const out: string[] = [];
   out.push(...Object.values(MODE_LABELS));
   out.push(...Object.values(MODE_ORIENTATION));
+  out.push(...NAV_DESTINATIONS.map((d) => d.label));
+  out.push(...NAV_DESTINATIONS.map((d) => d.orientation));
   out.push(...Object.values(SUBVIEW_LABELS));
   for (const m of Object.values(STATUS_META)) out.push(m.primary);
   for (const m of Object.values(PROFILE_META)) out.push(m.primary);
@@ -59,13 +64,62 @@ function allPrimaryStrings(): string[] {
 
 describe("glossary — plain-Korean primary labels", () => {
   it("uses the exact citizen navigation labels the deploy gate checks for", () => {
-    expect(MODE_LABELS.equity).toBe("지역 부담");
+    // The SIX visible destinations, in nav order (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2).
+    expect(NAV_DESTINATIONS.map((d) => d.label)).toEqual([
+      "지역 지표",
+      "폐기물 처리 현황",
+      "후보지 분석",
+      "후보지 심층 분석",
+      "후보지 심층 비교",
+      "데이터·출처",
+    ]);
+    // The area-level vocabulary behind them.
+    expect(MODE_LABELS.equity).toBe("지역 지표");
     expect(MODE_LABELS.suitability).toBe("후보지 분석");
-    expect(MODE_LABELS.flow).toBe("매립지 현황");
+    expect(MODE_LABELS.flow).toBe("폐기물 처리 현황");
     expect(MODE_LABELS.transparency).toBe("데이터·출처");
-    expect(SUBVIEW_LABELS.score).toBe("후보지 점수");
-    expect(SUBVIEW_LABELS.scenario).toBe("가중치 바꿔보기");
-    expect(SUBVIEW_LABELS.cost).toBe("비용 살펴보기");
+    // Sub-view names now equal the destination they were promoted to, so the two
+    // registries can never print two different names for one screen.
+    expect(SUBVIEW_LABELS.score).toBe("후보지 심층 분석");
+    expect(SUBVIEW_LABELS.scenario).toBe("후보지 심층 비교");
+    expect(SUBVIEW_LABELS.cost).toBe("후보지 분석");
+  });
+
+  it("projects the six destinations onto the four modes without a new mode", () => {
+    // The whole point of the projection: no new backend mode, no new URL version.
+    expect(new Set(NAV_DESTINATIONS.map((d) => d.mode))).toEqual(
+      new Set(["equity", "flow", "suitability", "transparency"]),
+    );
+    // Three destinations share the suitability mode and differ ONLY by sub-view.
+    const suitability = NAV_DESTINATIONS.filter((d) => d.mode === "suitability");
+    expect(suitability.map((d) => d.view).sort()).toEqual(["cost", "scenario", "score"]);
+    // The other three carry no sub-view, so entering them cannot rewrite `view`.
+    for (const d of NAV_DESTINATIONS.filter((d) => d.mode !== "suitability")) {
+      expect(d.view, d.key).toBeNull();
+    }
+    // Every testId is unique — they are the automation contract.
+    expect(new Set(NAV_DESTINATIONS.map((d) => d.testId)).size).toBe(NAV_DESTINATIONS.length);
+  });
+
+  it("resolves an analytical state to exactly one destination", () => {
+    expect(destinationFor("equity", "score").label).toBe("지역 지표");
+    expect(destinationFor("flow", "scenario").label).toBe("폐기물 처리 현황");
+    expect(destinationFor("transparency", "cost").label).toBe("데이터·출처");
+    // A stale sub-view carried by a NON-suitability mode never selects a
+    // suitability destination — `view` is only consulted for that mode.
+    expect(destinationFor("equity", "cost").mode).toBe("equity");
+    // Inside suitability the sub-view decides.
+    expect(destinationFor("suitability", "score").label).toBe("후보지 심층 분석");
+    expect(destinationFor("suitability", "scenario").label).toBe("후보지 심층 비교");
+    expect(destinationFor("suitability", "cost").label).toBe("후보지 분석");
+  });
+
+  it("labels each destination the same way the view titles itself", () => {
+    // Spec §2.2 — the nav label and the view's <h1> are one string, so a reader
+    // never sees the place they clicked named differently once they arrive.
+    for (const d of NAV_DESTINATIONS) {
+      expect(destinationLabel(d.mode, d.view ?? "score"), d.key).toBe(d.label);
+    }
   });
 
   it("uses the exact plain status labels (Phase 0 screening terminology)", () => {

@@ -21,7 +21,11 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  /* Noto Sans KR is the 여기다 Korean UI face (spec §1). It is loaded by
+     app/layout.tsx via next/font/google, which self-hosts it and exposes it as
+     --font-noto-sans-kr; the Latin fallbacks below cover the few ASCII strings
+     (codes, units, years) and the brief window before the font resolves. */
+  --font-sans: var(--font-noto-sans-kr), "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -43,38 +47,43 @@
    never referenced by map code, and map constants are never referenced by chrome. */
 @theme {
   /* ---- Surfaces ---------------------------------------------------------- */
-  /* The application canvas: a very light blue-gray behind every white surface. */
-  --color-canvas: #f4f6fb;
+  /* The application canvas: the near-white 여기다 page ground (spec §1). */
+  --color-canvas: #f9f9f9;
   --color-surface: #ffffff; /* cards, panels, the app bar, popovers */
-  --color-surface-muted: #f8fafc; /* a quiet block inside a white surface */
-  --color-surface-sunken: #f4f7f8; /* a recessed area inside a surface */
+  --color-surface-muted: #f4f5f8; /* a quiet block inside a white surface */
+  --color-surface-sunken: #f2f3f7; /* a recessed area inside a surface */
 
   /* ---- Borders & text ---------------------------------------------------- */
   /* Cards are separated from the canvas by a hairline BORDER, not by a shadow. */
-  --color-hairline: #e3e8f0; /* default 1px border */
-  --color-hairline-strong: #c9d3d9; /* inputs / quiet buttons — reads interactive */
-  --color-ink: #171c29; /* primary text, headings, metric values (17.01:1 on white) */
-  --color-ink-muted: #4d5466; /* secondary/body text (7.57:1) */
-  --color-ink-subtle: #687083; /* tertiary: labels, captions. 4.96:1 on white and
-                                  4.59:1 on the canvas — the worst case in the
-                                  palette and the lightest text allowed. Nothing
-                                  lighter or smaller may be introduced. */
+  --color-hairline: #e6e7ee; /* default 1px border */
+  --color-hairline-strong: #c8cad6; /* inputs / quiet buttons — reads interactive */
+  --color-ink: #1b1d26; /* primary text, headings, metric values (15.9:1 on white) */
+  --color-ink-muted: #4a4d5c; /* secondary/body text (8.5:1) */
+  --color-ink-subtle: #646676; /* tertiary: labels, captions. 6.31:1 on white and
+                                  6.03:1 on the #f9f9f9 canvas. This is the
+                                  lightest text allowed at body size. */
+  --color-ink-faint: #848a95; /* 3.24:1 on white — BELOW the 4.5:1 body-text
+                                 threshold. Permitted ONLY for large (≥24px) or
+                                 purely decorative text, never for small copy,
+                                 labels, values, or anything a reader must parse
+                                 (spec §12). When in doubt use -subtle. */
 
-  /* ---- Brand — teal ------------------------------------------------------ */
-  /* Identity only (app-bar mark, reported-value badge). Deliberately NOT an action
-     color: a teal button would compete with the action blue below. */
-  --color-brand: #17786c; /* ~5.3:1 on white */
-  --color-brand-hover: #12675d;
-  --color-brand-soft: #edf8f6;
+  /* ---- Brand — 여기다 navy ------------------------------------------------ */
+  /* Identity (app-bar mark, reported-value badge). The redesign folds brand and
+     action onto ONE navy so the product reads as a single key color; the two
+     roles stay separate tokens because they are separate jobs. */
+  --color-brand: #111a56; /* 14.4:1 on white */
+  --color-brand-hover: #0b1240;
+  --color-brand-soft: #eef0f8;
 
-  /* ---- Action — blue ----------------------------------------------------- */
+  /* ---- Action — 여기다 navy ----------------------------------------------- */
   /* Every interactive affordance: buttons, links, selection, the active nav
-     indicator, the focus ring. Harmonises with the ColorBrewer-blue data palette. */
-  --color-primary: #2663eb; /* ~5.2:1 on white */
-  --color-primary-hover: #1f4fa8;
+     indicator, the focus ring. */
+  --color-primary: #111a56; /* 14.4:1 on white */
+  --color-primary-hover: #0b1240;
   --color-primary-ink: #ffffff;
-  --color-primary-soft: #eaf0fe; /* selected/emphasis tint */
-  --color-primary-border: #c3d4f7; /* pairs with -soft so "selected" is fill +
+  --color-primary-soft: #eef0f8; /* selected/emphasis tint */
+  --color-primary-border: #c5cbe4; /* pairs with -soft so "selected" is fill +
                                       border + a mark, never color alone */
 
   /* ---- Warning / caution — amber ----------------------------------------- */
@@ -106,16 +115,18 @@
   --color-info-border: #bae6fd; /* sky-200 */
 
   /* ---- Radii, shadows, focus --------------------------------------------- */
-  /* Moderate, not playful: 10px keeps a dense grid of cards reading as a data
-     surface rather than a set of app tiles. */
-  --radius-card: 0.625rem; /* 10px — cards, panels, banners */
-  --radius-control: 0.5rem; /* 8px — buttons, inputs */
+  /* The 여기다 language is softer than the previous 10px: ~20px on major cards
+     (spec §12), with controls kept tighter so a dense form does not read as a
+     row of pills. */
+  --radius-card: 1.25rem; /* 20px — cards, panels, banners */
+  --radius-control: 0.625rem; /* 10px — buttons, inputs */
   --radius-pill: 9999px; /* chips and the segmented-control track only */
   /* Shadows mean "floating above the page", not "this is a card". `.wep-card` has
-     none; -card is for the one raised segment / popovers, -float for overlays. */
-  --shadow-card: 0 1px 2px rgba(23, 28, 41, 0.06);
-  --shadow-float: 0 8px 24px rgba(23, 28, 41, 0.1);
-  --focus-ring: #2663eb; /* same value as --color-primary, a separate role */
+     none; -card is for the one raised segment / popovers, -float for overlays.
+     Tinted with the navy so elevation reads as part of the palette. */
+  --shadow-card: 0 1px 2px rgba(17, 26, 86, 0.06);
+  --shadow-float: 0 8px 24px rgba(17, 26, 86, 0.12);
+  --focus-ring: #111a56; /* same value as --color-primary, a separate role */
 }
 
 /* Reusable component classes for the consistent citizen patterns (cards, the
@@ -213,14 +224,23 @@
   flex-wrap: wrap;
   align-items: stretch;
   justify-content: space-between;
-  gap: 0 1.5rem;
+  gap: 0 1rem;
   min-height: 4rem;
 }
-.wep-subbar {
-  /* A quiet tint rather than a second white bar, so the sub-view switch reads as
-     belonging to the content below it and never as a peer of the primary nav. */
-  background: var(--color-surface-muted);
-  border-bottom: 1px solid var(--color-hairline);
+/* SIX destinations have to share one row with the brand from 1024px up, so the
+   gap between the two blocks tightens as the width does. Measured budget at
+   1024px: brand ≈ 180px + nav ≈ 713px + the container's 64px padding ≈ 957px,
+   leaving ~67px of slack — see docs/YEOGIDA_UI_REDESIGN_SPEC.md §2. */
+@media (min-width: 1024px) {
+  .wep-appbar-row {
+    flex-wrap: nowrap;
+    gap: 0 1rem;
+  }
+}
+@media (min-width: 1280px) {
+  .wep-appbar-row {
+    gap: 0 2rem;
+  }
 }
 
 /* Brand block (left of the primary navigation, OUTSIDE the mode-switch group).
@@ -229,8 +249,9 @@
    navigation's accessible group. */
 .wep-brand {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.5rem;
   min-width: 0;
   padding: 0.5rem 0;
 }
@@ -239,8 +260,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 1.875rem;
+  height: 1.875rem;
   border-radius: var(--radius-control);
   background: var(--color-brand);
   color: var(--color-primary-ink);
@@ -252,21 +273,22 @@
   justify-content: center;
 }
 .wep-brand-name {
-  color: var(--color-ink);
-  font-size: 0.9375rem;
-  font-weight: 700;
-  line-height: 1.25;
+  color: var(--color-brand);
+  font-size: 1.0625rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   white-space: nowrap;
 }
 .wep-brand-sub {
   color: var(--color-ink-subtle);
   font-size: 0.6875rem;
   font-weight: 500;
-  letter-spacing: 0.04em;
   line-height: 1.3;
   white-space: nowrap;
 }
-/* Phone widths have no room for the English subtitle beside four Korean tabs. */
+/* Phone widths have no room for the subtitle; the product name always stays
+   (spec §1). The nav track below scrolls rather than the page. */
 @media (max-width: 639px) {
   .wep-brand-sub {
     display: none;
@@ -283,41 +305,71 @@
    below the mobile one. */
 /* The tab track. `align-items: stretch` is what makes each tab as tall as the bar,
    so the active indicator is flush with the bar's bottom border.
-   NOTE: wrapping stays a `flex-wrap` UTILITY in the markup, not a declaration here.
-   These .wep-* rules are unlayered and therefore beat Tailwind's layered utilities,
-   so declaring it in both places would silently make the class the winner; keeping
-   it in the markup leaves one source of truth (and app/responsive.test.tsx asserts
-   the mode switcher carries it, since jsdom never loads this stylesheet). */
+
+   It NEVER wraps. Six Korean labels cannot wrap gracefully, and the spec requires
+   one row from 1024px up, so the track instead SCROLLS horizontally at narrow
+   widths. `min-width: 0` is load-bearing: without it the flex item refuses to
+   shrink below its content and the PAGE gains a horizontal scrollbar — exactly
+   what the mobile contract forbids. Scrolling the track keeps the overflow inside
+   the nav. */
 .wep-nav-track {
   display: flex;
   align-items: stretch;
-  gap: 0 0.25rem;
+  gap: 0 0.125rem;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none; /* the tabs are the affordance; a bar here reads as chrome */
+}
+.wep-nav-track::-webkit-scrollbar {
+  display: none;
 }
 .wep-nav-tab {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
+  gap: 0.3125rem;
   min-height: 2.75rem;
-  padding: 0 0.875rem;
+  padding: 0 0.5rem;
   /* The transparent TOP border mirrors the indicator so the label stays optically
      centred whether or not the tab is active. */
   border-top: 2px solid transparent;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--color-ink-muted);
-  font-size: 0.9375rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
+}
+/* The icon inherits the tab's color, so it carries the active state with the
+   label rather than becoming a second, independent signal. */
+.wep-nav-icon {
+  flex: none;
+  opacity: 0.75;
 }
 .wep-nav-tab:hover {
   color: var(--color-ink);
   background: var(--color-surface-muted);
 }
 .wep-nav-tab[aria-pressed="true"] {
-  color: var(--color-ink);
+  color: var(--color-primary);
   font-weight: 700;
   border-bottom-color: var(--color-primary);
+}
+.wep-nav-tab[aria-pressed="true"] .wep-nav-icon {
+  opacity: 1;
+}
+/* Above 1280px there is room to relax back toward the previous rhythm. */
+@media (min-width: 1280px) {
+  .wep-nav-tab {
+    gap: 0.375rem;
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+  }
+  .wep-nav-track {
+    gap: 0 0.25rem;
+  }
 }
 
 /* Segmented control — a restrained pill track with one raised active segment.
@@ -591,7 +643,11 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Noto Sans KR (spec §1). This previously pinned `Arial, Helvetica, sans-serif`,
+     which — being a concrete declaration on <body> — beat the font variable the
+     <html> class exposes, so the loaded webfont never actually applied to Korean
+     text. Referencing the token instead is what makes the global font change real. */
+  font-family: var(--font-sans);
 }
 
 /* Map pane sizing.

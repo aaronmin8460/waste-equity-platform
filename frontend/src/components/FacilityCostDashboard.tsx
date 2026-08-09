@@ -97,11 +97,26 @@ export interface FacilityCostDashboardProps {
   wasteRegions: { code: string; name: string; stream: string }[];
   /** The currently-selected suitability candidate (for candidate integration). */
   selectedCandidate: CandidateDetail | null;
+  /**
+   * The view's single `<h1>`, supplied by the page so it always equals the visible
+   * navigation destination name (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.2). Previously
+   * the literal "시설 비용 살펴보기"; that scope wording survives in
+   * `HEADER_SUBTITLE` under the title.
+   */
+  title: string;
+  /**
+   * The destination's one-line orientation strip, rendered directly below the
+   * `<h1>` — the same position it occupies in the other areas, and what keeps
+   * `shell.test.tsx`'s "orientation follows the heading" check true here.
+   */
+  orientation?: React.ReactNode;
 }
 
 export default function FacilityCostDashboard({
   wasteRegions,
   selectedCandidate,
+  title,
+  orientation,
 }: FacilityCostDashboardProps) {
   const [options, setOptions] = useState<FacilityCostOptions | null>(null);
   const [optionsError, setOptionsError] = useState<string | null>(null);
@@ -264,11 +279,9 @@ export default function FacilityCostDashboard({
       {/* The header shares the content column with the cards below it, so the title
           and the first card start on the same vertical line at every width. */}
       <div className="mx-auto w-full max-w-6xl">
-        <PageHeader
-          title="시설 비용 살펴보기"
-          description={HEADER_SUBTITLE}
-          testId="facility-cost-header"
-        />
+        <PageHeader title={title} description={HEADER_SUBTITLE} testId="facility-cost-header">
+          {orientation}
+        </PageHeader>
       </div>
 
       {optionsError ? (

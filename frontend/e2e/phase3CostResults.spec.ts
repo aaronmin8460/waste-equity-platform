@@ -146,7 +146,8 @@ for (const vp of VIEWPORTS) {
 
       // Shared chrome is not duplicated by the second view.
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
-      await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+      // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
       await expect(page.locator("h1")).toHaveCount(1);
       await expect(page.locator("#main-content")).toHaveCount(1);
       // The cost branch stays map-free on the results screen too.

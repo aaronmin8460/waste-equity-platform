@@ -96,6 +96,7 @@ import type { LoadedData } from "../app/page";
 export default function TransparencyDashboard({
   data,
   orientation,
+  title,
 }: {
   data: LoadedData;
   /**
@@ -104,6 +105,13 @@ export default function TransparencyDashboard({
    * the other three areas (asserted by `shell.test.tsx` document-order check).
    */
   orientation?: React.ReactNode;
+  /**
+   * The view's single `<h1>`, supplied by the page so it always equals the visible
+   * navigation destination name (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.2). Previously
+   * the literal "데이터와 출처", which differed from the nav's "데이터·출처" — two
+   * names for one place.
+   */
+  title: string;
 }) {
   const [freshness, setFreshness] = useState<DataFreshnessItem[] | null>(null);
   const [freshnessState, setFreshnessState] = useState<FreshnessState>("loading");
@@ -241,7 +249,7 @@ export default function TransparencyDashboard({
     // none, and a sticky rail here would also narrow the full-width source section.
     <div className="w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8" data-testid="transparency-dashboard">
       <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-5">
-        <PageHeader title="데이터와 출처" description={HEADER_SUMMARY}>
+        <PageHeader title={title} description={HEADER_SUMMARY}>
           {orientation}
         </PageHeader>
 

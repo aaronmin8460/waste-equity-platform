@@ -321,10 +321,13 @@ describe("가중치 실험실 (weight scenario) sub-view", () => {
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
   }
 
-  it("adds a 가중치 바꿔보기 sub-view button under 후보지 분석", async () => {
+  it("offers 후보지 심층 비교 as a top-level destination in the global navigation", async () => {
     await enterSuitability();
     const button = screen.getByTestId("suitability-view-scenario");
-    expect(button.textContent).toContain("가중치 바꿔보기");
+    // Promoted out of the retired sub-view bar into the six-destination nav, and
+    // renamed with it (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2).
+    expect(button.textContent).toBe("후보지 심층 비교");
+    expect(screen.getByTestId("mode-switch").contains(button)).toBe(true);
   });
 
   it("navigates score → scenario → cost with exactly one MapView and never a second", async () => {

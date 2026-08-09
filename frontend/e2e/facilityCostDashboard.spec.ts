@@ -204,7 +204,8 @@ for (const vp of VIEWPORTS) {
       // civicShell.spec.ts locates it.
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
-      await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+      // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
       await expect(page.locator("#main-content")).toHaveCount(1);
 
       // The primary action is inside the first viewport with the page at offset 0,
@@ -366,10 +367,11 @@ test.describe("suitability sub-view regression at 1440×900", () => {
   test("switches cost ↔ score ↔ scenario with one map on each map sub-view", async ({ page }) => {
     await openCost(page);
     await expect(page.getByTestId("map-container")).toHaveCount(0);
-    await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+    // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
 
     // cost → score restores the score workspace and its single map.
-    await page.getByTestId("suitability-view-score").click();
+    await page.getByTestId("mode-suitability").click();
     await expect(page.getByTestId("suitability-summary")).toBeVisible();
     await expect(page.getByTestId("map-container")).toHaveCount(1);
     await expect(page.getByTestId("facility-cost-dashboard")).toHaveCount(0);
@@ -386,7 +388,8 @@ test.describe("suitability sub-view regression at 1440×900", () => {
     await page.getByTestId("suitability-view-cost").click();
     await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
     await expect(page.getByTestId("map-container")).toHaveCount(0);
-    await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+    // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
     await expect(page.getByTestId("suitability-view-cost")).toHaveAttribute("aria-pressed", "true");
   });
 

@@ -68,85 +68,75 @@ interface View {
   navTestId: string;
   /** Exactly how many `MapView`s this view mounts. */
   maps: number;
-  /** Whether the 후보지 분석 sub-view selector belongs on this view. */
-  subviews: boolean;
-  /** The sub-view button that must read `aria-pressed="true"`, when applicable. */
-  activeSubview?: string;
 }
 
 const VIEWS: View[] = [
   {
-    name: "지역 부담",
+    name: "지역 지표",
     url: "/?v=1&mode=equity",
     ready: "region-select",
-    h1: "지역 부담",
-    navLabel: "지역 부담",
+    h1: "지역 지표",
+    navLabel: "지역 지표",
     navTestId: "mode-equity",
     maps: 1,
-    subviews: false,
   },
   {
-    name: "후보지 점수",
+    name: "후보지 심층 분석",
     url: "/?v=1&mode=suitability&view=score",
     ready: "suitability-summary",
-    h1: "후보지 분석",
-    navLabel: "후보지 분석",
+    h1: "후보지 심층 분석",
+    navLabel: "후보지 심층 분석",
     navTestId: "mode-suitability",
     maps: 1,
-    subviews: true,
-    activeSubview: "suitability-view-score",
   },
   {
-    name: "가중치 바꿔보기",
+    name: "후보지 심층 비교",
     url: "/?v=1&mode=suitability&view=scenario",
     ready: "scenario-lab",
-    h1: "후보지 분석",
-    navLabel: "후보지 분석",
-    navTestId: "mode-suitability",
+    h1: "후보지 심층 비교",
+    navLabel: "후보지 심층 비교",
+    navTestId: "suitability-view-scenario",
     maps: 1,
-    subviews: true,
-    activeSubview: "suitability-view-scenario",
   },
   {
-    name: "비용 살펴보기",
+    name: "후보지 분석",
     url: "/?v=1&mode=suitability&view=cost",
     ready: "facility-cost-dashboard",
-    h1: "시설 비용 살펴보기",
+    h1: "후보지 분석",
     navLabel: "후보지 분석",
-    navTestId: "mode-suitability",
+    navTestId: "suitability-view-cost",
     maps: 0,
-    subviews: true,
-    activeSubview: "suitability-view-cost",
   },
   {
-    name: "매립지 현황",
+    name: "폐기물 처리 현황",
     url: "/?v=1&mode=flow",
     ready: "landfill-dashboard",
-    h1: "수도권매립지 반입 현황",
-    navLabel: "매립지 현황",
+    h1: "폐기물 처리 현황",
+    navLabel: "폐기물 처리 현황",
     navTestId: "mode-flow",
     maps: 0,
-    subviews: false,
   },
   {
     name: "데이터·출처",
     url: "/?v=1&mode=transparency",
     ready: "transparency-dashboard",
-    h1: "데이터와 출처",
+    h1: "데이터·출처",
     navLabel: "데이터·출처",
     navTestId: "mode-transparency",
     maps: 0,
-    subviews: false,
   },
 ];
 
+/** Every visible destination label, compared exactly, present on every screen. */
+const NAV_LABELS = VIEWS.map((v) => v.navLabel);
+
 /** The components each view OWNS — they must not survive into another view. */
 const VIEW_OWNED_TESTIDS: Record<string, string[]> = {
-  "지역 부담": ["region-select", "region-ranking", "region-comparison", "share-export"],
-  "후보지 점수": ["suitability-summary"],
-  "가중치 바꿔보기": ["scenario-lab"],
-  "비용 살펴보기": ["facility-cost-dashboard", "facility-cost-form"],
-  "매립지 현황": ["landfill-dashboard", "landfill-filters"],
+  "지역 지표": ["region-select", "region-ranking", "region-comparison", "share-export"],
+  "후보지 심층 분석": ["suitability-summary"],
+  "후보지 심층 비교": ["scenario-lab"],
+  "후보지 분석": ["facility-cost-dashboard", "facility-cost-form"],
+  "폐기물 처리 현황": ["landfill-dashboard", "landfill-filters"],
   "데이터·출처": ["transparency-dashboard", "transparency-sources"],
 };
 
@@ -187,8 +177,6 @@ const SINGLETON_TESTIDS = [
   "mode-suitability",
   "mode-flow",
   "mode-transparency",
-  "suitability-subviews",
-  "suitability-view-score",
   "suitability-view-scenario",
   "suitability-view-cost",
   "map-container",
@@ -236,8 +224,8 @@ async function expectViewContract(page: Page, view: View): Promise<void> {
   await expect(page.locator("h1"), `${view.name}: one page-level h1`).toHaveCount(1);
   await expect(page.locator("h1"), `${view.name}: exact h1`).toHaveText(view.h1);
 
-  // The four frozen navigation labels, all four present at once, compared exactly.
-  for (const other of ["지역 부담", "후보지 분석", "매립지 현황", "데이터·출처"]) {
+  // The six frozen destination labels, all six present at once, compared exactly.
+  for (const other of NAV_LABELS) {
     await expect(
       page.getByRole("button", { name: other, exact: true }),
       `${view.name}: nav label ${other}`,
@@ -246,13 +234,23 @@ async function expectViewContract(page: Page, view: View): Promise<void> {
   await expect(page.getByTestId(view.navTestId)).toHaveAttribute("aria-pressed", "true");
 
   await expect(page.getByTestId("map-container"), `${view.name}: map count`).toHaveCount(view.maps);
+  // The sub-view segmented bar is retired — the six destinations select `view`
+  // directly (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.1).
   await expect(
     page.getByTestId("suitability-subviews"),
-    `${view.name}: sub-view selector`,
-  ).toHaveCount(view.subviews ? 1 : 0);
-  if (view.activeSubview) {
-    await expect(page.getByTestId(view.activeSubview)).toHaveAttribute("aria-pressed", "true");
-  }
+    `${view.name}: no retired sub-view selector`,
+  ).toHaveCount(0);
+  // Exactly ONE destination is pressed — the three suitability destinations share
+  // a mode, so a mode-only active rule would press all three.
+  const pressed = await page.evaluate(
+    (ids) =>
+      ids.filter(
+        (id) =>
+          document.querySelector(`[data-testid="${id}"]`)?.getAttribute("aria-pressed") === "true",
+      ),
+    VIEWS.map((v) => v.navTestId),
+  );
+  expect(pressed, `${view.name}: exactly one pressed destination`).toEqual([view.navTestId]);
 
   // Nothing another view owns is left behind.
   for (const [owner, ids] of Object.entries(VIEW_OWNED_TESTIDS)) {
@@ -292,7 +290,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
     test("keeps 비용 계산하기 on the first screen when reached by navigating", async ({ page }) => {
       // Arrive the way a citizen does — through the app, not by deep link — because
       // the sub-view switch keeps <main> mounted and only swaps its subtree.
-      await openView(page, VIEWS[1]); // 후보지 점수
+      await openView(page, VIEWS[1]); // 후보지 심층 분석
       await page.getByTestId("suitability-view-cost").click();
       await expect(page.getByTestId("facility-cost-form")).toBeVisible();
 
@@ -356,9 +354,6 @@ test.describe("URL state survives integration at 1440×900", () => {
     for (const view of VIEWS) {
       await openView(page, view);
       await expect(page.getByTestId(view.navTestId)).toHaveAttribute("aria-pressed", "true");
-      if (view.activeSubview) {
-        await expect(page.getByTestId(view.activeSubview)).toHaveAttribute("aria-pressed", "true");
-      }
     }
   });
 
@@ -369,7 +364,7 @@ test.describe("URL state survives integration at 1440×900", () => {
     // replaces the previous view rather than layering on top of it.
     await openView(page, VIEWS[0]);
     await page.getByTestId("mode-suitability").click();
-    await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+    await expect(page.getByTestId("suitability-summary")).toBeVisible({ timeout: 15000 });
     await page.getByTestId("suitability-view-cost").click();
     await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
     await expectViewContract(page, VIEWS[3]);
@@ -387,8 +382,8 @@ test.describe("URL state survives integration at 1440×900", () => {
   test("browser back and forward restore the deep-linked view", async ({ page }) => {
     // Two real document navigations DO create history entries, so this exercises the
     // browser's own back/forward against the `?v=1&mode=…&view=…` restoration path.
-    await openView(page, VIEWS[0]); // 지역 부담
-    await openView(page, VIEWS[3]); // 비용 살펴보기
+    await openView(page, VIEWS[0]); // 지역 지표
+    await openView(page, VIEWS[3]); // 후보지 분석
 
     await page.goBack();
     await expect(page.getByTestId("region-select")).toBeVisible({ timeout: 15000 });
@@ -399,18 +394,26 @@ test.describe("URL state survives integration at 1440×900", () => {
     await expectViewContract(page, VIEWS[3]);
   });
 
-  test("round-trips the three sub-views without doubling the selector or the map", async ({
+  test("round-trips the three suitability destinations without doubling the map", async ({
     page,
   }) => {
     await openView(page, VIEWS[1]);
+    // The sub-view keys still exist in the URL; what changed is that each is now
+    // reached from the top-level navigation rather than a second bar.
+    const BY_VIEW_KEY = {
+      score: VIEWS[1], // 후보지 심층 분석
+      scenario: VIEWS[2], // 후보지 심층 비교
+      cost: VIEWS[3], // 후보지 분석
+    } as const;
     for (const step of ["cost", "score", "scenario", "cost", "scenario", "score"] as const) {
-      await page.getByTestId(`suitability-view-${step}`).click();
-      const expected = VIEWS.find((v) => v.activeSubview === `suitability-view-${step}`)!;
-      await expect(page.getByTestId(expected.ready)).toBeVisible();
-      await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+      const expected = BY_VIEW_KEY[step];
+      await page.getByTestId(expected.navTestId).click();
+      await expect(page.getByTestId(expected.ready)).toBeVisible({ timeout: 15000 });
+      await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
       await expect(page.getByTestId("map-container")).toHaveCount(expected.maps);
       await expect(page.locator("h1")).toHaveCount(1);
-      await expectNoDuplicateTestIds(page, `sub-view ${step}`);
+      await expect(page.locator("h1")).toHaveText(expected.h1);
+      await expectNoDuplicateTestIds(page, `destination ${step}`);
     }
   });
 });
@@ -422,16 +425,18 @@ test.describe("URL state survives integration at 1440×900", () => {
 test.describe("integrated semantics at 1440×900", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("keeps the 데이터·출처 nav label and the 데이터와 출처 heading distinct", async ({
+  test("titles every destination with the exact label its nav button carries", async ({
     page,
   }) => {
-    await openView(page, VIEWS[5]);
-    // Both strings are present on the same screen and are NOT the same string.
-    await expect(page.locator("h1")).toHaveText("데이터와 출처");
-    await expect(page.getByTestId("mode-transparency")).toHaveText("데이터·출처");
-    expect("데이터와 출처").not.toBe("데이터·출처");
-    // …and the heading is not silently unified into the nav label anywhere.
-    await expect(page.getByRole("heading", { name: "데이터·출처", exact: true })).toHaveCount(0);
+    // The redesign UNIFIED these deliberately (spec §2.2). The old contract kept
+    // "데이터와 출처" as the heading beside a "데이터·출처" nav label — two names for
+    // one place, which is what a reader had to reconcile on arrival.
+    for (const view of VIEWS) {
+      await openView(page, view);
+      await expect(page.locator("h1"), `${view.name}: one h1`).toHaveCount(1);
+      await expect(page.locator("h1"), `${view.name}: h1 = nav label`).toHaveText(view.navLabel);
+      await expect(page.getByTestId(view.navTestId)).toHaveText(view.navLabel);
+    }
   });
 
   test("never doubles a live region, in any view", async ({ page }) => {

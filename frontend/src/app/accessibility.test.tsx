@@ -313,6 +313,7 @@ describe("single logical heading", () => {
     // twice on one screen). See docs/ui-refresh/regression-contract.md §10 — the
     // count assertion above is the contract and is unchanged.
     expect(h1s[0].textContent).toBe(MODE_LABELS.equity);
+    expect(h1s[0].textContent).toBe("지역 지표");
   });
 
   it("keeps the product name on screen, in the app bar, without a second heading", async () => {
@@ -336,11 +337,11 @@ describe("suitability accessible alternatives", () => {
     expect(live.textContent).toContain("점수 반영 기준 기본 기준");
   });
 
-  it("switches between the score screening and the cost lens sub-views", async () => {
+  it("switches between 후보지 심층 분석 and 후보지 분석 from the global navigation", async () => {
     await renderLoaded();
     await enterSuitability();
-    // Default sub-view is the score screening.
-    expect(screen.getByTestId("suitability-view-score").getAttribute("aria-pressed")).toBe("true");
+    // Default suitability destination is the score screening (후보지 심층 분석).
+    expect(screen.getByTestId("mode-suitability").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("suitability-summary")).toBeDefined();
     // Switch to the cost lens — it mounts as a full-width dashboard and the score
     // panel (and the map) are gone.
@@ -350,10 +351,13 @@ describe("suitability accessible alternatives", () => {
     expect(screen.queryByTestId("suitability-summary")).toBeNull();
     // The full-width cost dashboard mounts no map.
     expect(screen.queryByTestId("map-container")).toBeNull();
-    // The neutral citizen framing + disclaimer are present.
-    expect(screen.getByText("시설 비용 살펴보기")).toBeDefined();
-    // Back to the score view restores the screening panel (and the map).
-    fireEvent.click(screen.getByTestId("suitability-view-score"));
+    // The view titles itself with the destination the reader clicked (spec §2.2),
+    // and it is that view's SINGLE h1 — not a second heading beside the brand.
+    const costHeadings = document.querySelectorAll("h1");
+    expect(costHeadings).toHaveLength(1);
+    expect(costHeadings[0].textContent).toBe("후보지 분석");
+    // Back to 후보지 심층 분석 restores the screening panel (and the map).
+    fireEvent.click(screen.getByTestId("mode-suitability"));
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
     expect(screen.queryByTestId("facility-cost-dashboard")).toBeNull();
     expect(screen.getByTestId("map-container")).toBeDefined();

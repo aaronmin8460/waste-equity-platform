@@ -190,11 +190,18 @@ beforeEach(() => {
   h.options.mockResolvedValue(OPTIONS);
   h.calc.mockResolvedValue(calcFixture());
 });
+/** The <h1>, supplied by the page as the visible destination name (spec §2.2). */
+const TITLE = "후보지 분석";
+
 afterEach(cleanup);
 
 async function renderPanel(candidate: CandidateDetail | null = null) {
   const utils = render(
-    <FacilityCostDashboard wasteRegions={WASTE_REGIONS} selectedCandidate={candidate} />,
+    <FacilityCostDashboard
+      title={TITLE}
+      wasteRegions={WASTE_REGIONS}
+      selectedCandidate={candidate}
+    />,
   );
   // The dashboard shell renders immediately; wait for the scenario form, which
   // only mounts once the (mocked) options have resolved.
@@ -254,7 +261,7 @@ function primaryResultsText(): string {
 describe("citizen framing", () => {
   it("shows the neutral title and the decision-support disclaimer", async () => {
     await renderPanel();
-    expect(screen.getByText("시설 비용 살펴보기")).toBeDefined();
+    expect(screen.getByText(TITLE)).toBeDefined();
     const disclaimer = screen.getByTestId("facility-cost-disclaimer").textContent ?? "";
     expect(disclaimer).toContain("권고하거나 반대를 설득하기 위한 페이지가 아닙니다");
     expect(disclaimer).toContain("시민 의사결정 지원 도구");
@@ -1083,7 +1090,7 @@ describe("results — scenario summary and page structure", () => {
 
     await calculateToResults();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelectorAll("h1")[0].textContent).toContain("시설 비용 살펴보기");
+    expect(container.querySelectorAll("h1")[0].textContent).toContain(TITLE);
     expect(container.querySelector('[data-testid="map-container"]')).toBeNull();
     expect(container.querySelector("canvas")).toBeNull();
   });

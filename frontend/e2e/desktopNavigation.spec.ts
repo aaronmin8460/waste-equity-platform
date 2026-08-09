@@ -23,12 +23,26 @@ const DESKTOP_VIEWPORTS = [
   { name: "desktop 1280×800", width: 1280, height: 800 },
 ];
 
-const MODE_TEST_IDS = ["mode-equity", "mode-suitability", "mode-flow", "mode-transparency"];
-const MODE_LABELS = ["지역 부담", "후보지 분석", "매립지 현황", "데이터·출처"];
-const SUBVIEW_TEST_IDS = [
-  "suitability-view-score",
-  "suitability-view-scenario",
+/**
+ * The SIX visible destinations, in nav/DOM order. These are the pre-existing
+ * testids (see lib/glossary.ts): `mode-suitability` is 후보지 심층 분석, and
+ * `suitability-view-cost` / `-scenario` are 후보지 분석 / 후보지 심층 비교.
+ */
+const MODE_TEST_IDS = [
+  "mode-equity",
+  "mode-flow",
   "suitability-view-cost",
+  "mode-suitability",
+  "suitability-view-scenario",
+  "mode-transparency",
+];
+const MODE_LABELS = [
+  "지역 지표",
+  "폐기물 처리 현황",
+  "후보지 분석",
+  "후보지 심층 분석",
+  "후보지 심층 비교",
+  "데이터·출처",
 ];
 
 async function expectNoHorizontalOverflow(page: Page): Promise<void> {
@@ -60,7 +74,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
   test.describe(vp.name, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });
 
-    test("shows all four navigation buttons on a single unwrapped line", async ({ page }) => {
+    test("shows all six navigation buttons on a single unwrapped line", async ({ page }) => {
       await gotoView(page, "/");
 
       const boxes = [];
@@ -94,11 +108,11 @@ for (const vp of DESKTOP_VIEWPORTS) {
       const reference = await navBox(page);
 
       const views = [
-        { query: "/?v=1&mode=equity", label: "지역 부담" },
-        { query: "/?v=1&mode=suitability&view=score", label: "후보지 점수" },
-        { query: "/?v=1&mode=suitability&view=scenario", label: "가중치 바꿔보기" },
-        { query: "/?v=1&mode=suitability&view=cost", label: "비용 살펴보기" },
-        { query: "/?v=1&mode=flow", label: "매립지 현황" },
+        { query: "/?v=1&mode=equity", label: "지역 지표" },
+        { query: "/?v=1&mode=suitability&view=score", label: "후보지 심층 분석" },
+        { query: "/?v=1&mode=suitability&view=scenario", label: "후보지 심층 비교" },
+        { query: "/?v=1&mode=suitability&view=cost", label: "후보지 분석" },
+        { query: "/?v=1&mode=flow", label: "폐기물 처리 현황" },
         { query: "/?v=1&mode=transparency", label: "데이터·출처" },
       ];
 
@@ -163,56 +177,54 @@ for (const vp of DESKTOP_VIEWPORTS) {
       expect(activeBg).not.toBe("rgb(30, 41, 59)");
     });
 
-    test("keeps the 후보지 분석 segmented control in one position across all three sub-views", async ({
+    test("renders no sub-view bar anywhere — the six destinations replace it", async ({
       page,
     }) => {
-      const positions: { label: string; box: { x: number; y: number; width: number } }[] = [];
-
-      for (const [view, label] of [
-        ["score", "후보지 점수"],
-        ["scenario", "가중치 바꿔보기"],
-        ["cost", "비용 살펴보기"],
-      ] as const) {
-        await gotoView(page, `/?v=1&mode=suitability&view=${view}`);
-
-        // Exactly one control, and exactly one of each segment — never a sidebar
-        // copy plus a full-width copy.
-        await expect(page.getByTestId("suitability-subviews"), label).toHaveCount(1);
-        for (const testId of SUBVIEW_TEST_IDS) {
-          await expect(page.getByTestId(testId), `${label}: ${testId}`).toHaveCount(1);
+      // The three suitability sub-views are top-level destinations now, so the old
+      // segmented control would be a SECOND control writing the same `view` state
+      // (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.1). It is gone in every area.
+      for (const query of [
+        "/?v=1&mode=equity",
+        "/?v=1&mode=flow",
+        "/?v=1&mode=transparency",
+        "/?v=1&mode=suitability&view=score",
+        "/?v=1&mode=suitability&view=scenario",
+        "/?v=1&mode=suitability&view=cost",
+      ]) {
+        await gotoView(page, query);
+        await expect(page.getByTestId("suitability-subviews"), query).toHaveCount(0);
+        // The nav is the only place the six destinations live.
+        const group = page.getByTestId("mode-switch");
+        await expect(group.locator("button"), query).toHaveCount(6);
+        for (const testId of MODE_TEST_IDS) {
+          await expect(group.getByTestId(testId), `${query}: ${testId}`).toHaveCount(1);
         }
-        await expect(page.getByTestId(`suitability-view-${view}`)).toHaveAttribute(
-          "aria-pressed",
-          "true",
-        );
-
-        const box = (await page.getByTestId("suitability-subviews").boundingBox())!;
-        // It sits directly below the navigation, never above it.
-        const nav = await navBox(page);
-        expect(box.y, `${label}: below the nav`).toBeGreaterThanOrEqual(nav.y + nav.height - 2);
-        positions.push({ label, box: { x: box.x, y: box.y, width: box.width } });
-
-        await expectNoHorizontalOverflow(page);
-      }
-
-      // Identical placement in all three sub-views.
-      for (const position of positions.slice(1)) {
-        expect(position.box.x, `${position.label}: x`).toBeCloseTo(positions[0].box.x, 0);
-        expect(position.box.y, `${position.label}: y`).toBeCloseTo(positions[0].box.y, 0);
-        expect(position.box.width, `${position.label}: width`).toBeCloseTo(
-          positions[0].box.width,
-          0,
-        );
       }
     });
 
-    test("renders no segmented control outside 후보지 분석", async ({ page }) => {
-      for (const query of ["/?v=1&mode=equity", "/?v=1&mode=flow", "/?v=1&mode=transparency"]) {
-        await gotoView(page, query);
-        await expect(page.getByTestId("suitability-subviews"), query).toHaveCount(0);
-        for (const testId of SUBVIEW_TEST_IDS) {
-          await expect(page.getByTestId(testId), `${query}: ${testId}`).toHaveCount(0);
+    test("reaches each suitability destination in ONE click, and presses only it", async ({
+      page,
+    }) => {
+      await gotoView(page, "/?v=1&mode=equity");
+
+      for (const [testId, expected] of [
+        ["suitability-view-cost", "facility-cost-dashboard"],
+        ["suitability-view-scenario", "scenario-lab"],
+        ["mode-suitability", "suitability-summary"],
+      ] as const) {
+        // One click from wherever we are — no "enter the area, then pick a sub-view".
+        await page.getByTestId(testId).click();
+        await expect(page.getByTestId(expected)).toBeVisible({ timeout: 15000 });
+
+        // Exactly one destination is pressed. The three suitability destinations
+        // share `mode=suitability`, so a mode-only active rule would press all three.
+        const pressed: string[] = [];
+        for (const id of MODE_TEST_IDS) {
+          if ((await page.getByTestId(id).getAttribute("aria-pressed")) === "true") pressed.push(id);
         }
+        expect(pressed, `${testId}: exactly one pressed`).toEqual([testId]);
+
+        await expectNoHorizontalOverflow(page);
       }
     });
 
@@ -227,11 +239,11 @@ for (const vp of DESKTOP_VIEWPORTS) {
         await expect(map).toBeVisible();
         const mapBox = (await map.boundingBox())!;
 
-        // Starts immediately below the shared chrome (nav, plus the sub-view bar in
-        // 후보지 분석) with no gap…
-        const chrome = page.getByTestId("suitability-subviews");
-        const chromeBox =
-          (await chrome.count()) > 0 ? (await chrome.boundingBox())! : await navBox(page);
+        // Starts immediately below the shared chrome with no gap. Since the
+        // sub-view bar was retired the nav is the ONLY chrome above the map, in
+        // every area — which is also why the map is taller than it used to be.
+        await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
+        const chromeBox = await navBox(page);
         const chromeBottom = chromeBox.y + chromeBox.height;
         expect(mapBox.y, `${query}: no gap below chrome`).toBeGreaterThanOrEqual(chromeBottom - 2);
         expect(mapBox.y, `${query}: starts at chrome bottom`).toBeLessThanOrEqual(chromeBottom + 2);
@@ -293,10 +305,10 @@ for (const vp of DESKTOP_VIEWPORTS) {
       await page.keyboard.press("Enter");
       expect(await page.evaluate(() => document.activeElement?.id)).toBe("main-content");
 
-      // From the skip link, Tab reaches all four navigation buttons in order.
+      // From the skip link, Tab reaches all six navigation buttons in order.
       await page.locator("a.skip-link").focus();
       const reached: string[] = [];
-      for (let i = 0; i < 8 && reached.length < MODE_TEST_IDS.length; i += 1) {
+      for (let i = 0; i < 12 && reached.length < MODE_TEST_IDS.length; i += 1) {
         await page.keyboard.press("Tab");
         const testId = await page.evaluate(() =>
           document.activeElement?.getAttribute("data-testid"),

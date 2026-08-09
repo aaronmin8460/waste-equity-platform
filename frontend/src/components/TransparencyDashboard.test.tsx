@@ -209,11 +209,14 @@ beforeEach(() => {
   });
   api.fetchFacilityMappingTransparency.mockResolvedValue(mapping);
 });
+/** The <h1>, supplied by the page as the visible destination name (spec §2.2). */
+const TITLE = "데이터·출처";
+
 afterEach(cleanup);
 
 /** Render and wait until the freshness join has resolved (either way). */
 async function renderDashboard(overrides?: Partial<LoadedData>) {
-  const result = render(<TransparencyDashboard data={{ ...data, ...overrides }} />);
+  const result = render(<TransparencyDashboard title={TITLE} data={{ ...data, ...overrides }} />);
   await screen.findByTestId("transparency-sources");
   await waitFor(() =>
     expect(screen.getByTestId("transparency-freshness-status").textContent).not.toContain(
@@ -241,7 +244,7 @@ describe("structure", () => {
   it("renders exactly one h1 and mounts no map", async () => {
     const { container } = await renderDashboard();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("h1")!.textContent).toBe("데이터와 출처");
+    expect(container.querySelector("h1")!.textContent).toBe(TITLE);
     // Map-free: not merely hidden — nothing map-shaped exists in the subtree.
     expect(container.querySelector("canvas")).toBeNull();
     expect(screen.queryByTestId("map-container")).toBeNull();
@@ -261,6 +264,7 @@ describe("structure", () => {
   it("renders the orientation strip after the heading when the page supplies one", async () => {
     const { container } = render(
       <TransparencyDashboard
+        title={TITLE}
         data={data}
         orientation={<p data-testid="mode-orientation">안내</p>}
       />,
@@ -788,7 +792,7 @@ describe("loading, empty, and error states", () => {
   it("announces loading in a status region while the skeleton stays decorative", async () => {
     // Never resolves, so the loading state is observable.
     api.fetchFacilityMappingTransparency.mockReturnValue(new Promise(() => {}));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
 
     const loading = await screen.findByTestId("transparency-mapping-loading");
     expect(loading.getAttribute("role")).toBe("status");
@@ -803,7 +807,9 @@ describe("loading, empty, and error states", () => {
   });
 
   it("treats a successful empty registry as an answer, not an error", async () => {
-    render(<TransparencyDashboard data={{ ...data, sources: [] } as unknown as LoadedData} />);
+    render(
+      <TransparencyDashboard title={TITLE} data={{ ...data, sources: [] } as unknown as LoadedData} />,
+    );
     const empty = await screen.findByTestId("transparency-sources-empty");
     expect(empty.getAttribute("role")).toBeNull();
     expect(empty.textContent).toContain("등록된 출처 기록이 없습니다");
@@ -843,7 +849,7 @@ describe("loading, empty, and error states", () => {
 
   it("keeps a failed freshness request distinct from 'no reference period exists'", async () => {
     api.fetchDataFreshness.mockRejectedValue(new Error("network"));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     const note = await screen.findByTestId("transparency-freshness-error");
     // Not an alert — the catalog still renders and nothing is wrong with the data.
     expect(note.getAttribute("role")).toBeNull();
@@ -856,7 +862,7 @@ describe("loading, empty, and error states", () => {
 
   it("never reports an unfetched reference-period count as a measured zero", async () => {
     api.fetchDataFreshness.mockRejectedValue(new Error("network"));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     await screen.findByTestId("transparency-freshness-error");
     const card = screen.getByTestId("transparency-overview-period");
     // The VALUE slot is what a reader reads as the figure. `0건` there would state
@@ -871,7 +877,7 @@ describe("loading, empty, and error states", () => {
 
   it("shows the reference-period count as pending, not zero, while loading", async () => {
     api.fetchDataFreshness.mockReturnValue(new Promise(() => {}));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     const card = await screen.findByTestId("transparency-overview-period");
     const value = card.querySelector("dd")!;
     expect(value.textContent).not.toContain("0");
@@ -883,11 +889,11 @@ describe("loading, empty, and error states", () => {
     // holds its content when inserted is generally not announced, and removing one
     // announces nothing — so a conditional "loading" message would leave the
     // resolution silent while every reference period on screen changed.
-    const { rerender } = render(<TransparencyDashboard data={data} />);
+    const { rerender } = render(<TransparencyDashboard title={TITLE} data={data} />);
     const live = screen.getByTestId("transparency-freshness-status");
     expect(live.getAttribute("role")).toBe("status");
     expect(live.textContent).toContain("불러오는 중");
-    rerender(<TransparencyDashboard data={data} />);
+    rerender(<TransparencyDashboard title={TITLE} data={data} />);
     await waitFor(() =>
       expect(screen.getByTestId("transparency-freshness-status").textContent).toContain(
         "확인을 마쳤습니다",
@@ -1126,7 +1132,9 @@ describe("refresh: the current-condition summary", () => {
   });
 
   it("is not rendered at all for an empty registry, so no condition is implied", async () => {
-    render(<TransparencyDashboard data={{ ...data, sources: [] } as unknown as LoadedData} />);
+    render(
+      <TransparencyDashboard title={TITLE} data={{ ...data, sources: [] } as unknown as LoadedData} />,
+    );
     await screen.findByTestId("transparency-sources-empty");
     expect(screen.queryByTestId("transparency-filter-summary")).toBeNull();
     expect(screen.queryByTestId("transparency-result-count")).toBeNull();
@@ -1171,7 +1179,7 @@ describe("refresh: provenance badges", () => {
 
   it("keeps a failed freshness lookup out of the missing badge entirely", async () => {
     api.fetchDataFreshness.mockRejectedValue(new Error("network"));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     await screen.findByTestId("transparency-freshness-error");
     fireEvent.change(searchInput(), { target: { value: "sgis" } });
     // A request that failed says nothing about whether a period exists, so it must
@@ -1234,7 +1242,7 @@ describe("refresh: known gaps", () => {
 
   it("shows no count at all while the freshness join is unresolved", async () => {
     api.fetchDataFreshness.mockReturnValue(new Promise(() => {}));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     const gap = await screen.findByTestId("transparency-gap-period");
     expect(gap.textContent).toContain("확인하는 중");
     expect(gap.textContent).not.toMatch(/\d건/);
@@ -1242,7 +1250,7 @@ describe("refresh: known gaps", () => {
 
   it("never reports an unfetched gap count as a measured zero", async () => {
     api.fetchDataFreshness.mockRejectedValue(new Error("network"));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     await screen.findByTestId("transparency-freshness-error");
     const gap = screen.getByTestId("transparency-gap-period");
     expect(gap.textContent).toContain("0건이라는 뜻이 아닙니다");

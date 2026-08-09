@@ -151,7 +151,7 @@ for (const vp of VIEWPORTS) {
       await openEquity(page);
       await expect(page.getByTestId("map-container")).toHaveCount(1);
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText("지역 부담");
+      await expect(page.locator("h1")).toHaveText("지역 지표");
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
       await expect(page.locator("main")).toHaveCount(1);

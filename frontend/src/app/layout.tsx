@@ -1,10 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+/**
+ * The 여기다 Korean UI face (docs/YEOGIDA_UI_REDESIGN_SPEC.md §1).
+ *
+ * `next/font/google` downloads and SELF-HOSTS the files at build time, so the
+ * running app makes no request to fonts.googleapis.com — which matters here
+ * because production serves behind Caddy with a restrictive origin policy.
+ * `display: "swap"` keeps text readable while the Korean subset (the large one)
+ * is still arriving; the fallback chain lives in the `--font-sans` token in
+ * globals.css.
+ *
+ * Only weights the UI actually uses are requested — 400 body, 500/700 emphasis,
+ * 800 for the brand wordmark — because each weight of a CJK face is a large
+ * download.
+ */
+const notoSansKr = Noto_Sans_KR({
+  variable: "--font-noto-sans-kr",
   subsets: ["latin"],
+  weight: ["400", "500", "700", "800"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -13,9 +29,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "수도권 폐기물 형평성 지도 — Waste Equity Platform",
+  title: "여기다 — 쓰레기 매립지 입지 추천 플랫폼",
   description:
-    "Official-data policy map for waste-management equity across Seoul, Incheon, and Gyeonggi-do.",
+    "서울·인천·경기 공공자료로 쓰레기 매립지 후보지를 비교하는 시민용 분석 플랫폼입니다.",
 };
 
 // Explicit responsive viewport so phones render at device width (not the ~980px
@@ -37,7 +53,7 @@ export default function RootLayout({
     // and pronunciation rules instead of an English one.
     <html
       lang="ko"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${notoSansKr.variable} ${geistMono.variable} h-full antialiased`}
     >
       {/* min-h-dvh (dynamic viewport) so the app fills the visible area even as
           mobile browser toolbars expand/collapse, instead of the static 100%.

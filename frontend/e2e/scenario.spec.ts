@@ -80,7 +80,7 @@ test.describe("weight scenario lab workflow", () => {
     await expect(page.getByTestId("scenario-stale-notice")).toBeVisible();
 
     // 9. Back to stored score view: the map still works, scenario reset.
-    await page.getByTestId("suitability-view-score").click();
+    await page.getByTestId("mode-suitability").click();
     await expect(page.getByTestId("map-container")).toHaveCount(1);
     await expect(page.getByTestId("suitability-summary")).toBeVisible();
 

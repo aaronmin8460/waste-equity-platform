@@ -357,12 +357,16 @@ afterEach(() => {
 // --------------------------------------------------------------------------- //
 
 describe("후보지 점수 — shell contracts", () => {
-  it("keeps one h1, one map, one sub-view control, one main and one aside", async () => {
+  it("keeps one h1, one map, no sub-view bar, one main and one aside", async () => {
     const { container } = await enterScore();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("h1")!.textContent).toBe("후보지 분석");
+    // The view titles itself with its destination name (spec §2.2); "후보지 분석"
+    // is now the SEPARATE cost destination, so a stale literal here would name two
+    // different screens the same thing.
+    expect(container.querySelector("h1")!.textContent).toBe("후보지 심층 분석");
     expect(screen.getAllByTestId("map-container")).toHaveLength(1);
-    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(1);
+    // The segmented sub-view bar is retired — the six destinations select `view`.
+    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(0);
     expect(container.querySelectorAll("main")).toHaveLength(1);
     expect(container.querySelectorAll("aside")).toHaveLength(1);
     // One global navigation (the app bar's `mode-switch` group), not one per branch.
@@ -761,11 +765,12 @@ describe("후보지 점수 — map workspace", () => {
 // --------------------------------------------------------------------------- //
 
 describe("가중치 바꿔보기 — shell and controls", () => {
-  it("keeps one h1, one map, and one sub-view control", async () => {
+  it("keeps one h1, one map, and no sub-view bar", async () => {
     const { container } = await enterScenario();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(container.querySelector("h1")!.textContent).toBe("후보지 심층 비교");
     expect(screen.getAllByTestId("map-container")).toHaveLength(1);
-    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(0);
     // The screening disclaimer follows into this sub-view.
     expect(screen.getByTestId("suitability-screening-disclaimer")).toBeDefined();
   });
@@ -938,11 +943,12 @@ describe("비용 살펴보기 — untouched by this milestone", () => {
     await waitFor(() => expect(screen.getByTestId("facility-cost-dashboard")).toBeDefined());
     expect(screen.queryByTestId("map-container")).toBeNull();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(1);
+    expect(container.querySelector("h1")!.textContent).toBe("후보지 분석");
+    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(0);
     expect(screen.getByTestId("mode-switch")).toBeDefined();
     // The score sidebar is gone, and returning to it brings the workspace back.
     expect(screen.queryByTestId("suitability-summary")).toBeNull();
-    fireEvent.click(screen.getByTestId("suitability-view-score"));
+    fireEvent.click(screen.getByTestId("mode-suitability"));
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
     expect(screen.getByTestId("map-container")).toBeDefined();
   });

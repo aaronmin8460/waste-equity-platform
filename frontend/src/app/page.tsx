@@ -161,13 +161,13 @@ import { buildComparisonReport, buildEquityReport, type ReportModel } from "../l
 import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario";
 import { namedWeightRows } from "../lib/suitability";
 import {
-  MODE_LABELS,
-  MODE_ORIENTATION,
   SUITABILITY_SCREENING_SHORT_LABEL,
   accountingBasisLabel,
+  destinationFor,
   plainError,
   type DashboardArea,
   type DataStatus,
+  type NavDestination,
 } from "../lib/glossary";
 
 /** Sub-view inside suitability mode: the score screening, the weight lab, or cost. */
@@ -675,6 +675,30 @@ export default function Home() {
       setSuitabilityView(next);
     },
     [clearScenario],
+  );
+
+  /**
+   * Apply a visible destination: the ONE entry point the global navigation uses.
+   *
+   * The six destinations are a projection over `(mode, view)`
+   * (lib/glossary.NAV_DESTINATIONS), so navigating is just setting both — through
+   * the existing guarded setters, which is what keeps the scenario-clearing and
+   * report-closing side effects intact. `view` is only written for the suitability
+   * destinations, so moving to 지역 지표 or 폐기물 처리 현황 leaves the reader's
+   * last suitability sub-view alone and returning to it is not a surprise.
+   */
+  const navigate = useCallback(
+    (destination: NavDestination) => {
+      if (destination.view !== null) changeSuitabilityView(destination.view);
+      changeMode(destination.mode);
+    },
+    [changeMode, changeSuitabilityView],
+  );
+
+  /** The destination the current analytical state renders as. */
+  const destination = useMemo(
+    () => destinationFor(mode as DashboardArea, suitabilityView),
+    [mode, suitabilityView],
   );
 
   // Flip one suitability status' visibility in the canonical page state. This is the
@@ -1417,23 +1441,28 @@ export default function Home() {
   // non-map mode cannot reach MapView.
   if (mode === "transparency") {
     return (
-      <DashboardShell mode={mode} onModeChange={changeMode} variant="page">
+      <DashboardShell destination={destination} onNavigate={navigate} variant="page">
         {/* Phase 6: the heading and the orientation strip moved INTO the dashboard,
             matching the Phase 5 landfill pattern. The strip still renders directly
             below the single <h1> (asserted by shell.test.tsx's document-order check)
             and the view still has exactly one <h1>. */}
-        <TransparencyDashboard data={data} orientation={<ModeOrientation mode={mode} />} />
+        <TransparencyDashboard
+          data={data}
+          title={destination.label}
+          orientation={<ModeOrientation destination={destination} />}
+        />
       </DashboardShell>
     );
   }
 
   if (mode === "flow") {
     return (
-      <DashboardShell mode={mode} onModeChange={changeMode} variant="page">
+      <DashboardShell destination={destination} onNavigate={navigate} variant="page">
         <LandfillDashboard
+          title={destination.label}
           // Rendered inside the dashboard's own header, below its <h1> — the same
           // place the orientation strip sits in the other three areas.
-          orientation={<ModeOrientation mode={mode} />}
+          orientation={<ModeOrientation destination={destination} />}
           data={flowData}
           unavailable={flowUnavailable}
           year={flowYear}
@@ -1472,15 +1501,11 @@ export default function Home() {
   // below is thus only ever reached by the equity map and the suitability SCORE view.
   if (mode === "suitability" && suitabilityView === "cost") {
     return (
-      <DashboardShell
-        mode={mode}
-        onModeChange={changeMode}
-        variant="page"
-        suitabilityView={suitabilityView}
-        onSuitabilityViewChange={changeSuitabilityView}
-      >
+      <DashboardShell destination={destination} onNavigate={navigate} variant="page">
         <div className="pt-6">
           <FacilityCostDashboard
+            title={destination.label}
+            orientation={<ModeOrientation destination={destination} />}
             wasteRegions={facilityCostWasteRegions}
             selectedCandidate={selected}
           />
@@ -1524,13 +1549,7 @@ export default function Home() {
     // still reaches the viewport bottom with no empty strip below it.
     // Inside <main>: mobile stacks the sidebar above a full-width map; md+ is the
     // original side-by-side row.
-    <DashboardShell
-      mode={mode}
-      onModeChange={changeMode}
-      variant="map"
-      suitabilityView={suitabilityView}
-      onSuitabilityViewChange={changeSuitabilityView}
-    >
+    <DashboardShell destination={destination} onNavigate={navigate} variant="map">
       {/* The control column is a SUNKEN surface so each section inside it reads as a
           distinct `.wep-card` (the shell root is the application canvas, cards are
           white surfaces — docs/ui-refresh/design-tokens.md §2). The layout classes
@@ -1546,11 +1565,11 @@ export default function Home() {
             SIBLING so it still follows the h1 in document order (shell.test.tsx)
             while keeping the column's gap-3 rhythm. */}
         <PageHeader
-          title={MODE_LABELS[mode]}
+          title={destination.label}
           description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
         />
 
-        <ModeOrientation mode={mode} />
+        <ModeOrientation destination={destination} />
 
         {mode === "equity" && (
           <>
@@ -1973,10 +1992,10 @@ export default function Home() {
 // components/DashboardShell.tsx, rendered once above every branch.
 // --------------------------------------------------------------------------- //
 
-function ModeOrientation({ mode }: { mode: DashboardMode }) {
+function ModeOrientation({ destination }: { destination: NavDestination }) {
   return (
     <p className="wep-orient" data-testid="mode-orientation">
-      {MODE_ORIENTATION[mode as DashboardArea]}
+      {destination.orientation}
     </p>
   );
 }

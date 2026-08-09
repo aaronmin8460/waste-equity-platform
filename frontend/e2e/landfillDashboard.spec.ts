@@ -354,7 +354,7 @@ test.describe("1440×900 — the refreshed workflow", () => {
     await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
     await expect(page.getByTestId("top-navigation")).toHaveCount(1);
     await expect(page.locator("h1")).toHaveCount(1);
-    await expect(page.getByTestId("mode-flow")).toHaveText("매립지 현황");
+    await expect(page.getByTestId("mode-flow")).toHaveText("폐기물 처리 현황");
     await expect(page.getByTestId("mode-flow")).toHaveAttribute("aria-pressed", "true");
     await expectNoHorizontalOverflow(page, "returned to landfill");
   });

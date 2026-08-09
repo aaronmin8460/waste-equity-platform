@@ -260,8 +260,8 @@ test.describe("Task A — 지역 부담 (equity)", () => {
   }) => {
     await setup(page);
     // The plain-Korean navigation is present.
-    await expect(page.getByRole("button", { name: "지역 부담" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "후보지 분석" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "지역 지표" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "후보지 분석", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "데이터·출처" })).toBeVisible();
 
     // The highest-value region leads the "값이 높은 지역" list.
@@ -289,12 +289,12 @@ test.describe("Task A — 지역 부담 (equity)", () => {
   });
 });
 
-test.describe("Task B — 후보지 분석 (suitability)", () => {
+test.describe("Task B — 후보지 심층 분석 (suitability score)", () => {
   test("shows the three plain statuses, a scoring basis, and a candidate detail", async ({
     page,
   }) => {
     await setup(page);
-    await page.getByRole("button", { name: "후보지 분석" }).click();
+    await page.getByRole("button", { name: "후보지 심층 분석" }).click();
     await expect(page.getByTestId("candidate-counts")).toContainText("스크리닝 통과");
     await expect(page.getByTestId("candidate-counts")).toContainText("추가 검토 필요");
     await expect(page.getByTestId("candidate-counts")).toContainText("프로젝트 스크리닝 제외");
@@ -310,11 +310,11 @@ test.describe("Task B — 후보지 분석 (suitability)", () => {
   });
 });
 
-test.describe("Task C — 가중치 바꿔보기 (scenario)", () => {
+test.describe("Task C — 후보지 심층 비교 (scenario)", () => {
   test("apply a preset and see rank movement and the temporary-result note", async ({ page }) => {
     await setup(page);
-    await page.getByRole("button", { name: "후보지 분석" }).click();
-    await page.getByRole("button", { name: "가중치 바꿔보기" }).click();
+    // One click: the scenario sub-view is a top-level destination now.
+    await page.getByRole("button", { name: "후보지 심층 비교" }).click();
     await expect(page.getByTestId("scenario-lab")).toBeVisible();
     await expect(page.getByTestId("scenario-warning")).toBeVisible();
   });
@@ -342,11 +342,10 @@ test.describe("Task C — 가중치 바꿔보기 (scenario)", () => {
   });
 });
 
-test.describe("Task D — 비용 살펴보기 (cost)", () => {
+test.describe("Task D — 후보지 분석 (facility cost)", () => {
   test("opens the full-width cost view with no map", async ({ page }) => {
     await setup(page);
-    await page.getByRole("button", { name: "후보지 분석" }).click();
-    await page.getByRole("button", { name: "비용 살펴보기" }).click();
+    await page.getByRole("button", { name: "후보지 분석", exact: true }).click();
     await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
     await expect(page.getByTestId("map-container")).toHaveCount(0);
   });

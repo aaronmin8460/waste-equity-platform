@@ -56,7 +56,7 @@ test("landfill dashboard: renders full-width with no map and official values", a
   await expect(page.getByTestId("map-container")).toHaveCount(0);
 
   // Heading + the mandated limitation notice.
-  await expect(page.getByRole("heading", { name: "수도권매립지 반입 현황" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "폐기물 처리 현황" })).toBeVisible();
   await expect(page.getByTestId("landfill-limitation")).toContainText(
     "시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다",
   );

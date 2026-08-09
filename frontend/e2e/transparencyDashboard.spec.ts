@@ -93,7 +93,7 @@ for (const vp of VIEWPORTS) {
       await gotoTransparency(page);
 
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText("데이터와 출처");
+      await expect(page.locator("h1")).toHaveText("데이터·출처");
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
       await expect(page.locator("main")).toHaveCount(1);
@@ -459,9 +459,11 @@ test.describe("cross-view regression — 1440×900", () => {
 
     const steps: [string, string, number][] = [
       ["데이터·출처", "transparency-sources", 0],
-      ["지역 부담", "region-select", 1],
-      ["후보지 분석", "suitability-summary", 1],
-      ["매립지 현황", "landfill-dashboard", 0],
+      ["지역 지표", "region-select", 1],
+      // 후보지 심층 분석 is the SCORE destination (the one with the map). Plain
+      // "후보지 분석" is now the separate cost destination, which mounts none.
+      ["후보지 심층 분석", "suitability-summary", 1],
+      ["폐기물 처리 현황", "landfill-dashboard", 0],
       ["데이터·출처", "transparency-sources", 0],
     ];
     for (const [label, marker, maps] of steps) {
@@ -476,7 +478,8 @@ test.describe("cross-view regression — 1440×900", () => {
 
     // 비용 살펴보기 is map-free too, and it is the only place the sub-view bar exists.
     await page.getByRole("button", { name: "후보지 분석", exact: true }).click();
-    await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+    // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
     await page.getByTestId("suitability-view-cost").click();
     await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
     await expect(page.getByTestId("map-container")).toHaveCount(0);
@@ -499,7 +502,7 @@ test.describe("cross-view regression — 1440×900", () => {
 
     // Leaving and returning gives a fresh catalog — the filter state is view state,
     // never written to the URL, and never leaks into another area.
-    await page.getByRole("button", { name: "매립지 현황", exact: true }).click();
+    await page.getByRole("button", { name: "폐기물 처리 현황", exact: true }).click();
     await expect(page.getByTestId("landfill-dashboard")).toBeVisible();
     await expect(page.getByTestId("transparency-search")).toHaveCount(0);
     await expect(page.getByTestId("transparency-source-card")).toHaveCount(0);
@@ -513,6 +516,6 @@ test.describe("cross-view regression — 1440×900", () => {
     // And a cold deep link lands in the same place.
     await page.goto(URL);
     await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator("h1")).toHaveText("데이터와 출처");
+    await expect(page.locator("h1")).toHaveText("데이터·출처");
   });
 });
