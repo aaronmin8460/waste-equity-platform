@@ -28,10 +28,11 @@
 
 import type { RefObject } from "react";
 
-import type { FacilityCostOptions } from "../../lib/api";
+import type { FacilityCostOptions, RegionBoundaryCollection } from "../../lib/api";
 import Accordion from "../ui/Accordion";
 import EmptyState from "../ui/EmptyState";
 import SearchableRegionPicker from "../ui/SearchableRegionPicker";
+import FacilityCostRegionMap from "./FacilityCostRegionMap";
 import SectionCard from "../ui/SectionCard";
 import {
   captionClass,
@@ -111,6 +112,13 @@ export interface FacilityCostSetupPanelProps {
   options: FacilityCostOptions;
   scenario: ScenarioState;
   regionOptions: { code: string; name: string }[];
+  /**
+   * Geometry for the administrative-region selection map, in the SAME code space
+   * as `regionOptions`. Optional: without it the picker alone is shown, which is
+   * the accessible path anyway, so a missing boundary payload degrades to "no
+   * map" rather than to a broken screen.
+   */
+  regionBoundaries?: RegionBoundaryCollection | null;
   update: <K extends keyof ScenarioState>(key: K, value: ScenarioState[K]) => void;
   validationMessage: string | null;
   /** Focus target used when returning from the results view. */
@@ -121,6 +129,7 @@ export default function FacilityCostSetupPanel({
   options,
   scenario,
   regionOptions,
+  regionBoundaries,
   update,
   validationMessage,
   headingRef,
@@ -144,13 +153,36 @@ export default function FacilityCostSetupPanel({
             testId="facility-cost-regions-empty"
           />
         ) : (
-          <SearchableRegionPicker
-            label="지역 이름 검색"
-            hint="이름을 입력하거나 아래 버튼으로 광역시·도 전체를 선택할 수 있습니다."
-            regions={regionOptions}
-            selectedCodes={scenario.regionCodes}
-            onChange={(codes) => update("regionCodes", codes)}
-          />
+          <>
+            <SearchableRegionPicker
+              label="지역 이름 검색"
+              hint="이름을 입력하거나 아래 버튼으로 광역시·도 전체를 선택할 수 있습니다."
+              regions={regionOptions}
+              selectedCodes={scenario.regionCodes}
+              onChange={(codes) => update("regionCodes", codes)}
+            />
+            {regionBoundaries && (
+              <div className="mt-3">
+                <p className="mb-1.5 text-xs text-ink-subtle" data-testid="facility-cost-map-note">
+                  지도에서 행정구역을 눌러 처리 대상 지역을 고를 수도 있습니다. 이 지도는 처리 대상
+                  행정구역을 고르는 용도이며, 지역별 공사비나 땅값을 나타내지 않습니다.
+                </p>
+                <FacilityCostRegionMap
+                  boundaries={regionBoundaries}
+                  selectedCodes={scenario.regionCodes}
+                  selectableCodes={regionOptions.map((region) => region.code)}
+                  onToggleRegion={(code) =>
+                    update(
+                      "regionCodes",
+                      scenario.regionCodes.includes(code)
+                        ? scenario.regionCodes.filter((c) => c !== code)
+                        : [...scenario.regionCodes, code],
+                    )
+                  }
+                />
+              </div>
+            )}
+          </>
         )}
       </SectionCard>
 

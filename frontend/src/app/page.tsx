@@ -1436,6 +1436,34 @@ export default function Home() {
   // regions could be under-offered here even though /facility-cost/calculate
   // (which resolves the latest year PER stream) could still compute them; that
   // would then warrant a backend per-stream coverage endpoint.
+  /**
+   * RCIS reporting geometry, keyed the way the rest of the app keys regions.
+   *
+   * The facility-cost region list comes from `data.waste.items`, which is RCIS
+   * reporting geography — so the selection map has to use the SAME collection, or
+   * a clicked polygon would carry a code the picker has never heard of. Mapped to
+   * `region_code` here because that is the property the map's click handler and
+   * `promoteId` read.
+   */
+  const reportingBoundaryCollection = useMemo(() => {
+    if (!data) return null;
+    return {
+      type: "FeatureCollection" as const,
+      reference_year: data.reportingBoundaries.reference_year,
+      count: data.reportingBoundaries.features.length,
+      features: data.reportingBoundaries.features.map((f) => ({
+        type: "Feature" as const,
+        geometry: f.geometry,
+        properties: {
+          region_code: f.properties.reporting_region_code,
+          region_name: f.properties.reporting_region_name,
+          region_level: f.properties.source_reporting_level,
+          parent_region_code: null,
+        },
+      })),
+    } as unknown as RegionBoundaryCollection;
+  }, [data]);
+
   const facilityCostWasteRegions = useMemo(
     () =>
       data
@@ -1619,6 +1647,9 @@ export default function Home() {
             orientation={<ModeOrientation destination={destination} />}
             wasteRegions={facilityCostWasteRegions}
             selectedCandidate={selected}
+            // The RCIS reporting geometry — the same code space the waste
+            // statistics (and therefore the calculable region list) use.
+            regionBoundaries={reportingBoundaryCollection}
           />
         </div>
       </DashboardShell>,

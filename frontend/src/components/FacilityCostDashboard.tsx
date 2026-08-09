@@ -49,6 +49,7 @@ import {
   type CandidateDetail,
   type FacilityCostCalculate,
   type FacilityCostOptions,
+  type RegionBoundaryCollection,
 } from "../lib/api";
 import { approximatePercent } from "../lib/displayNumber";
 import { regionDisplayName } from "../lib/regionDisplay";
@@ -97,6 +98,8 @@ export interface FacilityCostDashboardProps {
   wasteRegions: { code: string; name: string; stream: string }[];
   /** The currently-selected suitability candidate (for candidate integration). */
   selectedCandidate: CandidateDetail | null;
+  /** Geometry for the 처리 대상 행정구역 selection map (spec §5). */
+  regionBoundaries?: RegionBoundaryCollection | null;
   /**
    * The view's single `<h1>`, supplied by the page so it always equals the visible
    * navigation destination name (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.2). Previously
@@ -115,6 +118,7 @@ export interface FacilityCostDashboardProps {
 export default function FacilityCostDashboard({
   wasteRegions,
   selectedCandidate,
+  regionBoundaries,
   title,
   orientation,
 }: FacilityCostDashboardProps) {
@@ -310,6 +314,7 @@ export default function FacilityCostDashboard({
           scenario={scenario}
           advancedDefaults={advancedDefaults}
           regionOptions={regionOptions}
+          regionBoundaries={regionBoundaries}
           update={update}
           calculate={calculate}
           calculating={calculating}
@@ -334,6 +339,7 @@ function FacilityCostBody({
   scenario,
   advancedDefaults,
   regionOptions,
+  regionBoundaries,
   update,
   calculate,
   calculating,
@@ -350,6 +356,7 @@ function FacilityCostBody({
   scenario: ScenarioState;
   advancedDefaults: AdvancedDefaults;
   regionOptions: { code: string; name: string }[];
+  regionBoundaries?: RegionBoundaryCollection | null;
   update: <K extends keyof ScenarioState>(key: K, value: ScenarioState[K]) => void;
   calculate: () => void;
   calculating: boolean;
@@ -388,6 +395,7 @@ function FacilityCostBody({
         scenario={scenario}
         advancedDefaults={advancedDefaults}
         regionOptions={regionOptions}
+        regionBoundaries={regionBoundaries}
         update={update}
         onCalculate={calculate}
         calculating={calculating}
@@ -480,6 +488,7 @@ function FacilityCostSetup({
   scenario,
   advancedDefaults,
   regionOptions,
+  regionBoundaries,
   update,
   onCalculate,
   calculating,
@@ -491,6 +500,7 @@ function FacilityCostSetup({
   scenario: ScenarioState;
   advancedDefaults: AdvancedDefaults;
   regionOptions: { code: string; name: string }[];
+  regionBoundaries?: RegionBoundaryCollection | null;
   update: <K extends keyof ScenarioState>(key: K, value: ScenarioState[K]) => void;
   onCalculate: () => void;
   calculating: boolean;
@@ -528,6 +538,7 @@ function FacilityCostSetup({
             options={options}
             scenario={scenario}
             regionOptions={regionOptions}
+            regionBoundaries={regionBoundaries}
             update={update}
             validationMessage={validationMessage}
             headingRef={headingRef}

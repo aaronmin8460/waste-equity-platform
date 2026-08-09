@@ -598,9 +598,44 @@ non-clickable.
 
 **Phase 5C status: PASS.**
 
-## Phase 5B — NOT STARTED
+## Phase 5B — 후보지 분석 administrative-region map
 
-후보지 분석 administrative-region selection map. Phases 6 and 7 not begun;
+`components/facilityCost/FacilityCostRegionMap.tsx`. Click a region to add or
+remove it from the service-region selection; the `SearchableRegionPicker` beside
+it remains the primary accessible control, so this is a second way to do the same
+thing and never the only way.
+
+**Deliberately NOT `MapView`.** `MapView` is a choropleth — palette, class
+breaks, per-region value. That is precisely the thing this map must never be: a
+shaded surface beside a cost figure reads as "cost varies across this area", a
+per-location land-price claim the facility-cost model does not make (spec §5).
+Here the fill is bound to a **boolean feature-state** and nothing else: no
+`interpolate`, no `step`, no `get`, no numeric literal anywhere in the paint
+expression, two colours rather than a ramp, no legend, no symbol layer, and no
+basemap source. The tests read the expressions actually handed to MapLibre, so
+the guarantee is checked against the real style rather than against a comment.
+
+Geometry is the RCIS reporting collection — the same code space
+`data.waste.items` uses for the calculable region list, so a clicked polygon can
+never carry a code the picker has not heard of. Regions the cost model cannot
+calculate are inert rather than selectable-then-rejected. `promoteId:
+"region_code"` gives the features ids, without which every selection repaint
+would be silently dropped.
+
+A real browser error was caught and fixed in e2e: an explicit `glyphs: undefined`
+in the style is rejected by MapLibre's validator ("glyphs: string expected"). The
+key is simply absent now — there are no symbol layers to need it.
+
+| Gate | Result |
+| --- | --- |
+| lint / typecheck / build | **PASS** |
+| `npm test` | **1308 passed / 7 skipped / 0 failed** |
+| `e2e/facilityCostDashboard.spec.ts` | **26 passed / 2 skipped** |
+
+**Phase 5B status: PASS. Phase 5 is complete.**
+
+## Phases 6–7 — NOT STARTED
+
 **RELEASE READY: NO**, nothing pushed, nothing deployed.
 
 Remaining: 후보지 분석 administrative-region selection map (5B) and the
