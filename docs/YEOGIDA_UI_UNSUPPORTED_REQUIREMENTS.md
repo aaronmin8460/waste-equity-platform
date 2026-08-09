@@ -121,4 +121,60 @@ official-landfill section rather than the whole dashboard.
 
 ---
 
-_Phase 2–7 entries are appended below as they are found._
+## U5 — "신규 통과 후보" and "통과 → 제외 후보" scenario metrics
+
+**Requested UI concept:** Cards in the 후보지 심층 비교 comparison showing how
+many candidates newly passed screening, and how many went from passing to
+excluded, under the user's weight scenario.
+
+**Status:** UNSUPPORTED BY CONSTRUCTION — omitted, not zero-filled.
+
+**Why it cannot truthfully be implemented:** A user-weight scenario reweights
+the *frozen* Z/R/E/D component scores of one stored run. It does not re-run
+screening, and it cannot change `ELIGIBLE` / `REVIEW_REQUIRED` / `EXCLUDED`.
+The two counts are therefore not "unavailable" — they are **zero by
+construction**, and printing `0` would tell a reader the question was asked and
+answered when it was never a meaningful question.
+
+**Existing source/API limitation:** `UserScenarioPreview` returns no status
+transition because none occurs; the backend states this in its own
+`scenario_disclaimer`, which the UI and the workbook both carry verbatim.
+
+**Safe alternative used:** The comparison presents only metrics the preview
+genuinely supports — A안 score/rank, B안 score/rank, `rank_delta` and its
+direction, Z/R/E/D components, and the stability class — each scoped to the
+displayed TOP-N list.
+
+**Future work if desired:** Nothing. This is the correct permanent behaviour;
+a status-change metric would require re-running screening, which is a new
+official run, not a preview.
+
+---
+
+## U6 — Population-wide scenario statistics
+
+**Requested UI concept:** Full-population comparison figures (changed-rank count
+across all candidates, a sensitivity scatter, a whole-population export).
+
+**Status:** UNSUPPORTED — replaced with explicitly TOP-N-scoped figures.
+
+**Why it cannot truthfully be implemented:** The preview returns
+`top_candidates` (a TOP-N list) plus `ranking_population` (the full size). Any
+"across all candidates" figure computed from the top-N rows would describe a
+biased slice while claiming to describe the whole — the specific error the spec
+forbids.
+
+**Existing source/API limitation:** No full-population scenario endpoint exists;
+adding one is a backend change outside this redesign.
+
+**Safe alternative used:** Every comparison figure and the XLSX export are
+scoped to the displayed TOP-N, and say so in three places — the button label,
+the workbook preamble, and the sheet tab/filename — printing the exported row
+count *and* `ranking_population` side by side.
+
+**Future work if desired:** A backend endpoint returning population-level
+scenario aggregates would make the full-population figures honest.
+
+---
+
+_Phase 5–7 entries are appended below as they are found._

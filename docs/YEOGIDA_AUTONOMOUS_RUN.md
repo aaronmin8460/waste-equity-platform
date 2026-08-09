@@ -454,7 +454,55 @@ wide single-column views, whose card size is unchanged.
 
 **Phase 3 status: PASS.**
 
-## Phases 4–7 — NOT STARTED
+## Phase 4 — 후보지 심층 비교 + XLSX
+
+**A안** = an existing official comparison profile of the stored run.
+**B안** = the reader's temporary weight scenario over the same frozen Z/R/E/D
+component scores. B안 is never a stored run and never changes a screening
+status; the workbook carries the backend's own `scenario_disclaimer` and
+`screening_disclaimer` verbatim rather than paraphrasing them.
+
+### XLSX
+
+Dependency added: **`write-excel-file@4.1.1`** (MIT), imported dynamically from
+its `/browser` entry so it stays out of the initial bundle. Chosen over SheetJS
+(`xlsx` on npm is stuck on a 2022 release with prototype-pollution advisories)
+and `exceljs` (an order of magnitude larger for two flat sheets).
+
+`lib/xlsx.ts` is the shared writer, with two rules baked in:
+**a missing value is an EMPTY CELL, never `0`** — a spreadsheet is where a
+fabricated zero does the most damage, because the reader sums and charts the
+column — and **scope is stated inside the file**, since a workbook outlives the
+page that produced it.
+
+`lib/scenarioExport.ts` builds the comparison sheet: B안 rank, region identity,
+A안 score/rank, B안 score, `rank_delta` + direction, Z/R/E/D, stability, and
+candidate id. Scope is declared in **three** places (button label, workbook
+preamble, sheet tab + filename) and prints the exported row count against
+`ranking_population`.
+
+**Bug caught by typing:** `UserScenarioRankDirection` is lowercase
+(`"up" | "down" | "same"`). The first implementation compared uppercase, which
+would have silently emptied the direction column for every row. Now fixed and
+pinned by a test in both directions.
+
+Omitted by construction and recorded as U5/U6: 신규 통과 / 통과 → 제외 counts
+(a weight scenario cannot change official status, so `0` would be a false
+answer) and any population-wide statistic derived from top-N rows.
+
+### Validation
+
+| Gate | Result |
+| --- | --- |
+| `npm run lint` / `typecheck` / `build` | **PASS** |
+| `npm test` | **1278 passed / 7 skipped / 0 failed** (up from 1265; +13 export tests) |
+| `e2e/scenario.spec.ts` + `e2e/suitabilityDashboard.spec.ts` | **34 passed** |
+
+**Phase 4 status: PASS.**
+
+---
+
+## Phases 5–7 — NOT STARTED
 
 Phase 4 (후보지 심층 비교 + XLSX), Phase 5 (Page 2 + Page 3 + data modal),
 Phase 6 (release gate), and Phase 7 (OCI deployment) were not begun.
