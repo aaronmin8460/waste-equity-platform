@@ -438,14 +438,21 @@ with `top_fraction: "0.10"` and `top_cutoff_rank: 1751` (= 10% of 17,501). The
 3/3-across-baseline/equal/critic part is already correct. Rewriting "top 10%" to
 "top 10 positions" would make the UI misstate the backend, so it was left alone.
 
-#### Known open item
+#### Resolved open item
 
-`e2e/mapInsightDisclosure.spec.ts:393` (후보지 심층 분석 @ 1440×900) fails: the
+RESOLVED. `e2e/mapInsightDisclosure.spec.ts:393` (후보지 심층 분석 @ 1440×900) had failed: the
 map is narrower with two columns, so the collapsed insight bar now sits at the
 coordinate the test probes for a map click. This is a REAL overlay-collision
 consequence of the new layout, not a stale assertion, and is the next thing to
-fix (likely `pointer-events` on the bottom overlay column, matching the existing
-legend fix). 90/91 of the two affected suites pass.
+fix. **Fixed:** `.map-insight[open]` was `width: 100%` capped at 832px, which
+left the canvas clickable beside it only while the map was wider than the cap.
+With two side columns the map is ~768px at 1440, so the card began spanning the
+whole map. It now reserves a 4rem left gutter — `width: calc(100% - 4rem)` — so a
+strip of canvas stays reachable at every width; the 832px cap still governs the
+wide single-column views, whose card size is unchanged.
+`e2e/mapInsightDisclosure.spec.ts` now passes **60/60**.
+
+**Phase 3 status: PASS.**
 
 ## Phases 4–7 — NOT STARTED
 

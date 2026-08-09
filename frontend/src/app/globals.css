@@ -1091,7 +1091,18 @@ body {
    surrounding overlay column shrink it to the available map width at 1024px, where
    the map is only ~624px wide, instead of pushing anything past the map edge. */
 .map-insight[open] {
-  width: 100%;
+  /* A LEFT GUTTER, not the full width.
+
+     This was `width: 100%` with a 832px cap, which left the map clickable beside
+     the card only while the map was wider than 832px. 후보지 심층 분석 now has
+     two side columns, so at 1440 the map is ~768px — narrower than the cap — and
+     the open card began spanning the entire map, swallowing clicks aimed at the
+     canvas next to it (e2e/mapInsightDisclosure.spec.ts:393).
+
+     Reserving 4rem keeps a strip of canvas reachable at every width, and the
+     832px cap still governs the wide single-column views, where the card's size
+     is unchanged. */
+  width: calc(100% - 4rem);
   max-width: 52rem; /* 832px */
 }
 .map-insight[open] > summary {
