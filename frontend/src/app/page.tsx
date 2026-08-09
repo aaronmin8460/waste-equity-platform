@@ -106,6 +106,12 @@ import type { MunicipalCostErrorState } from "../lib/municipalCost";
 import { municipalCostErrorFrom } from "../lib/municipalCost";
 import DashboardShell from "../components/DashboardShell";
 import ResizableSidebar from "../components/ui/ResizableSidebar";
+import CollapsiblePanel from "../components/ui/CollapsiblePanel";
+import {
+  RelativeGradePanel,
+  RelativeGradeUnavailable,
+} from "../components/suitability/RelativeGradeChip";
+import { computeGradeDistribution, type GradeDistribution } from "../lib/relativeGrade";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import LandCoverLayerControl from "../components/LandCoverLayerControl";
 import type { ClassLevel } from "../lib/landCover";
@@ -254,6 +260,19 @@ export default function Home() {
   const [profile, setProfile] = useState<SuitabilityProfile>("baseline");
   // Sub-view inside suitability mode: 후보지 점수 (score) or 비용 살펴보기 (cost).
   const [suitabilityView, setSuitabilityView] = useState<SuitabilityView>("score");
+
+  // 후보지 심층 분석 workspace: which of the two side columns are collapsed. Local
+  // layout preference only — deliberately NOT in the URL, because a shared link
+  // should restore an ANALYSIS, not someone else's panel arrangement.
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+
+  // The A/B/C relative band distribution for the active run + profile.
+  //   null + settled=false → still loading (render nothing rather than a guess)
+  //   null + settled=true  → the complete population could not be established,
+  //                          so the bands are DISABLED and say so.
+  const [gradeDistribution, setGradeDistribution] = useState<GradeDistribution | null>(null);
+  const [gradeSettled, setGradeSettled] = useState(false);
 
   // The persistent identity of the selected region is its region CODE, not a
   // captured metric-value snapshot. The full RegionSelection (label + value +
@@ -465,6 +484,41 @@ export default function Home() {
       .then((summary) => setSuit((prev) => (prev ? { ...prev, summary } : prev)))
       .catch(() => undefined);
   }, [profile, mode]);
+
+  // Load the relative-band thresholds for the run+profile currently on the map.
+  //
+  // Four ~1 KB order-statistic reads (see lib/relativeGrade.ts), and only while
+  // 후보지 심층 분석 is actually open — the bands are not shown anywhere else, so
+  // no other view pays for them. Keyed on run + profile because a different
+  // profile is a genuinely different score distribution.
+  useEffect(() => {
+    if (mode !== "suitability" || suitabilityView !== "score" || !suit) return;
+    let cancelled = false;
+    const runId = suit.run.id;
+    /* eslint-disable react-hooks/set-state-in-effect -- clear the PREVIOUS key's
+       bands before the new key's read begins. Leaving the old distribution on
+       screen would briefly label candidates with thresholds computed for a
+       different profile — exactly the silently-wrong number this feature exists
+       to avoid. Clearing to the honest "not yet known" state is the safe move. */
+    setGradeSettled(false);
+    setGradeDistribution(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    computeGradeDistribution(runId, profile)
+      .then((distribution) => {
+        if (cancelled) return;
+        setGradeDistribution(distribution);
+        setGradeSettled(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Never a fabricated threshold: an error settles into the disabled state.
+        setGradeDistribution(null);
+        setGradeSettled(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, suitabilityView, suit, profile]);
 
   // No candidate fetch here anymore: the map serves the complete suitability grid
   // as PostGIS vector tiles (see suitabilityTileUrl / MapView's vector source), so
@@ -695,6 +749,12 @@ export default function Home() {
     },
     [changeMode, changeSuitabilityView],
   );
+
+  /**
+   * True on 후보지 심층 분석 — the one destination that uses the three-column
+   * collapsible workspace instead of the resizable single column.
+   */
+  const deepAnalysis = mode === "suitability" && suitabilityView === "score";
 
   /** The destination the current analytical state renders as. */
   const destination = useMemo(
@@ -1555,13 +1615,56 @@ export default function Home() {
           distinct `.wep-card` (the shell root is the application canvas, cards are
           white surfaces — docs/ui-refresh/design-tokens.md §2).
 
-          `ResizableSidebar` renders the <aside> AND the drag handle beside it. The
-          fixed `md:w-96` (384px) is gone: the desktop width is now 300–520px,
-          default 360, remembered per reader (spec §3). It still stacks full-width on
-          phones and scrolls independently at md+, and the map beside it follows
-          through MapView's EXISTING container ResizeObserver — this adds no second
-          observer and never remounts the map. */}
-      <ResizableSidebar>
+          TWO different left columns live here:
+            - 지역 지표 and 후보지 심층 비교 keep the RESIZABLE column (Phase 2);
+            - 후보지 심층 분석 uses the collapsible three-column workspace instead
+              (spec §6), so its controls move into `CollapsiblePanel`.
+
+          The map element stays at the SAME child index in both shapes, which is
+          what lets React reconcile it rather than remount it when the reader moves
+          between areas (asserted by app/shell.test.tsx). */}
+      {deepAnalysis ? (
+        <CollapsiblePanel
+          side="left"
+          label="분석 조건"
+          collapsed={leftPanelCollapsed}
+          onToggle={setLeftPanelCollapsed}
+          panelId="deep-analysis-left"
+          testId="deep-left-panel"
+        >
+        {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
+            데이터·출처, and 비용 살펴보기 already title themselves. The product name
+            it replaced now lives in the app bar's brand block, so the same words no
+            longer appear twice on one screen; the scope line below it is the exact
+            string this header carried before. See
+            docs/ui-refresh/regression-contract.md §10. ModeOrientation stays a
+            SIBLING so it still follows the h1 in document order (shell.test.tsx)
+            while keeping the column's gap-3 rhythm. */}
+        <PageHeader
+          title={destination.label}
+          description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
+        />
+
+        <ModeOrientation destination={destination} />
+          <SuitabilityScreeningNotice />
+          <SuitabilitySidebar
+            part="left"
+            suit={suit}
+            suitError={suitError}
+            profile={profile}
+            setProfile={setProfile}
+            runProfiles={runProfiles}
+            stabilityAvailable={stabilityAvailable}
+            selected={selected}
+            clearSelected={() => setSelected(null)}
+            onSelect={onCandidateClick}
+            statusVisibility={statusVisibility}
+            stableOnly={stableOnly && stabilityAvailable}
+            statusColors={CANDIDATE_STATUS_COLORS}
+          />
+        </CollapsiblePanel>
+      ) : (
+        <ResizableSidebar>
         {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
             데이터·출처, and 비용 살펴보기 already title themselves. The product name
             it replaced now lives in the app bar's brand block, so the same words no
@@ -1762,7 +1865,8 @@ export default function Home() {
           </>
         )}
 
-      </ResizableSidebar>
+        </ResizableSidebar>
+      )}
 
       {/* The map wrapper. Its MapLibre child is `h-full` (100% of this box), so the
           box needs a *definite* height. The dedicated `.map-pane` class (globals.css)
@@ -1971,6 +2075,42 @@ export default function Home() {
           ) : null}
         </div>
       </div>
+
+      {deepAnalysis && (
+        <CollapsiblePanel
+          side="right"
+          label="후보지 결과"
+          collapsed={rightPanelCollapsed}
+          onToggle={setRightPanelCollapsed}
+          panelId="deep-analysis-right"
+          testId="deep-right-panel"
+        >
+          <SuitabilitySidebar
+            part="right"
+            suit={suit}
+            suitError={suitError}
+            profile={profile}
+            setProfile={setProfile}
+            runProfiles={runProfiles}
+            stabilityAvailable={stabilityAvailable}
+            selected={selected}
+            clearSelected={() => setSelected(null)}
+            onSelect={onCandidateClick}
+            statusVisibility={statusVisibility}
+            stableOnly={stableOnly && stabilityAvailable}
+            statusColors={CANDIDATE_STATUS_COLORS}
+            relativeGradePanel={
+              /* Nothing at all while the population is still being read — a
+                 placeholder band would be a claim we cannot yet make. */
+              !gradeSettled ? null : gradeDistribution ? (
+                <RelativeGradePanel distribution={gradeDistribution} />
+              ) : (
+                <RelativeGradeUnavailable />
+              )
+            }
+          />
+        </CollapsiblePanel>
+      )}
 
       {/* Print / PNG report preview overlay (map-free). Opened from the equity
           share/export bar; the model is the ranking or the region comparison. */}

@@ -258,7 +258,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
 
         const others: { label: string; locator: Locator }[] = [
           { label: "legend", locator: page.getByTestId("map-legend") },
-          { label: "sidebar (metric/profile selector)", locator: page.locator("aside") },
+          { label: "sidebar (metric/profile selector)", locator: page.getByTestId("deep-left-panel") },
           { label: "zoom controls", locator: page.locator(".maplibregl-ctrl-top-right") },
           { label: "wetland control", locator: page.getByTestId("wetland-layer-control") },
           { label: "land-cover control", locator: page.getByTestId("land-cover-layer-control") },

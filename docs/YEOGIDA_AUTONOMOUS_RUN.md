@@ -402,6 +402,51 @@ expensive part.
 
 ---
 
+### Phase 3b — three-column workspace (this turn)
+
+Delivered: `components/ui/CollapsiblePanel.tsx` (an `<aside>` per column),
+`components/suitability/RelativeGradeChip.tsx`, the `part="left" | "right"` split
+of `SuitabilitySidebar`, the workspace restructure in `page.tsx`, and
+`app/page.deepAnalysis.test.tsx` (20 tests).
+
+- Left = 분석 조건 (scoring basis, Z/R/E/D weights, status/stability context,
+  method + limitations). Right = 후보지 결과 (relative bands, stability, ranking,
+  selected candidate, served reasons). Map stays between them at a STABLE child
+  index, so React reconciles it instead of remounting when areas change.
+- Each column collapses to a 48px rail independently; the body is hidden by a
+  CSS class scoped to md+ (never the `hidden` attribute), so a phone always has
+  the full stacked content and no unopenable panel.
+- Panels are always mounted — collapsing cannot remount the map or drop state.
+  Asserted by node IDENTITY, not presence.
+- `computeGradeDistribution` is now memoised per run+profile (successes only;
+  failures stay retryable). This removed a real regression: the four reads fired
+  on every mount and pushed `page.suitabilityDashboard.test.tsx` from ~17s to
+  ~45s, which surfaced two `waitFor` flakes. With the cache the full unit suite
+  is **1265 passed / 0 failed**, including the previously-documented
+  `page.phase7` flake.
+- Panel width is 15.5rem below 1280px and 21rem above. At 21rem the PAIR left
+  only ~336px of map at the 1024px minimum and the floating overlays collided —
+  a genuine defect found by e2e and fixed, not silenced.
+
+**Stable-candidate semantics — checked, and deliberately NOT changed.** A review
+instruction asserted the rule is "top 10 ranked positions". The authoritative
+backend says otherwise, in two independent places:
+`backend/src/waste_equity_backend/analysis/suitability/policy.py:128` and the
+live production API, whose `stability_definition` reads *"remains in the top 10%
+of complete ELIGIBLE candidates under baseline, equal, and CRITIC profiles"*
+with `top_fraction: "0.10"` and `top_cutoff_rank: 1751` (= 10% of 17,501). The
+3/3-across-baseline/equal/critic part is already correct. Rewriting "top 10%" to
+"top 10 positions" would make the UI misstate the backend, so it was left alone.
+
+#### Known open item
+
+`e2e/mapInsightDisclosure.spec.ts:393` (후보지 심층 분석 @ 1440×900) fails: the
+map is narrower with two columns, so the collapsed insight bar now sits at the
+coordinate the test probes for a map click. This is a REAL overlay-collision
+consequence of the new layout, not a stale assertion, and is the next thing to
+fix (likely `pointer-events` on the bottom overlay column, matching the existing
+legend fix). 90/91 of the two affected suites pass.
+
 ## Phases 4–7 — NOT STARTED
 
 Phase 4 (후보지 심층 비교 + XLSX), Phase 5 (Page 2 + Page 3 + data modal),

@@ -708,6 +708,151 @@ body {
   }
 }
 
+/* Three-column 후보지 심층 분석 workspace (components/ui/CollapsiblePanel.tsx).
+
+   Mobile: every column is just a section in the stack — full width, body always
+   shown, no rail and no toggle. A phone must never be able to reach a state where
+   an analytical panel is closed with no way to open it.
+
+   md+: each column is a fixed-width flex item beside the map. Collapsing swaps
+   that width for a narrow rail, and the freed width goes to `.map-pane`
+   (`flex: 1 1 0%`), whose existing ResizeObserver in MapView then resizes the
+   canvas. Nothing here touches the map. */
+.wep-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-bottom: 1px solid var(--color-hairline);
+  background: var(--color-surface-sunken);
+}
+.wep-panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+.wep-panel-title {
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wep-panel-toggle {
+  display: none; /* desktop-only affordance; see the md+ block */
+}
+.wep-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0 0.75rem 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .wep-panel {
+    flex: none;
+    /* 248px between 768 and 1279. TWO columns flank the map here, so the pair
+       costs double: at 21rem each they left only ~336px of map at the 1024px
+       minimum, and the floating overlays (legend, layer stack, insight card)
+       then collided with each other and with the columns. 15.5rem keeps the map
+       above 500px at 1024 while still fitting the controls. */
+    width: 15.5rem;
+    border-bottom: 0;
+    overflow-y: auto;
+    /* Only the width animates; the body is display-toggled, so there is nothing
+       to interpolate inside it. */
+    transition: width 0.16s ease;
+  }
+  .wep-panel[data-side="left"] {
+    border-right: 1px solid var(--color-hairline);
+  }
+  .wep-panel[data-side="right"] {
+    border-left: 1px solid var(--color-hairline);
+  }
+  .wep-panel-toggle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    /* 32px: comfortably clickable while keeping the collapsed rail narrow. */
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--color-hairline-strong);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-ink-muted);
+    cursor: pointer;
+  }
+  .wep-panel-toggle:hover {
+    border-color: var(--color-primary-border);
+    background: var(--color-primary-soft);
+    color: var(--color-primary);
+  }
+  /* Collapsed: a rail just wide enough for the toggle plus its padding. */
+  .wep-panel-collapsed {
+    width: 3rem;
+    overflow: hidden;
+  }
+  .wep-panel-collapsed .wep-panel-bar {
+    justify-content: center;
+    padding-inline: 0.5rem;
+  }
+  .wep-panel-collapsed .wep-panel-body {
+    /* Removes it from layout, the a11y tree, and the tab order — the correct
+       state for a column the reader has closed. React keeps it mounted. */
+    display: none;
+  }
+}
+
+/* Above 1280px there is room for the roomier column the controls prefer. */
+@media (min-width: 1280px) {
+  .wep-panel {
+    width: 21rem; /* 336px */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wep-panel {
+    transition: none;
+  }
+}
+
+/* 상대 점수 구간 (A/B/C) chips (lib/relativeGrade.ts).
+   Each band is distinguished by its LETTER first — the fill is a supporting
+   signal only, so the bands survive a grayscale render or a colour deficiency.
+   These are deliberately NOT the official status colours: a reader must never
+   confuse a relative band with a screening outcome. */
+.wep-grade {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0 0.375rem;
+  border: 1px solid;
+  border-radius: var(--radius-control);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.wep-grade-A {
+  border-color: #b6c0e0;
+  background: #e8ecf8;
+  color: #16205f;
+}
+.wep-grade-B {
+  border-color: #cdd2dd;
+  background: #f0f2f6;
+  color: #3f4459;
+}
+.wep-grade-C {
+  border-color: #dcdfe6;
+  background: #f7f8fa;
+  color: #5b6070;
+}
+
 /* Map pane sizing.
    Replaces the ambiguous stack of `h-[60vh] h-[60dvh] md:h-auto md:min-h-0
    md:flex-1` utilities that previously sized the map wrapper. Two problems it

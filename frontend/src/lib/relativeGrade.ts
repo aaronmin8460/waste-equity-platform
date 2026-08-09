@@ -163,6 +163,27 @@ function parseScore(raw: string | null | undefined): number | null {
 }
 
 /**
+ * Successful distributions, keyed by `runId:profile`.
+ *
+ * A stored analysis run is IMMUTABLE — its scores never change — so the
+ * thresholds for a given run+profile are a constant, and re-reading them when a
+ * reader navigates away and back (or flips between two profiles they have
+ * already seen) is pure waste. Caching turns those repeat visits into zero
+ * requests.
+ *
+ * Only SUCCESSES are cached. A failure is usually transient, and caching `null`
+ * would disable the bands for the rest of the session over one dropped request.
+ * In-flight promises are cached too, so two components mounting at once share a
+ * single read instead of racing four requests each.
+ */
+const distributionCache = new Map<string, Promise<GradeDistribution | null>>();
+
+/** Test seam: drop the memo so a spec can observe the requests it triggers. */
+export function __resetGradeCache(): void {
+  distributionCache.clear();
+}
+
+/**
  * Compute the thresholds and the exact band sizes for one run + profile.
  *
  * Returns `null` — never a guess — when the complete population cannot be
@@ -173,7 +194,24 @@ function parseScore(raw: string | null | undefined): number | null {
  *
  * A population below 4 cannot produce meaningful quartiles, so it is refused.
  */
-export async function computeGradeDistribution(
+export function computeGradeDistribution(
+  runId: number,
+  profile: SuitabilityProfile,
+): Promise<GradeDistribution | null> {
+  const key = `${runId}:${profile}`;
+  const cached = distributionCache.get(key);
+  if (cached) return cached;
+  const pending = readGradeDistribution(runId, profile).then((result) => {
+    // Forget a failure so the next visit retries; keep a success forever, since
+    // a stored run's scores cannot change.
+    if (result === null) distributionCache.delete(key);
+    return result;
+  });
+  distributionCache.set(key, pending);
+  return pending;
+}
+
+async function readGradeDistribution(
   runId: number,
   profile: SuitabilityProfile,
 ): Promise<GradeDistribution | null> {

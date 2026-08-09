@@ -65,13 +65,23 @@ for (const vp of VIEWPORTS) {
       );
       expect(documentScrolls, "no page-level vertical scroll").toBe(false);
 
-      const sidebar = page.locator("aside");
+      // 후보지 심층 분석 now has TWO complementary columns (분석 조건 / 후보지 결과),
+      // so a bare `aside` locator is ambiguous. The "control column" this test is
+      // about is the left one; the right column is asserted the same way below.
+      const sidebar = page.getByTestId("deep-left-panel");
       await expect(sidebar).toBeVisible();
       expect(await sidebar.evaluate((el) => getComputedStyle(el).overflowY)).toBe("auto");
 
       // The control column ends at the viewport bottom rather than pushing the page.
       const sidebarBox = (await sidebar.boundingBox())!;
       expect(sidebarBox.y + sidebarBox.height).toBeLessThanOrEqual(vp.height + 2);
+
+      // The results column is its own scroll container with the same contract.
+      const results = page.getByTestId("deep-right-panel");
+      await expect(results).toBeVisible();
+      expect(await results.evaluate((el) => getComputedStyle(el).overflowY)).toBe("auto");
+      const resultsBox = (await results.boundingBox())!;
+      expect(resultsBox.y + resultsBox.height).toBeLessThanOrEqual(vp.height + 2);
 
       // It is long enough at every supported height that it must scroll LOCALLY —
       // and doing so moves only the sidebar, leaving the page still.

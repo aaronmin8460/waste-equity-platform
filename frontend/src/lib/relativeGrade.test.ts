@@ -18,6 +18,7 @@ import {
   GRADE_LABELS,
   RELATIVE_GRADE_EXPLANATION,
   ascendingIndexToDescendingRank,
+  __resetGradeCache,
   computeGradeDistribution,
   gradeFor,
   nearestRankIndex,
@@ -166,6 +167,9 @@ function coll(totalMatched: number, score: string | null = null): Coll {
 
 let spy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
+  // The module memoises successful distributions, so each test starts from a
+  // cold cache or it would observe the previous test's reads.
+  __resetGradeCache();
   spy = vi.spyOn(api, "fetchSuitabilityCandidates");
 });
 afterEach(() => vi.restoreAllMocks());
@@ -253,6 +257,32 @@ describe("computeGradeDistribution", () => {
   it("degrades to null — never to a fabricated threshold — on a request failure", async () => {
     spy.mockRejectedValue(new Error("network"));
     expect(await computeGradeDistribution(48, "baseline")).toBeNull();
+  });
+
+  it("memoises a success, so revisiting the same run+profile costs nothing", async () => {
+    // A stored run is immutable, so its thresholds are a constant.
+    wireHappyPath(17501, "47.6779", "57.811", 4914, 13317);
+    const first = await computeGradeDistribution(48, "baseline");
+    const callsAfterFirst = spy.mock.calls.length;
+    const second = await computeGradeDistribution(48, "baseline");
+    expect(second).toEqual(first);
+    expect(spy.mock.calls.length, "no second read").toBe(callsAfterFirst);
+  });
+
+  it("does NOT memoise a failure, so a dropped request can be retried", async () => {
+    // Caching null would disable the bands for the whole session over one blip.
+    spy.mockRejectedValue(new Error("network"));
+    expect(await computeGradeDistribution(48, "baseline")).toBeNull();
+    wireHappyPath(17501, "47.6779", "57.811", 4914, 13317);
+    expect(await computeGradeDistribution(48, "baseline")).not.toBeNull();
+  });
+
+  it("keys the cache by profile, so a different profile is read afresh", async () => {
+    wireHappyPath(17501, "47.6779", "57.811", 4914, 13317);
+    await computeGradeDistribution(48, "baseline");
+    const after = spy.mock.calls.length;
+    await computeGradeDistribution(48, "equal");
+    expect(spy.mock.calls.length, "a different distribution").toBeGreaterThan(after);
   });
 });
 

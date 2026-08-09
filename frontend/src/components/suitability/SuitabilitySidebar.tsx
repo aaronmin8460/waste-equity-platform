@@ -59,6 +59,24 @@ export interface SuitabilitySidebarProps {
   stableOnly: boolean;
   /** Status swatch colors from the page's candidate constants. */
   statusColors: Record<SuitabilityStatus, string>;
+  /**
+   * Which column of the three-column 후보지 심층 분석 workspace to render
+   * (docs/YEOGIDA_UI_REDESIGN_SPEC.md §6).
+   *
+   *   "left"  — what you ASK: scoring basis, weights, status/stability context,
+   *             method and limitations.
+   *   "right" — what you GET: ranking, relative band, selected candidate, and the
+   *             served exclusion/review reasons.
+   *   "all"   — the original single column, still used by the stacked mobile
+   *             layout and by 후보지 심층 비교, which has no third column.
+   *
+   * Splitting by prop rather than into two components keeps ONE definition of the
+   * loading, error, and live-region behaviour; two components would be two places
+   * for those to drift apart.
+   */
+  part?: "left" | "right" | "all";
+  /** The A/B/C panel, injected by the page (it owns the distribution fetch). */
+  relativeGradePanel?: React.ReactNode;
 }
 
 export default function SuitabilitySidebar({
@@ -74,8 +92,13 @@ export default function SuitabilitySidebar({
   statusVisibility,
   stableOnly,
   statusColors,
+  part = "all",
+  relativeGradePanel,
 }: SuitabilitySidebarProps) {
+  // The error and loading states belong to ONE column. Rendering them in both
+  // would duplicate a single failure into two identical messages on one screen.
   if (suitError) {
+    if (part === "right") return null;
     return (
       <SectionCard title="후보지 점수" testId="suitability-error">
         {/* A genuine, actionable failure — the one place `role="alert"` is correct
@@ -87,6 +110,7 @@ export default function SuitabilitySidebar({
     );
   }
   if (suit === null) {
+    if (part === "right") return null;
     return (
       <p className="text-sm text-ink-muted" role="status" data-testid="suitability-loading">
         후보지 분석을 불러오는 중…
@@ -95,17 +119,22 @@ export default function SuitabilitySidebar({
   }
 
   const summary = suit.summary;
+  const showLeft = part === "left" || part === "all";
+  const showRight = part === "right" || part === "all";
   return (
     <>
       {/* Screen-reader status: announced when the score basis changes and when the
           candidate summary updates (both change this text). Kept concise; the same
           counts are shown visibly below. Unchanged wording. */}
+      {showLeft && (
       <p role="status" className="sr-only" data-testid="suitability-live">
         점수 반영 기준 {profileLabel(profile)}. {statusLabel("ELIGIBLE")}{" "}
         {formatCount(summary.candidate_count_eligible)}개, {statusLabel("REVIEW_REQUIRED")}{" "}
         {formatCount(summary.candidate_count_review)}개.
       </p>
+      )}
 
+      {showLeft && (
       <SuitabilityScoringBasis
         policy={suit.policy}
         run={suit.run}
@@ -114,7 +143,9 @@ export default function SuitabilitySidebar({
         runProfiles={runProfiles}
         stabilityAvailable={stabilityAvailable}
       />
+      )}
 
+      {showLeft && (
       <SuitabilityStatusSummary
         summary={summary}
         policy={suit.policy}
@@ -124,9 +155,15 @@ export default function SuitabilitySidebar({
         stabilityAvailable={stabilityAvailable}
         statusColors={statusColors}
       />
+      )}
 
+      {showRight && relativeGradePanel}
+
+      {showRight && (
       <SuitabilityStabilitySummary summary={summary} available={stabilityAvailable} />
+      )}
 
+      {showRight && (
       <SuitabilityCandidateList
         summary={summary}
         profile={profile}
@@ -134,21 +171,28 @@ export default function SuitabilitySidebar({
         onSelect={onSelect}
         stabilityAvailable={stabilityAvailable}
       />
+      )}
 
+      {showRight && (
       <SuitabilityCandidateSummary detail={selected} clearSelected={clearSelected} />
+      )}
 
+      {showRight && (
       <ReasonSummary
         title="현재 기준에서 제외된 사유"
         counts={summary.exclusion_reason_counts}
         testId="exclusion-reason-summary"
       />
+      )}
+      {showRight && (
       <ReasonSummary
         title="추가 확인이 필요한 사유"
         counts={summary.review_reason_counts}
         testId="review-reason-summary"
       />
+      )}
 
-      {summary.coverage_notes.length > 0 && (
+      {showLeft && summary.coverage_notes.length > 0 && (
         <SectionCard title="자료 공백 안내" testId="coverage-warnings">
           <ul className="list-disc space-y-1 pl-4 text-xs text-ink-muted">
             {summary.coverage_notes.map((note) => (
@@ -161,6 +205,7 @@ export default function SuitabilitySidebar({
         </SectionCard>
       )}
 
+      {showLeft && (
       <SectionCard title="계산 방법과 가정" testId="suitability-methodology">
         <ul className="list-disc space-y-1 pl-4 text-xs text-ink-muted">
           {summary.assumptions.map((assumption) => (
@@ -174,6 +219,7 @@ export default function SuitabilitySidebar({
           <UnmodeledFactorsDisclosure testId="suitability-unmodeled-factors" />
         </div>
       </SectionCard>
+      )}
     </>
   );
 }

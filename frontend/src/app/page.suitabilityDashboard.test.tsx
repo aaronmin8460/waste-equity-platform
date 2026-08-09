@@ -368,7 +368,12 @@ describe("후보지 점수 — shell contracts", () => {
     // The segmented sub-view bar is retired — the six destinations select `view`.
     expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(0);
     expect(container.querySelectorAll("main")).toHaveLength(1);
-    expect(container.querySelectorAll("aside")).toHaveLength(1);
+    // TWO complementary columns now flank the map — the collapsible 분석 조건 and
+    // 후보지 결과 panels of the three-column workspace (spec §6). Before the
+    // redesign this view had a single resizable column, hence the old count of 1.
+    expect(container.querySelectorAll("aside")).toHaveLength(2);
+    expect(screen.getByTestId("deep-left-panel")).toBeDefined();
+    expect(screen.getByTestId("deep-right-panel")).toBeDefined();
     // One global navigation (the app bar's `mode-switch` group), not one per branch.
     expect(container.querySelectorAll('[data-testid="top-navigation"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-testid="mode-switch"]')).toHaveLength(1);
@@ -669,14 +674,22 @@ describe("후보지 점수 — selected-candidate summary", () => {
 // --------------------------------------------------------------------------- //
 
 describe("후보지 점수 — no raw enum on the primary surface", () => {
-  it("keeps forbidden technical tokens out of the sidebar once diagnostics are stripped", async () => {
+  it("keeps forbidden technical tokens out of BOTH panels once diagnostics are stripped", async () => {
     const { container } = await enterScore();
-    const aside = container.querySelector("aside")!;
-    const clone = aside.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll("[data-diagnostic]").forEach((node) => node.remove());
-    // Detail disclosures are the sanctioned home for a version string.
-    clone.querySelectorAll("details").forEach((node) => node.remove());
-    const text = clone.textContent ?? "";
+    // The controls and the results are two columns now, so the audit has to scan
+    // both — checking only the first would leave the whole results panel
+    // (ranking, relative bands, selected candidate) unaudited.
+    const asides = Array.from(container.querySelectorAll("aside"));
+    expect(asides.length).toBe(2);
+    const text = asides
+      .map((aside) => {
+        const clone = aside.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll("[data-diagnostic]").forEach((node) => node.remove());
+        // Detail disclosures are the sanctioned home for a version string.
+        clone.querySelectorAll("details").forEach((node) => node.remove());
+        return clone.textContent ?? "";
+      })
+      .join(" ");
     for (const token of FORBIDDEN_PRIMARY_TOKENS) {
       // The served reason strings are the backend's own text, shown verbatim in the
       // reason breakdowns; they are not this milestone's labels.
