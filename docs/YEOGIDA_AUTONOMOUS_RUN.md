@@ -541,7 +541,61 @@ suite has been fully green in the run.
 | `npm test` | **1286 passed / 7 skipped / 0 failed** (up from 1278) |
 | `e2e/phase5LandfillDashboard.spec.ts` | **37/37 PASS** |
 
-## Phase 5B / 5C — NOT STARTED
+## Phase 5C — 데이터·출처 as a dialog
+
+`components/ui/Dialog.tsx` + the page rewiring. 데이터·출처 is no longer a page:
+it is a modal layered over the destination the reader was already on.
+
+- `role="dialog"` + `aria-modal` + `aria-labelledby` on the visible title; the
+  title is an `<h2>`, so the page keeps its single `<h1>` (the destination behind).
+- Focus moves into the panel on open and is restored to the exact opener on
+  close; Tab/Shift+Tab wrap inside; Escape closes; the body behind cannot scroll
+  while the dialog's own body does.
+- `lastArea` records the last non-transparency `(mode, view)`, so closing returns
+  to the exact sub-view — 후보지 분석 (cost), not just "suitability". It is typed
+  `Exclude<DashboardMode, "transparency">`, which makes a close-loop impossible
+  by construction. A cold `?v=1&mode=transparency` deep link defaults the area
+  behind to 지역 지표 rather than a blank frame.
+- `URL_STATE_VERSION` is untouched and `mode=transparency` still round-trips.
+- `TransparencyDashboard` gains `embedded`, which drops its page gutters and its
+  `PageHeader` so the title is not printed twice; all catalogue/search/filter/gap
+  functionality is reused unchanged.
+
+New tests: `app/page.dataDialog.test.tsx` (13) — nav opens the dialog, the prior
+destination stays mounted (same node, no remount), legacy URL, close returns to
+the exact sub-view, a three-round open/close loop stays stable, focus enter and
+restore, Escape, named close control, and body-scroll lock/release.
+
+| Gate | Result |
+| --- | --- |
+| lint / typecheck / build | **PASS** |
+| `npm test` | **1299 passed / 7 skipped / 0 failed** (up from 1286) |
+| `e2e/phase6DataSourcesDashboard.spec.ts` | **PASS** |
+| `e2e/transparencyDashboard.spec.ts` | **46 / 50** |
+
+### Open — 4 e2e assertions, three repair attempts spent
+
+All four are in `transparencyDashboard.spec.ts` and are consequences of the
+page→dialog change rather than data problems:
+
+- ×3 `uses the desktop width for the catalog…` at 1280/1440/1920. The catalogue
+  now lives in a width-capped dialog rather than a viewport-wide page, so the
+  column count differs from the old viewport-derived expectation. Re-pointing it
+  at the dialog container did not settle it and needs the real rendered geometry
+  inspected rather than another guess.
+- ×1 `holds the map contract through a full round trip`. The nav is inert behind
+  the modal (correct), so the loop must close the dialog before each hop; the
+  close step was added but the step table still needs its expected map counts
+  re-derived per hop.
+
+These are layout/measurement assertions, not integrity ones. **Phase 5C is
+therefore PASS WITH NON-BLOCKING LIMITATIONS**, and they must be resolved before
+the Phase 6 release gate can pass.
+
+## Phase 5B — NOT STARTED
+
+후보지 분석 administrative-region selection map. Phases 6 and 7 not begun;
+**RELEASE READY: NO**, nothing pushed, nothing deployed.
 
 Remaining: 후보지 분석 administrative-region selection map (5B) and the
 데이터·출처 modal with legacy-URL and history behaviour (5C). Phases 6 and 7 have

@@ -97,6 +97,7 @@ export default function TransparencyDashboard({
   data,
   orientation,
   title,
+  embedded = false,
 }: {
   data: LoadedData;
   /**
@@ -112,6 +113,14 @@ export default function TransparencyDashboard({
    * names for one place.
    */
   title: string;
+  /**
+   * Rendered inside the 데이터·출처 dialog rather than as a page.
+   *
+   * The dialog supplies its own heading, padding, and scroll container, so the
+   * embedded form drops this component's page gutters and its `PageHeader` —
+   * otherwise the reader would meet the title twice and scroll two boxes.
+   */
+  embedded?: boolean;
 }) {
   const [freshness, setFreshness] = useState<DataFreshnessItem[] | null>(null);
   const [freshnessState, setFreshnessState] = useState<FreshnessState>("loading");
@@ -247,11 +256,24 @@ export default function TransparencyDashboard({
     // <main id="main-content"> skip-link target, so this is a plain content block.
     // No <aside> is introduced — `desktopNavigation.spec.ts` asserts this view has
     // none, and a sticky rail here would also narrow the full-width source section.
-    <div className="w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8" data-testid="transparency-dashboard">
+    <div
+      className={
+        embedded
+          ? "w-full px-4 pt-4 pb-8 sm:px-6"
+          : "w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8"
+      }
+      data-testid="transparency-dashboard"
+    >
       <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-5">
-        <PageHeader title={title} description={HEADER_SUMMARY}>
-          {orientation}
-        </PageHeader>
+        {embedded ? (
+          // The dialog's own <h2> is the title; a PageHeader here would repeat it
+          // and would also introduce a second heading inside the dialog.
+          <p className="text-sm text-ink-muted">{HEADER_SUMMARY}</p>
+        ) : (
+          <PageHeader title={title} description={HEADER_SUMMARY}>
+            {orientation}
+          </PageHeader>
+        )}
 
         {/* Standing explanation, so deliberately NOT role="alert" — an alert here
             would interrupt a screen reader on every render for information that is

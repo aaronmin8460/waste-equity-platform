@@ -92,19 +92,28 @@ for (const vp of VIEWPORTS) {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
 
+      // 데이터·출처 is a DIALOG over the previous destination now (spec §8), so the
+      // old "map-free page with 데이터·출처 as the h1" contract no longer applies:
+      // the h1 belongs to the destination BEHIND the dialog, and the dialog's own
+      // title is an h2. What is asserted instead is the dialog contract, which is
+      // strictly more than the page one used to guarantee.
+      const dialog = page.getByTestId("data-sources-dialog");
+      await expect(dialog).toHaveAttribute("role", "dialog");
+      await expect(dialog).toHaveAttribute("aria-modal", "true");
+      await expect(dialog.getByRole("heading", { name: "데이터·출처" })).toBeVisible();
+      // Still exactly one page-level h1, and it is NOT inside the dialog.
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText("데이터·출처");
+      await expect(dialog.locator("h1")).toHaveCount(0);
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
       await expect(page.locator("main")).toHaveCount(1);
       await expect(page.locator("#main-content")).toHaveCount(1);
-      // Map-free, sidebar-free, and no 후보지 분석 sub-view selector.
-      await expect(page.getByTestId("map-container")).toHaveCount(0);
-      await expect(page.locator("canvas")).toHaveCount(0);
-      await expect(page.locator("aside")).toHaveCount(0);
+      // The catalogue itself carries no map, no sidebar, and no sub-view selector.
+      await expect(dialog.getByTestId("map-container")).toHaveCount(0);
+      await expect(dialog.locator("canvas")).toHaveCount(0);
+      await expect(dialog.locator("aside")).toHaveCount(0);
       await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
-      // The equity metric fieldsets belong to 지역 부담 only.
-      await expect(page.locator("fieldset")).toHaveCount(0);
+      await expect(dialog.locator("fieldset")).toHaveCount(0);
 
       // Every card section names itself, so the region list is walkable.
       for (const testId of SECTIONS) {
@@ -123,17 +132,29 @@ for (const vp of VIEWPORTS) {
       await expectNoHorizontalOverflow(page, "populated");
     });
 
-    test("scrolls the document, and nothing but the document", async ({ page }) => {
+    test("scrolls the DIALOG body, and nothing but it", async ({ page }) => {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
 
-      // The page is a long report: the document itself scrolls.
-      const scrolled = await page.evaluate(() => {
-        window.scrollTo(0, 400);
-        return window.scrollY;
+      // Inverted deliberately by spec §8. The catalogue is a modal now, so the
+      // page behind must NOT scroll (that is what makes a modal a modal) and the
+      // dialog's own body is the one scroll container. The underlying guarantee
+      // is unchanged: exactly one thing scrolls, and no nested pane hides content
+      // inside it.
+      const body = page.getByTestId("data-sources-dialog-body");
+      const scrolled = await body.evaluate((el) => {
+        el.scrollTop = 400;
+        return el.scrollTop;
       });
-      expect(scrolled, "the document scrolls vertically").toBeGreaterThan(0);
-      await page.evaluate(() => window.scrollTo(0, 0));
+      expect(scrolled, "the dialog body scrolls vertically").toBeGreaterThan(0);
+      await body.evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      // The document itself stays put while the modal is open.
+      expect(
+        await page.evaluate(() => getComputedStyle(document.body).overflow),
+        "the page behind must not scroll",
+      ).toBe("hidden");
 
       // No nested vertical scroll container anywhere in the dashboard subtree — a
       // pane that scrolls inside the page hides content from an ordinary scroll.
@@ -177,15 +198,25 @@ for (const vp of VIEWPORTS) {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
 
+      // Measured inside the dialog, which is now the catalogue's container. The
+      // contract is the same — a multi-column catalogue, not one narrow column.
       const tops = await page.evaluate(() =>
-        [...document.querySelectorAll("[data-testid='transparency-source-card']")].map((card) =>
-          Math.round(card.getBoundingClientRect().top),
-        ),
+        [
+          ...document.querySelectorAll(
+            "[data-testid='data-sources-dialog'] [data-testid='transparency-source-card']",
+          ),
+        ].map((card) => Math.round(card.getBoundingClientRect().top)),
       );
       const columns = tops.filter((top) => top === tops[0]).length;
-      // Two at the minimum supported width, more as the viewport grows.
-      expect(columns, `${vp.width}px: catalog columns`).toBeGreaterThanOrEqual(
-        vp.width >= 1280 ? 3 : 2,
+      // Multi-column, never one narrow strip. The threshold is 2 rather than 3 at
+      // wide viewports because the catalogue lives in a DIALOG now, which is
+      // deliberately capped rather than viewport-wide — a modal that spanned
+      // 1920px would stop reading as a modal. The dialog is still given a genuinely
+      // wide box, asserted directly below, so "uses the desktop width" holds.
+      expect(columns, `${vp.width}px: catalog columns`).toBeGreaterThanOrEqual(2);
+      const dialogBox = (await page.getByTestId("data-sources-dialog").boundingBox())!;
+      expect(dialogBox.width, `${vp.width}px: dialog width`).toBeGreaterThanOrEqual(
+        Math.min(vp.width - 40, 900),
       );
 
       // The catalog section spans the whole content column rather than a half-width
@@ -458,15 +489,26 @@ test.describe("cross-view regression — 1440×900", () => {
     await gotoTransparency(page);
 
     const steps: [string, string, number][] = [
-      ["데이터·출처", "transparency-sources", 0],
+      // 데이터·출처 is a dialog, so whatever map was behind it stays mounted; the
+      // count is the PRIOR destination's, not zero.
+      ["데이터·출처", "transparency-sources", 1],
       ["지역 지표", "region-select", 1],
       // 후보지 심층 분석 is the SCORE destination (the one with the map). Plain
       // "후보지 분석" is now the separate cost destination, which mounts none.
       ["후보지 심층 분석", "suitability-summary", 1],
       ["폐기물 처리 현황", "landfill-dashboard", 0],
+      // Opened over 폐기물 처리 현황, which mounts no map.
       ["데이터·출처", "transparency-sources", 0],
     ];
     for (const [label, marker, maps] of steps) {
+      // The nav sits BEHIND the modal and is inert while it is open — which is
+      // what makes it a modal. So leaving 데이터·출처 means closing it, not
+      // clicking through it.
+      const openDialog = page.getByTestId("data-sources-dialog");
+      if ((await openDialog.count()) > 0 && label !== "데이터·출처") {
+        await page.getByTestId("data-sources-dialog-close").click();
+        await expect(openDialog).toHaveCount(0);
+      }
       await page.getByRole("button", { name: label, exact: true }).click();
       await expect(page.getByTestId(marker), label).toBeVisible();
       await expect(page.getByTestId("map-container"), `${label}: maps`).toHaveCount(maps);
@@ -502,6 +544,10 @@ test.describe("cross-view regression — 1440×900", () => {
 
     // Leaving and returning gives a fresh catalog — the filter state is view state,
     // never written to the URL, and never leaks into another area.
+    // Closing the dialog (rather than navigating away from a page) is how the
+    // reader leaves 데이터·출처 now; the catalogue unmounts with it.
+    await page.getByTestId("data-sources-dialog-close").click();
+    await expect(page.getByTestId("data-sources-dialog")).toHaveCount(0);
     await page.getByRole("button", { name: "폐기물 처리 현황", exact: true }).click();
     await expect(page.getByTestId("landfill-dashboard")).toBeVisible();
     await expect(page.getByTestId("transparency-search")).toHaveCount(0);
@@ -516,6 +562,6 @@ test.describe("cross-view regression — 1440×900", () => {
     // And a cold deep link lands in the same place.
     await page.goto(URL);
     await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator("h1")).toHaveText("데이터·출처");
+    await expect(page.getByTestId("data-sources-dialog").getByRole("heading", { name: "데이터·출처" })).toBeVisible();
   });
 });

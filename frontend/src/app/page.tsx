@@ -107,6 +107,7 @@ import { municipalCostErrorFrom } from "../lib/municipalCost";
 import DashboardShell from "../components/DashboardShell";
 import ResizableSidebar from "../components/ui/ResizableSidebar";
 import CollapsiblePanel from "../components/ui/CollapsiblePanel";
+import Dialog from "../components/ui/Dialog";
 import {
   RelativeGradePanel,
   RelativeGradeUnavailable,
@@ -266,6 +267,21 @@ export default function Home() {
   // should restore an ANALYSIS, not someone else's panel arrangement.
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+
+  /**
+   * The destination 데이터·출처 is layered OVER.
+   *
+   * The data-and-sources surface is a dialog, not a page (spec §8), so something
+   * has to be rendered behind it — and closing has to return there. This is the
+   * last non-transparency area the reader was actually on. It defaults to 지역
+   * 지표 so a cold `?v=1&mode=transparency` deep link still has a real page
+   * behind the dialog rather than a blank frame.
+   */
+  const [lastArea, setLastArea] = useState<{
+    // Never "transparency" — that is the dialog, not something it can sit over.
+    mode: Exclude<DashboardMode, "transparency">;
+    view: SuitabilityView;
+  }>({ mode: "equity", view: "score" });
 
   // The A/B/C relative band distribution for the active run + profile.
   //   null + settled=false → still loading (render nothing rather than a guess)
@@ -750,11 +766,28 @@ export default function Home() {
     [changeMode, changeSuitabilityView],
   );
 
+  useEffect(() => {
+    if (mode === "transparency") return;
+    /* eslint-disable react-hooks/set-state-in-effect -- mirror the current area so
+       closing the data dialog can return to it. Derived from state that has
+       already settled; it is a record of where the reader was, not a computation. */
+    setLastArea({ mode: mode as Exclude<DashboardMode, "transparency">, view: suitabilityView });
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [mode, suitabilityView]);
+
   /**
-   * True on 후보지 심층 분석 — the one destination that uses the three-column
-   * collapsible workspace instead of the resizable single column.
+   * Close the dialog by navigating back to the area it was layered over.
+   *
+   * This is a state change, not a history pop: in-app area changes mirror to the
+   * URL with `replaceState` (they add no history entries), so "go back to where
+   * you were" has to be expressed as a destination, not as `history.back()` —
+   * which would leave the app entirely. That also makes the close idempotent and
+   * loop-free: `lastArea` is by construction never transparency.
    */
-  const deepAnalysis = mode === "suitability" && suitabilityView === "score";
+  const closeDataDialog = useCallback(() => {
+    changeSuitabilityView(lastArea.view);
+    changeMode(lastArea.mode);
+  }, [lastArea, changeMode, changeSuitabilityView]);
 
   /** The destination the current analytical state renders as. */
   const destination = useMemo(
@@ -1500,24 +1533,41 @@ export default function Home() {
   // 수도권매립지 mode: a full-width dashboard with no map and no sidebar. The
   // early return also narrows `mode` to MapMode for the map layout below, so a
   // non-map mode cannot reach MapView.
-  if (mode === "transparency") {
-    return (
-      <DashboardShell destination={destination} onNavigate={navigate} variant="page">
-        {/* Phase 6: the heading and the orientation strip moved INTO the dashboard,
-            matching the Phase 5 landfill pattern. The strip still renders directly
-            below the single <h1> (asserted by shell.test.tsx's document-order check)
-            and the view still has exactly one <h1>. */}
-        <TransparencyDashboard
-          data={data}
-          title={destination.label}
-          orientation={<ModeOrientation destination={destination} />}
-        />
-      </DashboardShell>
-    );
-  }
+  // 데이터·출처 is a DIALOG layered over the previous destination (spec §8), not a
+  // page of its own. So there is no transparency branch here any more: the view
+  // below renders `lastArea` while the dialog is open, and the dialog itself is
+  // appended to every branch by `withDataDialog` at the bottom of this component.
+  //
+  // `destination` still resolves to 데이터·출처, so the navigation shows it active
+  // and the URL keeps `mode=transparency` — the legacy deep link is unchanged.
+  const dataDialogOpen = mode === "transparency";
+  // Never "transparency": when the dialog is open this is the area BEHIND it, and
+  // when it is closed `mode` is already something else. Stating that in the type
+  // is what lets the flow/cost early returns narrow to `MapMode` as before.
+  const viewMode: Exclude<DashboardMode, "transparency"> = dataDialogOpen
+    ? lastArea.mode
+    : (mode as Exclude<DashboardMode, "transparency">);
+  const viewSubview: SuitabilityView = dataDialogOpen ? lastArea.view : suitabilityView;
+  const viewDeepAnalysis = viewMode === "suitability" && viewSubview === "score";
 
-  if (mode === "flow") {
-    return (
+  /** Wrap a branch with the data dialog, so exactly one definition of it exists. */
+  const withDataDialog = (branch: React.ReactNode) => (
+    <>
+      {branch}
+      <Dialog
+        open={dataDialogOpen}
+        title="데이터·출처"
+        description="이 플랫폼이 사용하는 공공자료의 출처와 기준 시점, 그리고 부족한 부분을 확인할 수 있습니다."
+        testId="data-sources-dialog"
+        onClose={closeDataDialog}
+      >
+        <TransparencyDashboard data={data} title="데이터·출처" embedded />
+      </Dialog>
+    </>
+  );
+
+  if (viewMode === "flow") {
+    return withDataDialog(
       <DashboardShell destination={destination} onNavigate={navigate} variant="page">
         <LandfillDashboard
           title={destination.label}
@@ -1550,7 +1600,7 @@ export default function Home() {
             setSort: setMcSort,
           }}
         />
-      </DashboardShell>
+      </DashboardShell>,
     );
   }
 
@@ -1560,8 +1610,8 @@ export default function Home() {
   // The main mode switch and the suitability sub-view switch stay reachable above it,
   // and the selected candidate context is preserved (passed through). The map layout
   // below is thus only ever reached by the equity map and the suitability SCORE view.
-  if (mode === "suitability" && suitabilityView === "cost") {
-    return (
+  if (viewMode === "suitability" && viewSubview === "cost") {
+    return withDataDialog(
       <DashboardShell destination={destination} onNavigate={navigate} variant="page">
         <div className="pt-6">
           <FacilityCostDashboard
@@ -1571,7 +1621,7 @@ export default function Home() {
             selectedCandidate={selected}
           />
         </div>
-      </DashboardShell>
+      </DashboardShell>,
     );
   }
 
@@ -1602,7 +1652,7 @@ export default function Home() {
     return { color, range };
   });
 
-  return (
+  return withDataDialog(
     // The shell owns the viewport-height chain (see components/DashboardShell.tsx):
     // it is the fixed-height flex COLUMN at md+, the global nav is its auto-height
     // first child, and <main> is `md:flex-1 md:min-h-0` — a definite-height flex
@@ -1623,7 +1673,7 @@ export default function Home() {
           The map element stays at the SAME child index in both shapes, which is
           what lets React reconcile it rather than remount it when the reader moves
           between areas (asserted by app/shell.test.tsx). */}
-      {deepAnalysis ? (
+      {viewDeepAnalysis ? (
         <CollapsiblePanel
           side="left"
           label="분석 조건"
@@ -1680,7 +1730,7 @@ export default function Home() {
 
         <ModeOrientation destination={destination} />
 
-        {mode === "equity" && (
+        {viewMode === "equity" && (
           <>
             {/* REGION SEARCH & SELECTION — the keyboard path to the same canonical
                 `selectedRegionCode`, now its own labelled section instead of a form
@@ -1807,7 +1857,7 @@ export default function Home() {
           </>
         )}
 
-        {mode === "suitability" && (
+        {viewMode === "suitability" && (
           <>
             {/* Phase 0: the standing analytical-screening disclaimer heads the
                 suitability sidebar for both map sub-views (score + scenario). */}
@@ -1820,7 +1870,7 @@ export default function Home() {
                 sidebar for two of them and above a full-width page for the third.
                 The suitability status filter + score legend float over the map
                 (MapLegendOverlay below), not in this panel. */}
-            {suitabilityView === "scenario" ? (
+            {viewSubview === "scenario" ? (
               suit ? (
                 <SuitabilityScenarioLab
                   run={suit.run}
@@ -1891,7 +1941,7 @@ export default function Home() {
           metricReferencePeriod={metricReferencePeriod}
           facilities={data.facilities.items}
           showFacilities={showFacilities}
-          mode={mode}
+          mode={viewMode}
           showWetlands={showWetlands}
           wetlandTileUrl={wetlandTiles}
           wetlandTypeVisibility={wetlandTypeVisibility}
@@ -1912,12 +1962,12 @@ export default function Home() {
           selectedCandidate={mapSelectedCandidate}
           onCandidateClick={mapCandidateClick}
           ariaLabel={
-            mode === "equity"
+            viewMode === "equity"
               ? `지역 지표 지도 — ${metric.label} (interactive choropleth map)`
               : "적합성 후보 격자 지도 (suitability candidate grid, interactive map)"
           }
           ariaDescription={
-            mode === "equity"
+            viewMode === "equity"
               ? "지역별 지표를 색으로 표시한 인터랙티브 지도입니다. 지역을 클릭하면 좌측 '선택한 지역' 요약에 이름과 값이 표시되며, 키보드·스크린리더 사용자는 그 요약으로 같은 정보를 확인할 수 있습니다."
               : "500m 후보 격자를 표시한 인터랙티브 지도입니다. 상세 후보는 좌측 '상위 후보지' 목록과 '후보 상세' 패널에서 접근할 수 있습니다. 광역 분석 스크리닝이며 법적·공학적 적합 판정이 아닙니다."
           }
@@ -1941,7 +1991,7 @@ export default function Home() {
               onToggleDesignationOnly={toggleWetlandDesignationOnly}
             />
           </div>
-          {mode === "suitability" ? (
+          {viewMode === "suitability" ? (
             <div className="pointer-events-auto min-w-0">
               <LandCoverLayerControl
                 show={showLandCover}
@@ -1987,7 +2037,7 @@ export default function Home() {
             statusVisibility state (its checkboxes drive the filter the map reads). */}
         <div className="pointer-events-none absolute bottom-8 left-2 right-2 z-10 flex flex-col items-start gap-2 md:left-3 md:right-3">
           <div className="pointer-events-auto">
-            {mode === "equity" ? (
+            {viewMode === "equity" ? (
               <MapLegendOverlay
                 mode="equity"
                 metricLabel={metric.label}
@@ -2031,7 +2081,7 @@ export default function Home() {
               />
             )}
           </div>
-          {mode === "equity" ? (
+          {viewMode === "equity" ? (
             <EquityMapInsightStrip
               metricLabel={metric.label}
               unit={unit}
@@ -2045,11 +2095,11 @@ export default function Home() {
               so it can never collide with the legend above it, and it renders only
               once the run/policy are loaded — there is no version string, run id, or
               basis to state before then, and it must not print a placeholder. */}
-          {mode === "suitability" && suit ? (
+          {viewMode === "suitability" && suit ? (
             <SuitabilityMapInsightStrip
-              variant={suitabilityView === "scenario" ? "scenario" : "score"}
+              variant={viewSubview === "scenario" ? "scenario" : "score"}
               profile={
-                suitabilityView === "scenario"
+                viewSubview === "scenario"
                   ? (appliedScenario?.compareProfile ?? "baseline")
                   : profile
               }
@@ -2076,7 +2126,7 @@ export default function Home() {
         </div>
       </div>
 
-      {deepAnalysis && (
+      {viewDeepAnalysis && (
         <CollapsiblePanel
           side="right"
           label="후보지 결과"

@@ -762,14 +762,32 @@ describe("후보지 점수 — map workspace", () => {
     );
   });
 
-  it("routes to the existing 데이터·출처 area, which mounts no map", async () => {
+  it("opens 데이터·출처 as a DIALOG over this view, and closing returns here", async () => {
+    // 데이터·출처 is a dialog now, not a page (spec §8). The old contract was
+    // "mounts no map", which held only while it navigated away to a map-free
+    // page. Layering is the point: the reader must be able to check a source
+    // without losing the analysis they were reading, so the map behind STAYS —
+    // and stays the same node, not a remount.
     await enterScore();
+    const mapNode = screen.getByTestId("map-container");
+
     fireEvent.click(screen.getByTestId("suitability-insight-summary"));
     fireEvent.click(screen.getByTestId("suitability-insight-open-sources"));
     await waitFor(() =>
       expect(screen.getByTestId("mode-transparency").getAttribute("aria-pressed")).toBe("true"),
     );
-    expect(screen.queryByTestId("map-container")).toBeNull();
+
+    const dialog = screen.getByTestId("data-sources-dialog");
+    expect(dialog.getAttribute("role")).toBe("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    // The analysis is still mounted underneath, untouched.
+    expect(screen.getByTestId("map-container")).toBe(mapNode);
+
+    // Closing returns to the destination it was layered over.
+    fireEvent.click(screen.getByTestId("data-sources-dialog-close"));
+    await waitFor(() => expect(screen.queryByTestId("data-sources-dialog")).toBeNull());
+    expect(screen.getByTestId("mode-suitability").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("map-container")).toBe(mapNode);
   });
 });
 

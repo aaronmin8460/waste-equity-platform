@@ -74,17 +74,22 @@ for (const vp of VIEWPORTS) {
       // Exactly one of each piece of global chrome.
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
+      // The dialog's title is an h2; the single h1 belongs to the destination
+      // behind it (spec §8).
+      const dialog = page.getByTestId("data-sources-dialog");
+      await expect(dialog).toHaveAttribute("aria-modal", "true");
+      await expect(dialog.getByRole("heading", { name: "데이터·출처" })).toBeVisible();
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText("데이터·출처");
+      await expect(dialog.locator("h1")).toHaveCount(0);
       await expect(page.locator("#main-content")).toHaveCount(1);
       await expect(page.locator("main")).toHaveCount(1);
 
       // This view supports no map, so none is mounted — not merely hidden.
-      await expect(page.getByTestId("map-container")).toHaveCount(0);
-      await expect(page.locator(".maplibregl-canvas")).toHaveCount(0);
-      await expect(page.locator("canvas")).toHaveCount(0);
+      // Scoped to the dialog: a map may legitimately be mounted BEHIND it.
+      await expect(dialog.getByTestId("map-container")).toHaveCount(0);
+      await expect(dialog.locator("canvas")).toHaveCount(0);
       // Nor an equity-style sidebar, nor the retired sub-view segmented control.
-      await expect(page.locator("aside")).toHaveCount(0);
+      await expect(dialog.locator("aside")).toHaveCount(0);
       await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
       // NOTE: `suitability-view-cost` / `-scenario` are no longer sub-view segments
       // that would leak into this view — they are two of the six GLOBAL destination
