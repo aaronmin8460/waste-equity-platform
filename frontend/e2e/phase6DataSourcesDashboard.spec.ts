@@ -101,7 +101,13 @@ for (const vp of VIEWPORTS) {
 
       // Full-width: the dashboard spans essentially the whole viewport.
       const box = (await page.getByTestId("transparency-dashboard").boundingBox())!;
-      expect(box.width).toBeGreaterThan(vp.width * 0.9);
+      // DIALOG-relative, not viewport-relative. The catalogue renders inside the
+      // width-capped 데이터·출처 modal now, so "90% of the viewport" is unreachable
+      // by construction at 1280+ and could only be met by making the modal
+      // full-bleed — which would stop it reading as a modal. The contract that
+      // matters is unchanged: the dashboard fills the box it is given.
+      const dialogBody = (await page.getByTestId("data-sources-dialog-body").boundingBox())!;
+      expect(box.width).toBeGreaterThan(dialogBody.width * 0.9);
 
       await expectNoHorizontalOverflow(page);
     });
@@ -112,10 +118,17 @@ for (const vp of VIEWPORTS) {
       for (const label of ["지역 지표", "폐기물 처리 현황", "후보지 분석", "후보지 심층 분석", "후보지 심층 비교", "데이터·출처"]) {
         await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(1);
       }
-      // The nav sits above the dashboard content, as in every other area.
+      // The nav is still THERE and still the same six labels — but the vertical
+      // "nav above the content" stacking was a PAGE contract, and 데이터·출처 is a
+      // modal now: its overlay spans the viewport and deliberately covers the nav,
+      // which is what makes the background inert. So the contract asserted here is
+      // the modal one: the dialog overlays the chrome rather than flowing under it.
       const nav = (await page.getByTestId("top-navigation").boundingBox())!;
-      const dashboard = (await page.getByTestId("transparency-dashboard").boundingBox())!;
-      expect(nav.y + nav.height).toBeLessThanOrEqual(dashboard.y + 1);
+      const backdrop = (await page.getByTestId("data-sources-dialog-backdrop").boundingBox())!;
+      expect(backdrop.y, "the overlay starts at the viewport top").toBeLessThanOrEqual(nav.y + 1);
+      expect(backdrop.height, "and covers the chrome").toBeGreaterThanOrEqual(
+        nav.y + nav.height,
+      );
       await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
     });
 
@@ -529,7 +542,13 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("transparency-source-card")).toHaveCount(0);
       // The section still spans the page (the full-width contract is unchanged).
       const box = (await page.getByTestId("transparency-sources").boundingBox())!;
-      expect(box.width).toBeGreaterThan(vp.width * 0.9);
+      // DIALOG-relative, not viewport-relative. The catalogue renders inside the
+      // width-capped 데이터·출처 modal now, so "90% of the viewport" is unreachable
+      // by construction at 1280+ and could only be met by making the modal
+      // full-bleed — which would stop it reading as a modal. The contract that
+      // matters is unchanged: the dashboard fills the box it is given.
+      const dialogBody = (await page.getByTestId("data-sources-dialog-body").boundingBox())!;
+      expect(box.width).toBeGreaterThan(dialogBody.width * 0.9);
       await expectNoHorizontalOverflow(page);
     });
 

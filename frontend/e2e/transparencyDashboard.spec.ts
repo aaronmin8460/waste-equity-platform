@@ -221,11 +221,19 @@ for (const vp of VIEWPORTS) {
 
       // The catalog section spans the whole content column rather than a half-width
       // rail. Measured against a sibling in the same column, because the column is
-      // capped at `max-w-screen-2xl` and would otherwise fail this at 1920.
+      // capped and would otherwise fail this at wide viewports.
       const section = (await page.getByTestId("transparency-sources").boundingBox())!;
       const column = (await page.getByTestId("transparency-notice").boundingBox())!;
       expect(Math.abs(section.width - column.width)).toBeLessThanOrEqual(1);
-      expect(section.width).toBeGreaterThanOrEqual(Math.min(vp.width * 0.85, 1536));
+      // The floor is DIALOG-relative, not viewport-relative. The catalogue lives
+      // in a width-capped modal now, so "85% of the viewport" is unreachable by
+      // construction at 1280+ and would only be satisfiable by making the modal
+      // full-bleed — which would stop it reading as a modal. The contract that
+      // actually matters is unchanged and is asserted directly: the section fills
+      // the container it is given, rather than sitting in a narrow rail inside it.
+      const dialogBody = (await page.getByTestId("data-sources-dialog-body").boundingBox())!;
+      expect(section.width, `${vp.width}px: section fills the dialog body`)
+        .toBeGreaterThanOrEqual(dialogBody.width * 0.85);
 
       // Every card is wide enough that its metadata is not clipped.
       const card = (await page.getByTestId("transparency-source-card").first().boundingBox())!;
@@ -505,11 +513,18 @@ test.describe("cross-view regression — 1440×900", () => {
       // what makes it a modal. So leaving 데이터·출처 means closing it, not
       // clicking through it.
       const openDialog = page.getByTestId("data-sources-dialog");
-      if ((await openDialog.count()) > 0 && label !== "데이터·출처") {
-        await page.getByTestId("data-sources-dialog-close").click();
-        await expect(openDialog).toHaveCount(0);
+      const alreadyOpen = (await openDialog.count()) > 0;
+      if (alreadyOpen && label === "데이터·출처") {
+        // Already here. Clicking the nav again is not just redundant, it is
+        // impossible: the backdrop correctly intercepts pointer events aimed at
+        // the inert page behind it.
+      } else {
+        if (alreadyOpen) {
+          await page.getByTestId("data-sources-dialog-close").click();
+          await expect(openDialog).toHaveCount(0);
+        }
+        await page.getByRole("button", { name: label, exact: true }).click();
       }
-      await page.getByRole("button", { name: label, exact: true }).click();
       await expect(page.getByTestId(marker), label).toBeVisible();
       await expect(page.getByTestId("map-container"), `${label}: maps`).toHaveCount(maps);
       // The shared chrome never doubles, and the labels stay frozen.
@@ -518,7 +533,12 @@ test.describe("cross-view regression — 1440×900", () => {
       await expect(page.locator("main")).toHaveCount(1);
     }
 
-    // 비용 살펴보기 is map-free too, and it is the only place the sub-view bar exists.
+    // The loop ended with the dialog open, and the nav behind it is inert — so
+    // close it before using the nav again.
+    await page.getByTestId("data-sources-dialog-close").click();
+    await expect(page.getByTestId("data-sources-dialog")).toHaveCount(0);
+
+    // 후보지 분석 (the cost destination) is map-free too.
     await page.getByRole("button", { name: "후보지 분석", exact: true }).click();
     // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
     await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
@@ -528,6 +548,7 @@ test.describe("cross-view regression — 1440×900", () => {
 
     // Back in 데이터·출처 the sub-view bar is gone again, not merely hidden.
     await page.getByRole("button", { name: "데이터·출처", exact: true }).click();
+    await expect(page.getByTestId("data-sources-dialog")).toBeVisible();
     await expect(page.getByTestId("transparency-source-list")).toBeVisible();
     await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
     await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");

@@ -1297,3 +1297,19 @@ body {
     }
   }
 }
+
+/* Source-catalogue grid (components/transparency/SourceCatalog.tsx).
+
+   CONTAINER-relative, not viewport-relative. It used
+   `md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4`, which reads the VIEWPORT — fine
+   while the catalogue was a full-width page, but wrong now that it also renders
+   inside the width-capped 데이터·출처 dialog: at a 1920px viewport the grid asked
+   for four columns inside a 1088px dialog and produced 242px cards, clipping the
+   metadata (caught by e2e/transparencyDashboard.spec.ts "cards stay readable").
+
+   `auto-fill` + a 20rem floor derives the column count from the space actually
+   available, so the same rule serves the page and the dialog and a card can never
+   be squeezed below a readable width. */
+.wep-source-grid {
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+}

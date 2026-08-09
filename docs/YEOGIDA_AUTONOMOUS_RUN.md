@@ -573,24 +573,30 @@ restore, Escape, named close control, and body-scroll lock/release.
 | `e2e/phase6DataSourcesDashboard.spec.ts` | **PASS** |
 | `e2e/transparencyDashboard.spec.ts` | **46 / 50** |
 
-### Open — 4 e2e assertions, three repair attempts spent
+### Resolved — and one real defect they caught
 
-All four are in `transparencyDashboard.spec.ts` and are consequences of the
-page→dialog change rather than data problems:
+All previously-open assertions now pass. `transparencyDashboard.spec.ts`
+**50/50**, `phase6DataSourcesDashboard.spec.ts` **108/108**.
 
-- ×3 `uses the desktop width for the catalog…` at 1280/1440/1920. The catalogue
-  now lives in a width-capped dialog rather than a viewport-wide page, so the
-  column count differs from the old viewport-derived expectation. Re-pointing it
-  at the dialog container did not settle it and needs the real rendered geometry
-  inspected rather than another guess.
-- ×1 `holds the map contract through a full round trip`. The nav is inert behind
-  the modal (correct), so the loop must close the dialog before each hop; the
-  close step was added but the step table still needs its expected map counts
-  re-derived per hop.
+Inspecting the actual rendered geometry (rather than guessing again) turned up a
+**genuine defect the dialog introduced**: `SourceCatalog`'s grid used VIEWPORT
+breakpoints — `md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4` — which was fine
+for a full-width page but wrong inside a width-capped modal. At a 1920 viewport
+it asked for four columns inside a 1088px dialog and produced **242px cards**,
+clipping their metadata. The grid is now container-relative
+(`repeat(auto-fill, minmax(20rem, 1fr))`), so the column count derives from the
+space actually available and one rule serves both the page and the dialog.
 
-These are layout/measurement assertions, not integrity ones. **Phase 5C is
-therefore PASS WITH NON-BLOCKING LIMITATIONS**, and they must be resolved before
-the Phase 6 release gate can pass.
+Three other assertions were viewport-relative width/stacking floors that a
+capped modal cannot satisfy by construction. Each was re-pointed at the dialog
+rather than relaxed: section width is measured against the dialog body, and the
+"nav above the content" page-stacking check became the modal contract it should
+now be — the overlay starts at the viewport top and covers the chrome, which is
+precisely what makes the background inert. The round trip additionally closes the
+dialog before each nav hop, because a modal's background is correctly
+non-clickable.
+
+**Phase 5C status: PASS.**
 
 ## Phase 5B — NOT STARTED
 

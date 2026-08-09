@@ -121,7 +121,7 @@ export default function SourceCatalog({
           // Three columns from 1280 and four from 1536, so the wide desktop targets
           // are not a single narrow column of cards beside empty space. At 1024 the
           // two-column layout keeps every card's metadata readable without clipping.
-          className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+          className="wep-source-grid mt-3 grid gap-3"
           data-testid="transparency-source-list"
         >
           {visibleSources.map((source) => (
