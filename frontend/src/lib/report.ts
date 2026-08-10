@@ -20,7 +20,7 @@
 
 import type { SuitabilityStatus } from "./api";
 import { readableTimestamp } from "./csv";
-import type { ComparisonExportInput, RankingExportInput, ScenarioExportInput } from "./exports";
+import type { RankingExportInput, ScenarioExportInput } from "./exports";
 import {
   COMPONENT_META,
   COMPONENT_ORDER,
@@ -330,36 +330,8 @@ export function buildEquityReport(input: RankingExportInput): ReportModel {
   };
 }
 
-export function buildComparisonReport(input: ComparisonExportInput): ReportModel {
-  return {
-    generatedAt: readableTimestamp(input.when),
-    mapExclusionNote: MAP_EXCLUSION_NOTE,
-    blocks: [
-      { kind: "title", text: "지역 비교" },
-      { kind: "subtitle", text: `${input.metricLabel}${input.unit ? ` · 단위 ${input.unit}` : ""}` },
-      {
-        kind: "section",
-        heading: "자료 정보",
-        rows: compact([
-          kv("출처", input.source),
-          kv("자료 기준 시점", input.referencePeriod),
-          kv("집계 기준", input.accountingBasis),
-        ]),
-      },
-      {
-        kind: "table",
-        caption: "비교한 지역",
-        headers: ["지역", "값", "자료 상태"],
-        rows: input.regions.map((r) => [
-          r.name,
-          r.hasValue ? r.display : "",
-          r.hasValue ? "공식 값" : "자료 없음",
-        ]),
-      },
-      { kind: "disclaimer", text: EQUITY_REPORT_DISCLAIMER },
-    ],
-  };
-}
+// A 지역 비교 report model lived here until the correction pass removed the Page 1
+// card that opened it. `ReportPreview` and the two remaining models are unchanged.
 
 export function buildScenarioReport(input: ScenarioExportInput): ReportModel {
   const w = input.weights;

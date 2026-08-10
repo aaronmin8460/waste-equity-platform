@@ -4,7 +4,6 @@ import { rankRegions, type RankableRegion } from "./ranking";
 import {
   type Ctx2D,
   MAP_EXCLUSION_NOTE,
-  buildComparisonReport,
   buildEquityReport,
   buildScenarioReport,
   drawReport,
@@ -70,25 +69,31 @@ describe("buildEquityReport", () => {
   });
 });
 
-describe("buildComparisonReport", () => {
-  it("keeps 자료 없음 distinct from a value in the table", () => {
-    const model = buildComparisonReport({
+// `buildComparisonReport` was removed with the Page 1 지역 비교 card (correction
+// pass). Its "a region with no value never appears as a number" rule is carried by
+// `buildEquityReport`, which excludes such regions from both tables outright.
+describe("buildEquityReport — an unavailable region never reaches the tables", () => {
+  it("omits it from both lists rather than printing a blank or a zero", () => {
+    const regions: RankableRegion[] = [
+      { code: "11110", name: "종로구", value: { numeric: 300, display: "300" } },
+      { code: "28710", name: "강화군", value: undefined },
+    ];
+    const model = buildEquityReport({
       metricLabel: "1인당 생활계 발생량",
       unit: "kg/인/년",
       source: "RCIS",
       referencePeriod: "2022",
       accountingBasis: "ORIGIN_BASED_TREATMENT_OUTCOME",
-      regions: [
-        { code: "11110", name: "종로구", display: "83,721.3", hasValue: true },
-        { code: "28710", name: "강화군", display: "자료 없음", hasValue: false },
-      ],
+      scope: "all",
+      result: rankRegions(regions, "all", 10),
       when: WHEN,
     });
-    const table = model.blocks.find((b) => b.kind === "table");
-    expect(table).toBeDefined();
-    if (table && table.kind === "table") {
-      expect(table.rows[0]).toEqual(["종로구", "83,721.3", "공식 값"]);
-      expect(table.rows[1]).toEqual(["강화군", "", "자료 없음"]); // missing → empty cell
+    const tables = model.blocks.filter((b) => b.kind === "table");
+    expect(tables.length).toBeGreaterThan(0);
+    for (const table of tables) {
+      if (table.kind !== "table") continue;
+      expect(table.rows.some((row) => row.includes("강화군"))).toBe(false);
+      expect(table.rows.some((row) => row.includes("종로구"))).toBe(true);
     }
   });
 });

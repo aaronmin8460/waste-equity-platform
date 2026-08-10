@@ -180,17 +180,24 @@ describe("loading announcement", () => {
 });
 
 describe("metric fieldset groups + live summary", () => {
-  it("groups the 11 metrics into three labelled fieldsets, all one radio group", async () => {
+  // The correction pass re-cut the eleven metrics from three STATISTICAL FAMILIES
+  // into three SUBJECT sections, so the legends and the radio count changed. What is
+  // asserted here did not: still exactly three fieldsets, each with a labelled
+  // legend, and every category radio in ONE logical group so native arrow keys still
+  // cross all of them.
+  it("groups the metrics into three labelled fieldsets, all one radio group", async () => {
     const { container } = await renderLoaded();
     const fieldsets = container.querySelectorAll("fieldset");
     expect(fieldsets.length).toBe(3);
     const legends = Array.from(container.querySelectorAll("legend")).map((l) => l.textContent);
-    expect(legends.some((t) => t?.includes("총량 지표"))).toBe(true);
-    expect(legends.some((t) => t?.includes("1인당 형평성 지표"))).toBe(true);
-    expect(legends.some((t) => t?.includes("시설 부담 지표"))).toBe(true);
-    // All 11 metric radios remain a single logical group (shared name="metric").
+    expect(legends.some((t) => t?.includes("지역별 인구"))).toBe(true);
+    expect(legends.some((t) => t?.includes("폐기물 발생량"))).toBe(true);
+    expect(legends.some((t) => t?.includes("1인당 시설 처리 수준"))).toBe(true);
+    // Seven category rows: 인구 · four waste streams · two facility measures. The
+    // remaining four metrics are the per-capita counterparts, reached by the switch
+    // on the waste rows — so all eleven stay reachable.
     const radios = Array.from(container.querySelectorAll('input[type="radio"][name="metric"]'));
-    expect(radios).toHaveLength(11);
+    expect(radios).toHaveLength(7);
   });
 
   it("announces the selected metric via role=status and updates on change", async () => {
@@ -294,11 +301,11 @@ describe("map/dashboard readability (Phase 3)", () => {
     expect(nodata.textContent).toContain("데이터 없음");
   });
 
-  it("presents the metric families as three scannable group cards", async () => {
+  it("presents the metric subjects as three scannable sections", async () => {
     await renderLoaded();
-    expect(screen.getByTestId("metric-group-total")).toBeDefined();
-    expect(screen.getByTestId("metric-group-per_capita")).toBeDefined();
-    expect(screen.getByTestId("metric-group-burden")).toBeDefined();
+    expect(screen.getByTestId("metric-section-population")).toBeDefined();
+    expect(screen.getByTestId("metric-section-generation")).toBeDefined();
+    expect(screen.getByTestId("metric-section-facility")).toBeDefined();
   });
 });
 

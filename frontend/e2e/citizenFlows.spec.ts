@@ -255,7 +255,7 @@ const SUMMARY = {
 };
 
 test.describe("Task A — 지역 부담 (equity)", () => {
-  test("high/low ranking, comparison, and map-synced selection via visible Korean labels", async ({
+  test("high/low ranking, the full ranking, and map-synced selection via visible Korean labels", async ({
     page,
   }) => {
     await setup(page);
@@ -269,19 +269,15 @@ test.describe("Task A — 지역 부담 (equity)", () => {
     await expect(high).toContainText("수원시 장안구");
     await expect(high).toContainText("500,000");
 
-    // Compare two regions via the searchable combobox. Type to filter, wait for the
-    // listbox, then pick the option from within it (robust against the blur race).
-    const search = page.getByTestId("comparison-search");
-    await search.click();
-    await search.pressSequentially("종로");
-    const options = page.getByTestId("comparison-options");
-    await expect(options).toBeVisible();
-    await options.getByText("종로구").click();
-    await search.pressSequentially("중구");
-    await expect(options).toBeVisible();
-    await options.getByText("중구").click();
-    await expect(page.getByTestId("comparison-table")).toContainText("종로구");
-    await expect(page.getByTestId("comparison-table")).toContainText("300,000");
+    // See every region at once through 지표 순위 전체보기 — the citizen path that
+    // replaced hand-picking up to three regions in 지역 비교 (correction pass).
+    await page.getByTestId("open-full-ranking").click();
+    const fullRanking = page.getByTestId("full-ranking-dialog");
+    await expect(fullRanking).toBeVisible();
+    await expect(fullRanking.getByTestId("full-ranking-table")).toContainText("종로구");
+    await expect(fullRanking.getByTestId("full-ranking-table")).toContainText("300,000");
+    await fullRanking.getByTestId("full-ranking-dialog-close").click();
+    await expect(fullRanking).toHaveCount(0);
 
     // Selecting a ranked region drives the shared summary (map sync).
     await page.getByTestId("rank-high").getByTestId("rank-row").first().click();

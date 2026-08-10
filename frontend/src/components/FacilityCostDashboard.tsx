@@ -453,6 +453,25 @@ function FacilityCostBody({
           />
         </div>
       )}
+
+      {/* THE SCOPE NOTICE, LAST — moved here by the post-production visual review
+          (docs/YEOGIDA_AUTONOMOUS_RUN.md, "UI correction pass").
+
+          It used to open the screen, so 후보지 분석 began with two blocks of caveat
+          before the reader met a single control. Nothing about it is weakened by
+          the move: the banner keeps every sentence, the eight-item disclosure keeps
+          all eight strings, its two groupings, its count, and its test ids, and it
+          is still on the page in full at the end of the workflow it qualifies. Only
+          its position changed. It also remains OUTSIDE any results view, so the
+          numbers screen keeps its own notice rather than borrowing this one.
+
+          A side benefit worth keeping: this is also the position that best serves
+          the first-screen contract (docs/ui-refresh/regression-contract.md §16) —
+          the setup grid, and with it the sticky action rail, now starts at the very
+          top of the workspace at every viewport height. */}
+      <div className="mx-auto w-full max-w-6xl" data-testid="facility-cost-scope-notice">
+        <FacilityCostNotice />
+      </div>
     </div>
   );
 }
@@ -468,8 +487,8 @@ function FacilityCostBody({
  * action is reachable without scrolling to the bottom of a long form. Below `lg` the
  * columns stack and the summary returns to normal document flow.
  *
- * WHY THE SCOPE NOTICE IS INSIDE THE LEFT COLUMN (final integration milestone).
- * It used to sit full-width ABOVE the grid, which made it part of the sticky rail's
+ * WHERE THE SCOPE NOTICE IS, AND WHY IT IS NOT HERE.
+ * It once sat full-width ABOVE this grid, which made it part of the sticky rail's
  * STATIC position: at 1024×768 the banner plus its exclusion disclosure spent 250px
  * before the grid even began, so the rail started at y=464 and its 415px-tall card
  * ended at y=879 — 111px below the fold, with 비용 계산하기 clipped at 838. Sticky
@@ -478,10 +497,12 @@ function FacilityCostBody({
  * help until the citizen had already scrolled — which is exactly the state the
  * first-screen contract is about (docs/ui-refresh/regression-contract.md §16).
  *
- * Moving the notice into the scrolling workflow column starts the grid — and so the
- * rail — at the top of the workspace. The notice is unchanged in content, wording,
- * prominence order (still the first block under the `<h1>`, still above step 1), and
- * test ids; only the column it occupies changed.
+ * The final-integration milestone moved it into this column's top; the post-
+ * production visual review moved it further, to the END of the setup view
+ * (`FacilityCostBody`), so the workflow — not a caveat — opens the screen. Both
+ * moves keep the grid, and so the rail, starting at the top of the workspace. The
+ * notice's content, wording, grouping, count, and test ids are unchanged throughout;
+ * only its position ever moved.
  */
 function FacilityCostSetup({
   options,
@@ -529,21 +550,18 @@ function FacilityCostSetup({
   return (
     <div className="mx-auto w-full max-w-6xl" data-testid="facility-cost-form">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="flex flex-col gap-3">
-          <div>
-            <FacilityCostNotice />
-          </div>
-
-          <FacilityCostSetupPanel
-            options={options}
-            scenario={scenario}
-            regionOptions={regionOptions}
-            regionBoundaries={regionBoundaries}
-            update={update}
-            validationMessage={validationMessage}
-            headingRef={headingRef}
-          />
-        </div>
+        {/* The workflow column. It carries its own `flex flex-col gap-3`, so the
+            wrapper the scope notice used to share with it is gone rather than left
+            behind as a single-child div. */}
+        <FacilityCostSetupPanel
+          options={options}
+          scenario={scenario}
+          regionOptions={regionOptions}
+          regionBoundaries={regionBoundaries}
+          update={update}
+          validationMessage={validationMessage}
+          headingRef={headingRef}
+        />
 
         <FacilityCostSetupSummary
           options={options}

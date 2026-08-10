@@ -167,15 +167,60 @@ describe("equity page header", () => {
     expect(headings[0].textContent).toBe(MODE_LABELS.equity);
   });
 
-  it("keeps the scope description and the task orientation, in that order", async () => {
+  // CORRECTION PASS. 지역 지표 no longer shows a visible title block: the h1, the
+  // scope tagline, and the orientation strip repeated what the active navigation item
+  // already said, and cost the column its first ~90px. The h1 stays for landmark
+  // navigation and is `sr-only`; the other two are gone from this area entirely.
+  // Every other area still shows all three (see shell.test.tsx).
+  it("hides the h1 visually and renders no visible intro block", async () => {
     const { container } = await renderLoaded();
-    // The approved scope tagline is preserved verbatim (regression-contract §10).
-    expect(container.textContent).toContain("서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지");
     const h1 = container.querySelector("h1")!;
-    const orientation = screen.getByTestId("mode-orientation");
-    expect(orientation.textContent).toBe(MODE_ORIENTATION.equity);
-    // DOCUMENT_POSITION_FOLLOWING — the orientation supports the h1, never precedes it.
-    expect(h1.compareDocumentPosition(orientation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(h1.className).toContain("sr-only");
+    // Not merely hidden-with-spacing: the removed lines are not in the DOM at all,
+    // so they cannot occupy layout.
+    expect(container.textContent).not.toContain(
+      "서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지",
+    );
+    expect(screen.queryByTestId("mode-orientation")).toBeNull();
+    expect(container.textContent).not.toContain(MODE_ORIENTATION.equity);
+  });
+
+  /**
+   * REGRESSION GUARD for the one defect this correction pass introduced and fixed.
+   *
+   * 데이터·출처 is a DIALOG layered over the previous area, so it renders through this
+   * same equity branch — but the `<h1>` is then 데이터·출처's title, not Page 1's.
+   * Hiding it by `viewMode === "equity"` alone stripped 데이터·출처 of its visible page
+   * title (caught by e2e/phase6DataSourcesDashboard.spec.ts at 1280 and 1440). The
+   * heading is hidden ONLY while the reader is actually looking at 지역 지표.
+   */
+  it("restores the visible heading when 데이터·출처 opens over this area", async () => {
+    const { container } = await renderLoaded();
+    expect(container.querySelector("h1")!.className).toContain("sr-only");
+
+    fireEvent.click(screen.getByTestId("mode-transparency"));
+    await waitFor(() =>
+      expect(screen.getByTestId("mode-transparency").getAttribute("aria-pressed")).toBe("true"),
+    );
+
+    // Still exactly one h1 — and now it is VISIBLE and titles 데이터·출처.
+    const headings = container.querySelectorAll("h1");
+    expect(headings).toHaveLength(1);
+    expect(headings[0].textContent).toBe("데이터·출처");
+    expect(headings[0].className).not.toContain("sr-only");
+  });
+
+  it("puts the region and metric controls first in the column", async () => {
+    const { container } = await renderLoaded();
+    const h1 = container.querySelector("h1")!;
+    const picker = screen.getByTestId("region-select");
+    const selector = screen.getByTestId("equity-metric-selector");
+    // DOCUMENT_POSITION_FOLLOWING — the sr-only h1 still leads the column in document
+    // order, and the two controls a reader acts on come immediately after it.
+    expect(h1.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      picker.compareDocumentPosition(selector) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
 
@@ -263,18 +308,60 @@ describe("current-region summary", () => {
 // --------------------------------------------------------------------------- //
 
 describe("metric selection", () => {
-  it("keeps exactly eleven radios in exactly three labelled fieldsets", async () => {
+  it("keeps seven category radios in exactly three labelled fieldsets", async () => {
     const { container } = await renderLoaded();
     expect(container.querySelectorAll("fieldset")).toHaveLength(3);
     expect(container.querySelectorAll("legend")).toHaveLength(3);
     const radios = Array.from(
       container.querySelectorAll<HTMLInputElement>('input[type="radio"][name="metric"]'),
     );
-    expect(radios).toHaveLength(11);
+    // 인구 · four waste streams · two facility measures. The other four served
+    // metrics are those streams' per-capita counterparts, reached by the row switch.
+    expect(radios).toHaveLength(7);
     expect(radios.filter((radio) => radio.checked)).toHaveLength(1);
-    expect(screen.getByTestId("metric-group-total")).toBeDefined();
-    expect(screen.getByTestId("metric-group-per_capita")).toBeDefined();
-    expect(screen.getByTestId("metric-group-burden")).toBeDefined();
+    expect(screen.getByTestId("metric-section-population")).toBeDefined();
+    expect(screen.getByTestId("metric-section-generation")).toBeDefined();
+    expect(screen.getByTestId("metric-section-facility")).toBeDefined();
+  });
+
+  it("reaches all eleven served metrics — four via the 총량/1인당 switch", async () => {
+    await renderLoaded();
+    // Selecting a waste category shows its switch; the switch swaps the SERVED key.
+    fireEvent.click(screen.getByRole("radio", { name: "생활계 폐기물 발생량" }));
+    const modes = await screen.findByTestId("metric-mode-household");
+    const [total, perCapita] = within(modes).getAllByRole("button");
+    expect(total.getAttribute("aria-pressed")).toBe("true");
+    expect(total.textContent).toBe("총량");
+    expect(perCapita.textContent).toBe("1인당");
+
+    fireEvent.click(perCapita);
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-metric-summary").textContent).toContain(
+        "1인당 생활계 발생량",
+      ),
+    );
+    // The CATEGORY stays selected across the mode change — only the counting changed.
+    expect(
+      (screen.getByRole("radio", { name: "생활계 폐기물 발생량" }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      within(screen.getByTestId("metric-mode-household"))
+        .getAllByRole("button")[1]
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("offers no counting switch where no second served metric exists", async () => {
+    await renderLoaded();
+    // 인구 and the two facility-burden measures have exactly one served form each.
+    expect(screen.queryByTestId("metric-mode-population")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "소재 시설 처리량" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-metric-summary").textContent).toContain(
+        "1인당 소재 시설 처리량",
+      ),
+    );
+    expect(screen.queryByTestId("metric-mode-facility_located")).toBeNull();
   });
 
   it("does not replace the radios with a select, tabs, chips, or a disclosure", async () => {
@@ -292,12 +379,12 @@ describe("metric selection", () => {
     await renderLoaded();
     const summary = screen.getByTestId("selected-metric-summary");
     expect(summary.getAttribute("role")).toBe("status");
-    const checked = screen.getByRole("radio", { name: "인구" }) as HTMLInputElement;
+    const checked = screen.getByRole("radio", { name: "지역별 인구" }) as HTMLInputElement;
     expect(checked.checked).toBe(true);
-    // The row carries a heavier weight and a border in addition to the tint.
-    const row = checked.closest("label")!;
-    expect(row.className).toContain("font-semibold");
-    expect(row.className).toContain("border-primary-border");
+    // The label carries a heavier weight; the card around it carries the border, in
+    // addition to the tint — so selection survives grayscale and colour deficiency.
+    expect(checked.closest("label")!.className).toContain("font-semibold");
+    expect(screen.getByTestId("metric-row-population").className).toContain("border-primary");
   });
 
   it("drives the map, the summary, and the strip from one metric change", async () => {
@@ -347,19 +434,19 @@ describe("ranking and comparison interaction", () => {
     expect(basis).toContain("2024");
   });
 
-  it("adds and removes a comparison region without touching the ranking", async () => {
+  // The 지역 비교 card is gone (correction pass). Its replacement opens from inside
+  // this card and leaves the compact ranking exactly as it was.
+  it("opens 지표 순위 전체보기 without disturbing the compact ranking", async () => {
     await renderLoaded();
-    const search = screen.getByTestId("comparison-search");
-    fireEvent.focus(search);
-    fireEvent.change(search, { target: { value: "종로" } });
-    fireEvent.mouseDown(within(await screen.findByTestId("comparison-options")).getByText(/종로구/));
-    expect(screen.getByTestId("comparison-table").textContent).toContain("종로구");
-    expect(screen.getByTestId("comparison-count").textContent).toContain("1");
+    expect(screen.queryByTestId("region-comparison")).toBeNull();
 
-    fireEvent.click(screen.getByTestId("comparison-chip-remove"));
-    expect(screen.queryByTestId("comparison-table")).toBeNull();
-    // The ranking is unaffected by comparison membership.
-    expect(within(screen.getByTestId("rank-high")).getAllByTestId("rank-row").length).toBeGreaterThan(0);
+    const before = within(screen.getByTestId("rank-high")).getAllByTestId("rank-row").length;
+    const trigger = screen.getByTestId("open-full-ranking");
+    expect(trigger.textContent).toBe("지표 순위 전체보기");
+    fireEvent.click(trigger);
+
+    expect(screen.getByTestId("full-ranking-dialog")).toBeDefined();
+    expect(within(screen.getByTestId("rank-high")).getAllByTestId("rank-row")).toHaveLength(before);
   });
 });
 
@@ -431,10 +518,11 @@ describe("one source of truth per control", () => {
   it("renders exactly one of each selection control and one landmark set", async () => {
     const { container } = await renderLoaded();
     expect(container.querySelectorAll('[data-testid="region-select"]')).toHaveLength(1);
-    expect(container.querySelectorAll('[data-testid="comparison-search"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-testid="rank-topn"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-testid="region-ranking"]')).toHaveLength(1);
-    expect(container.querySelectorAll('[data-testid="region-comparison"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-testid="open-full-ranking"]')).toHaveLength(1);
+    // The 지역 비교 card is gone entirely, not merely hidden.
+    expect(container.querySelectorAll('[data-testid="region-comparison"]')).toHaveLength(0);
     expect(container.querySelectorAll('[data-testid="share-export"]')).toHaveLength(1);
     expect(container.querySelectorAll("main")).toHaveLength(1);
     expect(container.querySelectorAll("#main-content")).toHaveLength(1);

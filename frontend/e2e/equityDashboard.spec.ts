@@ -151,17 +151,21 @@ for (const vp of VIEWPORTS) {
       await openEquity(page);
       await expect(page.getByTestId("map-container")).toHaveCount(1);
       await expect(page.locator("h1")).toHaveCount(1);
+      // Present for landmark navigation, but visually hidden — 지역 지표 shows no
+      // title block after the correction pass.
       await expect(page.locator("h1")).toHaveText("지역 지표");
+      await expect(page.locator("h1")).toHaveClass(/sr-only/);
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
       await expect(page.locator("main")).toHaveCount(1);
 
-      // Three fieldsets and eleven radios, each individually reachable — the
-      // sidebar scrolls to them, nothing is hidden behind a disclosure.
+      // Three fieldsets and seven category radios, each individually reachable — the
+      // sidebar scrolls to them, nothing is hidden behind a disclosure. The other
+      // four served metrics are reached by the 총량/1인당 switch on the waste rows.
       await expect(page.locator("fieldset")).toHaveCount(3);
       const radios = page.locator('input[type="radio"][name="metric"]');
-      await expect(radios).toHaveCount(11);
-      for (let i = 0; i < 11; i += 1) {
+      await expect(radios).toHaveCount(7);
+      for (let i = 0; i < 7; i += 1) {
         await radios.nth(i).scrollIntoViewIfNeeded();
         await expect(radios.nth(i)).toBeVisible();
       }
@@ -169,10 +173,10 @@ for (const vp of VIEWPORTS) {
 
     test("keeps the header and BOTH choices actionable without scrolling", async ({ page }) => {
       await openEquity(page);
-      await expect(page.locator("h1")).toBeInViewport();
-      // 지역 선택 then 지표 선택 now LEAD the column (spec §3), so these are what
-      // must be reachable without scrolling: they are what a reader acts on. The
-      // summary is the RESULT of those two choices and moved below them.
+      // The visible header is GONE (correction pass), so there is nothing to keep
+      // above the fold except the controls themselves — which is the point of having
+      // removed it. 지역 선택 then 지표 선택 LEAD the column (spec §3): they are what
+      // a reader acts on. The summary is the RESULT of those two choices, below them.
       await expect(page.getByTestId("region-select")).toBeInViewport();
       await expect(page.getByTestId("equity-metric-selector")).toBeInViewport();
     });
@@ -212,7 +216,10 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
     page,
   }) => {
     await openEquity(page);
-    await page.getByRole("radio", { name: "1인당 생활계 발생량" }).check();
+    // The 총량/1인당 switch on the category row replaced the separate per-capita
+    // radio (correction pass); the SERVED metric it resolves to is unchanged.
+    await page.getByRole("radio", { name: "생활계 폐기물 발생량" }).check();
+    await page.getByTestId("metric-mode-household").getByRole("button", { name: "1인당" }).click();
 
     await expect(page.getByTestId("selected-metric-summary")).toContainText("1인당 생활계 발생량");
     await expect(page.getByTestId("legend-metric-label")).toContainText("1인당 생활계 발생량");
@@ -250,19 +257,27 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
     await expect(page.getByTestId("region-select")).toHaveValue("");
   });
 
-  test("keeps the ranking basis, the comparison, and the export actions on one column", async ({
+  test("keeps the ranking basis, the full ranking, and the export actions on one column", async ({
     page,
   }) => {
     await openEquity(page);
     await expect(page.getByTestId("rank-basis")).toContainText("인구");
     await expect(page.getByTestId("rank-basis")).toContainText("persons");
 
-    await page.getByTestId("comparison-search").fill("종로");
-    await page.getByTestId("comparison-options").getByRole("option").first().click();
-    await expect(page.getByTestId("comparison-table")).toBeVisible();
-    await expect(page.getByTestId("comparison-count")).toContainText("1");
-    await page.getByTestId("comparison-chip-remove").click();
-    await expect(page.getByTestId("comparison-table")).toHaveCount(0);
+    // 지표 순위 전체보기 replaced the 지역 비교 card (correction pass): the same
+    // served values, every region, no top-N cut.
+    await expect(page.getByTestId("region-comparison")).toHaveCount(0);
+    await page.getByTestId("open-full-ranking").click();
+    const dialog = page.getByTestId("full-ranking-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("지표 순위 전체보기");
+    await expect(dialog.getByTestId("full-ranking-row").first()).toBeVisible();
+    // A region with no served value is stated as missing, never ranked as a 0.
+    await expect(dialog.getByTestId("full-ranking-unranked")).toContainText(
+      "0으로 채우지 않았습니다",
+    );
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
 
     // The real existing actions, in the final sidebar section.
     await expect(page.getByTestId("share-copy")).toBeVisible();

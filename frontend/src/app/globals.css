@@ -790,8 +790,17 @@ body {
     background: var(--color-primary-soft);
     color: var(--color-primary);
   }
-  /* Collapsed: a rail just wide enough for the toggle plus its padding. */
-  .wep-panel-collapsed {
+  /* Collapsed: a rail just wide enough for the toggle plus its padding.
+
+     THE DOUBLE CLASS IS LOAD-BEARING — do not simplify it to `.wep-panel-collapsed`.
+     The ≥1280px block below re-declares `.wep-panel { width: 21rem }`. At the single
+     class both rules have specificity (0,1,0), and the 1280 block is LATER in source
+     order, so above 1280px the open width beat the collapsed rail: the body hid, the
+     column kept its full 336px, and the map never received the freed width. That is
+     the defect the post-production visual review found, and `.wep-panel` +
+     `.wep-panel-collapsed` (0,2,0) is what makes the collapsed state win at every
+     width regardless of block order. Measured by e2e/deepAnalysisPanels.spec.ts. */
+  .wep-panel.wep-panel-collapsed {
     width: 3rem;
     overflow: hidden;
   }
@@ -806,7 +815,9 @@ body {
   }
 }
 
-/* Above 1280px there is room for the roomier column the controls prefer. */
+/* Above 1280px there is room for the roomier column the controls prefer.
+   This rule governs the OPEN column only — the collapsed rail above deliberately
+   carries a higher-specificity selector so this later block cannot out-cascade it. */
 @media (min-width: 1280px) {
   .wep-panel {
     width: 21rem; /* 336px */

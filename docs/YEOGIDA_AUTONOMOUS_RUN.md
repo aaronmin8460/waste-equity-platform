@@ -814,3 +814,255 @@ frontend, backend, and Caddy in the last 200 lines each.
    (`top_fraction 0.10`, `top_cutoff_rank 1751` of 17,501) both define it as the
    top 10 **percent**, 3/3 across baseline/equal/critic. The wording was left
    correct rather than changed to match the instruction.
+
+---
+
+## UI correction pass — post-production visual review
+
+**Scope:** the FOUR defects a visual review of the deployed redesign reported, and
+nothing else. No backend, schema, migration, ingestion, deployment, methodology,
+Page 2 fee semantics, Page 5 scenario semantics, XLSX, or 데이터·출처 change.
+**Not deployed** — this pass ends at a commit.
+
+Branch `feat/yeogida-figma-redesign`, from `94771c2`.
+
+### 1. 지역 지표 — the top intro block is gone
+
+`PageHeader` (지역 지표 + 서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지) and the
+`ModeOrientation` strip no longer render for this area. They are **removed from the
+layout**, not hidden: nothing of them is in the DOM, so none of their height survives.
+The first thing under the app bar is now the region control.
+
+The view keeps exactly one `<h1>` reading 지역 지표, as `sr-only` — required by
+`docs/YEOGIDA_UI_REDESIGN_SPEC.md` §2.2/§13 and asserted in four places. It measures
+≤2px tall at all three widths. The navigation item 지역 지표 is untouched, and every
+other area still renders its full header.
+
+**The one defect this pass introduced, and fixed.** The first implementation hid the
+heading whenever `viewMode === "equity"`. 데이터·출처 is a DIALOG layered over the
+previous area (spec §8), so a cold `?v=1&mode=transparency` link renders through this
+same branch with `viewMode === "equity"` while `destination` is 데이터·출처 — the
+`<h1>` is then THAT destination's title, not Page 1's. The first version therefore
+stripped 데이터·출처 of its visible page title.
+`e2e/phase6DataSourcesDashboard.spec.ts:663` caught it deterministically at 1280×800
+and 1440×900 in the full-suite run — it was not a flake and was not waved through. The
+condition is now `viewMode === "equity" && !dataDialogOpen`, so the heading is hidden
+only while the reader is actually looking at 지역 지표, and a unit regression guard
+(`app/page.equityDashboard.test.tsx`, "restores the visible heading when 데이터·출처
+opens over this area") pins it so it cannot come back.
+
+### 2. 지역 지표 — 지표 선택 rebuilt around the subject, not the statistical family
+
+Was: one flat list of eleven radios under 총량 지표 / 1인당 형평성 지표 / 시설 부담 지표.
+Now: three subject sections of selectable cards, with the counting choice attached to
+the row it belongs to.
+
+```text
+지역별 인구
+  ○ 지역별 인구 — 선택 지역의 총 인구를 확인합니다.
+
+폐기물 발생량 — 선택 지역에서 발생하는 폐기물의 양을 확인합니다.
+  ○ 생활계 폐기물 발생량            [총량] [1인당]
+  ○ 사업장 폐기물 발생량 (비배출시설계) [총량] [1인당]
+  ○ 사업장 폐기물 발생량 (배출시설계)  [총량] [1인당]
+  ○ 건설 폐기물 발생량              [총량] [1인당]
+
+1인당 시설 처리 수준 — 선택 지역의 폐기물 처리시설 처리량을 확인합니다.
+  ○ 소재 시설 처리량 — 선택 지역 내 시설의 처리량
+  ○ 인근 5km 시설 처리량 — 선택 지역 5km 이내 시설의 처리량
+```
+
+The mapping lives in `lib/metrics.ts` (`METRIC_SECTIONS`); the component only draws
+it. **Seven category rows × the switch = the same eleven served `MetricKey`s.** No
+metric was added, removed, renamed, merged, or derived, and no backend enum moved.
+Row and mode are both READ BACK off the one canonical `metricKey`, so `?metric=` deep
+links, the map, the ranking, and the exports still share one value.
+
+Still true, and still enforced: exactly three `<fieldset>`/`<legend>` groups; one
+logical radio group (`name="metric"`) so arrow keys cross all seven rows; nothing
+behind a disclosure on desktop; selection signalled four ways (checked radio, bold
+label, card border, tint); the mode switch is the shared `SegmentedControl`
+(`role="group"` + `aria-pressed`), never a fourth fieldset. Each row's supporting line
+is attached with `aria-describedby` rather than nested in the `<label>`, so a screen
+reader hears the row's NAME as its name.
+
+**One place the shipped IA differs from the reference sketch — and the correction
+request explicitly authorised it** ("If the repo's real official waste-stream
+distinction requires two existing business streams, preserve the real data semantics.
+Use truthful citizen-facing presentation rather than collapsing distinct official
+datasets incorrectly").
+
+**The sketch showed three waste rows with 생활계 annotated "생활 + 비배출계"; this
+ships four rows and does not print that annotation.** Korean statistics do define
+생활계폐기물 as 생활(가정) + 사업장비배출시설계 — but this platform ingests those as two
+separate official series (RCIS `NTN007` → `HOUSEHOLD`, `NTN008` →
+`BUSINESS_NON_FACILITY`; `docs/API_CONTRACTS/waste_statistics.md`) and the backend
+serves **no combined figure**. Adding the two in the browser would publish a statistic
+no source published, which `AGENTS.md` and spec §11 forbid; dropping either row would
+hide a real official series. Both are offered, each labelled with the stream it
+actually is, and 생활계's supporting line says where the other component lives.
+
+The switch labels are **총량 · 1인당**, as specified: left segment selects that
+category's absolute served metric, right selects its per-capita one.
+
+### 3. 지역 지표 — 지역 비교 removed, 지표 순위 전체보기 added
+
+Removed: the 지역 비교 card, its `0 / 3` counter, its search field, its chips, the
+page state behind them, and the two builders only that card reached
+(`buildComparisonCsv`, `buildComparisonReport`) with `RegionComparison.tsx` itself.
+`lib/urlState.ts` still decodes and bounds-checks `cmp` so an already-shared legacy
+link keeps restoring everything else it carries — the page just no longer applies it.
+The formula-injection guard the removed CSV test covered was moved onto
+`buildRankingCsv`, a builder that still ships, so nothing was dropped with it.
+
+Added: `components/FullRankingDialog.tsx`, opened by a 지표 순위 전체보기 button inside
+the ranking card.
+
+- Derived from the rows Page 1 has **already loaded** — no endpoint was added.
+- `rankAllRegions` (`lib/ranking.ts`) is the SAME scope filter, exclusion rule,
+  comparator and tie-break as the compact card, with the top-N cut removed. Both go
+  through one `partitionByScope`/`sortDescending` pair, so the two surfaces cannot
+  disagree. It is a second VIEW of one ranking, not a second ranking.
+- Follows the active metric and its counting mode; the basis line names both.
+- **Missing is never zero.** A region with no served value is not ranked, not ranked
+  last, and not dropped: it is named in a 값이 없어 순위에서 제외한 지역 list with the
+  count and an explicit 0으로 채우지 않았습니다. An official measured 0 IS ranked.
+- Uses the existing `ui/Dialog`, so focus entry, Tab/Shift+Tab containment, Escape,
+  the close control, backdrop click, the body scroll lock, and focus restoration to the
+  opener are the behaviours already contracted for 데이터·출처. The primitive was not
+  modified to take a second consumer. No new route.
+- Leaving 지역 지표 closes it, the same way `changeMode` already closed the report
+  overlay — an area you navigate away from must not leave an overlay armed.
+
+### 4. 후보지 분석 — the warnings moved to the bottom
+
+`facility-cost-notice` (알림) and `facility-cost-completeness`
+(분석에 포함되지 않은 항목 8가지) moved from the top of the setup screen to the end of
+it. **Nothing else about them changed** — not a word of copy, not the two groupings,
+not the eight strings, not the count, not the collapsed-by-default disclosure, not a
+test id. Both are still fully on the page; the results view keeps its own notice.
+
+Layout/order only. No calculation, no input, no service-region semantics, and the map
+still selects processing regions only.
+
+Side benefit: the setup grid — and with it the sticky action rail — now starts at the
+top of the workspace at every viewport height, which strengthens the first-screen
+contract in `docs/ui-refresh/regression-contract.md` §16.
+
+### 5. 후보지 심층 분석 — the collapsed panel now really gives its width to the map
+
+**Root cause, and it was a real defect.** `globals.css` declared
+`.wep-panel-collapsed { width: 3rem }` inside the ≥768px block and
+`.wep-panel { width: 21rem }` inside the ≥1280px block. Both are single-class
+selectors, so specificity ties and SOURCE ORDER decides — and the 1280 block is later.
+Above 1280px the collapsed rule lost: the panel body hid (that rule is a descendant
+selector, so it kept winning) while the column stayed 336px wide. The panel LOOKED
+collapsed and the map never received the space. Below 1280px it worked, which is why
+it survived to production.
+
+**Fix:** one selector, `.wep-panel.wep-panel-collapsed` (0,2,0), which wins regardless
+of block order. No JS, no new state, no remount, no `key`, no manual `map.resize()`.
+`MapView`'s existing container `ResizeObserver` → `requestAnimationFrame` →
+`map.resize()` is untouched and is what repaints the canvas; `CollapsiblePanel` still
+owns no observer and never unmounts its children.
+
+Measured at 1440×900: both open → left collapsed grows the map by **+288px**; right
+collapsed, the same; both collapsed → **+576px**, the widest state. Reopening returns
+the map to its original width within 1px. At 1024×768 both collapsed grows it by
++416px. Every assertion reads a **bounding box**; `toHaveClass` appears nowhere in the
+new spec, because a class assertion could not have caught this defect — the element
+carried the right class the whole time.
+
+**Remount guard:** `e2e/deepAnalysisPanels.spec.ts` stamps an expando property on the
+live map container and canvas, collapses and reopens both panels, and re-reads it. A
+`key={collapsed}` workaround, a conditional unmount, or a re-created `MapView` all
+produce fresh nodes with no stamp and fail the suite.
+
+### Validation
+
+Run on the branch, working tree clean at commit time.
+
+| Gate | Result |
+| --- | --- |
+| `npm run lint` | PASS — 0 errors, 0 warnings |
+| `npm run typecheck` | PASS |
+| `npm test` | PASS — **58 files passed / 1 skipped; 1322 tests passed / 7 skipped / 0 failed** |
+| `npm run build` | PASS — compiled, TypeScript checked, 4 static pages |
+| `e2e/correctionPass.spec.ts` | PASS — **17/17**, at 390 / 1024 / 1440 |
+| `e2e/deepAnalysisPanels.spec.ts` | PASS — the Page 4 collapse regression test |
+| Playwright (full mocked suite) | 588 passed / 89 skipped / **3 failed** — all three proven flaky, see below |
+
+Unit baseline before the pass: **1308 passed / 7 skipped / 0 failed** on `94771c2`.
+This branch started from a genuinely green suite, so every failure that appeared
+during the pass was caused by this work and was fixed rather than tolerated. The
+suite ends at 1322 passed: net +14 tests (the four corrections' new coverage, minus
+the three obsolete 지역 비교 cases the user explicitly replaced).
+
+#### The three remaining Playwright failures are flakes, and here is the proof
+
+They are recorded rather than hidden, because "it passed on the retry" is not
+evidence. Two full-suite runs were compared:
+
+| Run | Failing tests |
+| --- | --- |
+| Before the `데이터·출처` fix | `facilityCostDashboard:271` @1920, `phase6DataSources:663` @1280, `phase6DataSources:663` @1440 |
+| After the fix (final) | `facilityCostDashboard:332` @1920, `phase6DataSources:493` @430, `responsive:58` @1280 |
+
+Both runs: 588 passed / 89 skipped / 3 failed. Four independent facts establish
+that the remaining three are load flakes and not a regression:
+
+1. **The two `phase6DataSources:663` failures were real, and they are gone.** They
+   failed deterministically at two viewports, were diagnosed to a genuine defect this
+   pass introduced (below), fixed, and now pass. That is what a real regression looks
+   like: stable, reproducible, and it stays fixed.
+2. **The failing sets are disjoint.** No test failed in both runs. A regression does
+   not move between test files when the code does not change.
+3. **Every failure is `element(s) not found`** on the first landmark after
+   `page.goto` — `facility-cost-form`, `transparency-dashboard`, `map-container` —
+   inside the 5s expect timeout. None is a layout assertion returning a wrong value.
+   The pages never rendered; nothing measured them incorrectly.
+4. **All three pass in isolation: 48/48.** Re-run at `--repeat-each=3` across every
+   viewport project, with this branch's code, they are green. And all three spec files
+   are byte-identical to the pre-correction `HEAD` (`git diff HEAD` is empty for them),
+   so this pass did not touch the assertions that failed.
+
+The mechanism is dev-server first-paint contention: the full suite runs many workers
+against one Turbopack dev server, and a cold route compile can exceed a 5s expect
+timeout. It is a pre-existing property of this harness, not of this change.
+
+The unit suite showed the same pattern once: a single full-suite run failed
+`page.suitabilityDashboard.test.tsx › restores a candidate from the versioned URL`,
+a file this pass does not modify. It passes 105/105 alone (three runs × 35 tests)
+**with this branch's `page.tsx` in place**, which is the load-bearing point — the
+rewritten page does not break candidate restore — and the very next full run was
+green at 1322/0. Recorded here rather than quietly re-run.
+
+Viewports checked structurally at **390 / 1024 / 1440** by
+`e2e/correctionPass.spec.ts`, which encodes the reviewer's checklist directly: intro
+block absent and its space reclaimed, the three-section metric IA with a working
+counting switch, 지역 비교 absent and 지표 순위 전체보기 open/Escape/focus-restore,
+the Page 3 warnings measured BELOW the workflow, the six-item navigation intact, and
+zero horizontal page overflow on every screen. The panel-collapse checks run at 1024
+and 1440 only: below `md` the three columns stack, so a width collapse has no meaning
+and the rail is deliberately not rendered.
+
+### Honest limitations
+
+1. **`e2e/civicShell.spec.ts` "mounts exactly one map, and none on the map-free
+   areas" flaked once at 1920×1080** during a full-suite run, on the
+   `?v=1&mode=transparency` step. It passed 15/15 on `--repeat-each=5` in isolation
+   afterwards. It is **pre-existing and not caused by this pass**: the diff touches no
+   `lastArea`, `dataDialogOpen`, or `withDataDialog` line. The mechanism is a race the
+   file already documents for this exact assertion — `gotoView` waits only for the
+   shell, while a cold transparency deep link renders 지역 지표 behind the dialog and
+   mounts its map once the data resolves. Left alone: fixing it means changing a
+   test's patience in a file this pass has no business editing.
+2. **The four-row waste mapping in §2 above** is a data-integrity decision, recorded
+   rather than absorbed silently. It is one edit to `METRIC_SECTIONS` to change, but
+   any three-row form that merges 생활(가정) with 사업장비배출시설계 would have to
+   publish a figure the backend does not serve.
+3. **Figma remained unreachable** (403 / login wall), unchanged from the original run.
+   The IA implemented here is the one written out in the correction request; no frame
+   was inspected and no colour or number was taken from one.
+4. **Not deployed.** Production still serves `26d555f`. Nothing in this pass touched
+   the deployment script, Docker, Caddy, or any environment file.

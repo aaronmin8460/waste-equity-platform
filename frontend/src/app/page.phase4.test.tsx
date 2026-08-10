@@ -153,7 +153,12 @@ async function renderLoaded() {
 // --------------------------------------------------------------------------- //
 
 describe("metric control structure is unchanged by the Phase 4 restyle", () => {
-  it("keeps exactly three fieldsets, three legends, and eleven radios in one group", async () => {
+  // The correction pass re-cut the eleven metrics into three SUBJECT sections with a
+  // 총량/1인당 switch on the waste rows, so the legends and the radio count changed.
+  // The structural guarantees this suite exists for did not: three fieldsets, three
+  // legends, one logical radio group, one checked option, nothing behind a closed
+  // disclosure.
+  it("keeps exactly three fieldsets, three legends, and one logical radio group", async () => {
     const { container } = await renderLoaded();
     expect(container.querySelectorAll("fieldset")).toHaveLength(3);
     expect(container.querySelectorAll("legend")).toHaveLength(3);
@@ -161,10 +166,10 @@ describe("metric control structure is unchanged by the Phase 4 restyle", () => {
     const radios = Array.from(
       container.querySelectorAll<HTMLInputElement>('input[type="radio"][name="metric"]'),
     );
-    expect(radios).toHaveLength(11);
+    expect(radios).toHaveLength(7);
     // One logical radio group: every radio shares the name, so native arrow-key
-    // traversal still moves across all eleven options. No custom key handler and no
-    // select/combobox/segmented-control replacement.
+    // traversal still moves across all seven category rows, across section
+    // boundaries. No custom key handler and no select/combobox replacement.
     for (const radio of radios) {
       expect(radio.getAttribute("name")).toBe("metric");
       expect(radio.tagName).toBe("INPUT");
@@ -173,20 +178,20 @@ describe("metric control structure is unchanged by the Phase 4 restyle", () => {
     expect(radios.filter((r) => r.checked)).toHaveLength(1);
   });
 
-  it("keeps the three metric group test IDs", async () => {
+  it("keeps the three metric section test IDs", async () => {
     await renderLoaded();
-    expect(screen.getByTestId("metric-group-total")).toBeDefined();
-    expect(screen.getByTestId("metric-group-per_capita")).toBeDefined();
-    expect(screen.getByTestId("metric-group-burden")).toBeDefined();
+    expect(screen.getByTestId("metric-section-population")).toBeDefined();
+    expect(screen.getByTestId("metric-section-generation")).toBeDefined();
+    expect(screen.getByTestId("metric-section-facility")).toBeDefined();
   });
 
-  it("uses Korean-only primary text for the group legends", async () => {
+  it("uses Korean-only primary text for the section legends", async () => {
     const { container } = await renderLoaded();
     const legends = Array.from(container.querySelectorAll("legend")).map(
       (l) => l.textContent ?? "",
     );
-    expect(legends).toEqual(["총량 지표", "1인당 형평성 지표", "시설 부담 지표"]);
-    // No English parenthetical survives in the primary group labels.
+    expect(legends).toEqual(["지역별 인구", "폐기물 발생량", "1인당 시설 처리 수준"]);
+    // No English parenthetical survives in the primary section labels.
     for (const legend of legends) {
       expect(legend).not.toMatch(/[A-Za-z]/);
     }

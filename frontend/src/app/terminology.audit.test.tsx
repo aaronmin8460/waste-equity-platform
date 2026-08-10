@@ -141,9 +141,19 @@ describe("primary navigation uses plain Korean", () => {
     }
   });
 
-  it("shows a plain-language orientation for the active area", async () => {
+  it("shows a plain-language orientation for an area that has one", async () => {
     await renderLoaded();
-    expect(screen.getByTestId("mode-orientation").textContent).toContain("지역별 폐기물 발생량");
+    // 지역 지표 shows no intro block at all after the correction pass, so the
+    // orientation wording is audited on the next area that does show one.
+    expect(screen.queryByTestId("mode-orientation")).toBeNull();
+    fireEvent.click(screen.getByTestId("mode-flow"));
+    await waitFor(() => expect(screen.getByTestId("landfill-dashboard")).toBeDefined());
+    const orientation = screen.getByTestId("mode-orientation").textContent ?? "";
+    expect(orientation).toMatch(/\S/);
+    // Plain Korean: no raw enum and no English technical token.
+    for (const token of FORBIDDEN_PRIMARY_TOKENS) {
+      expect(orientation.includes(token), `orientation leaks "${token}"`).toBe(false);
+    }
   });
 });
 

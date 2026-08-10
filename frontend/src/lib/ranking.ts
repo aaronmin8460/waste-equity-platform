@@ -95,24 +95,30 @@ function assignRanks(rows: Omit<RankedRow, "rank">[]): RankedRow[] {
   return rows.map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
+/** A region in scope that could not be ranked, because no value was served. */
+export interface UnrankedRegion {
+  code: string;
+  name: string;
+}
+
 /**
- * Rank the regions by their served numeric value, filtered to `scope` and limited
- * to `topN` per list. Regions without a value are excluded and counted, never
- * ranked as 0.
+ * THE one place scope filtering and the "no value ⇒ excluded, never 0" rule live.
+ * Both `rankRegions` (the compact two-list card) and `rankAllRegions` (the full
+ * ranking dialog) go through it, so the two surfaces can never disagree about which
+ * regions are rankable or why one is missing.
  */
-export function rankRegions(
+function partitionByScope(
   regions: RankableRegion[],
   scope: ScopeSelection,
-  topN: number,
-): RankingResult {
+): { ranked: Omit<RankedRow, "rank">[]; unranked: UnrankedRegion[] } {
   const inScope =
     scope === "all" ? regions : regions.filter((r) => regionScope(r.code) === scope);
 
   const ranked: Omit<RankedRow, "rank">[] = [];
-  let excludedCount = 0;
+  const unranked: UnrankedRegion[] = [];
   for (const region of inScope) {
     if (region.value === undefined || !Number.isFinite(region.value.numeric)) {
-      excludedCount += 1;
+      unranked.push({ code: region.code, name: region.name });
       continue;
     }
     ranked.push({
@@ -123,25 +129,79 @@ export function rankRegions(
       scope: regionScope(region.code),
     });
   }
+  return { ranked, unranked };
+}
 
-  // Value descending for "값이 높은 지역"; ties by region code ascending.
-  const highSorted = [...ranked].sort((a, b) =>
+/** Value descending ("값이 높은 지역"); ties by region code ascending. */
+function sortDescending(rows: Omit<RankedRow, "rank">[]): Omit<RankedRow, "rank">[] {
+  return [...rows].sort((a, b) =>
     b.numeric !== a.numeric ? b.numeric - a.numeric : a.code < b.code ? -1 : a.code > b.code ? 1 : 0,
   );
-  // Value ascending for "값이 낮은 지역".
-  const lowSorted = [...ranked].sort((a, b) =>
+}
+
+/** Value ascending ("값이 낮은 지역"); the same deterministic tie-break. */
+function sortAscending(rows: Omit<RankedRow, "rank">[]): Omit<RankedRow, "rank">[] {
+  return [...rows].sort((a, b) =>
     a.numeric !== b.numeric ? a.numeric - b.numeric : a.code < b.code ? -1 : a.code > b.code ? 1 : 0,
   );
+}
 
-  const high = assignRanks(highSorted).slice(0, topN);
-  const low = assignRanks(lowSorted).slice(0, topN);
+/**
+ * Rank the regions by their served numeric value, filtered to `scope` and limited
+ * to `topN` per list. Regions without a value are excluded and counted, never
+ * ranked as 0.
+ */
+export function rankRegions(
+  regions: RankableRegion[],
+  scope: ScopeSelection,
+  topN: number,
+): RankingResult {
+  const { ranked, unranked } = partitionByScope(regions, scope);
+
+  const high = assignRanks(sortDescending(ranked)).slice(0, topN);
+  const low = assignRanks(sortAscending(ranked)).slice(0, topN);
 
   return {
     high,
     low,
     rankedCount: ranked.length,
-    excludedCount,
+    excludedCount: unranked.length,
     scope,
     topN,
+  };
+}
+
+/** The complete ranking for one metric — every rankable region, no top-N cut. */
+export interface FullRankingResult {
+  /** Every region with a served value, highest first, ranks 1..N with no gaps. */
+  rows: RankedRow[];
+  rankedCount: number;
+  /**
+   * Regions in scope with NO served value. They are listed by name so a reader can
+   * see the ranking is incomplete and why — never appended at rank N+1 with a 0.
+   */
+  unranked: UnrankedRegion[];
+  scope: ScopeSelection;
+}
+
+/**
+ * The whole ranking for the active metric, for the 지표 순위 전체보기 dialog.
+ *
+ * Deliberately the SAME derivation as the compact card — same scope filter, same
+ * exclusion rule, same comparator, same sequential ranks — with the top-N cut
+ * removed. It is a second VIEW of one ranking, not a second ranking; there is no
+ * second sort order, no second tie-break, and no re-formatting of the served display
+ * string. A region with no value is returned in `unranked`, never as a 0.
+ */
+export function rankAllRegions(
+  regions: RankableRegion[],
+  scope: ScopeSelection,
+): FullRankingResult {
+  const { ranked, unranked } = partitionByScope(regions, scope);
+  return {
+    rows: assignRanks(sortDescending(ranked)),
+    rankedCount: ranked.length,
+    unranked,
+    scope,
   };
 }

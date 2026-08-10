@@ -51,6 +51,12 @@ interface RegionRankingProps {
   setTopN: (n: number) => void;
   selectedRegionCode: string | null;
   onSelectRegion: (code: string) => void;
+  /**
+   * Opens 지표 순위 전체보기 — the same ranking without the top-N cut, in a modal
+   * (components/FullRankingDialog.tsx). The card stays the compact answer; this is
+   * the way out of it when top-N is not enough.
+   */
+  onOpenFullRanking: () => void;
 }
 
 /** The scope filter options — the same order and labels lib/ranking defines. */
@@ -123,6 +129,7 @@ export default function RegionRanking({
   setTopN,
   selectedRegionCode,
   onSelectRegion,
+  onOpenFullRanking,
 }: RegionRankingProps) {
   const result = rankRegions(regions, scope, topN);
 
@@ -188,6 +195,18 @@ export default function RegionRanking({
           testId="rank-low"
         />
       </div>
+
+      {/* The way out of the top-N cut. A native button, labelled with the exact
+          words the redesign asked for, and placed directly under the two lists it
+          extends rather than in a corner of the header. */}
+      <button
+        type="button"
+        onClick={onOpenFullRanking}
+        className="wep-btn-quiet mt-3 w-full"
+        data-testid="open-full-ranking"
+      >
+        지표 순위 전체보기
+      </button>
 
       <p className="mt-2 border-t border-hairline pt-2 text-xs text-ink-subtle" data-testid="rank-excluded">
         순위 대상 {formatCount(result.rankedCount)}개 지역. 값이 없어 제외한 지역{" "}

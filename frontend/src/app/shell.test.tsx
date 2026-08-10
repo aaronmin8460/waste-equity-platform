@@ -339,11 +339,17 @@ describe("one main-content target and one h1 per view", () => {
 });
 
 describe("mode orientation stays supporting text, not a second nav row", () => {
-  it("renders inside the view's content area, below the shared chrome", async () => {
+  // 지역 지표 shows NO orientation any more — its whole intro block was removed by the
+  // correction pass (see app/page.equityDashboard.test.tsx for that contract). Every
+  // other area still shows one, and this suite is about those.
+  it("is absent on 지역 지표 and present, as supporting text, on the others", async () => {
     const { container } = await renderLoaded();
+    expect(screen.queryByTestId("mode-orientation")).toBeNull();
+
+    await enterSuitability();
     const orientation = screen.getByTestId("mode-orientation");
     // Plain-language text preserved (the citizen-language guarantee).
-    expect(orientation.textContent).toContain("지역별 폐기물 발생량");
+    expect(orientation.textContent).toMatch(/\S/);
     // Inside <main>, not in the nav chrome.
     expect(container.querySelector("main")?.contains(orientation)).toBe(true);
     expect(screen.getByTestId("top-navigation").contains(orientation)).toBe(false);
@@ -368,8 +374,7 @@ describe("mode orientation stays supporting text, not a second nav row", () => {
       ).toBe(true);
     }
 
-    orientationFollowsHeading("지역 부담");
-
+    // 지역 부담 is deliberately not in this list: it shows no orientation at all.
     await enterSuitability();
     orientationFollowsHeading("후보지 점수");
 

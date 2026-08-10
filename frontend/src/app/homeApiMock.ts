@@ -30,6 +30,19 @@ type Api = typeof ApiModule;
 /** Overrides object for `vi.mock("../lib/api", …)`; spread over the real module. */
 export function homeApiMock(actual: Api): Api {
   const emptyEnvelope = { reference_year: 2024, count: 0, items: [] };
+  // The two DERIVED envelopes (per-capita, facility burden) carry provenance fields
+  // beside their items, and the provenance panel renders them whenever such a metric
+  // is active. An envelope missing them is not "empty", it is malformed — the real
+  // API always sends them — so the empty fixture states them explicitly rather than
+  // leaving the panel to read `undefined`. `assumptions: []` is the honest empty
+  // list: no assumption is invented to fill it.
+  const derivedEnvelope = {
+    unit: "kg/인/년",
+    excluded_regions: [],
+    derivation_version: "test-fixture-derivation",
+    derivation_formula: "test fixture — no official formula",
+    assumptions: [],
+  };
   // The real backend returns 404 NO_DATA_AVAILABLE when no landfill rows exist;
   // fetchJson throws exactly this ApiError. Rejecting with it keeps the landfill
   // fixture explicitly unavailable and non-official instead of a fabricated zero
@@ -56,12 +69,14 @@ export function homeApiMock(actual: Api): Api {
     fetchPopulation: vi.fn().mockResolvedValue(emptyEnvelope),
     fetchWasteStatistics: vi.fn().mockResolvedValue(emptyEnvelope),
     fetchFacilities: vi.fn().mockResolvedValue(emptyEnvelope),
-    fetchWastePerCapita: vi
-      .fn()
-      .mockResolvedValue({ ...emptyEnvelope, unit: "kg/인/년", excluded_regions: [] }),
-    fetchFacilityBurden: vi
-      .fn()
-      .mockResolvedValue({ ...emptyEnvelope, unit: "kg/인/년", excluded_regions: [] }),
+    fetchWastePerCapita: vi.fn().mockResolvedValue({ ...emptyEnvelope, ...derivedEnvelope }),
+    fetchFacilityBurden: vi.fn().mockResolvedValue({
+      ...emptyEnvelope,
+      ...derivedEnvelope,
+      buffer_meters: 5000,
+      facilities_without_coordinates: 0,
+      facilities_without_region: 0,
+    }),
     fetchReportingBoundaries: vi.fn().mockResolvedValue({
       type: "FeatureCollection",
       reference_year: 2024,
@@ -73,7 +88,7 @@ export function homeApiMock(actual: Api): Api {
       .mockResolvedValue({ ...emptyEnvelope, unavailable_regions: [] }),
     fetchReportingPerCapita: vi
       .fn()
-      .mockResolvedValue({ ...emptyEnvelope, unit: "kg/인/년", excluded_regions: [] }),
+      .mockResolvedValue({ ...emptyEnvelope, ...derivedEnvelope }),
     fetchDataSources: vi.fn().mockResolvedValue([]),
     fetchSuitabilityPolicy: vi.fn().mockResolvedValue({
       policy_version: "suitability-policy-v2",

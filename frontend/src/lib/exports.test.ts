@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { toCsv } from "./csv";
-import {
-  buildComparisonCsv,
-  buildRankingCsv,
-  buildScenarioCsv,
-} from "./exports";
+import { buildRankingCsv, buildScenarioCsv } from "./exports";
 import { rankRegions, type RankableRegion } from "./ranking";
 
 const WHEN = new Date(2026, 6, 20, 3, 7, 9);
@@ -68,26 +64,31 @@ describe("buildRankingCsv", () => {
   });
 });
 
-describe("buildComparisonCsv", () => {
-  const rows = buildComparisonCsv({
-    metricLabel: "1인당 생활계 발생량",
-    unit: "kg/인/년",
-    source: "RCIS",
-    referencePeriod: "2022",
-    accountingBasis: "ORIGIN_BASED_TREATMENT_OUTCOME",
-    regions: [
-      { code: "11110", name: "종로구", display: "83,721.3", hasValue: true },
-      { code: "11140", name: "중구", display: "0", hasValue: true }, // official zero
-      { code: "28710", name: "강화군", display: "자료 없음", hasValue: false },
-    ],
-    when: WHEN,
-  });
-
-  it("keeps official value, official zero, and 자료 없음 distinct", () => {
-    const csv = flat(rows);
-    expect(csv).toContain("11110,종로구,83,721.3".replace("83,721.3", '"83,721.3"'));
-    expect(csv).toContain("11140,중구,0,kg/인/년,공식 값"); // zero preserved
-    expect(csv).toContain("28710,강화군,,kg/인/년,자료 없음"); // missing → empty cell
+// `buildComparisonCsv` was removed with the Page 1 지역 비교 card (correction pass).
+// The two rules it covered are still covered against the LIVE ranking builder: an
+// official 0 is exported as 0, and an unavailable region is never exported as one.
+describe("buildRankingCsv — an official zero is a value, not a gap", () => {
+  it("exports a measured 0 as 0 while the unavailable region stays absent", () => {
+    const zeroRegions: RankableRegion[] = [
+      { code: "11110", name: "종로구", value: { numeric: 300, display: "300" } },
+      { code: "11140", name: "중구", value: { numeric: 0, display: "0" } }, // official zero
+      { code: "28710", name: "강화군", value: undefined }, // unavailable
+    ];
+    const csv = flat(
+      buildRankingCsv({
+        metricLabel: "1인당 생활계 발생량",
+        unit: "kg/인/년",
+        source: "RCIS",
+        referencePeriod: "2022",
+        accountingBasis: "ORIGIN_BASED_TREATMENT_OUTCOME",
+        scope: "all",
+        result: rankRegions(zeroRegions, "all", 10),
+        when: WHEN,
+      }),
+    );
+    expect(csv).toContain("값이 낮은 지역,1,11140,중구,0,kg/인/년");
+    expect(csv).not.toContain("강화군");
+    expect(csv).toContain("값이 없어 제외한 지역 수,1");
   });
 });
 
@@ -169,13 +170,21 @@ describe("buildScenarioCsv", () => {
 
 describe("formula-injection safety in exports", () => {
   it("guards a region name that begins with a formula lead-in", () => {
-    const rows = buildComparisonCsv({
+    // Moved off the removed comparison builder onto the ranking one. The guard being
+    // tested lives in `csv.ts` and applies to every cell of every builder, so any
+    // live builder proves it — but it must be proven against one that still ships.
+    const rows = buildRankingCsv({
       metricLabel: "인구",
       unit: "persons",
       source: "SGIS",
       referencePeriod: "2024",
       accountingBasis: null,
-      regions: [{ code: "11110", name: "=HYPERLINK(1)", display: "1", hasValue: true }],
+      scope: "all",
+      result: rankRegions(
+        [{ code: "11110", name: "=HYPERLINK(1)", value: { numeric: 1, display: "1" } }],
+        "all",
+        10,
+      ),
       when: WHEN,
     });
     // The malicious name is neutralised with a leading single quote.

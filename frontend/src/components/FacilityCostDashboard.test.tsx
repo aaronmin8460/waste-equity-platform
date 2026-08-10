@@ -1188,6 +1188,50 @@ describe("candidate integration", () => {
 // are unchanged apart from the one documented structural change (§4 of that doc).
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe("correction pass — the scope notice sits AFTER the workflow", () => {
+  it("places both warning blocks below the numbered steps and the primary action", async () => {
+    const { container } = await renderPanel();
+
+    const form = screen.getByTestId("facility-cost-form");
+    const banner = screen.getByTestId("facility-cost-notice");
+    const completeness = screen.getByTestId("facility-cost-completeness");
+
+    // Node.DOCUMENT_POSITION_FOLLOWING === 4. Both warning blocks must FOLLOW the
+    // whole setup form — the region picker, the processing conditions, the
+    // assumptions, and the calculate rail all live inside it.
+    for (const [label, node] of [
+      ["알림 banner", banner],
+      ["분석에 포함되지 않은 항목", completeness],
+    ] as const) {
+      expect(
+        Boolean(form.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING),
+        `${label} must follow the analysis workflow, not precede it`,
+      ).toBe(true);
+    }
+
+    // Nothing else renders below them: they really are the view's last block.
+    const notice = screen.getByTestId("facility-cost-scope-notice");
+    const setupView = screen.getByTestId("facility-cost-setup-view");
+    expect(setupView.lastElementChild).toBe(notice);
+
+    // And the move is a MOVE, not a deletion: exactly one of each is on screen.
+    expect(container.querySelectorAll('[data-testid="facility-cost-notice"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-testid="facility-cost-completeness"]')).toHaveLength(
+      1,
+    );
+  });
+
+  it("keeps the calculate action above the warnings, so the workflow reads first", async () => {
+    await renderPanel();
+    const calculate = screen.getByTestId("facility-cost-calculate");
+    const banner = screen.getByTestId("facility-cost-notice");
+    expect(
+      Boolean(calculate.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING),
+      "the warnings follow the calculate control",
+    ).toBe(true);
+  });
+});
+
 describe("refresh — setup workflow", () => {
   it("presents the setup as three numbered steps", async () => {
     await renderPanel();

@@ -138,7 +138,7 @@ const NAV_LABELS = VIEWS.map((v) => v.navLabel);
 
 /** The components each view OWNS — they must not survive into another view. */
 const VIEW_OWNED_TESTIDS: Record<string, string[]> = {
-  "지역 지표": ["region-select", "region-ranking", "region-comparison", "share-export"],
+  "지역 지표": ["region-select", "region-ranking", "open-full-ranking", "share-export"],
   "후보지 심층 분석": ["suitability-summary"],
   "후보지 심층 비교": ["scenario-lab"],
   "후보지 분석": ["facility-cost-dashboard", "facility-cost-form"],
@@ -188,7 +188,7 @@ const SINGLETON_TESTIDS = [
   "map-container",
   "region-select",
   "region-ranking",
-  "region-comparison",
+  "open-full-ranking",
   "share-export",
   "suitability-summary",
   "scenario-lab",

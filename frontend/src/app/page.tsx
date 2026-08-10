@@ -74,18 +74,22 @@ import {
   CANDIDATE_SCORE_BREAKS,
   CANDIDATE_SCORE_PALETTE_5,
   CANDIDATE_STABLE_OUTLINE_COLOR,
-  METRIC_GROUPS,
+  METRIC_MODE_LABELS,
   METRICS,
   NO_DATA_COLOR,
+  findMetricRow,
   formatCount,
   formatLegendValue,
   formatQuantity,
   frequencyLabel,
+  metricKeyFor,
   UNKNOWN_FREQUENCY_LABEL,
   resolveActiveScale,
   scaleConfigForMetric,
   scaleMethodNote,
   type MetricKey,
+  type MetricMode,
+  type MetricRow,
 } from "../lib/metrics";
 import type {
   MapMode,
@@ -93,7 +97,7 @@ import type {
   RegionSelection,
   StatusVisibility,
 } from "../components/MapView";
-import { formatRegionMetricDisplay, regionUnavailableReasonLabel } from "../lib/regionDisplay";
+import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import EquityMapInsightStrip from "../components/equity/EquityMapInsightStrip";
 import EquityMetricSelector from "../components/equity/EquityMetricSelector";
 import EquityRegionPicker from "../components/equity/EquityRegionPicker";
@@ -141,7 +145,7 @@ import WetlandLayerControl from "../components/WetlandLayerControl";
 import type { WetlandType } from "../lib/wetland";
 import { defaultWetlandTypeVisibility } from "../lib/wetland";
 import RegionRanking from "../components/RegionRanking";
-import RegionComparison, { type ComparisonValue } from "../components/RegionComparison";
+import FullRankingDialog from "../components/FullRankingDialog";
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
 import PageHeader from "../components/ui/PageHeader";
@@ -155,17 +159,12 @@ import {
   decodeUrlState,
   encodeUrlState,
   shareableUrl,
-  MAX_COMPARE,
   MUNICIPAL_COST_DEFAULT_SORT,
   type AppUrlState,
 } from "../lib/urlState";
 import { downloadCsv, safeFilename } from "../lib/csv";
-import {
-  buildComparisonCsv,
-  buildRankingCsv,
-  type ComparisonRegionRow,
-} from "../lib/exports";
-import { buildComparisonReport, buildEquityReport, type ReportModel } from "../lib/report";
+import { buildRankingCsv } from "../lib/exports";
+import { buildEquityReport, type ReportModel } from "../lib/report";
 import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario";
 import { namedWeightRows } from "../lib/suitability";
 import {
@@ -388,11 +387,17 @@ export default function Home() {
     null,
   );
 
-  // 지역 부담 ranking + comparison + share/export state.
+  // 지역 지표 ranking + share/export state.
+  //
+  // The 지역 비교 (pick-up-to-three) feature that also lived here was removed by the
+  // correction pass: 지표 순위 전체보기 shows EVERY region for the active metric, which
+  // is what the hand-picked three were being used to approximate. `reportKind` is
+  // therefore a one-member union rather than a boolean, so the report preview keeps
+  // its existing "which model?" shape if a second report is ever added back.
   const [scope, setScope] = useState<ScopeSelection>("all");
   const [topN, setTopN] = useState(10);
-  const [comparison, setComparison] = useState<string[]>([]);
-  const [reportKind, setReportKind] = useState<"ranking" | "comparison" | null>(null);
+  const [fullRankingOpen, setFullRankingOpen] = useState(false);
+  const [reportKind, setReportKind] = useState<"ranking" | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<string[]>([]);
   // A scenario / candidate restored from a shared URL, held until consumed (the
   // scenario is auto-applied by the lab via the preview API; the candidate is
@@ -461,15 +466,38 @@ export default function Home() {
     load();
   }, [load]);
 
-  // Select a metric while PRESERVING the selected region: the summary is derived
+  // Both metric handlers below PRESERVE the selected region: the summary is derived
   // from `selectedRegionCode` under the active metric, so switching metric simply
   // re-derives the same region's label + value (or its explicit unavailable text
-  // if the new metric serves no value for it). The stored code is retained here —
-  // it is only dropped when the region no longer exists in the active geography
-  // (handled by the derivation returning null; see `selectedRegion`).
-  const selectMetric = useCallback((key: MetricKey) => {
-    setMetricKey(key);
-  }, []);
+  // if the new metric serves no value for it). The stored code is retained — it is
+  // only dropped when the region no longer exists in the active geography (handled
+  // by the derivation returning null; see `selectedRegion`).
+  //
+  // The 지표 선택 card presents the eleven metrics as CATEGORY ROWS with an optional
+  // 총량/1인당 switch (lib/metrics.ts METRIC_SECTIONS). Neither the row nor the mode is
+  // separate state: both are read back off the one canonical `metricKey`, and both
+  // handlers below just resolve a different served key for it. That is what keeps a
+  // shared `?metric=` link, the map, the ranking, and the exports on one value.
+  const activeMetricRow = findMetricRow(metricKey);
+  const metricMode: MetricMode = activeMetricRow?.mode ?? "total";
+
+  // Picking a category keeps the reader's counting choice where that category
+  // supports it; a category with no per-capita counterpart resolves to its absolute
+  // metric rather than silently inventing one (`metricKeyFor`).
+  const selectMetricRow = useCallback(
+    (row: MetricRow) => setMetricKey(metricKeyFor(row, metricMode)),
+    [metricMode],
+  );
+
+  // Flipping 총량/1인당 stays on the SAME category — it only ever swaps between that
+  // row's two served keys.
+  const selectMetricMode = useCallback(
+    (nextMode: MetricMode) => {
+      if (!activeMetricRow) return;
+      setMetricKey(metricKeyFor(activeMetricRow.row, nextMode));
+    },
+    [activeMetricRow],
+  );
 
   // Suitability meta (policy + latest run + summary): load once when entering the mode.
   useEffect(() => {
@@ -735,7 +763,12 @@ export default function Home() {
   const changeMode = useCallback(
     (next: DashboardMode) => {
       if (next !== "suitability") clearScenario();
-      if (next !== "equity") setReportKind(null); // close the equity report overlay
+      if (next !== "equity") {
+        setReportKind(null); // close the equity report overlay
+        // …and the equity full-ranking dialog, for the same reason: leaving the area
+        // must not leave an overlay armed to reappear when the reader comes back.
+        setFullRankingOpen(false);
+      }
       setMode(next);
     },
     [clearScenario],
@@ -1155,7 +1188,7 @@ export default function Home() {
       ? "derived"
       : "reported";
 
-  // --- 지역 부담 ranking + comparison + export derivations ------------------- //
+  // --- 지역 지표 ranking + export derivations -------------------------------- //
 
   // Every region on the active geography paired with its served value (or undefined
   // when unavailable) — the input to the ranking, which never fabricates a 0.
@@ -1167,32 +1200,6 @@ export default function Home() {
         value: regionValues.get(feature.properties.region_code),
       })),
     [activeBoundaries, regionValues],
-  );
-
-  // Resolve one region's comparison cell (exact value or 자료 없음). Reuses the same
-  // formatter path as the summary, so an official 0 stays distinct from unavailable.
-  const resolveComparisonValue = useCallback(
-    (code: string): ComparisonValue | null => {
-      const selection = buildRegionSelection(code);
-      if (!selection) return null;
-      const value = regionValues.get(code);
-      // The SERVED availability reason for a region with no value, so the
-      // comparison row can say WHY the cell is empty instead of only 자료 없음.
-      // Read from the same feature the summary and the map popup read; when the
-      // source attached no reason the label is "" and nothing extra is rendered.
-      const feature = activeBoundaries.features.find((f) => f.properties.region_code === code);
-      return {
-        code,
-        name: selection.regionName,
-        display: value?.display ?? "",
-        hasValue: selection.hasValue,
-        numeric: value?.numeric,
-        unavailableReason: selection.hasValue
-          ? undefined
-          : regionUnavailableReasonLabel(feature?.properties.unavailable_reason) || undefined,
-      };
-    },
-    [buildRegionSelection, regionValues, activeBoundaries],
   );
 
   // Concise source/period/accounting provenance for the CSV + report metadata.
@@ -1209,15 +1216,6 @@ export default function Home() {
     };
   }, [sourceInfo, derivedInfo, metricReferencePeriod]);
 
-  const comparisonExportRows = useCallback((): ComparisonRegionRow[] => {
-    return comparison.map((code) => {
-      const value = resolveComparisonValue(code);
-      return value
-        ? { code, name: value.name, display: value.display, hasValue: value.hasValue }
-        : { code, name: code, display: "", hasValue: false };
-    });
-  }, [comparison, resolveComparisonValue]);
-
   const downloadRankingCsv = useCallback(() => {
     const result = rankRegions(rankableRegions, scope, topN);
     const rows = buildRankingCsv({
@@ -1233,45 +1231,20 @@ export default function Home() {
     downloadCsv(safeFilename(`지역부담순위_${metric.label}`, "csv"), rows);
   }, [rankableRegions, scope, topN, metric.label, unit, exportProvenance]);
 
-  const downloadComparisonCsv = useCallback(() => {
-    const rows = buildComparisonCsv({
-      metricLabel: metric.label,
-      unit,
-      source: exportProvenance.source,
-      referencePeriod: exportProvenance.referencePeriod,
-      accountingBasis: exportProvenance.accountingBasis,
-      regions: comparisonExportRows(),
-      when: new Date(),
-    });
-    downloadCsv(safeFilename(`지역비교_${metric.label}`, "csv"), rows);
-  }, [metric.label, unit, exportProvenance, comparisonExportRows]);
-
   // The report model for the print/PNG preview, built when a report is opened.
   const reportModel = useMemo<ReportModel | null>(() => {
     if (reportKind === null) return null;
-    const when = new Date();
-    if (reportKind === "ranking") {
-      return buildEquityReport({
-        metricLabel: metric.label,
-        unit,
-        source: exportProvenance.source,
-        referencePeriod: exportProvenance.referencePeriod,
-        accountingBasis: exportProvenance.accountingBasis,
-        scope,
-        result: rankRegions(rankableRegions, scope, topN),
-        when,
-      });
-    }
-    return buildComparisonReport({
+    return buildEquityReport({
       metricLabel: metric.label,
       unit,
       source: exportProvenance.source,
       referencePeriod: exportProvenance.referencePeriod,
       accountingBasis: exportProvenance.accountingBasis,
-      regions: comparisonExportRows(),
-      when,
+      scope,
+      result: rankRegions(rankableRegions, scope, topN),
+      when: new Date(),
     });
-  }, [reportKind, metric.label, unit, exportProvenance, scope, topN, rankableRegions, comparisonExportRows]);
+  }, [reportKind, metric.label, unit, exportProvenance, scope, topN, rankableRegions]);
 
   // --- Shareable, validated URL state -------------------------------------- //
 
@@ -1280,7 +1253,11 @@ export default function Home() {
       mode: mode as DashboardArea,
       metric: metricKey,
       region: selectedRegionCode,
-      cmp: comparison,
+      // 지역 비교 is gone, so this page writes no comparison codes. The FIELD stays in
+      // the URL contract (`lib/urlState.ts` still decodes and bounds-checks `cmp`) so
+      // an already-shared legacy link keeps restoring everything else it carries
+      // instead of being rejected — it just no longer selects anything.
+      cmp: [],
       scope,
       top: topN,
       view: suitabilityView,
@@ -1310,7 +1287,6 @@ export default function Home() {
       mode,
       metricKey,
       selectedRegionCode,
-      comparison,
       scope,
       topN,
       suitabilityView,
@@ -1335,10 +1311,10 @@ export default function Home() {
     ],
   );
 
-  // Restore shared state ONCE, after the regions have loaded (so restored region
-  // and comparison codes resolve against real geography; a code the active metric's
-  // geometry does not contain simply shows no value — never a fabricated one). The
-  // decoder has already whitelisted/bounds-checked every field.
+  // Restore shared state ONCE, after the regions have loaded (so a restored region
+  // code resolves against real geography; a code the active metric's geometry does
+  // not contain simply shows no value — never a fabricated one). The decoder has
+  // already whitelisted/bounds-checked every field.
   useEffect(() => {
     if (urlRestored.current || data === null || typeof window === "undefined") return;
     urlRestored.current = true;
@@ -1350,7 +1326,9 @@ export default function Home() {
     if (state.mode) setMode(state.mode);
     if (state.metric) setMetricKey(state.metric);
     if (state.region) setSelectedRegionCode(state.region);
-    if (state.cmp) setComparison(state.cmp.slice(0, MAX_COMPARE));
+    // `state.cmp` is decoded but deliberately NOT applied: the 지역 비교 surface it
+    // fed no longer exists. Ignoring it keeps a legacy shared link working for every
+    // other field rather than failing the whole restore.
     if (state.scope) setScope(state.scope);
     if (state.top) setTopN(state.top);
     if (state.view) setSuitabilityView(state.view);
@@ -1746,20 +1724,51 @@ export default function Home() {
         </CollapsiblePanel>
       ) : (
         <ResizableSidebar>
-        {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
-            데이터·출처, and 비용 살펴보기 already title themselves. The product name
-            it replaced now lives in the app bar's brand block, so the same words no
-            longer appear twice on one screen; the scope line below it is the exact
-            string this header carried before. See
-            docs/ui-refresh/regression-contract.md §10. ModeOrientation stays a
-            SIBLING so it still follows the h1 in document order (shell.test.tsx)
-            while keeping the column's gap-3 rhythm. */}
-        <PageHeader
-          title={destination.label}
-          description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
-        />
+        {/* 지역 지표 HAS NO VISIBLE TITLE BLOCK (correction pass).
 
-        <ModeOrientation destination={destination} />
+            The area used to open with a three-line header — the destination name, the
+            "서울 · 인천 · 경기 …" scope line, and the orientation strip — repeating
+            what the active navigation item already says and pushing the two controls
+            a reader actually acts on down the column. The post-production visual
+            review asked for that space back, so the whole block is GONE from the
+            layout rather than hidden with a class that would keep occupying it.
+
+            The `<h1>` itself stays, because the page must keep exactly one
+            (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.2 / §13, app/shell.test.tsx) and a
+            landmark-navigating reader still needs the area named. `sr-only` takes it
+            out of the visual flow completely — it contributes no height, no margin,
+            and no gap — while leaving it first in document order.
+
+            Every OTHER area that renders through this column (후보지 심층 비교) keeps
+            its full header, so this is a Page-1 change, not a shell change.
+
+            `!dataDialogOpen` IS LOAD-BEARING. 데이터·출처 is a dialog layered over the
+            previous area (spec §8), so on a cold `?v=1&mode=transparency` link this
+            same branch renders with `viewMode === "equity"` while `destination` is
+            데이터·출처 — and this `<h1>` is then THAT destination's title, not Page 1's.
+            Hiding it there stripped 데이터·출처 of its visible page title, which
+            `e2e/phase6DataSourcesDashboard.spec.ts:663` caught at 1280 and 1440. The
+            heading is hidden only when the reader is actually looking at 지역 지표. */}
+        {viewMode === "equity" && !dataDialogOpen ? (
+          <h1 className="sr-only">{destination.label}</h1>
+        ) : (
+          <>
+            {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
+                데이터·출처, and 비용 살펴보기 already title themselves. The product name
+                it replaced now lives in the app bar's brand block, so the same words no
+                longer appear twice on one screen; the scope line below it is the exact
+                string this header carried before. See
+                docs/ui-refresh/regression-contract.md §10. ModeOrientation stays a
+                SIBLING so it still follows the h1 in document order (shell.test.tsx)
+                while keeping the column's gap-3 rhythm. */}
+            <PageHeader
+              title={destination.label}
+              description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
+            />
+
+            <ModeOrientation destination={destination} />
+          </>
+        )}
 
         {viewMode === "equity" && (
           <>
@@ -1776,13 +1785,16 @@ export default function Home() {
               onSelectRegion={(code) => setSelectedRegionCode(code)}
             />
 
-            {/* METRIC GROUPS — structure frozen: 3 fieldsets / 3 legends / 11 radios
-                in one logical group (regression-contract §5). Presentation only. */}
+            {/* 지표 선택 — three SUBJECT sections (인구 · 발생량 · 시설 처리 수준) of
+                selectable rows, with a 총량/1인당 switch on the rows that have both.
+                Still three fieldsets and one logical radio group (regression-contract
+                §5, restated for the new shape). The same eleven served metrics: the
+                mapping lives in lib/metrics.ts METRIC_SECTIONS, never here. */}
             <EquityMetricSelector
-              groups={METRIC_GROUPS}
-              metrics={METRICS}
               metricKey={metricKey}
-              onSelectMetric={selectMetric}
+              mode={metricMode}
+              onSelectRow={selectMetricRow}
+              onSelectMode={selectMetricMode}
             />
 
             {/* CURRENT SELECTION — the answer to the two choices above, so it now
@@ -1802,12 +1814,16 @@ export default function Home() {
               onClear={() => setSelectedRegionCode(null)}
             />
 
-            {/* 지표 순위, then comparison, then share/export. All three read the
-                active metric's served values, so they follow the metric
-                automatically, and selecting a region in any of them drives the ONE
-                canonical selected-region state (map + summary stay in sync).
-                Ranking leads because it answers "where does this stand?" for every
-                region, while comparison answers a follow-up about a chosen few. */}
+            {/* 지표 순위, then share/export. Both read the active metric's served
+                values, so they follow the metric automatically, and selecting a
+                region in either drives the ONE canonical selected-region state (map +
+                summary stay in sync).
+
+                The 지역 비교 card that used to sit between them is gone (correction
+                pass). Picking up to three regions by hand was a way of asking "how do
+                these stand against each other?", and 지표 순위 전체보기 — the button
+                inside this card — answers that for EVERY region at once, from the
+                same served values, with no top-N cut. */}
             <RegionRanking
               regions={rankableRegions}
               metricLabel={metric.label}
@@ -1819,24 +1835,13 @@ export default function Home() {
               setTopN={setTopN}
               selectedRegionCode={selectedRegionCode}
               onSelectRegion={(code) => setSelectedRegionCode(code)}
-            />
-
-            <RegionComparison
-              regionOptions={regionOptions}
-              resolveValue={resolveComparisonValue}
-              metricLabel={metric.label}
-              unit={unit}
-              selected={comparison}
-              setSelected={setComparison}
-              onSelectRegionOnMap={(code) => setSelectedRegionCode(code)}
-              maxCompare={MAX_COMPARE}
+              onOpenFullRanking={() => setFullRankingOpen(true)}
             />
 
             <ShareExportBar
               getShareUrl={getShareUrl}
               onDownloadRankingCsv={downloadRankingCsv}
-              onDownloadComparisonCsv={comparison.length > 0 ? downloadComparisonCsv : undefined}
-              onOpenReport={() => setReportKind(comparison.length > 0 ? "comparison" : "ranking")}
+              onOpenReport={() => setReportKind("ranking")}
               urlWarnings={urlWarnings}
             />
 
@@ -2193,12 +2198,34 @@ export default function Home() {
         </CollapsiblePanel>
       )}
 
+      {/* 지표 순위 전체보기 — the complete ranking for the ACTIVE metric, derived from
+          the region rows already loaded here (no endpoint was added for it). Mounted
+          beside the map rather than inside the sidebar so the dialog is not a child
+          of a column that scrolls or, at md+, can be resized under it. It renders
+          nothing while closed. */}
+      <FullRankingDialog
+        open={viewMode === "equity" && fullRankingOpen}
+        onClose={() => setFullRankingOpen(false)}
+        regions={rankableRegions}
+        metricLabel={metric.label}
+        // Only stated when the active metric actually has a counting mode — the
+        // facility-burden metrics are per-capita as served and have no switch.
+        modeLabel={
+          activeMetricRow?.row.perCapita ? METRIC_MODE_LABELS[metricMode] : undefined
+        }
+        unit={unit}
+        referencePeriod={metricReferencePeriod}
+        scope={scope}
+        selectedRegionCode={selectedRegionCode}
+        onSelectRegion={(code) => setSelectedRegionCode(code)}
+      />
+
       {/* Print / PNG report preview overlay (map-free). Opened from the equity
-          share/export bar; the model is the ranking or the region comparison. */}
+          share/export bar; the model is the ranking. */}
       {reportModel && (
         <ReportPreview
           model={reportModel}
-          filenameBase={reportKind === "comparison" ? `지역비교_${metric.label}` : `지역부담순위_${metric.label}`}
+          filenameBase={`지역부담순위_${metric.label}`}
           onClose={() => setReportKind(null)}
         />
       )}

@@ -30,8 +30,8 @@ import { MAP_EXCLUSION_NOTE, type ReportModel } from "../lib/report";
 afterEach(cleanup);
 
 /**
- * A model shaped like the real ones (`buildRankingReport` / `buildComparisonReport`):
- * a title, a two-column section, a multi-column table, a note and a disclaimer.
+ * A model shaped like the real one (`buildRankingReport`): a title, a two-column
+ * section, a multi-column table, a note and a disclaimer.
  * Values are synthetic and no assertion below claims any of them is correct.
  */
 const MODEL: ReportModel = {
