@@ -1064,5 +1064,95 @@ and the rail is deliberately not rendered.
 3. **Figma remained unreachable** (403 / login wall), unchanged from the original run.
    The IA implemented here is the one written out in the correction request; no frame
    was inspected and no colour or number was taken from one.
-4. **Not deployed.** Production still serves `26d555f`. Nothing in this pass touched
-   the deployment script, Docker, Caddy, or any environment file.
+4. **Deployed.** This limitation previously read "Not deployed — production still
+   serves `26d555f`". That is no longer true: the release was deployed and verified
+   on 2026-08-10 and production now serves `bf5165f`. See the post-deploy section
+   below. Nothing in this pass modified the deployment script, Docker, Caddy, or any
+   environment file — `deploy.sh` was used exactly as it already existed.
+
+---
+
+## Post-deploy verification — OCI production, 2026-08-10
+
+**DEPLOYED APPLICATION SHA:** `bf5165f889f0a0415f5bc459255ab74bd7a54653`
+**PREVIOUS PRODUCTION SHA:** `26d555fc83f7637d63b335223480e46226d3d173`
+
+Deployed with `scripts/deployment/deploy.sh --ref bf5165f… --env-file
+.env.production --base-url https://waste-161-33-2-143.sslip.io --expect-data`,
+which exited 0. The release is frontend + docs only: **no migration, no ingestion,
+no database restore, no volume change, no environment-file edit.**
+
+### Server state
+
+| Check | Result |
+| --- | --- |
+| Production `git rev-parse HEAD` | `bf5165f889f0a0415f5bc459255ab74bd7a54653` — matches the release |
+| `GET /` | 200 |
+| `GET /health` | 200 — `{"status":"ok","database":"ok","app_env":"production"}` |
+| `GET /api/v1/data-sources` | 200, catalogue served |
+| backend / database / frontend | all `healthy`; caddy running |
+| Alembic head | `0021 (head)` — **identical before and after**, no migration ran |
+| Container restart counts | frontend 0, backend 0, caddy 0, database 0 — no crash loop |
+| backend logs | no traceback, no exception, no 5xx |
+| caddy logs | no `"status":5xx`, no error-level lines |
+
+The deploy script's own smoke test passed all seven checks (health, data-sources,
+suitability policies, frontend root, latest run, candidates, database reachability).
+
+### Production UI smoke
+
+Driven against the **deployed site** with real Chrome, measuring bounding boxes and
+DOM identity rather than class names. **Every check passed (exit 0).**
+
+An earlier attempt at this smoke failed, and the harness was at fault, not the
+product: it clicked the row container (`metric-row-household`) instead of checking
+the radio, so the mode switch — which by design belongs only to the *active* row —
+never appeared. The corrected harness uses the same interaction as the passing
+`e2e/correctionPass.spec.ts`: `getByRole("radio", { name: "생활계 폐기물 발생량" })
+.check()`. Production was not touched to satisfy a broken script.
+
+**Page 1 — 지역 지표** at 390×844, 1024×768, 1440×900:
+
+- The intro subtitle is not present at all (`count=0`), and `mode-orientation` is
+  absent. Exactly one `h1`, reading 지역 지표, measuring **1.0px tall** — present for
+  assistive technology, consuming no visible layout.
+- Three subject sections, **7 radios all sharing `name="metric"`**, and all three
+  subject titles render.
+- The `[총량]/[1인당]` switch is absent until its row is active, then appears with
+  총량 pressed. 1인당 moves the canonical URL to `metric=PER_CAPITA_HOUSEHOLD` and
+  총량 returns it to `metric=HOUSEHOLD`, with the category still selected — an
+  existing served metric in both directions, no new enum.
+- `region-comparison`, `comparison-search`, `comparison-chips`, `comparison-table`
+  are all absent, and no 최대 3개 지역 copy remains.
+- 지표 순위 전체보기 opens `role="dialog" aria-modal="true"` listing **all 66 ranked
+  regions**, names its basis, fits inside every viewport (390×844 exactly), closes on
+  Escape and returns focus to its opener.
+- Missing values stay missing: the dialog states *"값이 없어 순위에서 제외한 지역
+  0개 … 값이 0이라는 뜻이 아니며, 0으로 채우지 않았습니다"*. On this metric no region
+  is unranked, and the wording still refuses to equate absent with zero.
+
+**Page 3 — 후보지 분석** at all three viewports: `facility-cost-notice` and
+`facility-cost-completeness` both still exist, 분석에 포함되지 않은 항목 8가지 is
+intact, and both sit below the workflow by measurement (1440×900: notice y=1415,
+exclusions y=1557, form bottom y=1297; step 1 at y=188). Wording unchanged.
+
+**Page 4 — 후보지 심층 분석**, measured geometry:
+
+| Viewport | Both open | Left collapsed | Right collapsed | Both collapsed | Rail |
+| --- | --- | --- | --- | --- | --- |
+| 1024×768 | 528px | 728px | 728px | **928px** | 48px |
+| 1440×900 | 768px | 1056px | 1056px | **1344px** | 48px |
+
+Reopening returns the map to its original width exactly (528→528, 768→768). The
+MapLibre canvas tracks the container at every step (1056/1056, 1344/1344), so
+`map.resize()` is firing. The map container and canvas were stamped with a JS
+property before collapsing and **both stamps survive the entire cycle**, proving the
+same DOM nodes — no remount, no `key={collapsed}`. Zoom controls stay operable and
+the legend stays usable inside the map.
+
+**Cross-view** at 1440×900: all six navigation destinations present; Page 2 and
+Page 5 return 200 and render. 데이터·출처 shows a **visible** `h1` (28px, not
+`sr-only`) — the regression this pass introduced and fixed, confirmed fixed in
+production.
+
+No page-level horizontal overflow at any viewport on any page.
