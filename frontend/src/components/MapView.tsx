@@ -462,18 +462,84 @@ export function wetlandPopupHtml(
   );
 }
 
+/** Minimal HTML escaping for served strings interpolated into popup markup. */
+function esc(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** One `label  value` provenance row, in the popup's smallest type. */
+function metaRow(label: string, value: string): string {
+  return (
+    `<div class="wep-popup-meta"><span class="wep-popup-meta-label">${esc(label)}</span>` +
+    `<span>${esc(value)}</span></div>`
+  );
+}
+
+/**
+ * The facility half of the map popup: the served attributes of ONE facility.
+ * Every line is a served value; a facility without a throughput simply omits that
+ * line rather than printing a 0 or a dash.
+ */
+function facilitySectionHtml(props: Record<string, unknown>): string {
+  const throughput = props.throughput
+    ? `<div class="wep-popup-line">연간 처리량: ${esc(props.throughput)}</div>`
+    : "";
+  const address = props.address ? `<div class="wep-popup-line">${esc(props.address)}</div>` : "";
+  return (
+    `<div class="wep-popup-rule"></div>` +
+    `<div class="wep-popup-subtitle">${esc(props.facility_name)}</div>` +
+    `<div class="wep-popup-line">${esc(props.category_label)}</div>` +
+    throughput +
+    address +
+    metaRow("시설 출처", `${esc(props.source_id)} · 기준 ${esc(props.reference_period)}`)
+  );
+}
+
+/**
+ * The popup for a facility clicked where no region polygon is rendered underneath
+ * it (the suitability map, or a marker just outside the loaded boundaries). Same
+ * facility block, without a region header it has no data for.
+ */
+export function facilityOnlyPopupHtml(props: Record<string, unknown>): string {
+  return (
+    `<div class="wep-popup-title">${esc(props.facility_name)}</div>` +
+    `<div class="wep-popup-line">${esc(props.category_label)}</div>` +
+    (props.throughput
+      ? `<div class="wep-popup-line">연간 처리량: ${esc(props.throughput)}</div>`
+      : "") +
+    (props.address ? `<div class="wep-popup-line">${esc(props.address)}</div>` : "") +
+    metaRow("시설 출처", `${esc(props.source_id)} · 기준 ${esc(props.reference_period)}`)
+  );
+}
+
 /**
  * The region tooltip/popup HTML, shared by the desktop hover tooltip and the
  * click/tap popup so both show the same information: region name, selected metric
  * label, the exact served value with unit (or the availability text — never a
  * fabricated 0), the metric's reference period, and the boundary provenance.
  * `props` are the MapLibre-serialized feature properties (strings/booleans).
+ *
+ * ── PHASE 1: ONE POPUP, NOT TWO (Figma frame 223:449) ────────────────────────────
+ * A facility marker sits ON TOP of the region fill, so a click used to reach BOTH
+ * layer handlers: the facility opened its own popup, the region opened a second one
+ * over it, and the region selection changed even though the reader had aimed at a
+ * marker. The design shows a SINGLE popup carrying the region's indicator value and
+ * the facility's details together ("지도에서 지역 선택 시, 폐기물 발생량과 매립장 정보
+ * 한번에 뜨도록 수정"), which is what `facility` renders here. The click priority
+ * that decides when it is passed lives in the map's own click handler below.
  */
-export function regionPopupHtml(props: Record<string, unknown>): string {
+export function regionPopupHtml(
+  props: Record<string, unknown>,
+  facility?: Record<string, unknown> | null,
+): string {
   // `metric_display` already conveys availability: a served value with its unit,
   // or "데이터 없음 — {reason}" for a region with no served value (never a 0).
   const period = props.metric_reference_period
-    ? `<br/><small>지표 기준 기간: ${props.metric_reference_period}</small>`
+    ? metaRow("지표 기준 기간", String(props.metric_reference_period))
     : "";
   let reportingLines = "";
   if (props.geometry_kind === "DERIVED") {
@@ -484,16 +550,23 @@ export function regionPopupHtml(props: Record<string, unknown>): string {
       children = "";
     }
     reportingLines =
-      `<br/><small>통계 보고 단위: 시 (city) · 수치 출처: RCIS</small>` +
-      (children ? `<br/><small>경계 표시: SGIS ${children} 경계의 파생 합집합</small>` : "") +
-      `<br/><small>구별 공식 폐기물 값은 제공되지 않습니다.</small>`;
+      metaRow("통계 보고 단위", "시 (city) · 수치 출처: RCIS") +
+      (children ? metaRow("포함 구", `SGIS ${children} 경계의 파생 합집합`) : "") +
+      `<div class="wep-popup-line wep-popup-note">구별 공식 폐기물 값은 제공되지 않습니다.</div>`;
   }
   return (
-    `<strong>${props.region_name}</strong><br/>${props.metric_label}<br/>` +
-    `${props.metric_display}` +
+    `<div class="wep-popup-title">${esc(props.region_name)}</div>` +
+    `<div class="wep-popup-line">${esc(props.metric_label)}</div>` +
+    `<div class="wep-popup-value">${esc(props.metric_display)}</div>` +
+    (facility ? facilitySectionHtml(facility) : "") +
+    `<div class="wep-popup-rule"></div>` +
     period +
-    `<br/><small>경계 출처: ${props.source_id} (${props.boundary_reference_period}) · 지표 출처는 좌측 패널 참조</small>` +
-    reportingLines
+    metaRow(
+      "경계 기준",
+      `${String(props.source_id ?? "")} (${String(props.boundary_reference_period ?? "")})`,
+    ) +
+    reportingLines +
+    `<div class="wep-popup-line wep-popup-note">지표 출처는 좌측 '선택한 지역' 패널을 참조하세요.</div>`
   );
 }
 
@@ -910,19 +983,72 @@ export default function MapView({
           source: "regions",
           paint: { "line-color": "#4b5563", "line-width": 0.8 },
         });
-        map.on("click", "regions-fill", (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const props = feature.properties as Record<string, string>;
+        /**
+         * ONE click handler for the region fill and the facility points, bound to
+         * the MAP rather than to each layer.
+         *
+         * A per-layer binding is what produced the defect this replaces: MapLibre
+         * delivers a click to EVERY layer under the pointer, so a facility marker
+         * (drawn on top of the region fill) fired the facility handler AND the
+         * region handler — two overlapping popups, plus a region selection the
+         * reader never asked for. Stopping propagation is not available between
+         * layer handlers, so the fix is to query the layers in PRIORITY ORDER once
+         * and act on the winner:
+         *
+         *   1. a facility marker — the smallest, most deliberate target;
+         *   2. an inland wetland — its own handler (bound above) already opened its
+         *      popup, so the region path must not open a second one;
+         *   3. the region fill — the default, and the only one that changes the
+         *      canonical selected region.
+         *
+         * Hidden layers are excluded automatically: `queryRenderedFeatures` returns
+         * nothing for a layer whose visibility is "none", which is exactly how the
+         * facility toggle already works.
+         */
+        const layerHits = (point: maplibregl.Point, id: string) =>
+          map.getLayer(id) ? map.queryRenderedFeatures(point, { layers: [id] }) : [];
+
+        map.on("click", (event) => {
+          const region = layerHits(event.point, "regions-fill")[0];
+          const facility = layerHits(event.point, "facilities-points")[0];
+          const wetland = layerHits(event.point, "wetlands-fill")[0];
+
+          // A wetland click is answered by the wetland handler alone.
+          if (!facility && wetland) return;
+          if (!facility && !region) return;
+
+          // Exactly one popup on screen at a time: replace any prior pin rather than
+          // letting abandoned popups accumulate. Retained in a ref so a metric/mode
+          // change can also close it before its label/value goes stale.
+          pinnedPopupRef.current?.remove();
+          pinnedPopupRef.current = null;
+          // The hover tooltip would otherwise sit on top of the popup it duplicates.
+          hoveredRegionRef.current = null;
+          hoverPopupRef.current?.remove();
+
+          if (facility) {
+            // A marker was the target, so the region underneath is CONTEXT, not a
+            // selection: `onRegionClick` is deliberately not called. The popup still
+            // shows that region's active-metric value beside the facility, which is
+            // the combined popup the design specifies.
+            const regionProps = (region?.properties ?? null) as Record<string, unknown> | null;
+            const facilityProps = facility.properties as Record<string, unknown>;
+            pinnedPopupRef.current = new maplibregl.Popup()
+              .setLngLat(event.lngLat)
+              .setHTML(
+                regionProps
+                  ? regionPopupHtml(regionProps, facilityProps)
+                  : facilityOnlyPopupHtml(facilityProps),
+              )
+              .addTo(map);
+            return;
+          }
+
+          const props = region!.properties as Record<string, string>;
           // Store only the region CODE; page state derives the accessible summary
           // (name, label, value, provenance) under the currently-active metric, so
           // it never carries a value snapshot that could go stale on a metric change.
           onRegionClickRef.current?.(props.region_code);
-          // Tap/click pins a popup (this is the mobile path — no hover there).
-          // Retain it in a ref so a metric/mode change (or the next click) can close
-          // it before its label/value goes stale; remove any prior pin first so
-          // exactly one stays on screen instead of accumulating abandoned popups.
-          pinnedPopupRef.current?.remove();
           pinnedPopupRef.current = new maplibregl.Popup()
             .setLngLat(event.lngLat)
             .setHTML(regionPopupHtml(props))
@@ -938,6 +1064,13 @@ export default function MapView({
           const feature = event.features?.[0];
           if (!feature) return;
           map.getCanvas().style.cursor = "pointer";
+          // Over a facility marker the click will open the COMBINED popup, so a
+          // region-only tooltip hovering above it would preview the wrong thing.
+          if (layerHits(event.point, "facilities-points").length > 0) {
+            hoveredRegionRef.current = null;
+            hoverPopupRef.current?.remove();
+            return;
+          }
           const props = feature.properties as Record<string, unknown>;
           if (!hoverPopupRef.current) {
             hoverPopupRef.current = new maplibregl.Popup({
@@ -1095,20 +1228,9 @@ export default function MapView({
             "circle-stroke-width": 1,
           },
         });
-        map.on("click", "facilities-points", (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const props = feature.properties as Record<string, string | null>;
-          new maplibregl.Popup()
-            .setLngLat(event.lngLat)
-            .setHTML(
-              `<strong>${props.facility_name}</strong><br/>${props.category_label}<br/>` +
-                `${props.throughput ? `연간 처리량: ${props.throughput}<br/>` : ""}` +
-                `${props.address}<br/>` +
-                `<small>출처: ${props.source_id} · 기준연도: ${props.reference_period}</small>`,
-            )
-            .addTo(map);
-        });
+        // NO click handler is bound to this layer. Facility clicks are answered by
+        // the map-level priority handler beside the region layers above — a second
+        // handler here is exactly what produced the overlapping-popup defect.
       }
 
       // --- Land-cover candidate-cell statistics (Phase 1B-LC5B) as PostGIS tiles ---
