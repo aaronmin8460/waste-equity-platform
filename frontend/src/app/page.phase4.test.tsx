@@ -337,7 +337,9 @@ describe("floating legend keeps every analytical element", () => {
     // own quiet line directly beneath, so the unit is still stated once — beside the
     // heading rather than inside it.
     expect(heading.textContent).toContain("인구");
-    expect(within(screen.getByTestId("legend")).getByText("persons")).toBeDefined();
+    // The served unit is the English `persons` (see /api/v1/population); the
+    // Korean-only legend states it once, beside the heading, as `명`.
+    expect(within(screen.getByTestId("legend")).getByText("명")).toBeDefined();
     expect(screen.getByTestId("map-legend-summary").textContent).not.toContain("(Legend)");
   });
 
@@ -347,7 +349,8 @@ describe("floating legend keeps every analytical element", () => {
     expect(rows.length).toBeGreaterThanOrEqual(1);
     for (const row of rows) {
       expect(row.textContent).toContain("급");
-      expect(row.textContent).toContain("persons");
+      expect(row.textContent).toContain("명");
+      expect(row.textContent).not.toContain("persons");
     }
     // The classification method note is still rendered verbatim from lib/metrics.ts.
     expect(screen.getByTestId("choropleth-scale-method").textContent).toBeTruthy();
