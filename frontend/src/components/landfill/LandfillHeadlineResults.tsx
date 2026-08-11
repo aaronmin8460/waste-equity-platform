@@ -85,7 +85,7 @@ export default function LandfillHeadlineResults({
 
   return (
     <section aria-labelledby="landfill-headline-heading" data-testid="landfill-headline">
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+      <div className="landfill-compact-headline-title mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 id="landfill-headline-heading" className="text-base font-bold text-ink">
           핵심 지표
         </h2>

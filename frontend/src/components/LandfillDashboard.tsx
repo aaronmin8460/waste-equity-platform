@@ -208,8 +208,15 @@ export default function LandfillDashboard({
     // fallbacks for every view, so this dashboard is a plain content block. Two
     // <main> elements — or two id="main-content" targets — would be invalid and would
     // make the skip link ambiguous.
-    <div className="w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8" data-testid="landfill-dashboard">
-      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-4">
+    // `landfill-compact` scopes the short-desktop fold budget (globals.css). It is
+    // inert at >=850px tall, so 1440×900 is unchanged; below that it tightens the
+    // rhythm above the fold so the KPI row is visible without scrolling at
+    // 1280×800. Nothing is hidden or removed at any height.
+    <div
+      className="landfill-compact w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8"
+      data-testid="landfill-dashboard"
+    >
+      <div className="landfill-compact-stack mx-auto flex w-full max-w-screen-2xl flex-col gap-4">
         {/* The mode selector is rendered by the page above this component. */}
         <PageHeader title={title} description={HEADER_SUMMARY}>
           {orientation}
