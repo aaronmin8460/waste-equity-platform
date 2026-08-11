@@ -127,7 +127,7 @@ for (const vp of VIEWPORTS) {
       // The overview names itself too, and its heading is no longer sr-only.
       const overview = page.getByTestId("transparency-overview");
       const overviewLabel = await overview.getAttribute("aria-labelledby");
-      await expect(page.locator(`#${overviewLabel}`)).toHaveText("자료 현황 요약");
+      await expect(page.locator(`#${overviewLabel}`)).toHaveText("한눈에 보기");
 
       await expectNoHorizontalOverflow(page, "populated");
     });

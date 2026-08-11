@@ -19,6 +19,31 @@ export const HEADER_SUMMARY =
   "이 서비스가 사용하는 공식 자료와 제공 기관, 자료의 기준 기간, 직접 보고값과 계산값의 구분, " +
   "그리고 현재 제공되지 않는 자료를 정리한 화면입니다.";
 
+/**
+ * Section headings and supporting copy, taken verbatim from Figma frame 156:470.
+ *
+ * ONLY the wording is adopted. Every NUMBER in that frame (9 / 6 / 5 / 2 registered
+ * sources, `9건 표시`, `32개 지역`, and the `처리시설 → 자료 없음` row) is prototype
+ * placeholder content that contradicts the served registry, and none of it is
+ * reproduced anywhere in this feature — the counters and rows are computed from the
+ * responses (`lib/dataSources.ts#summarizeSources`, `buildDatasetRows`).
+ */
+export const OVERVIEW_TITLE = "한눈에 보기";
+export const OVERVIEW_SUMMARY = "모두 등록된 기록의 개수입니다. 완성도 점수나 품질 등급이 아닙니다.";
+/**
+ * Figma's two sentences, plus the third the previous copy carried. That third one
+ * is the screen's only statement of how the data reaches the reader — the browser
+ * never calls a government API and no personal data is stored — and Figma having no
+ * place for it is not a reason to delete a true architectural claim.
+ */
+export const CATALOG_SUMMARY =
+  "자료명·기관명·분야로 검색할 수 있습니다. 등록된 원문 이름은 각 카드의 " +
+  "‘기술 정보 보기’에 그대로 남아 있습니다. 브라우저에서 정부 API를 직접 호출하거나 " +
+  "개인정보를 저장하지 않습니다.";
+/** The modal's closing line. States the preservation rule the cards implement. */
+export const CATALOG_PRESERVATION_NOTE =
+  "등록된 원문 이름과 식별자는 삭제하지 않고 각 카드의 ‘기술 정보 보기’에 보존합니다.";
+
 /** Page size for the unmapped-facility list. The served response is the authority. */
 export const UNMAPPED_PAGE_SIZE = 25;
 

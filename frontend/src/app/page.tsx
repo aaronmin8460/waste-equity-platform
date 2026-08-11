@@ -1576,7 +1576,12 @@ export default function Home() {
         testId="data-sources-dialog"
         onClose={closeDataDialog}
       >
-        <TransparencyDashboard data={data} title="데이터·출처" embedded />
+        <TransparencyDashboard
+          data={data}
+          title="데이터·출처"
+          embedded
+          onClose={closeDataDialog}
+        />
       </Dialog>
     </>
   );

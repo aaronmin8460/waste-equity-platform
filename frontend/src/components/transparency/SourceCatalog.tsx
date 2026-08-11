@@ -15,6 +15,12 @@
  * (The fourth and fifth outcomes — a request in flight and a genuine failure — belong
  * to the panels that own those requests.)
  *
+ * The no-match state no longer carries its own 검색 조건 지우기 button. That control
+ * is now permanent in `SourceFilterPanel`, directly above this list, so a second copy
+ * here would give two different buttons the same accessible name and make
+ * `getByRole("button", { name })` ambiguous for both the suites and a screen reader.
+ * The empty state points at the surviving one instead.
+ *
  * This component holds no state, no request, and no second copy of the registry. It
  * receives the already-built, already-filtered records and renders them.
  */
@@ -92,6 +98,7 @@ export default function SourceCatalog({
         query={query}
         onQueryChange={onQueryChange}
         onClearQuery={onClearQuery}
+        onClearFilters={onClearFilters}
         area={area}
         onAreaChange={onAreaChange}
         areaOptions={areaOptions}
@@ -104,16 +111,11 @@ export default function SourceCatalog({
       />
 
       {visibleSources.length === 0 ? (
-        <div className="mt-3">
+        <div className="mt-4">
           <EmptyState
             testId="transparency-empty-results"
             title="검색 조건에 맞는 출처가 없습니다."
-            description="검색어나 분야를 바꾸면 다시 찾을 수 있습니다. 조건에 맞는 출처가 없다고 해서 자료가 없는 것은 아닙니다."
-            action={
-              <button type="button" className="wep-btn-quiet" onClick={onClearFilters}>
-                검색 조건 지우기
-              </button>
-            }
+            description="위의 ‘검색 조건 지우기’를 누르면 등록된 출처를 다시 모두 볼 수 있습니다. 조건에 맞는 출처가 없다고 해서 자료가 없는 것은 아닙니다."
           />
         </div>
       ) : (
@@ -121,7 +123,7 @@ export default function SourceCatalog({
           // Three columns from 1280 and four from 1536, so the wide desktop targets
           // are not a single narrow column of cards beside empty space. At 1024 the
           // two-column layout keeps every card's metadata readable without clipping.
-          className="wep-source-grid mt-3 grid gap-3"
+          className="wep-source-grid mt-4 grid gap-4"
           data-testid="transparency-source-list"
         >
           {visibleSources.map((source) => (

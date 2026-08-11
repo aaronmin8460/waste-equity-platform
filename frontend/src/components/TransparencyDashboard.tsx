@@ -35,6 +35,29 @@
  *   6. The JSX moved into `components/transparency/`. This file kept the state and
  *      the composition; every component there is presentational.
  *
+ * ── WHAT THE FIGMA REDESIGN CHANGED (frame 156:470, page 6) ─────────────────────
+ * Presentation only, again. No endpoint, request parameter, response field, count,
+ * reference period, snapshot, availability rule, filter option, ordering, link, or
+ * analytical value changed.
+ *
+ *   1. Sections lost their card chrome (`ui/SectionCard` → `TransparencySection`).
+ *      Figma renders them bare on the modal surface and reserves a filled/bordered
+ *      surface for the four overview tiles and the source cards. The `<section>` +
+ *      visible `<h2>` + `aria-labelledby` contract is reproduced exactly.
+ *   2. The embedded form no longer repeats `HEADER_SUMMARY`: the dialog head
+ *      already carries a title and a supporting line, and Figma shows one.
+ *   3. 자료 현황 요약 → 한눈에 보기, with Figma's supporting copy and tile geometry.
+ *   4. The catalog controls became one row and gained a persistent
+ *      검색 조건 지우기; the no-match state's duplicate of that button is gone.
+ *   5. The source card is Figma's: chips for 자료 분야 / 갱신 주기, a rule, then
+ *      기준 기간 and 원문 링크 as label-left / value-right rows. 수집 시점 and
+ *      사용 상태 moved into the existing technical disclosure.
+ *   6. The modal ends with Figma's closing note and a primary 닫기 button.
+ *
+ * NOTHING NUMERIC came from the frame. Its 9 / 6 / 5 / 2 tiles, its `9건 표시`, its
+ * `32개 지역` column, and its `처리시설 → 자료 없음` row are prototype placeholders
+ * that contradict the served responses, and every one of them is ignored.
+ *
  * ── DATA-INTEGRITY CONTRACTS (repo AGENTS.md; redesign plan §5) ──────────────────
  *   - Nothing is fabricated: no source, owner, period, snapshot date, coverage area,
  *     completeness figure, or URL. Links are only ever a served `documentation_url`
@@ -82,14 +105,16 @@ import SourceCatalog from "./transparency/SourceCatalog";
 import SourceOverview from "./transparency/SourceOverview";
 import TransparencyMethodology from "./transparency/TransparencyMethodology";
 import TransparencyNotice from "./transparency/TransparencyNotice";
+import TransparencySection from "./transparency/TransparencySection";
 import {
   buildDatasetRows,
+  CATALOG_PRESERVATION_NOTE,
+  CATALOG_SUMMARY,
   HEADER_SUMMARY,
   UNMAPPED_PAGE_SIZE,
   type FreshnessState,
 } from "./transparency/shared";
 import PageHeader from "./ui/PageHeader";
-import SectionCard from "./ui/SectionCard";
 import WetlandSourceNote from "./WetlandSourceNote";
 import type { LoadedData } from "../app/page";
 
@@ -98,6 +123,7 @@ export default function TransparencyDashboard({
   orientation,
   title,
   embedded = false,
+  onClose,
 }: {
   data: LoadedData;
   /**
@@ -121,6 +147,14 @@ export default function TransparencyDashboard({
    * otherwise the reader would meet the title twice and scroll two boxes.
    */
   embedded?: boolean;
+  /**
+   * Closes the surrounding dialog. Supplied only in the embedded form, where Figma
+   * frame 156:470 ends the modal with a closing note and a primary 닫기 button — a
+   * long, internally-scrolling modal otherwise makes the reader scroll all the way
+   * back up to the ✕ to leave. It is additive: the dialog's own ✕, Escape, and
+   * backdrop click are untouched, and omitting this renders no footer at all.
+   */
+  onClose?: () => void;
 }) {
   const [freshness, setFreshness] = useState<DataFreshnessItem[] | null>(null);
   const [freshnessState, setFreshnessState] = useState<FreshnessState>("loading");
@@ -258,17 +292,20 @@ export default function TransparencyDashboard({
     // none, and a sticky rail here would also narrow the full-width source section.
     <div
       className={
-        embedded
-          ? "w-full px-4 pt-4 pb-8 sm:px-6"
-          : "w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8"
+        embedded ? "w-full px-5 pt-5 pb-6 sm:px-6" : "w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8"
       }
       data-testid="transparency-dashboard"
     >
-      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-5">
+      {/* Figma's inter-section rhythm is 27.5px; 24px is the nearest step on the
+          scale and the one that keeps 현재 조건 above the fold at 1024×768, which
+          `phase6DataSourcesDashboard.spec.ts` enforces. */}
+      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-6">
         {embedded ? (
-          // The dialog's own <h2> is the title; a PageHeader here would repeat it
-          // and would also introduce a second heading inside the dialog.
-          <p className="text-sm text-ink-muted">{HEADER_SUMMARY}</p>
+          // Nothing: the dialog head already carries the title AND a supporting
+          // line, and Figma frame 156:470 shows exactly one such line. Repeating
+          // HEADER_SUMMARY here gave the reader two consecutive descriptions of the
+          // same screen before any content.
+          null
         ) : (
           <PageHeader title={title} description={HEADER_SUMMARY}>
             {orientation}
@@ -291,10 +328,10 @@ export default function TransparencyDashboard({
             `desktopNavigation.spec.ts` asserts this element spans >90% of the
             viewport, and `citizenFlows.spec.ts` Task E reads the source name from
             inside it. */}
-        <SectionCard
+        <TransparencySection
           title="출처 목록"
           testId="transparency-sources"
-          description="이 서비스는 아래 공공기관 자료만 사용합니다. 브라우저에서 정부 API를 직접 호출하거나 개인정보를 저장하지 않습니다."
+          description={CATALOG_SUMMARY}
         >
           <SourceCatalog
             sources={sources}
@@ -327,19 +364,25 @@ export default function TransparencyDashboard({
               authorization the publication rests on, the raw-data non-redistribution
               statement, scoring non-use, and the coverage limitations. */}
           <LandCoverSourceNote />
-        </SectionCard>
+        </TransparencySection>
 
         {/* ── Reference periods and served record counts ───────────────────────── */}
-        <SectionCard
+        <TransparencySection
           title="자료별 기준 기간과 표시 개수"
           testId="transparency-datasets"
           description="화면에 실제로 표시되는 기록 수와 그 자료의 기준 기간입니다."
         >
           <DatasetPeriodTable rows={datasets} />
-        </SectionCard>
+        </TransparencySection>
 
-        {/* ── What is currently unavailable ───────────────────────────────────── */}
-        <SectionCard
+        {/* ── What is currently unavailable ─────────────────────────────────────
+            Figma frame 156:470 stops after the table. This section, the facility
+            mapping panel, and the methodology disclosure are kept: the frame is a
+            visual prototype of the top of the modal, and dropping the three blocks
+            that state what the platform does NOT have would make the screen a
+            catalogue of strengths (brief §10, §11). They follow the frame's section
+            rhythm so they do not read as a different screen. */}
+        <TransparencySection
           title="현재 제공되지 않는 자료"
           testId="transparency-gaps"
           description="공식 자료를 확보하지 못한 항목, 자료는 있으나 지도에 표시하지 못한 시설, 그리고 기준 기간을 확인하지 못한 자료입니다. 어느 쪽도 값이 0이라는 뜻이 아닙니다."
@@ -350,10 +393,10 @@ export default function TransparencyDashboard({
             mapping={mapping}
             mappingFailed={mappingError !== null}
           />
-        </SectionCard>
+        </TransparencySection>
 
         {/* ── Facility mapping transparency ───────────────────────────────────── */}
-        <SectionCard
+        <TransparencySection
           title="시설 지도 표시 현황"
           testId="transparency-facility-mapping"
           description="시설 자료는 있으나 지도 위치를 확인하지 못한 시설을 그대로 공개합니다. 아래 개수는 모두 공식 시설 목록을 센 값입니다."
@@ -365,16 +408,34 @@ export default function TransparencyDashboard({
             onPageChange={setPage}
             knownUnmappedTotal={knownUnmappedTotal}
           />
-        </SectionCard>
+        </TransparencySection>
 
         {/* ── Method, interpretation limits, and technical provenance ──────────── */}
-        <SectionCard
+        <TransparencySection
           title="계산 방법과 기술 정보"
           testId="transparency-methodology"
           description="자세한 계산 방법, 화면에 쓰인 표시 용어, 기술 식별자를 아래에서 펼쳐 볼 수 있습니다."
         >
           <TransparencyMethodology policy={policy} run={run} costOptions={costOptions} />
-        </SectionCard>
+        </TransparencySection>
+
+        {/* ── The modal's closing band ─────────────────────────────────────────
+            Figma rules the modal off and pairs the preservation statement with a
+            primary 닫기. Rendered here rather than in `ui/Dialog` so the shared
+            primitive (also used by 지표 순위 전체보기) is untouched. */}
+        {embedded && onClose ? (
+          <div className="flex flex-col gap-3 border-t border-hairline pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-ink-subtle">{CATALOG_PRESERVATION_NOTE}</p>
+            <button
+              type="button"
+              className="wep-btn-primary flex-none rounded-xl"
+              onClick={onClose}
+              data-testid="transparency-close"
+            >
+              닫기
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

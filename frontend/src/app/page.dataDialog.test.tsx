@@ -181,6 +181,44 @@ describe("keyboard and focus", () => {
     expect(document.activeElement).toBe(screen.getByTestId("mode-transparency"));
   });
 
+  it("closes from the footer 닫기 button at the end of the long body", async () => {
+    // Figma frame 156:470 ends the modal with a closing note and a primary 닫기.
+    // Without it, a reader who has scrolled to the bottom of a long catalogue has
+    // to scroll all the way back up to reach the ✕.
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId("mode-flow"));
+    await waitFor(() => expect(screen.getByTestId("landfill-dashboard")).toBeDefined());
+    fireEvent.click(screen.getByTestId("mode-transparency"));
+    await waitFor(() => expect(screen.getByTestId("data-sources-dialog")).toBeDefined());
+
+    const footerClose = within(dialog()).getByTestId("transparency-close");
+    expect(footerClose.tagName).toBe("BUTTON");
+    expect(footerClose.textContent).toBe("닫기");
+    // It states the preservation rule the source cards implement.
+    expect(dialog().textContent).toContain("등록된 원문 이름과 식별자는 삭제하지 않고");
+
+    fireEvent.click(footerClose);
+    await waitFor(() => expect(screen.queryByTestId("data-sources-dialog")).toBeNull());
+    // The same return-to-prior-destination behaviour as the ✕, not a default page.
+    expect(screen.getByTestId("mode-flow").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("states the screen's purpose exactly once, not twice", async () => {
+    // The dialog head already carries a title and a supporting line. The embedded
+    // dashboard used to add HEADER_SUMMARY underneath, so the reader met two
+    // consecutive descriptions of the same screen before any content.
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId("mode-transparency"));
+    await waitFor(() => expect(screen.getByTestId("data-sources-dialog")).toBeDefined());
+    expect(dialog().textContent).not.toContain(
+      "이 서비스가 사용하는 공식 자료와 제공 기관, 자료의 기준 기간",
+    );
+    // Exactly one heading names the dialog, and it is still an h2.
+    expect(within(dialog()).getAllByRole("heading", { level: 2 })[0].textContent).toBe(
+      "데이터·출처",
+    );
+  });
+
   it("offers an explicit, named close control", async () => {
     await renderLoaded();
     fireEvent.click(screen.getByTestId("mode-transparency"));

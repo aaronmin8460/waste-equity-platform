@@ -609,6 +609,9 @@ for (const vp of VIEWPORTS) {
       expect(reached).toContain("transparency-search-clear");
       expect(reached).toContain("transparency-filter-category");
       expect(reached).toContain("transparency-filter-frequency");
+      // The permanent clear-all sits last in the row, so the documented order is
+      // extended rather than interrupted.
+      expect(reached).toContain("transparency-clear-filters");
 
       // The clear control works from the keyboard.
       await page.getByTestId("transparency-search-clear").focus();
