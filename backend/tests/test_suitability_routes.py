@@ -7,10 +7,12 @@ Data-bearing candidate paths use PostGIS geometry and live in
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from waste_equity_backend.api.routes import suitability as suitability_routes
 from waste_equity_backend.models import SuitabilityAnalysisRun
 
 
@@ -130,6 +132,73 @@ def test_bad_status_is_422(client: TestClient) -> None:
 
 def test_bad_score_bounds_is_422(client: TestClient) -> None:
     assert client.get("/api/v1/suitability/candidates?min_score=250").status_code == 422
+
+
+# --- Page 4B scope/order contract (DB-independent parts) ---------------------
+# Which *rows* each filter selects needs PostGIS and lives in
+# ``test_suitability_scope_filters_integration.py``. What is fixed here is the
+# contract the frontend codes against: the closed sort vocabulary, the repeatable
+# shape of ``sigungu`` in the schema, and the region-code normalization rule.
+
+
+def test_bad_sort_is_422(client: TestClient) -> None:
+    """``sort`` is a closed two-value vocabulary, not a sort-field selector."""
+    for bogus in ("asc", "desc", "-rank", "equity_score", "score_desc "):
+        assert client.get(f"/api/v1/suitability/candidates?sort={bogus}").status_code == 422, bogus
+
+
+def test_default_sort_is_score_desc() -> None:
+    assert suitability_routes.DEFAULT_CANDIDATE_SORT == "score_desc"
+
+
+def test_openapi_declares_sigungu_repeatable_and_sido_scalar(client: TestClient) -> None:
+    """The published contract must show ``sigungu`` as an array, or clients will send one.
+
+    Read through ``app.openapi()`` rather than the router: FastAPI builds the schema
+    from the mounted app, and the router alone does not carry the resolved parameters.
+    """
+    schema = client.app.openapi()  # type: ignore[attr-defined]
+    params = {
+        p["name"]: p for p in schema["paths"]["/api/v1/suitability/candidates"]["get"]["parameters"]
+    }
+    sigungu = _unwrap_optional(params["sigungu"]["schema"])
+    assert sigungu["type"] == "array"
+    assert sigungu["items"]["type"] == "string"
+    assert _unwrap_optional(params["sido"]["schema"])["type"] == "string"
+    assert set(_unwrap_optional(params["sort"]["schema"])["enum"]) == {"score_desc", "score_asc"}
+
+
+def _unwrap_optional(schema: dict[str, object]) -> dict[str, Any]:
+    """Return the non-null branch of an ``anyOf`` optional, or the schema itself."""
+    branches = schema.get("anyOf")
+    if isinstance(branches, list):
+        for branch in branches:
+            if isinstance(branch, dict) and branch.get("type") != "null":
+                return branch
+    return dict(schema)
+
+
+def test_bare_sgis_code_normalizes_to_the_canonical_region_code() -> None:
+    """The stored code space is ``KR-SGIS-<adm_cd>``; the bare SGIS form is an alias."""
+    assert suitability_routes._canonical_region_code("11") == "KR-SGIS-11"
+    assert suitability_routes._canonical_region_code("11010") == "KR-SGIS-11010"
+    assert suitability_routes._canonical_region_code(" 31 ") == "KR-SGIS-31"
+    # Already-canonical codes pass through untouched.
+    assert suitability_routes._canonical_region_code("KR-SGIS-23") == "KR-SGIS-23"
+    # A non-numeric, non-canonical value is NOT coerced into something plausible: it
+    # stays unrecognized so it matches nothing instead of silently selecting a region.
+    assert suitability_routes._canonical_region_code("서울") == "서울"
+    assert suitability_routes._canonical_region_code("KR-RCISRG-3110") == "KR-RCISRG-3110"
+
+
+def test_repeated_region_codes_are_normalized_deduped_and_blank_stripped() -> None:
+    dedupe = suitability_routes._distinct_region_codes
+    assert dedupe(None) == []
+    assert dedupe([]) == []
+    assert dedupe(["", "   "]) == []
+    # Bare and canonical spellings of one region collapse to a single code, and the
+    # first-seen order is preserved so the emitted SQL is stable per request.
+    assert dedupe(["11010", "KR-SGIS-11020", "KR-SGIS-11010"]) == ["KR-SGIS-11010", "KR-SGIS-11020"]
 
 
 def test_bad_bbox_is_422(client: TestClient, session: Session) -> None:

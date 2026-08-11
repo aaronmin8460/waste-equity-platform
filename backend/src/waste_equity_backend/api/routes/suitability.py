@@ -36,6 +36,67 @@ SessionDep = Annotated[Session, Depends(get_session)]
 Profile = Literal["baseline", "equal", "equity_focused", "access_focused", "critic"]
 Status = Literal["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"]
 StabilityClass = Literal["STABLE", "CONDITIONALLY_STABLE", "WEIGHT_SENSITIVE"]
+# Ranking direction over the *stored* score of the selected weight profile. This is
+# a direction, not a sort-field selector: no other column is orderable, so no caller
+# can reorder the screening by anything the methodology did not rank on.
+CandidateSort = Literal["score_desc", "score_asc"]
+DEFAULT_CANDIDATE_SORT: CandidateSort = "score_desc"
+
+# --- Region code space -------------------------------------------------------
+# ``suitability_candidates.sido_region_code`` / ``sigungu_region_code`` are copied
+# verbatim from ``regions.region_code`` by the engine's centroid assignment, and
+# ``regions.region_code`` is derived as ``KR-SGIS-{adm_cd}`` (see
+# docs/REGION_CODE_STRATEGY.md). So the stored values are, exactly:
+#
+#   SIDO    KR-SGIS-11 서울 / KR-SGIS-23 인천 / KR-SGIS-31 경기
+#   SIGUNGU KR-SGIS-<5 digits>, e.g. KR-SGIS-11010 종로구, KR-SGIS-31011 수원시 장안구
+#
+# SGIS numbers SIGUNGU with its own sequence, NOT 행정표준코드: 종로구 is 11010 here,
+# and 11110 is 노원구. Read these codes from the data; never derive them.
+#
+# Two neighbouring code spaces are NOT what is stored here and must never be sent:
+#   * the landfill/MOIS administrative sido space 11 / 28 / 41 (Incheon and Gyeonggi
+#     differ from SGIS), and
+#   * the frontend ``ScopeSelection`` space, which is the bare 2-digit SGIS code
+#     "11" / "23" / "31".
+# Because the canonical code is a pure prefix of the source code, the bare SGIS form
+# is unambiguous and is accepted as an alias: it is normalized to the canonical form
+# below. Nothing else is rewritten — a code from the wrong space (e.g. sido=28)
+# normalizes to a canonical code that simply does not exist, and therefore matches
+# no rows rather than silently returning a different region's candidates.
+_CANONICAL_REGION_PREFIX = "KR-SGIS-"
+
+
+def _distinct_region_codes(values: list[str] | None) -> list[str]:
+    """Normalize, drop blanks, and de-duplicate a repeated region-code parameter.
+
+    Order-preserving de-duplication keeps the emitted SQL stable for a given request
+    so an identical query always produces an identical plan and page.
+    """
+
+    if not values:
+        return []
+    seen: dict[str, None] = {}
+    for raw in values:
+        if not raw or not raw.strip():
+            continue
+        seen.setdefault(_canonical_region_code(raw), None)
+    return list(seen)
+
+
+def _canonical_region_code(value: str) -> str:
+    """Accept either the canonical ``KR-SGIS-<adm_cd>`` code or the bare ``<adm_cd>``.
+
+    Only a purely numeric value is treated as a bare SGIS code; every other value is
+    passed through untouched so an unrecognized code stays unrecognized (and matches
+    nothing) instead of being coerced into something that looks valid.
+    """
+
+    stripped = value.strip()
+    if stripped.isdigit():
+        return f"{_CANONICAL_REGION_PREFIX}{stripped}"
+    return stripped
+
 
 # Static profiles are policy constants available for every run; the data-derived
 # ``critic`` profile is only available for runs that actually computed it.
@@ -473,8 +534,25 @@ def list_candidates(
     run_id: int | None = None,
     profile: Profile = "baseline",
     bbox: str | None = None,
-    sido: str | None = None,
-    sigungu: str | None = None,
+    sido: Annotated[
+        str | None,
+        Query(
+            description=(
+                "SIDO scope. Canonical KR-SGIS-11 / KR-SGIS-23 / KR-SGIS-31; the bare "
+                "SGIS form 11 / 23 / 31 is accepted and normalized."
+            )
+        ),
+    ] = None,
+    sigungu: Annotated[
+        list[str] | None,
+        Query(
+            description=(
+                "SIGUNGU scope, repeatable (sigungu=A&sigungu=B). Multiple values are "
+                "OR-ed. Canonical KR-SGIS-<5 digits>; the bare 5-digit SGIS form is "
+                "accepted and normalized. Omit for no SIGUNGU restriction."
+            )
+        ),
+    ] = None,
     status: Status | None = None,
     stability_class: StabilityClass | None = None,
     min_score: float | None = Query(default=None, ge=0, le=100),
@@ -482,6 +560,17 @@ def list_candidates(
     top: int | None = Query(default=None, ge=1, le=5000),
     limit: int = Query(default=500, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
+    sort: Annotated[
+        CandidateSort,
+        Query(
+            description=(
+                "Ranking direction over the selected profile's stored score. "
+                "score_desc (default) is highest-score-first, i.e. rank 1 first; "
+                "score_asc is lowest-scored-first. Candidates with no score for the "
+                "profile stay last in both directions."
+            )
+        ),
+    ] = DEFAULT_CANDIDATE_SORT,
 ) -> SuitabilityCandidateCollection:
     resolved = _resolve_run_id(session, run_id)
     run = (
@@ -510,10 +599,16 @@ def list_candidates(
         params.update({"x1": box[0], "y1": box[1], "x2": box[2], "y2": box[3]})
     if sido is not None:
         conditions.append("sido_region_code = :sido")
-        params["sido"] = sido
-    if sigungu is not None:
-        conditions.append("sigungu_region_code = :sigungu")
-        params["sigungu"] = sigungu
+        params["sido"] = _canonical_region_code(sido)
+    # Repeatable SIGUNGU scope. Zero values (parameter absent, or present only as
+    # empty strings) means *no* SIGUNGU restriction — never "match nothing", so a
+    # cleared multi-select in the UI cannot silently blank the ranking. Duplicates
+    # are collapsed, so repeating a code cannot change the result set or the count.
+    sigungu_codes = _distinct_region_codes(sigungu)
+    if sigungu_codes:
+        placeholders = ", ".join(f":sigungu_{i}" for i in range(len(sigungu_codes)))
+        conditions.append(f"sigungu_region_code IN ({placeholders})")
+        params.update({f"sigungu_{i}": code for i, code in enumerate(sigungu_codes)})
     if top is not None:
         conditions.append("status = 'ELIGIBLE' AND (profile_ranks->>:profile) IS NOT NULL")
     elif status is not None:
@@ -544,10 +639,20 @@ def list_candidates(
     # the indexed first-class `rank` column (active-profile rank; NULL for
     # review/excluded) so eligible cells surface first without an expensive
     # per-row JSONB extract+cast over tens of thousands of rows.
+    #
+    # `sort` flips only the *direction* of that same rank ordering; it never changes
+    # which column ranks the screening. A better score is a numerically *smaller*
+    # rank, so score_desc is rank ASC and score_asc is rank DESC. NULLS LAST in both
+    # directions: a candidate with no score for this profile (REVIEW_REQUIRED /
+    # EXCLUDED) has no place in a score ranking and must not be presented as the
+    # lowest-scoring one. candidate_key is the deterministic tie-break, so paging is
+    # stable in both directions (ranks are already unique per profile, so this only
+    # orders the unranked tail).
+    rank_direction = "ASC" if sort == "score_desc" else "DESC"
     order = (
-        "ORDER BY (profile_ranks->>:profile)::int ASC"
+        f"ORDER BY (profile_ranks->>:profile)::int {rank_direction}, candidate_key ASC"
         if top is not None
-        else "ORDER BY rank ASC NULLS LAST, candidate_key ASC"
+        else f"ORDER BY rank {rank_direction} NULLS LAST, candidate_key ASC"
     )
     params.update({"limit": effective_limit, "offset": offset})
     rows = (
@@ -640,6 +745,9 @@ def list_candidates(
         total_matched=total_matched,
         limit=effective_limit,
         offset=offset,
+        sido=params.get("sido"),
+        sigungu=sigungu_codes,
+        sort=sort,
         features=features,
         assumptions=ASSUMPTIONS,
         disclaimer=SCREENING_DISCLAIMER,

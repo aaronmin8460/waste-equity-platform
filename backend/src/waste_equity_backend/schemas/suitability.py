@@ -11,7 +11,7 @@ import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 SCREENING_DISCLAIMER = (
     "Analytical screening only — decision support, not a legal permit, engineering "
@@ -155,9 +155,19 @@ class SuitabilityCandidateCollection(BaseModel):
     reference_year: int
     run_id: int
     count: int
+    # Rows on this page vs. rows matching every filter. ``total_matched`` is counted
+    # by the database over the same WHERE clause the page is drawn from — it is never
+    # inferred from ``count`` — so "표시 N개 · 범위 내 M개" stays truthful under
+    # pagination.
     total_matched: int
     limit: int
     offset: int
+    # The scope and ordering actually applied, after region-code normalization and
+    # de-duplication. Echoed so a caller can confirm the server read its scope the way
+    # it meant it instead of inferring that from an empty result.
+    sido: str | None = None
+    sigungu: list[str] = Field(default_factory=list)
+    sort: str = "score_desc"
     features: list[CandidateFeature]
     assumptions: list[str]
     disclaimer: str
