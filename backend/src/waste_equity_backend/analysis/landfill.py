@@ -73,6 +73,20 @@ def available_through_month(months: Iterable[str], year: int) -> str | None:
     return in_year[-1] if in_year else None
 
 
+def available_from_month(months: Iterable[str], year: int) -> str | None:
+    """The EARLIEST present ``YYYY-MM`` within ``year``, or None if none present.
+
+    The mirror of :func:`available_through_month`, and served for the same reason:
+    a partial year described only by its last month reads as January-through-that
+    month. It is not — a year whose records begin in August covers 08–12, and the
+    UI must be able to say so instead of implying five months of coverage that do
+    not exist. Both bounds are computed over the SAME unfiltered set of ingested
+    months, so the pair always describes the dataset rather than a filtered slice.
+    """
+    in_year = sorted(_months_in_year(months, year))
+    return in_year[0] if in_year else None
+
+
 def latest_available_month(months: Iterable[str]) -> str | None:
     present = sorted(months)
     return present[-1] if present else None
@@ -432,6 +446,7 @@ __all__ = [
     "MetropolitanPopulation",
     "PerCapitaFee",
     "aggregate_fee_per_capita",
+    "available_from_month",
     "available_through_month",
     "effective_fee_per_ton",
     "fee_per_capita",

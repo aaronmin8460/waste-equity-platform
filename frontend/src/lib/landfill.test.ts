@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  compositionRows,
   formatDecimalExact,
   formatEffectiveFee,
   formatKrwEok,
   formatKrwPerPerson,
+  formatPercentChange,
   formatShare,
+  formatTonQuantity,
   formatTons,
   kgToTons,
   landfillUnavailableFrom,
   landfillUnavailableFromAll,
+  partialYearRange,
   perCapitaUnavailableCode,
   perCapitaUnavailableLabel,
+  percentChange,
 } from "./landfill";
 import { ApiError } from "./api";
 
@@ -261,20 +266,34 @@ describe("landfillUnavailableFromAll (severity across the three requests)", () =
     expect(state.kind).toBe("error");
   });
 
-  it("does not call a PARTIAL failure an answer of absence", () => {
-    // /summary served data while /trends 404'd: the backend demonstrably HAS records
-    // for these filters, so "선택한 조건의 공식 반입 자료가 없습니다" would be a false
-    // claim about the data rather than an honest one about the request.
+  it("calls a partial NO-DATA set an answer of absence, not a failure", () => {
+    // Page-2 defect F1. The three requests are scoped differently — /summary honours
+    // the month, /trends and /composition do not — so "only the narrowest one 404'd"
+    // is exactly the shape of a month the dataset does not cover (1999년 3월 in a year
+    // whose records begin in August). Reporting it as a request failure produced a red
+    // alert with a retry button for a deterministic absence, inviting the reader to
+    // retry their way into data that does not exist.
     const state = landfillUnavailableFromAll(
-      [apiError(404, "NO_DATA_FOR_PERIOD", "no rows for the requested period")],
+      [apiError(404, "NO_DATA_FOR_PERIOD", "no rows for the requested period", [1999, 2000])],
+      3,
+    );
+    expect(state.kind).toBe("no-data");
+    // The years the backend named survive, so the empty state can offer them.
+    expect(state.availableYears).toEqual([1999, 2000]);
+    // The code is still recoverable for the diagnostic line.
+    expect(state.detail).toContain("NO_DATA_FOR_PERIOD");
+  });
+
+  it("still calls a partial set an error when one failure is a genuine error", () => {
+    // Severity outranks arrival order and outranks absence: if the server is broken
+    // for one request, saying "the data does not exist" would be a false claim about
+    // the data rather than an honest one about the request.
+    const state = landfillUnavailableFromAll(
+      [apiError(404, "NO_DATA_FOR_PERIOD", "no rows"), apiError(500, "INTERNAL", "boom")],
       3,
     );
     expect(state.kind).toBe("error");
-    expect(state.message).toContain("일부를 불러오지 못했습니다");
-    // The code is still recoverable.
-    expect(state.detail).toContain("NO_DATA_FOR_PERIOD");
-    // A partial failure asserts nothing about which years exist.
-    expect(state.availableYears).toEqual([]);
+    expect(state.detail).toContain("INTERNAL");
   });
 
   it("reports absence only when every request came back with no data", () => {
@@ -295,5 +314,114 @@ describe("landfillUnavailableFromAll (severity across the three requests)", () =
     expect(state).toBeDefined();
     expect(state.kind).toBe("error");
     expect(state.availableYears).toEqual([]);
+  });
+});
+
+describe("partialYearRange (the period a partial year actually covers)", () => {
+  it("states both bounds so a late-starting year is not read as January-onward", () => {
+    expect(
+      partialYearRange({
+        year: 1999,
+        is_complete_year: false,
+        available_from_month: "1999-08",
+        available_through_month: "1999-12",
+      }),
+    ).toBe("1999-08 ~ 1999-12");
+  });
+
+  it("collapses a single covered month to that month", () => {
+    expect(
+      partialYearRange({
+        year: 2026,
+        is_complete_year: false,
+        available_from_month: "2026-01",
+        available_through_month: "2026-01",
+      }),
+    ).toBe("2026-01");
+  });
+
+  it("makes no range claim for a complete year", () => {
+    expect(
+      partialYearRange({
+        year: 2024,
+        is_complete_year: true,
+        available_from_month: "2024-01",
+        available_through_month: "2024-12",
+      }),
+    ).toBeNull();
+  });
+
+  it("makes no range claim when a bound was not served", () => {
+    // An older backend serves only the upper bound. A half-known range must not be
+    // printed as if it were known; the caller falls back to the single bound.
+    expect(
+      partialYearRange({
+        year: 2026,
+        is_complete_year: false,
+        available_through_month: "2026-05",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("percentChange (never a zero for a missing comparison)", () => {
+  it("computes the change between two served values", () => {
+    expect(percentChange("110", "100")).toBeCloseTo(10);
+    expect(percentChange("90", "100")).toBeCloseTo(-10);
+  });
+
+  it("returns null — not 0 — when the previous period was not served", () => {
+    expect(percentChange("110", null)).toBeNull();
+    expect(percentChange(null, "100")).toBeNull();
+  });
+
+  it("returns null rather than dividing by a zero baseline", () => {
+    expect(percentChange("110", "0")).toBeNull();
+  });
+
+  it("returns null for an unparseable value instead of coercing it", () => {
+    expect(percentChange("110", "not-a-number")).toBeNull();
+  });
+
+  it("formats a change with its sign and one decimal", () => {
+    expect(formatPercentChange(2.84)).toBe("+2.8%");
+    expect(formatPercentChange(-1.74)).toBe("−1.7%");
+    expect(formatPercentChange(0)).toBe("0%");
+  });
+});
+
+describe("compositionRows (descending, with a valid residual roll-up)", () => {
+  const item = (name: string, tons: string, share: string | null) => ({
+    waste_name: name,
+    quantity_tons: tons,
+    quantity_share: share,
+  });
+
+  it("sorts descending and appends the residual as a derived row", () => {
+    const rows = compositionRows([item("A", "300", "0.3"), item("B", "500", "0.5")], "1000");
+    expect(rows.map((row) => row.name)).toEqual(["B", "A", "그 외 항목 합계"]);
+    expect(Number(rows[2].quantityTons)).toBeCloseTo(200);
+    expect(Number(rows[2].share)).toBeCloseTo(0.2);
+    expect(rows[2].derived).toBe(true);
+    // The served names are printed verbatim — never remapped.
+    expect(rows[0].name).toBe("B");
+    expect(rows[0].derived).toBe(false);
+  });
+
+  it("emits no roll-up when the served categories already account for the total", () => {
+    const rows = compositionRows([item("A", "1000", "1")], "1000");
+    expect(rows).toHaveLength(1);
+    expect(rows.some((row) => row.derived)).toBe(false);
+  });
+
+  it("emits no roll-up when the parts exceed the total", () => {
+    // Two served figures disagreeing is not a category; nothing is asserted.
+    const rows = compositionRows([item("A", "1200", "1")], "1000");
+    expect(rows.some((row) => row.derived)).toBe(false);
+  });
+
+  it("formats a tonne value without round-tripping it through kilograms", () => {
+    expect(formatTonQuantity("1071548.250000")).toBe("1,071,548 t");
+    expect(formatTonQuantity("not-a-number")).toBe("—");
   });
 });

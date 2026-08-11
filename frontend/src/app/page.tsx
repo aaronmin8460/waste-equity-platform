@@ -54,6 +54,7 @@ import {
   type FacilityBurdenEnvelope,
   type FacilityItem,
   type LandfillOrigin,
+  type LandfillSummary,
   type MunicipalCostResponse,
   type MunicipalCostSido,
   type MunicipalCostSort,
@@ -220,6 +221,24 @@ export interface LoadedData {
   sources: DataSourceItem[];
 }
 
+/**
+ * The identity of the period a 전년 대비 comparison is against.
+ *
+ * Derived from the SERVED period plus the two filters that scope a landfill summary
+ * (origin and waste type), so a delta always describes the same slice of the data as
+ * the value it sits beside. A monthly view compares against the same month of the
+ * prior year, an annual view against the prior year. JSON rather than a joined
+ * string for the same reason as `flowKey`: the waste name is free text.
+ */
+function priorPeriodKey(
+  summary: LandfillSummary,
+  origin: LandfillOrigin | null,
+  waste: string | null,
+): string {
+  const { year, month } = summary.period;
+  return JSON.stringify([year - 1, month ? Number(month.slice(5, 7)) : null, origin, waste]);
+}
+
 export default function Home() {
   const [data, setData] = useState<LoadedData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -340,6 +359,23 @@ export default function Home() {
   const flowMatchesFilters = flowResult?.key === flowKey;
   const flowData = flowMatchesFilters ? flowResult.data : null;
   const flowUnavailable = flowMatchesFilters ? flowResult.unavailable : null;
+
+  /**
+   * The immediately preceding comparable period, for the 전년 대비 deltas.
+   *
+   * Keyed like every other landfill result, and resolved from the SERVED period
+   * rather than from the filters: `flowYear` is null for "latest complete year", so
+   * the prior period is only knowable once the current answer names its own year.
+   * `summary: null` on a settled key means the backend holds no record for that
+   * period — which the KPI cards render as 비교 자료 없음, never as 0%.
+   */
+  const [flowPrior, setFlowPrior] = useState<{
+    key: string;
+    summary: LandfillSummary | null;
+  } | null>(null);
+  const flowPriorKey = flowData ? priorPeriodKey(flowData.summary, flowOrigin, flowWaste) : null;
+  const flowPriorSettled = flowPriorKey !== null && flowPrior?.key === flowPriorKey;
+  const flowPriorSummary = flowPriorSettled ? (flowPrior?.summary ?? null) : null;
 
   // 시·군·구 수집·운반 계약 지급액 — a SEPARATE dataset sharing the 매립지 현황 area. Its
   // three filters are held apart from the four official-landfill ones above and are
@@ -679,6 +715,44 @@ export default function Home() {
     // does not change how often this runs — it only keeps the tag written into
     // `flowResult` in step with the request that produced it.
   }, [mode, flowKey, flowYear, flowMonth, flowOrigin, flowWaste]);
+
+  // The prior comparable period, for the 전년 대비 deltas.
+  //
+  // A SEPARATE effect keyed on the RESOLVED period, not a fourth entry in the
+  // `Promise.allSettled` above: `flowYear` is null whenever the reader has not named
+  // a year, so the period to compare against is not known until the current answer
+  // arrives. It must also fail independently — a period the backend does not hold is
+  // the normal case for the earliest year in the dataset, and it must not blank the
+  // official values it sits beside.
+  useEffect(() => {
+    if (mode !== "flow") return;
+    const summary = flowData?.summary;
+    if (!summary) return;
+    const key = priorPeriodKey(summary, flowOrigin, flowWaste);
+    let cancelled = false;
+    // Nothing is cleared here: the result is TAGGED with the period it describes and
+    // `flowPriorSettled` compares that tag against the current one during render, so
+    // a previous period's comparison stops rendering in the same pass that requests
+    // the new one — without a synchronous setState cascade.
+    fetchLandfillSummary({
+      year: summary.period.year - 1,
+      month: summary.period.month ? Number(summary.period.month.slice(5, 7)) : null,
+      origin: flowOrigin,
+      wasteName: flowWaste,
+    })
+      .then((prior) => {
+        if (!cancelled) setFlowPrior({ key, summary: prior });
+      })
+      .catch(() => {
+        // Settled with no summary: "the backend holds no record for that period",
+        // which renders as 비교 자료 없음. Never a zero, and never an alert — the
+        // current period's values are unaffected.
+        if (!cancelled) setFlowPrior({ key, summary: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, flowData, flowOrigin, flowWaste]);
 
   // 시·군·구 수집·운반 계약 지급액: one request per filter combination, issued only in
   // the 매립지 현황 area.
@@ -1607,6 +1681,13 @@ export default function Home() {
           availableYears={flowYears}
           wasteOptions={flowWasteOptions}
           maxMonth={flowMaxMonth}
+          priorSummary={flowPriorSummary}
+          priorSettled={flowPriorSettled}
+          // The two SERVED equity indicators the 발생·처리 비교 reads. Already loaded
+          // for the 지역 지표 area, so the landfill view issues no extra request and
+          // computes no aggregate of its own.
+          reportingPerCapita={data?.reportingPerCapita ?? null}
+          facilityBurden={data?.facilityBurden ?? null}
           // The 2024 municipal contract-payment dataset. One prop object, so the
           // two datasets' state can never be crossed at this call site.
           municipalCost={{

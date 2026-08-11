@@ -1483,6 +1483,12 @@ export interface LandfillPeriod {
   year: number;
   month: string | null;
   is_complete_year: boolean;
+  /**
+   * The FIRST ingested month inside `year`, the mirror of
+   * `available_through_month`. Optional because a backend older than this field
+   * omits it entirely — callers must fall back rather than assume "01".
+   */
+  available_from_month?: string | null;
   available_through_month: string | null;
   latest_available_month: string | null;
   available_years: number[];

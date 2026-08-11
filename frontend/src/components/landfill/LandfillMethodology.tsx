@@ -19,7 +19,12 @@ import type { LandfillSummary } from "../../lib/api";
 import { accountingBasisLabel } from "../../lib/glossary";
 import Accordion from "../ui/Accordion";
 import SectionCard from "../ui/SectionCard";
-import { LIMITATION_NOTICE, MOIS_SOURCE_ID, PER_CAPITA_LABEL } from "./shared";
+import {
+  EFFECTIVE_FEE_LABEL,
+  LIMITATION_NOTICE,
+  MOIS_SOURCE_ID,
+  PER_CAPITA_LABEL,
+} from "./shared";
 
 export interface LandfillMethodologyProps {
   summary: LandfillSummary;
@@ -123,7 +128,7 @@ export default function LandfillMethodology({ summary }: LandfillMethodologyProp
           <p className="mt-2 font-medium text-ink">공식자료를 바탕으로 계산한 값</p>
           <ul className="list-disc pl-4">
             <li>월·연 집계 · 비중</li>
-            <li>톤당 실효 수수료</li>
+            <li>{EFFECTIVE_FEE_LABEL}</li>
             <li>{PER_CAPITA_LABEL}</li>
           </ul>
           <dl className="mt-2 space-y-1 break-words">

@@ -197,6 +197,7 @@ def _resolve_period(
         year=year,
         month=month_str,
         is_complete_year=landfill_analysis.is_complete_year(months, year),
+        available_from_month=landfill_analysis.available_from_month(months, year),
         available_through_month=landfill_analysis.available_through_month(months, year),
         latest_available_month=landfill_analysis.latest_available_month(months),
         available_years=available_years,

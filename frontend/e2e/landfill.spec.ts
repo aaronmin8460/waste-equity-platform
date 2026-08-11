@@ -73,6 +73,7 @@ test("landfill dashboard: renders full-width with no map and official values", a
   await expect(page.getByTestId("landfill-kpis")).toBeVisible();
   await expect(page.getByTestId("landfill-kpi-quantity")).toContainText("t");
   await expect(page.getByTestId("landfill-kpi-fee")).toContainText("억원");
+  // 톤당 환산 수수료 now lives inside the 수수료 card (Figma 234:441).
   await expect(page.getByTestId("landfill-kpi-effective-fee")).toContainText("원/t");
   const perCapitaKpi = page.getByTestId("landfill-kpi-per-capita");
   await expect(perCapitaKpi).toContainText("주민 1인당 환산 반입수수료");
@@ -80,11 +81,12 @@ test("landfill dashboard: renders full-width with no map and official values", a
   await expect(perCapitaKpi).toContainText(/원\/인|데이터 없음|확인 필요|계산 불가/);
   await expect(perCapitaKpi).toContainText("개인의 실제 납부액이 아닙니다");
 
-  // Charts.
-  await expect(page.getByTestId("landfill-trend-quantity")).toBeVisible();
-  await expect(page.getByTestId("landfill-trend-fee")).toBeVisible();
-  await expect(page.getByTestId("landfill-origin-comparison")).toBeVisible();
-  await expect(page.getByTestId("landfill-waste-composition")).toBeVisible();
+  // Charts. The monthly trend is ONE chart with a metric switch; the composition
+  // and the inbound structure are their own sections.
+  await expect(page.getByTestId("landfill-trend-chart")).toBeVisible();
+  await expect(page.getByTestId("landfill-trend-metric-fee")).toBeVisible();
+  await expect(page.getByTestId("landfill-flow-structure")).toBeVisible();
+  await expect(page.getByTestId("landfill-composition")).toBeVisible();
 
   // Evidence: official vs derived, with source snapshot dates.
   const evidence = page.getByTestId("landfill-evidence");

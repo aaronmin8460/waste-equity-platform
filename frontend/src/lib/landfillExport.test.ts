@@ -11,12 +11,17 @@ import { describe, expect, it } from "vitest";
 
 import type { LandfillSummary, LandfillTrends } from "./api";
 import {
+  buildCompositionCsvRows,
+  buildLandfillCsvRows,
   buildOriginSheet,
   buildTrendSheet,
   buildWasteSheet,
   landfillFilenameBase,
   periodLabel,
 } from "./landfillExport";
+
+/** A fixed clock, so the "내보낸 시각" line never makes a test time-dependent. */
+const FIXED_TIME = new Date(2026, 7, 11, 9, 30, 0);
 
 function summary(over: Partial<LandfillSummary> = {}): LandfillSummary {
   return {
@@ -30,7 +35,7 @@ function summary(over: Partial<LandfillSummary> = {}): LandfillSummary {
     total_quantity_tons: "1",
     total_inbound_fee_krw: "50000",
     effective_fee_per_ton: "50000",
-    fee_per_capita: { value: null, unavailable_reason: "NO_MATCHING_POPULATION_PERIOD" },
+    fee_per_capita: { fee_per_capita_krw: null, unavailable_reason: "NO_MATCHING_POPULATION_PERIOD" },
     largest_origin_share: null,
     largest_waste_share: null,
     origin_shares: [
@@ -44,7 +49,7 @@ function summary(over: Partial<LandfillSummary> = {}): LandfillSummary {
         inbound_fee_krw: "30000",
         quantity_share: "0.6",
         effective_fee_per_ton: "50000",
-        fee_per_capita: { value: "12.5", unavailable_reason: null },
+        fee_per_capita: { fee_per_capita_krw: "12.5", unavailable_reason: null },
       },
       {
         origin_region_code: "28",
@@ -56,7 +61,7 @@ function summary(over: Partial<LandfillSummary> = {}): LandfillSummary {
         inbound_fee_krw: "20000",
         quantity_share: null,
         effective_fee_per_ton: null,
-        fee_per_capita: { value: null, unavailable_reason: "ZERO_POPULATION" },
+        fee_per_capita: { fee_per_capita_krw: null, unavailable_reason: "ZERO_POPULATION" },
       },
     ],
     top_waste_types: [
@@ -118,7 +123,7 @@ describe("missing stays missing", () => {
     const columns = buildOriginSheet(summary()).columns;
     const by = (h: string) => columns.find((c) => c.header === h)!.value(incheon);
     expect(by("반입량 비중(%)")).toBeNull();
-    expect(by("톤당 실효 수수료(원)")).toBeNull();
+    expect(by("톤당 환산 수수료(원)")).toBeNull();
     expect(by("1인당 수수료(원)")).toBeNull();
     // …and the served REASON travels with the blank, so the gap is explained.
     expect(by("1인당 계산 불가 사유")).toBe("ZERO_POPULATION");
@@ -130,7 +135,7 @@ describe("missing stays missing", () => {
     const columns = buildTrendSheet(summary(), trends).columns;
     expect(columns.find((c) => c.header === "반입량(톤)")!.value(feb)).toBe(0);
     // But its uncomputed effective fee is still blank.
-    expect(columns.find((c) => c.header === "톤당 실효 수수료(원)")!.value(feb)).toBeNull();
+    expect(columns.find((c) => c.header === "톤당 환산 수수료(원)")!.value(feb)).toBeNull();
   });
 
   it("tells the reader what a blank cell means", () => {
@@ -159,5 +164,64 @@ describe("provenance and naming", () => {
   it("builds a filename carrying the dataset and the period", () => {
     expect(landfillFilenameBase(summary())).toContain("수도권매립지_반입현황");
     expect(landfillFilenameBase(summary())).toContain("2024년");
+  });
+});
+
+describe("the per-resident column (regression: it was silently always blank)", () => {
+  it("writes the SERVED per-resident fee, and its reason when there is none", () => {
+    // The column read `fee_per_capita.value` behind an `unknown` cast — a field the
+    // payload has never had — so every workbook carried an empty cell where a served
+    // value existed, and the cast is what stopped the compiler saying so.
+    const sheet = buildOriginSheet(summary());
+    const column = (header: string) => sheet.columns.find((c) => c.header === header)!;
+    expect(column("1인당 수수료(원)").value(sheet.rows[0])).toBe(12.5);
+    // An unserved value stays an EMPTY cell — never 0 — and carries its reason.
+    expect(column("1인당 수수료(원)").value(sheet.rows[1])).toBeNull();
+    expect(column("1인당 계산 불가 사유").value(sheet.rows[1])).toBe("ZERO_POPULATION");
+  });
+});
+
+describe("the CSV export (same scope as the workbook, never wider)", () => {
+  it("keeps the exact served decimal strings rather than re-formatting them", () => {
+    const rows = buildLandfillCsvRows(summary(), trends as unknown as LandfillTrends, FIXED_TIME);
+    const flat = rows.map((row) => row.join("|")).join("\n");
+    expect(flat).toContain("0.6");
+    expect(flat).toContain("30000");
+  });
+
+  it("labels each block and separates them, so no row can mix the two bases", () => {
+    const rows = buildLandfillCsvRows(summary(), trends as unknown as LandfillTrends, FIXED_TIME);
+    const headings = rows.filter((row) => String(row[0] ?? "").startsWith("[표]"));
+    expect(headings.map((row) => row[0])).toEqual([
+      "[표] 출발 지역별 반입",
+      "[표] 폐기물 종류별 반입",
+      "[표] 월별 반입 추이",
+    ]);
+    // The municipal contract payment is in NEITHER file.
+    const flat = rows.map((row) => row.join("|")).join("\n");
+    expect(flat).not.toContain("수집·운반 계약 지급액(원)");
+    // …and the sentence that says why is carried into the CSV preamble.
+    expect(flat).toContain("더하거나 같은 비용으로 비교할 수 없습니다");
+  });
+
+  it("omits the trend block entirely when no month was served", () => {
+    const rows = buildLandfillCsvRows(summary(), null, FIXED_TIME);
+    const flat = rows.map((row) => row.join("|")).join("\n");
+    expect(flat).not.toContain("[표] 월별 반입 추이");
+  });
+
+  it("marks the composition roll-up as a calculated value in its own file", () => {
+    const rows = buildCompositionCsvRows(
+      summary(),
+      [
+        { name: "생활폐기물", quantityTons: "0.6", share: "0.6", derived: false },
+        { name: "그 외 항목 합계", quantityTons: "0.4", share: "0.4", derived: true },
+      ],
+      FIXED_TIME,
+    );
+    const flat = rows.map((row) => row.join("|")).join("\n");
+    expect(flat).toContain("생활폐기물|0.6|60|공식 보고값");
+    expect(flat).toContain("그 외 항목 합계|0.4|40|계산값");
+    expect(flat).toContain("공식적으로 보고된 하나의 항목이 아닙니다");
   });
 });

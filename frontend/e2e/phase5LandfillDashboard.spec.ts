@@ -104,10 +104,11 @@ for (const vp of VIEWPORTS) {
       }
 
       await expect(page.getByTestId("landfill-region-table")).toBeVisible();
-      await expect(page.getByTestId("landfill-origin-comparison")).toBeVisible();
-      await expect(page.getByTestId("landfill-waste-composition")).toBeVisible();
-      await expect(page.getByTestId("landfill-trend-quantity")).toBeVisible();
-      await expect(page.getByTestId("landfill-trend-fee")).toBeVisible();
+      await expect(page.getByTestId("landfill-flow-structure")).toBeVisible();
+      await expect(page.getByTestId("landfill-composition")).toBeVisible();
+      // ONE trend chart with a metric switch, not two side-by-side charts.
+      await expect(page.getByTestId("landfill-trend-chart")).toBeVisible();
+      await expect(page.getByTestId("landfill-trend-metric-fee")).toBeVisible();
 
       await expectNoHorizontalOverflow(page);
     });
@@ -261,7 +262,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(partial).toContainText("2026-05");
     await expect(partial).toContainText("연간 합계가 아닙니다");
     // Gaps stay gaps: only the five served months are drawn, never twelve.
-    await expect(page.getByTestId("landfill-trend-quantity").locator("rect")).toHaveCount(5);
+    await expect(page.getByTestId("landfill-trend-chart").locator("rect")).toHaveCount(5);
 
     // A month selection narrows the period label.
     await page.getByTestId("landfill-month-select").selectOption("3");
@@ -274,7 +275,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await mockLandfillBackend(page);
     await gotoLandfill(page);
 
-    const comparison = page.getByTestId("landfill-origin-comparison");
+    const comparison = page.getByTestId("landfill-flow-structure");
     await comparison.scrollIntoViewIfNeeded();
     // Region names and exact values with units stay present as text.
     for (const name of ["서울시", "인천시", "경기도"]) {
@@ -296,7 +297,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(rows.nth(2)).toContainText("동일 기간 인구 데이터 없음");
     await expect(rows.nth(2)).not.toContainText("0원/인");
 
-    await expect(page.getByTestId("landfill-waste-composition")).toContainText("생활폐기물");
+    await expect(page.getByTestId("landfill-composition")).toContainText("생활폐기물");
   });
 
   test("evidence and limitations stay reachable behind disclosures", async ({ page }) => {
@@ -484,7 +485,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(rows).toHaveCount(3);
 
     // The waste filter narrows the composition to the selected category.
-    const composition = page.getByTestId("landfill-waste-composition");
+    const composition = page.getByTestId("landfill-composition");
     await expect(composition).toContainText("건설폐기물");
     await page.getByTestId("landfill-waste-select").selectOption("생활폐기물");
     await expect(composition).toContainText("생활폐기물");
@@ -503,7 +504,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(page.getByTestId("landfill-region-row")).toHaveCount(1);
 
     // The single remaining origin is the whole of the scoped total.
-    await expect(page.getByTestId("landfill-origin-comparison")).toContainText("100%");
+    await expect(page.getByTestId("landfill-flow-structure")).toContainText("100%");
 
     // Read the VALUE elements specifically — a whole-card `innerText` would also
     // sweep in the caption's reference year — and match the tonnage itself rather
@@ -525,10 +526,10 @@ test.describe("desktop 1440×900 — states and interaction", () => {
 
     // And no waste category may exceed the total it is part of.
     await page.getByTestId("landfill-waste-select").selectOption("생활폐기물");
-    await expect(page.getByTestId("landfill-waste-composition")).toContainText("생활폐기물");
+    await expect(page.getByTestId("landfill-composition")).toContainText("생활폐기물");
     const scopedTotal = await totalOf();
     const category = parseTons(
-      await page.getByTestId("landfill-waste-composition").locator("li").first().innerText(),
+      await page.getByTestId("landfill-composition").locator("li").first().innerText(),
     );
     expect(category).toBeLessThanOrEqual(scopedTotal + 1);
   });
@@ -537,7 +538,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await mockLandfillBackend(page);
     await gotoLandfill(page);
     // The complete-year fixture reports twelve trend months.
-    await expect(page.getByTestId("landfill-trend-quantity").locator("rect")).toHaveCount(12);
+    await expect(page.getByTestId("landfill-trend-chart").locator("rect")).toHaveCount(12);
     await expect(page.getByTestId("landfill-dashboard")).toContainText("2024년");
 
     // Hold the next summary open so the transition itself is observable.

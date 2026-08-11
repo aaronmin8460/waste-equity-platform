@@ -37,6 +37,37 @@ export function originLabel(origin: LandfillOrigin | null): string {
  */
 export const PER_CAPITA_LABEL = "주민 1인당 환산 반입수수료";
 
+/**
+ * 톤당 환산 수수료 — the official fee divided by the official tonnage.
+ *
+ * The Figma design names it 환산 (converted), matching its sibling
+ * {@link PER_CAPITA_LABEL}; the platform previously called it 실효 (effective). It is
+ * one derived quantity, so it gets ONE name everywhere it appears — the KPI, the
+ * regional table, the methodology list, and the export column headers — rather than
+ * a Figma-matching label on the card and a different word two sections down.
+ */
+export const EFFECTIVE_FEE_LABEL = "톤당 환산 수수료";
+
+/**
+ * Why the two Figma headline totals carry no number.
+ *
+ * Short enough to read as a value substitute in a KPI card; the card's caption
+ * carries the full explanation. It states the absence of an official TOTAL, not the
+ * absence of the data — the per-region series are published and are on this page.
+ */
+export const UNBOUND_TOTAL_REASON = "합산 공식값 없음";
+
+/**
+ * The population basis, stated where the per-resident conversion is read.
+ *
+ * 지역 지표 divides by the SGIS ANNUAL population instead, so the same phrase
+ * "1인당" means a different denominator on the two screens. A reader who carries a
+ * number across without knowing that is comparing two different quantities.
+ */
+export const POPULATION_BASIS_NOTE =
+  "인구 기준: 행정안전부 주민등록 인구(월말). 지역 지표 화면의 1인당 값은 통계청 SGIS 연간 인구를 " +
+  "쓰므로 두 화면의 1인당 값은 같은 기준이 아닙니다.";
+
 export const PER_CAPITA_DESCRIPTION =
   "선택 기간의 공식 반입수수료를 동일 기간 기준의 해당 지역 인구로 나눈 분석용 환산값입니다. " +
   "개인의 실제 납부액이 아닙니다.";

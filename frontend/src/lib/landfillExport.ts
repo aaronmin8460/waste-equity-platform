@@ -32,6 +32,7 @@ import type {
   LandfillTrends,
   LandfillWasteShare,
 } from "./api";
+import { downloadCsv, readableTimestamp, safeFilename, type CsvValue } from "./csv";
 import { downloadXlsx, sealSheet, type XlsxColumn, type XlsxSheet } from "./xlsx";
 
 function num(raw: string | null | undefined): number | null {
@@ -82,24 +83,28 @@ const ORIGIN_COLUMNS: XlsxColumn<LandfillOriginShare>[] = [
   { header: "반입량(kg)", value: (r) => num(r.quantity_kg), width: 18 },
   { header: "공식 반입수수료(원)", value: (r) => num(r.inbound_fee_krw), width: 20 },
   { header: "반입량 비중(%)", value: (r) => percent(r.quantity_share), width: 16 },
-  { header: "톤당 실효 수수료(원)", value: (r) => num(r.effective_fee_per_ton), width: 20 },
+  { header: "톤당 환산 수수료(원)", value: (r) => num(r.effective_fee_per_ton), width: 20 },
   {
     header: "1인당 수수료(원)",
     // The served per-capita object carries its own unavailability reason; an
     // uncomputed value stays blank rather than becoming 0.
-    value: (r) => num((r.fee_per_capita as unknown as Record<string, string | null>)?.value),
+    //
+    // Read through the TYPED field. This was `fee_per_capita.value` behind an
+    // `unknown` cast — a field the payload has never had — so every workbook ever
+    // downloaded carried a blank column where a served value existed, and the cast
+    // is what stopped the compiler saying so.
+    value: (r) => num(r.fee_per_capita?.fee_per_capita_krw),
     width: 18,
   },
   {
     header: "1인당 계산 불가 사유",
-    value: (r) =>
-      ((r.fee_per_capita as unknown as Record<string, string | null>)?.unavailable_reason) ?? null,
+    value: (r) => r.fee_per_capita?.unavailable_reason ?? null,
     width: 26,
   },
 ];
 
 const WASTE_COLUMNS: XlsxColumn<LandfillWasteShare>[] = [
-  { header: "폐기물 종류", value: (r) => (r as unknown as Record<string, string>).waste_name, width: 20 },
+  { header: "폐기물 종류", value: (r) => r.waste_name, width: 20 },
   { header: "반입량(톤)", value: (r) => num(r.quantity_tons), width: 16 },
   { header: "공식 반입수수료(원)", value: (r) => num(r.inbound_fee_krw), width: 20 },
   { header: "반입량 비중(%)", value: (r) => percent(r.quantity_share), width: 16 },
@@ -109,7 +114,7 @@ const TREND_COLUMNS: XlsxColumn<LandfillTrendPoint>[] = [
   { header: "기준 월", value: (r) => r.reference_month, width: 14 },
   { header: "반입량(톤)", value: (r) => num(r.quantity_tons), width: 16 },
   { header: "공식 반입수수료(원)", value: (r) => num(r.inbound_fee_krw), width: 20 },
-  { header: "톤당 실효 수수료(원)", value: (r) => num(r.effective_fee_per_ton), width: 20 },
+  { header: "톤당 환산 수수료(원)", value: (r) => num(r.effective_fee_per_ton), width: 20 },
 ];
 
 export function buildOriginSheet(summary: LandfillSummary): XlsxSheet<LandfillOriginShare> {
@@ -172,4 +177,148 @@ export function downloadLandfillWorkbook(
     ...(trends && trends.points.length > 0 ? [sealSheet(buildTrendSheet(summary, trends))] : []),
   ];
   return downloadXlsx(landfillFilenameBase(summary), sheets);
+}
+
+// --------------------------------------------------------------------------- //
+// CSV — the same three tables, in one flat file
+// --------------------------------------------------------------------------- //
+//
+// A CSV has no sheets, so the one rule this module exists to enforce has to be
+// carried differently: each block is preceded by its own `[표]` heading line and the
+// preamble that names its accounting basis, and the blocks are separated by a blank
+// row. There is still no row anywhere that places the landfill fee beside the
+// municipal contract payment, and still no total.
+//
+// Values are written as the EXACT served decimal strings, not the numbers the
+// workbook uses: a CSV cell has no numeric formatting to lose precision to, so the
+// honest thing is to hand over what the backend served. `null` stays an empty cell
+// (lib/csv.ts), never `0`.
+
+function csvBlock(title: string, preamble: string[], header: string[], rows: CsvValue[][]) {
+  return [[`[표] ${title}`], ...preamble.map((line) => [line]), header, ...rows, []];
+}
+
+/**
+ * Build the landfill CSV rows. Exported for tests so the file's structure can be
+ * asserted without touching the DOM.
+ */
+export function buildLandfillCsvRows(
+  summary: LandfillSummary,
+  trends: LandfillTrends | null,
+  now: Date = new Date(),
+): CsvValue[][] {
+  const rows: CsvValue[][] = [
+    ["수도권매립지 반입 현황"],
+    [`내보낸 시각 ${readableTimestamp(now)}`],
+    [],
+  ];
+
+  rows.push(
+    ...csvBlock(
+      "출발 지역별 반입",
+      landfillPreamble(summary, "수도권매립지 반입 현황 — 출발 지역별"),
+      ORIGIN_COLUMNS.map((column) => column.header),
+      summary.origin_shares.map((share) => [
+        share.origin_name,
+        share.origin_region_code,
+        share.quantity_tons,
+        share.quantity_kg,
+        share.inbound_fee_krw,
+        percent(share.quantity_share),
+        share.effective_fee_per_ton,
+        share.fee_per_capita?.fee_per_capita_krw ?? null,
+        share.fee_per_capita?.unavailable_reason ?? null,
+      ]),
+    ),
+  );
+
+  rows.push(
+    ...csvBlock(
+      "폐기물 종류별 반입",
+      landfillPreamble(summary, "수도권매립지 반입 현황 — 폐기물 종류별"),
+      WASTE_COLUMNS.map((column) => column.header),
+      summary.top_waste_types.map((waste) => [
+        waste.waste_name,
+        waste.quantity_tons,
+        waste.inbound_fee_krw,
+        percent(waste.quantity_share),
+      ]),
+    ),
+  );
+
+  if (trends && trends.points.length > 0) {
+    rows.push(
+      ...csvBlock(
+        "월별 반입 추이",
+        [
+          `기간 ${trends.start_month} ~ ${trends.end_month} · 집계 기준 ${trends.accounting_basis}`,
+          "표시된 달만 공식 자료가 있는 기간입니다. 빠진 달은 0이 아니라 자료 없음입니다.",
+        ],
+        TREND_COLUMNS.map((column) => column.header),
+        trends.points.map((point) => [
+          point.reference_month,
+          point.quantity_tons,
+          point.inbound_fee_krw,
+          point.effective_fee_per_ton,
+        ]),
+      ),
+    );
+  }
+
+  return rows;
+}
+
+/** Download the landfill CSV — the same scope as the workbook, never wider. */
+export function downloadLandfillCsv(
+  summary: LandfillSummary,
+  trends: LandfillTrends | null,
+  now: Date = new Date(),
+): string {
+  const filename = safeFilename(landfillFilenameBase(summary), "csv", now);
+  downloadCsv(filename, buildLandfillCsvRows(summary, trends, now));
+  return filename;
+}
+
+/**
+ * The waste-composition CSV offered inside 폐기물 구성 전체보기.
+ *
+ * Deliberately its own file rather than a slice of the one above: the modal shows the
+ * composition at the CURRENT four-filter scope plus the residual roll-up, and a reader
+ * who exports what they are looking at must get exactly that, with the roll-up marked
+ * as the derived value it is.
+ */
+export function buildCompositionCsvRows(
+  summary: LandfillSummary,
+  rows: { name: string; quantityTons: string | null; share: string | null; derived: boolean }[],
+  now: Date = new Date(),
+): CsvValue[][] {
+  return [
+    ["수도권매립지 반입 폐기물 구성"],
+    [`대상 시점 ${periodLabel(summary)} · 집계 기준 ${summary.accounting_basis}`],
+    [`출발 지역 ${summary.origin_filter ?? "전체"} · 폐기물 종류 ${summary.waste_filter ?? "전체"}`],
+    [`총 반입량(톤) ${summary.total_quantity_tons}`],
+    [`내보낸 시각 ${readableTimestamp(now)}`],
+    [
+      "'그 외 항목 합계'는 총 반입량에서 위 항목들을 뺀 계산값이며, " +
+        "공식적으로 보고된 하나의 항목이 아닙니다.",
+    ],
+    [],
+    ["폐기물 종류", "반입량(톤)", "비중(%)", "값의 종류"],
+    ...rows.map((row) => [
+      row.name,
+      row.quantityTons,
+      percent(row.share),
+      row.derived ? "계산값" : "공식 보고값",
+    ]),
+  ];
+}
+
+export function downloadCompositionCsv(
+  summary: LandfillSummary,
+  rows: { name: string; quantityTons: string | null; share: string | null; derived: boolean }[],
+  now: Date = new Date(),
+): string {
+  const filename = safeFilename(`${landfillFilenameBase(summary)}_폐기물구성`, "csv", now);
+  downloadCsv(filename, buildCompositionCsvRows(summary, rows, now));
+  return filename;
 }

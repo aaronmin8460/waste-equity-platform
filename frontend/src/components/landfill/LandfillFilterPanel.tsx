@@ -23,6 +23,8 @@
  * partial-year statement stay with the values they qualify (`LandfillHeadlineResults`).
  */
 
+import { useState } from "react";
+
 import type { LandfillOrigin } from "../../lib/api";
 import DataStatusBadge from "../ui/DataStatusBadge";
 import SectionCard from "../ui/SectionCard";
@@ -70,9 +72,26 @@ export default function LandfillFilterPanel({
   const selectClass =
     "mt-1 min-h-[2.25rem] w-full rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm text-ink";
   const labelClass = "text-xs font-medium text-ink-muted";
+
+  /**
+   * The one piece of state this panel owns, and it is FEEDBACK, not data.
+   *
+   * Changing the year clears the month, because a month picked in one year may not
+   * exist in another. That reset is correct and is kept — but it used to happen in
+   * silence, so a reader who had asked for 3월 got a full-year answer with no
+   * indication that their narrower question had been dropped.
+   *
+   * It is held here rather than lifted into the page because it describes an action
+   * this control just took; it is not a filter, it is not requested, and no served
+   * value depends on it. Deliberately NOT a global toast framework for one message.
+   * The wording claims only what is actually known: the month was cleared BECAUSE the
+   * new year's coverage is unverified, not because the month was checked and missing.
+   */
+  const [periodReset, setPeriodReset] = useState<{ month: number; year: string } | null>(null);
+
   return (
     <SectionCard
-      title="조건 선택"
+      title="조회 조건"
       description="네 가지 조건이 아래 모든 값을 함께 결정합니다."
       testId="landfill-filters"
     >
@@ -87,8 +106,16 @@ export default function LandfillFilterPanel({
             data-testid="landfill-year-select"
             value={year ?? ""}
             onChange={(event) => {
-              setYear(event.target.value === "" ? null : Number(event.target.value));
-              // A month from the previous year may not exist in the new one.
+              const nextYear = event.target.value === "" ? null : Number(event.target.value);
+              setYear(nextYear);
+              // A month from the previous year may not exist in the new one. The
+              // reset is announced only when something was actually dropped.
+              if (month != null) {
+                setPeriodReset({
+                  month,
+                  year: nextYear != null ? `${nextYear}년` : "최신 완결연도",
+                });
+              }
               setMonth(null);
             }}
           >
@@ -106,9 +133,11 @@ export default function LandfillFilterPanel({
             className={selectClass}
             data-testid="landfill-month-select"
             value={month ?? ""}
-            onChange={(event) =>
-              setMonth(event.target.value === "" ? null : Number(event.target.value))
-            }
+            onChange={(event) => {
+              // The reader has answered the notice by choosing a period themselves.
+              setPeriodReset(null);
+              setMonth(event.target.value === "" ? null : Number(event.target.value));
+            }}
           >
             <option value="">연간</option>
             {monthOptions(maxMonth, month).map((m) => (
@@ -124,9 +153,10 @@ export default function LandfillFilterPanel({
             className={selectClass}
             data-testid="landfill-origin-select"
             value={origin ?? ""}
-            onChange={(event) =>
-              setOrigin(event.target.value === "" ? null : (event.target.value as LandfillOrigin))
-            }
+            onChange={(event) => {
+              setPeriodReset(null);
+              setOrigin(event.target.value === "" ? null : (event.target.value as LandfillOrigin));
+            }}
           >
             <option value="">전체</option>
             {ORIGIN_OPTIONS.map((option) => (
@@ -142,7 +172,10 @@ export default function LandfillFilterPanel({
             className={selectClass}
             data-testid="landfill-waste-select"
             value={waste ?? ""}
-            onChange={(event) => setWaste(event.target.value === "" ? null : event.target.value)}
+            onChange={(event) => {
+              setPeriodReset(null);
+              setWaste(event.target.value === "" ? null : event.target.value);
+            }}
           >
             <option value="">전체</option>
             {/* Same reasoning as the year options: a selected type missing from the
@@ -158,6 +191,21 @@ export default function LandfillFilterPanel({
           </select>
         </label>
       </div>
+
+      {/* A polite, in-place status. `role="status"` waits for a pause rather than
+          interrupting, which is the right register for "we changed one of your
+          choices for you". It sits directly under the controls it describes. */}
+      {periodReset && (
+        <p
+          role="status"
+          className="mt-2 rounded-control border border-warn-border bg-warn-surface px-3 py-2 text-xs text-warn"
+          data-testid="landfill-period-reset"
+        >
+          연도를 {periodReset.year}(으)로 바꾸면서 기간을 <strong>연간</strong>으로 되돌렸습니다.
+          이전에 선택한 {periodReset.month}월이 이 연도에도 있는지 확인되지 않았기 때문입니다.
+          필요하면 기간을 다시 선택해 주세요.
+        </p>
+      )}
 
       <LandfillSelectionSummary
         year={year}

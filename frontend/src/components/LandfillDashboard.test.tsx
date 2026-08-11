@@ -308,6 +308,16 @@ function renderDashboard(props: Partial<Parameters<typeof LandfillDashboard>[0]>
       availableYears={[2023, 2024, 2025]}
       wasteOptions={["생활"]}
       maxMonth={12}
+      // The prior-period comparison is SETTLED WITH NO RECORD by default, so these
+      // tests describe the dashboard's own values rather than a delta against a
+      // second fixture. The comparison's own behaviour is covered separately.
+      priorSummary={null}
+      priorSettled
+      // The 발생·처리 비교 reads two equity envelopes the page already loads. Null
+      // here keeps this file about the official landfill dataset; the scatter's own
+      // join is covered by `lib/landfillScatter.test.ts`.
+      reportingPerCapita={null}
+      facilityBurden={null}
       municipalCost={municipalCostProps()}
       {...props}
     />,
@@ -362,21 +372,36 @@ describe("LandfillDashboard", () => {
     expect(kpi.textContent).not.toContain("납부액입니다");
   });
 
-  it("renders a four-column regional table with three metropolitan rows for 전체", () => {
+  it("renders the grouped regional table with three metropolitan rows for 전체", () => {
+    // Figma 125:5358 groups the leaf columns under the two things they measure.
+    // The 폐기물 발생량 / 시설 처리량 groups the design also shows are deliberately
+    // ABSENT: those datasets are published on 시·군·구 units and the landfill source
+    // reports 시·도 only, so filling them would mean summing official per-district
+    // figures into a total no publisher issued.
     renderDashboard();
     const table = screen.getByTestId("landfill-region-table");
     const headers = within(table).getAllByRole("columnheader");
-    expect(headers).toHaveLength(4);
     expect(headers.map((h) => h.textContent)).toEqual([
       "지역",
-      "반입량",
+      "수도권매립지 반입량",
       "공식 반입수수료",
+      "반입량",
+      "비중",
+      "금액",
+      "톤당 환산 수수료",
       "주민 1인당 환산 반입수수료",
     ]);
     const rows = screen.getAllByTestId("landfill-region-row");
     expect(rows).toHaveLength(3);
-    const names = rows.map((row) => within(row).getAllByRole("rowheader")[0].textContent);
-    expect(names).toEqual(["서울시", "인천시", "경기도"]);
+    // Default sort is 반입량 descending; the three fixture rows are equal, so the
+    // served order survives.
+    const names = rows.map((row) => within(row).getAllByRole("rowheader")[0].textContent ?? "");
+    expect(names.map((name) => name.split("\n")[0].replace(/[\d,]+명|인구 자료 없음/, "").trim()))
+      .toEqual(["서울시", "인천시", "경기도"]);
+    // 시·군·구 drill-down is not offered, because the source has no such rows.
+    expect(screen.getByTestId("landfill-region-grain-note").textContent).toContain(
+      "시·군·구 단위로 펼칠 수 없습니다",
+    );
   });
 
   it("renders only the selected origin's row when one origin is selected", () => {
@@ -541,42 +566,44 @@ describe("LandfillDashboard", () => {
     expect(caveats).toContain("시·군·구별 반입량을 의미하지 않습니다");
   });
 
-  it("renders the four charts", () => {
+  it("renders the four analytical surfaces of the Figma body", () => {
     renderDashboard();
     for (const testId of [
-      "landfill-trend-quantity",
-      "landfill-trend-fee",
-      "landfill-origin-comparison",
-      "landfill-waste-composition",
+      "landfill-scatter",
+      "landfill-flow-structure",
+      "landfill-composition",
+      "landfill-trends",
     ]) {
-      expect(screen.getByTestId(testId)).toBeDefined();
+      expect(screen.getByTestId(testId), `missing ${testId}`).toBeDefined();
     }
   });
 
-  it("labels the monthly charts with their y-axis unit and reference period", () => {
+  it("labels the trend chart with the unit of the metric currently shown", () => {
     renderDashboard();
-    const qtyAxis = screen.getByTestId("landfill-trend-quantity-axis").textContent ?? "";
-    expect(qtyAxis).toContain("세로축 단위");
-    expect(qtyAxis).toContain("톤 (t)");
+    const trends = screen.getByTestId("landfill-trends");
+    expect(trends.textContent).toContain("세로축 단위");
+    expect(trends.textContent).toContain("톤 (t)");
     // The reference period comes from the trend points (2024-01 in the fixture).
-    expect(qtyAxis).toContain("2024-01");
-    const feeAxis = screen.getByTestId("landfill-trend-fee-axis").textContent ?? "";
-    expect(feeAxis).toContain("억원");
-    // Fee and quantity units must not be confused between the two charts.
-    expect(feeAxis).not.toContain("톤 (t)");
+    expect(trends.textContent).toContain("2024-01");
+    // Switching the metric switches the unit with it — the two must never be
+    // confused for one another on a single chart.
+    fireEvent.click(screen.getByTestId("landfill-trend-metric-fee"));
+    const afterSwitch = screen.getByTestId("landfill-trends").textContent ?? "";
+    expect(afterSwitch).toContain("억원");
+    expect(afterSwitch).not.toContain("톤 (t)");
   });
 
   it("offers an accessible table fallback with each month's exact (lossless) value", () => {
     renderDashboard();
-    const table = screen.getByTestId("landfill-trend-quantity-table");
+    const table = screen.getByTestId("landfill-trend-table");
     // The hover-only <title> tooltips are unreachable by touch/AT; the table gives
-    // every month's exact served value as text — no chart rounding.
+    // every month's exact served value as text — no chart rounding. BOTH metrics are
+    // always present, so the chart's metric switch can never hide a served value
+    // from the one representation a screen-reader user can read.
     expect(within(table).getByText("2024-01")).toBeDefined();
     expect(within(table).getByText("90,000 t")).toBeDefined();
-    // The fee table shows the exact served KRW fee (the chart's 억원 conversion
-    // would round); 9,000,000,000.00 → "9,000,000,000원".
-    const feeTable = screen.getByTestId("landfill-trend-fee-table");
-    expect(within(feeTable).getByText("9,000,000,000원")).toBeDefined();
+    // 9,000,000,000.00 → "9,000,000,000원" (the chart's 억원 conversion would round).
+    expect(within(table).getByText("9,000,000,000원")).toBeDefined();
   });
 
   it("keeps fractional precision in the exact table (never chart-rounded)", () => {
@@ -590,6 +617,10 @@ describe("LandfillDashboard", () => {
     render(
       <LandfillDashboard
         title={TITLE}
+        priorSummary={null}
+        priorSettled
+        reportingPerCapita={null}
+        facilityBurden={null}
         data={{
           ...data(),
           trends: {
@@ -621,9 +652,9 @@ describe("LandfillDashboard", () => {
         municipalCost={municipalCostProps()}
       />,
     );
-    const qtyTable = screen.getByTestId("landfill-trend-quantity-table");
+    const qtyTable = screen.getByTestId("landfill-trend-table");
     expect(within(qtyTable).getByText("90,123.456 t")).toBeDefined();
-    const feeTable = screen.getByTestId("landfill-trend-fee-table");
+    const feeTable = screen.getByTestId("landfill-trend-table");
     expect(within(feeTable).getByText("9,000,012,345.67원")).toBeDefined();
   });
 
@@ -762,9 +793,11 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
 
   it("keeps the four native selects, each with an accessible label", () => {
     const { container } = renderDashboard();
-    // Scoped to the official landfill view: the separate municipal-payment section
-    // owns three controls of its own (see its own suite).
-    const selects = outsideMunicipalSection(container, "select");
+    // Scoped to the FILTER card: the separate municipal-payment section owns three
+    // controls of its own (see its own suite), and the regional table owns a 정렬
+    // 기준 select which is a table control, not a request filter.
+    void container;
+    const selects = screen.getByTestId("landfill-filters").querySelectorAll("select");
     expect(selects).toHaveLength(4);
     for (const testId of [
       "landfill-year-select",
@@ -864,11 +897,10 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
 
   it("makes each KPI value more prominent than its explanation", () => {
     renderDashboard();
-    for (const testId of [
-      "landfill-kpi-quantity",
-      "landfill-kpi-fee",
-      "landfill-kpi-effective-fee",
-    ]) {
+    // 톤당 환산 수수료 and the per-resident conversion now live INSIDE the 수수료
+    // card (Figma 234:441), so the two cards checked here are the ones that own a
+    // caption of their own.
+    for (const testId of ["landfill-kpi-quantity", "landfill-kpi-fee"]) {
       const card = screen.getByTestId(testId);
       const value = card.querySelector("dd");
       const caption = card.querySelector("p");
@@ -917,7 +949,7 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
 
   it("keeps the exact text value beside every comparison bar", () => {
     renderDashboard();
-    for (const testId of ["landfill-origin-comparison", "landfill-waste-composition"]) {
+    for (const testId of ["landfill-flow-structure", "landfill-composition"]) {
       const section = screen.getByTestId(testId);
       const rows = section.querySelectorAll("li");
       expect(rows.length).toBeGreaterThan(0);
@@ -937,7 +969,7 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
   it("normalises comparison bars only within the rows on screen", () => {
     renderDashboard();
     const bars = screen
-      .getByTestId("landfill-origin-comparison")
+      .getByTestId("landfill-flow-structure")
       .querySelectorAll<HTMLElement>("[aria-hidden] > span");
     expect(bars.length).toBe(3);
     // Three equal fixture quantities → three equal, full-width bars. The scale is
@@ -957,7 +989,7 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
         ],
       }),
     });
-    const section = screen.getByTestId("landfill-origin-comparison");
+    const section = screen.getByTestId("landfill-flow-structure");
     expect(section.querySelectorAll("[aria-hidden] > span")).toHaveLength(0);
     expect(section.textContent).toContain("비율 표시 불가");
     // The official reported figure itself is still shown as text.
@@ -970,7 +1002,9 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
     const table = section.querySelector("table");
     expect(table).not.toBeNull();
     expect(table?.querySelector("caption")).not.toBeNull();
-    expect(section.querySelectorAll("th[scope='col']")).toHaveLength(4);
+    // Five leaf columns under three group headers; the group cells carry colSpan
+    // instead of scope="col", which is what makes them announce as groups.
+    expect(section.querySelectorAll("th[scope='col']")).toHaveLength(6);
     expect(section.querySelectorAll("th[scope='row']").length).toBeGreaterThan(0);
     // The table — not the page — owns its horizontal overflow.
     expect(table?.parentElement?.className).toContain("overflow-x-auto");
@@ -1004,15 +1038,19 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
         },
       },
     });
-    const chart = screen.getByTestId("landfill-trend-quantity");
+    const chart = screen.getByTestId("landfill-trend-chart");
     expect(chart.querySelectorAll("rect")).toHaveLength(2);
     // The unserved months are absent from the exact table too — not zero rows.
-    const rows = screen.getByTestId("landfill-trend-quantity-table").querySelectorAll("tbody tr");
+    const rows = screen.getByTestId("landfill-trend-table").querySelectorAll("tbody tr");
     expect(rows).toHaveLength(2);
-    expect(chart.textContent).toContain("자료가 없는 달은 막대를 그리지 않으며 0으로 채우지 않습니다");
-    // Quantity and fee units stay distinct.
-    expect(screen.getByTestId("landfill-trend-quantity-axis").textContent).toContain("톤 (t)");
-    expect(screen.getByTestId("landfill-trend-fee-axis").textContent).not.toContain("톤 (t)");
+    const trends = screen.getByTestId("landfill-trends");
+    expect(trends.textContent).toContain(
+      "자료가 없는 달은 막대를 그리지 않으며 0으로 채우지 않습니다",
+    );
+    // The unit belongs to the metric currently drawn, and switching changes it.
+    expect(trends.textContent).toContain("톤 (t)");
+    fireEvent.click(screen.getByTestId("landfill-trend-metric-fee"));
+    expect(screen.getByTestId("landfill-trends").textContent).not.toContain("톤 (t)");
   });
 
   it("keeps evidence, methodology, and limitations reachable in disclosures", () => {
@@ -1210,7 +1248,7 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
         ],
       }),
     });
-    const section = screen.getByTestId("landfill-origin-comparison");
+    const section = screen.getByTestId("landfill-flow-structure");
     for (const bar of Array.from(section.querySelectorAll<HTMLElement>("[aria-hidden] > span"))) {
       expect(bar.style.width).not.toContain("NaN");
       expect(bar.style.width).not.toContain("Infinity");
@@ -1252,12 +1290,16 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     // Six titled regions, in the order a reader needs them: what am I asking →
     // what is the answer → how did it move → what is it made of → the exact
     // figures → where it came from and what it does not mean.
+    // The Figma page-2 reading order, one titled region per question.
     for (const title of [
-      "조건 선택",
+      "조회 조건",
       "핵심 지표",
-      "월별 추이",
-      "반입 구성",
-      "지역별 정확한 값",
+      "지역별 폐기물 발생과 처리 비교",
+      "수도권매립지 반입 구조 (지역별)",
+      "수도권매립지 반입 폐기물 구성",
+      "월별 반입 추이",
+      "지역별 상세 현황",
+      "공유 및 내보내기",
       "근거와 한계",
     ]) {
       expect(
@@ -1372,18 +1414,14 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     const heroValue = screen.getByTestId("landfill-kpi-quantity").querySelector("dd");
     expect(heroValue?.className).toContain("text-3xl");
     expect(heroValue?.textContent).toBe("1,071,548 t");
-    // …and it is the ONLY hero: the other three stay at the secondary size.
-    for (const testId of [
-      "landfill-kpi-fee",
-      "landfill-kpi-effective-fee",
-      "landfill-kpi-per-capita",
-    ]) {
-      expect(
-        screen.getByTestId(testId).querySelector("dd")?.className,
-        `${testId} must not also be a hero`,
-      ).not.toContain("text-3xl");
-    }
-    // The grid still holds four cards and no more.
+    // …and it is the ONLY hero. Every other value on the row — including the two
+    // conversions inside the 수수료 card and the two unbound totals — stays at the
+    // secondary size, so the reader has exactly one entry point.
+    const values = Array.from(screen.getByTestId("landfill-kpis").querySelectorAll("dd"));
+    const heroes = values.filter((value) => value.className.includes("text-3xl"));
+    expect(heroes).toHaveLength(1);
+    expect(heroes[0].textContent).toBe("1,071,548 t");
+    // The grid still holds four cards and no more (Figma 125:5106).
     expect(screen.getByTestId("landfill-kpis").children).toHaveLength(4);
   });
 
@@ -1392,16 +1430,24 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     const statusOf = (testId: string) =>
       screen.getByTestId(testId).querySelector("dt [data-status]")?.getAttribute("data-status");
     expect(statusOf("landfill-kpi-quantity")).toBe("reported");
+    // The 수수료 card's own headline is the officially reported amount…
     expect(statusOf("landfill-kpi-fee")).toBe("reported");
-    // 톤당 실효 수수료 and the per-capita conversion are this platform's arithmetic,
-    // never an officially published figure.
-    expect(statusOf("landfill-kpi-effective-fee")).toBe("derived");
+    // …while 톤당 환산 수수료 and the per-resident conversion inside the SAME card are
+    // this platform's arithmetic, never an officially published figure. One badge
+    // for the card would have had to lie about half of it.
     expect(statusOf("landfill-kpi-per-capita")).toBe("derived");
+    const feeCard = screen.getByTestId("landfill-kpi-fee");
+    const derivedBadges = Array.from(feeCard.querySelectorAll("[data-status='derived']"));
+    expect(derivedBadges.length).toBeGreaterThanOrEqual(2);
     // The badge label is text, so provenance survives a grayscale render.
-    expect(
-      screen.getByTestId("landfill-kpi-effective-fee").querySelector("dt [data-status]")
-        ?.textContent,
-    ).toBe("계산값");
+    expect(derivedBadges[0].textContent).toBe("계산값");
+    // The two headline concepts the platform holds no official TOTAL for say so
+    // rather than showing a browser-side sum of official per-region series.
+    expect(statusOf("landfill-kpi-generation")).toBe("missing");
+    expect(statusOf("landfill-kpi-treatment")).toBe("missing");
+    expect(screen.getByTestId("landfill-kpi-generation-unavailable").textContent).toBe(
+      "합산 공식값 없음",
+    );
   });
 
   it("switches the per-capita card to the missing badge when no value was served", () => {
@@ -1469,23 +1515,22 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     expect(section.textContent).toContain("0이 아니라 자료 없음");
   });
 
-  it("groups the two trend charts under one heading that scopes them", () => {
+  it("puts both trend metrics behind one chart with a switch, and states its scope", () => {
     renderDashboard();
     const trends = screen.getByTestId("landfill-trends");
-    // Both charts live in the section, and the heading states the scope they share.
-    expect(within(trends).getByTestId("landfill-trend-quantity")).toBeDefined();
-    expect(within(trends).getByTestId("landfill-trend-fee")).toBeDefined();
+    expect(within(trends).getByTestId("landfill-trend-chart")).toBeDefined();
+    expect(within(trends).getByTestId("landfill-trend-metric-quantity")).toBeDefined();
+    expect(within(trends).getByTestId("landfill-trend-metric-fee")).toBeDefined();
     expect(trends.textContent).toContain("월 필터와 무관");
   });
 
   it("names the two breakdowns descriptively and never as a ranking", () => {
     renderDashboard();
+    const structure = screen.getByTestId("landfill-flow-structure");
     const composition = screen.getByTestId("landfill-composition");
-    expect(within(composition).getByTestId("landfill-origin-comparison")).toBeDefined();
-    expect(within(composition).getByTestId("landfill-waste-composition")).toBeDefined();
-    const text = composition.textContent ?? "";
-    expect(text).toContain("출발 지역별 반입량");
-    expect(text).toContain("폐기물 종류별 반입량");
+    const text = `${structure.textContent ?? ""} ${composition.textContent ?? ""}`;
+    expect(text).toContain("수도권매립지 반입 구조 (지역별)");
+    expect(text).toContain("수도권매립지 반입 폐기물 구성");
     // A larger quantity is a quantity, not blame, fault, or a verdict.
     for (const forbidden of ["최다", "최악", "1위", "책임", "위험", "과도"]) {
       expect(text, `composition implies a verdict via "${forbidden}"`).not.toContain(forbidden);
@@ -1578,5 +1623,257 @@ describe("LandfillDashboard — the separate municipal contract-payment section"
     const officialTable = screen.getByTestId("landfill-region-table");
     expect(within(officialTable).queryByTestId("municipal-cost-row")).toBeNull();
     expect(officialTable.textContent).not.toContain("수집·운반");
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// Figma page-2 redesign — the behaviours the redesign added or corrected
+// --------------------------------------------------------------------------- //
+
+describe("LandfillDashboard — Figma page 2", () => {
+  it("states a partial year as the range it covers, not just its last month", () => {
+    // Page-2 defect F2. `1999-12까지` reads as January-through-December, which is
+    // false for a year whose records begin in August. Both bounds come from the same
+    // served month list, so the pair always describes the dataset.
+    renderDashboard({
+      data: data({
+        period: {
+          ...summary().period,
+          year: 1999,
+          is_complete_year: false,
+          available_from_month: "1999-08",
+          available_through_month: "1999-12",
+        },
+      }),
+    });
+    const partial = screen.getByTestId("landfill-partial-year").textContent ?? "";
+    expect(partial).toContain("1999-08 ~ 1999-12");
+    expect(partial).toContain("연간 합계가 아닙니다");
+  });
+
+  it("falls back to the single served bound when the lower one is absent", () => {
+    // An older backend serves only `available_through_month`. A half-known range is
+    // never printed as if it were known.
+    renderDashboard({
+      data: data({
+        period: {
+          ...summary().period,
+          year: 2026,
+          is_complete_year: false,
+          available_through_month: "2026-05",
+        },
+      }),
+    });
+    expect(screen.getByTestId("landfill-partial-year").textContent).toContain("2026-05까지");
+  });
+
+  it("tells the reader when changing the year dropped their selected month", () => {
+    // The safe reset is kept; it is no longer silent.
+    renderDashboard({ month: 3 });
+    expect(screen.queryByTestId("landfill-period-reset")).toBeNull();
+    fireEvent.change(screen.getByTestId("landfill-year-select"), { target: { value: "2023" } });
+    const notice = screen.getByTestId("landfill-period-reset");
+    expect(notice.getAttribute("role")).toBe("status");
+    expect(notice.textContent).toContain("3월");
+    expect(notice.textContent).toContain("연간");
+    // It says the month was UNVERIFIED in the new year, not that it was checked and
+    // found missing — the reset happens before any request is made.
+    expect(notice.textContent).toContain("확인되지 않았기 때문입니다");
+  });
+
+  it("does not announce a reset when no month was selected", () => {
+    renderDashboard({ month: null });
+    fireEvent.change(screen.getByTestId("landfill-year-select"), { target: { value: "2023" } });
+    expect(screen.queryByTestId("landfill-period-reset")).toBeNull();
+  });
+
+  it("calls a missing prior period 비교 자료 없음, never 0%", () => {
+    renderDashboard({ priorSummary: null, priorSettled: true });
+    const delta = screen.getByTestId("landfill-yoy-quantity").textContent ?? "";
+    expect(delta).toContain("2023년 비교 자료 없음");
+    expect(delta).toContain("변화 없음이라는 뜻이 아닙니다");
+    expect(delta).not.toContain("0%");
+  });
+
+  it("says it is still checking while the prior period is in flight", () => {
+    renderDashboard({ priorSummary: null, priorSettled: false });
+    expect(screen.getByTestId("landfill-yoy-quantity").textContent).toContain(
+      "비교 자료를 확인하는 중입니다",
+    );
+  });
+
+  it("computes the prior-period delta from the two served totals", () => {
+    // 1,071,548,250 kg against 1,000,000,000 kg → +7.2%.
+    renderDashboard({
+      priorSettled: true,
+      priorSummary: summary({
+        total_quantity_kg: "1000000000",
+        total_inbound_fee_krw: "100000000000.00",
+      }),
+    });
+    expect(screen.getByTestId("landfill-yoy-quantity").textContent).toContain("+7.2%");
+    expect(screen.getByTestId("landfill-yoy-fee").textContent).toContain("+8.2%");
+  });
+
+  it("names a monthly view's comparison as the same month of the prior year", () => {
+    renderDashboard({
+      data: data({ period: { ...summary().period, month: "2024-03" } }),
+      priorSummary: null,
+      priorSettled: true,
+    });
+    expect(screen.getByTestId("landfill-yoy-quantity").textContent).toContain("2023년 3월");
+  });
+
+  it("opens the composition modal with the served taxonomy and a residual roll-up", () => {
+    renderDashboard();
+    fireEvent.click(screen.getByTestId("landfill-composition-open"));
+    const modal = screen.getByTestId("landfill-composition-modal");
+    const rows = within(modal).getAllByTestId("landfill-composition-modal-row");
+    // The fixture serves ONE category worth 500,000 t of a 1,071,548 t total, so the
+    // residual is real and is shown as its own derived row.
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("생활");
+    expect(rows[1].textContent).toContain("그 외 항목 합계");
+    expect(rows[1].querySelector("[data-status='derived']")).not.toBeNull();
+    // The official name is printed verbatim — never remapped onto a friendlier word.
+    expect(modal.textContent).not.toContain("생활계 폐기물");
+    expect(within(modal).getByTestId("landfill-composition-modal-footer").textContent).toContain(
+      "총 2개 항목",
+    );
+    fireEvent.click(within(modal).getByTestId("landfill-composition-modal-dismiss"));
+    expect(screen.queryByTestId("landfill-composition-modal")).toBeNull();
+  });
+
+  it("omits the roll-up when the served categories already account for the total", () => {
+    renderDashboard({
+      data: data({
+        top_waste_types: [
+          {
+            waste_name: "생활",
+            quantity_kg: "1071548250",
+            quantity_tons: "1071548.250000",
+            inbound_fee_krw: "108176043070.00",
+            quantity_share: "1",
+            effective_fee_per_ton: "100952.00",
+          },
+        ],
+      }),
+    });
+    fireEvent.click(screen.getByTestId("landfill-composition-open"));
+    const modal = screen.getByTestId("landfill-composition-modal");
+    expect(within(modal).getAllByTestId("landfill-composition-modal-row")).toHaveLength(1);
+    expect(modal.textContent).not.toContain("그 외 항목 합계");
+  });
+
+  it("calls out the highest and lowest month in words, not only in colour", () => {
+    renderDashboard({
+      data: {
+        ...data(),
+        trends: {
+          ...data().trends,
+          points: [
+            {
+              reference_month: "2024-01",
+              reference_year: 2024,
+              quantity_kg: "90000000",
+              quantity_tons: "90000.000000",
+              inbound_fee_krw: "9000000000.00",
+              effective_fee_per_ton: "100000.00",
+            },
+            {
+              reference_month: "2024-07",
+              reference_year: 2024,
+              quantity_kg: "60000000",
+              quantity_tons: "60000.000000",
+              inbound_fee_krw: "6000000000.00",
+              effective_fee_per_ton: "100000.00",
+            },
+          ],
+        },
+      },
+    });
+    expect(screen.getByTestId("landfill-trend-max").textContent).toContain("최고 1월");
+    expect(screen.getByTestId("landfill-trend-min").textContent).toContain("최저 7월");
+    // The bars carry the same distinction, as a redundant encoding of that text.
+    const chart = screen.getByTestId("landfill-trend-chart");
+    expect(chart.querySelector("[data-extreme='max']")?.getAttribute("data-month")).toBe("2024-01");
+    expect(chart.querySelector("[data-extreme='min']")?.getAttribute("data-month")).toBe("2024-07");
+  });
+
+  it("claims no high or low when every month carries the same value", () => {
+    const point = {
+      reference_month: "2024-01",
+      reference_year: 2024,
+      quantity_kg: "90000000",
+      quantity_tons: "90000.000000",
+      inbound_fee_krw: "9000000000.00",
+      effective_fee_per_ton: "100000.00",
+    };
+    renderDashboard({
+      data: {
+        ...data(),
+        trends: {
+          ...data().trends,
+          points: [point, { ...point, reference_month: "2024-02" }],
+        },
+      },
+    });
+    expect(screen.queryByTestId("landfill-trend-max")).toBeNull();
+    expect(screen.getByTestId("landfill-trend-no-extremes")).toBeDefined();
+  });
+
+  it("reorders the regional table by the chosen key without changing a value", () => {
+    renderDashboard({
+      data: data({
+        origin_shares: [
+          originShare("KR-SGIS-11", "11", "서울시", {
+            quantity_tons: "100",
+            inbound_fee_krw: "300",
+          }),
+          originShare("KR-SGIS-28", "28", "인천시", {
+            quantity_tons: "300",
+            inbound_fee_krw: "100",
+          }),
+        ],
+      }),
+    });
+    const names = () =>
+      screen
+        .getAllByTestId("landfill-region-row")
+        .map((row) => within(row).getAllByRole("rowheader")[0].textContent?.slice(0, 3));
+    expect(names()).toEqual(["인천시", "서울시"]);
+    fireEvent.change(screen.getByTestId("landfill-region-sort"), { target: { value: "fee" } });
+    expect(names()).toEqual(["서울시", "인천시"]);
+  });
+
+  it("offers both export formats for the official landfill dataset only", () => {
+    renderDashboard();
+    expect(screen.getByTestId("landfill-export-xlsx")).toBeDefined();
+    expect(screen.getByTestId("landfill-export-csv")).toBeDefined();
+    // 보고서 보기 is BLOCKED BY PRODUCT DEFINITION — no artifact, route, or content
+    // model exists, so no button pretends one does.
+    expect(screen.getByTestId("landfill-export").textContent).not.toContain("보고서");
+    expect(screen.getByTestId("landfill-export-scope").textContent).toContain(
+      "이 파일에 포함되지 않습니다",
+    );
+  });
+
+  it("names the MOIS population basis where the per-resident value is read", () => {
+    renderDashboard();
+    const basis = screen.getByTestId("landfill-population-basis").textContent ?? "";
+    expect(basis).toContain("행정안전부 주민등록 인구");
+    expect(basis).toContain("SGIS");
+  });
+
+  it("keeps the 출발 지역 filter the Figma design does not show", () => {
+    // It scopes every value on the screen; deleting it would remove the only way to
+    // ask a per-origin question.
+    renderDashboard();
+    expect(screen.getByTestId("landfill-origin-select")).toBeDefined();
+  });
+
+  it("keeps the municipal contract-payment module the design does not show", () => {
+    renderDashboard();
+    expect(screen.getByTestId("municipal-cost-section")).toBeDefined();
   });
 });

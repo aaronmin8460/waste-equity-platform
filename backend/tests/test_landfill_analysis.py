@@ -38,6 +38,19 @@ def test_period_completeness() -> None:
     assert la.latest_complete_year(months) == 2024
 
 
+def test_available_from_month_reports_the_real_lower_bound() -> None:
+    # A year whose records START late covers 08–12, NOT 01–12. Serving only the
+    # upper bound would let the UI imply five months of coverage that do not exist.
+    months = ["1999-08", "1999-09", "1999-10", "1999-11", "1999-12", "2000-01"]
+    assert la.available_from_month(months, 1999) == "1999-08"
+    assert la.available_through_month(months, 1999) == "1999-12"
+    # A year that starts in January still reports January — the bound is measured,
+    # never assumed from the fact that the year looks "normal".
+    assert la.available_from_month(months, 2000) == "2000-01"
+    # No months in the year at all → no bound, never a fabricated "01".
+    assert la.available_from_month(months, 1998) is None
+
+
 def test_latest_complete_year_falls_back_to_latest_present() -> None:
     # No complete year → fall back to the latest present year rather than nothing.
     assert la.latest_complete_year(["2026-01", "2026-02"]) == 2026
