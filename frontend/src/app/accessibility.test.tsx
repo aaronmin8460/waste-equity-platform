@@ -301,7 +301,9 @@ describe("map/dashboard readability (Phase 3)", () => {
     // is identifiable without relying on color.
     for (const row of rows) {
       expect(row.textContent).toContain("급");
-      expect(row.textContent).toContain("persons");
+      // The served population unit is the English `persons`; the legend prints 명.
+      expect(row.textContent).toContain("명");
+      expect(row.textContent).not.toContain("persons");
     }
     // An explicit no-data category, never rendered as a 0 class.
     const nodata = screen.getByTestId("choropleth-legend-nodata");

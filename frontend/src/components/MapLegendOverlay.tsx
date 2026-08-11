@@ -144,7 +144,29 @@ export default function MapLegendOverlay(props: MapLegendOverlayProps) {
   );
 }
 
+/**
+ * A served unit → how the legend prints it.
+ *
+ * `/api/v1/population` serves the English unit `persons`; this legend is
+ * Korean-only (G3), so it prints `명`. This is a DISPLAY label only — the served
+ * unit, the numeric values, the quantile breaks, the map fill and every export
+ * still carry the API's own unit string untouched.
+ *
+ * `separator` is per-unit because Korean typography attaches a counter word
+ * directly to the numeral (`151,306명`) but keeps a space before a compound
+ * symbol unit (`12.3 kg/인/년`, the unit the per-capita metrics serve). Units
+ * with no entry keep the pre-existing spaced rendering.
+ */
+const UNIT_DISPLAY: Record<string, { label: string; separator: string }> = {
+  persons: { label: "명", separator: "" },
+};
+
+function unitDisplay(unit: string): { label: string; separator: string } {
+  return UNIT_DISPLAY[unit] ?? { label: unit, separator: " " };
+}
+
 function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: EquityLegendProps) {
+  const { label: unitLabel, separator: unitSeparator } = unitDisplay(unit);
   return (
     <section aria-label="범례" data-testid="legend">
       {/* Korean-only primary heading (Phase 4). Every analytical element below is
@@ -162,7 +184,7 @@ function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: Equi
       >
         {metricLabel} 범례
       </h2>
-      {unit ? <p className="mt-1 text-[11px] text-ink-subtle">{unit}</p> : null}
+      {unit ? <p className="mt-1 text-[11px] text-ink-subtle">{unitLabel}</p> : null}
       <p className="mt-1 text-[11px] text-ink-subtle" data-testid="choropleth-scale-method">
         {methodNote}
       </p>
@@ -181,7 +203,7 @@ function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: Equi
             <span className="w-6 shrink-0 tabular-nums text-brand">{row.classNumber}급</span>
             <span className="tabular-nums">
               {row.range}
-              {unit ? ` ${unit}` : ""}
+              {unit ? `${unitSeparator}${unitLabel}` : ""}
             </span>
           </li>
         ))}
