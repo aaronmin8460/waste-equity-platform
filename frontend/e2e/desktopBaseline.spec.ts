@@ -112,7 +112,7 @@ test.describe(() => {
 
   test("후보지 분석 — 비용 살펴보기, before calculation", async ({ page }) => {
     await gotoLoaded(page, "/?v=1&mode=suitability&view=cost&metric=population");
-    await page.getByTestId("facility-cost-form").waitFor({ state: "visible" });
+    await page.getByTestId("facility-cost-workflow").waitFor({ state: "visible" });
     await capture(page, "facility-cost-setup", true);
   });
 

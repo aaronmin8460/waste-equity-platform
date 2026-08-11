@@ -181,35 +181,40 @@ for (const vp of WIDTHS) {
     // ─────────────────────────────────────────────────────────────────────────
     // 4. 후보지 분석 — the warnings are the LAST thing on the page
     // ─────────────────────────────────────────────────────────────────────────
-    test("후보지 분석 opens with the workflow and ends with the warnings", async ({ page }) => {
+    test("후보지 분석 opens with the workflow and keeps the warnings in full", async ({ page }) => {
       await mockBackend(page);
       await page.goto("/?v=1&mode=suitability&view=cost");
-      await expect(page.getByTestId("facility-cost-form")).toBeVisible({ timeout: 15000 });
+      await expect(page.getByTestId("facility-cost-workflow")).toBeVisible({ timeout: 15000 });
 
-      const form = page.getByTestId("facility-cost-form");
+      // The Figma redesign moved the warnings off the end of the page and behind
+      // the one 계산 방법과 한계 door. What this test protects is unchanged — they
+      // must not have been DELETED by that move, and the screen must open on the
+      // workflow rather than on a wall of caveats.
+      await expect(page.getByTestId("facility-cost-notice")).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "① 비용 계산 희망 지역 선택" })).toBeVisible();
+
+      // The standing non-claims stay readable WITHOUT opening anything, so the
+      // move did not hide the caveats a citizen must read beside the figures.
+      await expect(page.getByTestId("suitability-screening-disclaimer")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-standing-non-claims")).toBeVisible();
+
+      // …and the full eight-item list is still there, in full, behind the door.
+      await page.getByTestId("facility-cost-open-details").click();
+      const dialog = page.getByTestId("facility-cost-details");
+      await expect(dialog).toBeVisible();
       const notice = page.getByTestId("facility-cost-notice");
       const completeness = page.getByTestId("facility-cost-completeness");
-
-      // Both are still on the page, in full — the move must not have deleted them.
       await expect(notice).toHaveCount(1);
       await expect(completeness).toHaveCount(1);
       await expect(completeness).toContainText("8가지");
 
-      // …and both sit BELOW the whole workflow.
-      const formBox = (await form.boundingBox())!;
-      const noticeBox = (await notice.boundingBox())!;
-      const completenessBox = (await completeness.boundingBox())!;
-      expect(noticeBox.y, "알림 sits below the workflow").toBeGreaterThan(
-        formBox.y + formBox.height - 1,
-      );
-      expect(completenessBox.y, "the exclusion list sits below the workflow").toBeGreaterThan(
-        formBox.y + formBox.height - 1,
-      );
+      // Usable at this width: the panel fits and never scrolls the page sideways.
+      const panelBox = (await dialog.boundingBox())!;
+      expect(panelBox.width).toBeLessThanOrEqual(vp.width + 1);
+      await expectNoHorizontalOverflow(page, `${vp.name} cost details open`);
 
-      // The first step is what opens the screen now.
-      const stepBox = (await page.getByRole("heading", { name: "1. 처리할 지역" }).boundingBox())!;
-      expect(stepBox.y, "step 1 precedes the warnings").toBeLessThan(noticeBox.y);
-
+      await page.getByTestId("facility-cost-details-close").click();
+      await expect(dialog).toHaveCount(0);
       await expectNoHorizontalOverflow(page, `${vp.name} cost`);
     });
 

@@ -61,7 +61,7 @@ const WASTE_STATISTICS = {
 
 async function gotoCost(page: Page): Promise<void> {
   await page.goto("/?v=1&mode=suitability&view=cost");
-  await page.getByTestId("facility-cost-form").waitFor({ state: "visible" });
+  await page.getByTestId("facility-cost-workflow").waitFor({ state: "visible" });
 }
 
 async function capture(page: Page, name: string): Promise<void> {
@@ -111,7 +111,8 @@ test.describe(() => {
         // combobox behaviour), so dismiss it the way a user would before using them.
         await search.press("Escape");
         await page.getByTestId("facility-cost-regions-incheon").click();
-        await page.getByTestId("facility-cost-setup-summary").waitFor({ state: "visible" });
+        // The condition summary now lives in card ③ of the single-screen workflow.
+        await page.getByTestId("facility-cost-step-result").waitFor({ state: "visible" });
         await capture(page, `cost-selected-regions-${vp.label}`);
 
         await page.getByTestId("facility-cost-advanced-settings-summary").click();

@@ -80,14 +80,21 @@ test.beforeEach(async ({ page }) => {
 async function openCost(page: Page): Promise<void> {
   await page.goto("/?v=1&mode=suitability&view=cost");
   await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
-  await expect(page.getByTestId("facility-cost-form")).toBeVisible();
+  await expect(page.getByTestId("facility-cost-workflow")).toBeVisible();
 }
 
 async function calculate(page: Page, regionName = "서울 종로구"): Promise<void> {
   await page.getByTestId("facility-cost-region-search").click();
   await page.getByTestId("facility-cost-region-option").filter({ hasText: regionName }).click();
   await page.getByTestId("facility-cost-calculate").click();
-  await expect(page.getByTestId("facility-cost-results-view")).toBeVisible();
+  // The result appears IN card ③, beside the inputs — no view switch.
+  await expect(page.getByTestId("facility-cost-results")).toBeVisible();
+}
+
+/** Open 계산 방법과 한계, the one door to everything the workflow no longer shows inline. */
+async function openDetails(page: Page): Promise<void> {
+  await page.getByTestId("facility-cost-open-details").click();
+  await expect(page.getByTestId("facility-cost-details")).toBeVisible();
 }
 
 async function expectNoHorizontalOverflow(page: Page, where: string): Promise<void> {
@@ -123,8 +130,8 @@ async function scrollToTop(page: Page): Promise<void> {
  *
  * Asserts the action is at offset 0 of the document, entirely inside the viewport,
  * actually hit-testable at its own centre (so no sticky element, overlay, or
- * neighbouring card covers it), that the readiness context explaining its state is
- * on the same screen, and that the page has not started scrolling sideways.
+ * neighbouring card covers it), that the context explaining its state is on the same
+ * screen, and that the page has not started scrolling sideways.
  */
 async function expectActionOnFirstScreen(page: Page, viewportHeight: number): Promise<void> {
   await scrollToTop(page);
@@ -162,7 +169,8 @@ async function expectActionOnFirstScreen(page: Page, viewportHeight: number): Pr
 
   // The context that explains why the action is enabled or disabled is on the same
   // screen as the action — a reachable-by-scrolling explanation is not equivalent.
-  await expect(page.getByTestId("facility-cost-readiness")).toBeInViewport();
+  // The 준비 상태 checklist is retired: every row restated something already on
+  // screen, so this single blocked-reason line now carries that whole contract.
   await expect(page.getByTestId("facility-cost-calculate-status")).toBeInViewport();
 
   await expectNoHorizontalOverflow(page, "cost setup first screen");
@@ -214,12 +222,17 @@ for (const vp of VIEWPORTS) {
       // scrolled and sent back up.
       await expectActionOnFirstScreen(page, vp.height);
 
-      // …and the readiness summary beside it explains why it is disabled.
-      await expect(page.getByTestId("facility-cost-readiness")).toContainText("한 곳 이상 선택하세요");
+      // …and the status line beside it explains why it is disabled.
+      await expect(page.getByTestId("facility-cost-calculate-status")).toContainText(
+        "한 곳 이상 선택하면",
+      );
       await expect(page.getByTestId("facility-cost-calculate")).toBeDisabled();
 
-      // The three setup stages exist and are individually reachable.
-      for (const heading of ["1. 처리할 지역", "2. 처리 조건", "3. 계산 가정"]) {
+      // The three workflow cards of the Figma single screen exist and are
+      // individually reachable. 계산 가정 is no longer a fourth setup stage — it is
+      // an advanced disclosure inside card ②, and its full text lives in the
+      // 계산 방법과 한계 dialog.
+      for (const heading of ["① 비용 계산 희망 지역 선택", "② 계산 조건", "③ 비용 계산 결과"]) {
         const step = page.getByRole("heading", { name: heading });
         await step.scrollIntoViewIfNeeded();
         await expect(step, heading).toBeVisible();
@@ -251,10 +264,11 @@ for (const vp of VIEWPORTS) {
       await page.getByTestId("facility-cost-region-search").click();
       await page.getByTestId("facility-cost-region-option").filter({ hasText: "인천 강화군" }).click();
 
-      // The selection is visible in the picker AND restated in the summary rail.
+      // The selection is visible in the picker AND restated in card ③'s condition
+      // summary, which is what the retired 준비 상태 row used to duplicate.
       await expect(page.getByTestId("facility-cost-selected-regions")).toContainText("인천 강화군");
       await expect(page.getByTestId("facility-cost-summary-regions")).toContainText("인천 강화군");
-      await expect(page.getByTestId("facility-cost-readiness")).toContainText("1개 선택됨");
+      await expect(page.getByTestId("facility-cost-summary-regions")).toContainText("1개");
 
       // An out-of-range value blocks the action and is visible in both places.
       await page.getByTestId("facility-cost-processing-share").fill("150");
@@ -268,11 +282,14 @@ for (const vp of VIEWPORTS) {
       await expectNoHorizontalOverflow(page, "cost validation");
     });
 
-    test("lays the result out as titled sections that scroll as one document", async ({ page }) => {
+    test("answers on the same screen as the inputs, with no nested scroll trap", async ({ page }) => {
       await openCost(page);
       await calculate(page);
 
-      // The headline answer is on the first screen of the result.
+      // The headline answer is on the first screen, WITHOUT scrolling: that is the
+      // point of the single-screen workflow, where the old design put the report
+      // below a view switch.
+      await scrollToTop(page);
       const hero = page.getByTestId("facility-cost-hero");
       await expect(hero).toBeVisible();
       const heroBox = (await hero.boundingBox())!;
@@ -280,35 +297,47 @@ for (const vp of VIEWPORTS) {
         vp.height,
       );
 
-      // Every result section is present and reachable by ordinary page scrolling.
-      for (const title of [
-        "핵심 결과",
-        "비용 구성",
-        "빠진 항목과 주의사항",
-        "분석에 사용한 공식 자료",
-        "계산 기준·출처·버전",
-      ]) {
-        const section = page.getByRole("heading", { name: title });
-        await section.scrollIntoViewIfNeeded();
-        await expect(section, title).toBeVisible();
-      }
+      // The inputs that produced it are still on screen beside it — there is no
+      // longer a results screen the citizen has to leave in order to change one.
+      await expect(page.getByTestId("facility-cost-step-regions")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-step-conditions")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-region-search")).toBeVisible();
 
-      // The report is a normally-scrolling document, not a set of independently
-      // scrolling panels.
-      const scrolled = await page.evaluate(() => window.scrollY);
-      expect(scrolled, "the document itself scrolls").toBeGreaterThan(0);
+      // The workflow is an ordinary document, not a set of independently scrolling
+      // panels. Measured with the details dialog CLOSED — a dialog body legitimately
+      // scrolls within itself.
       expect(await nestedScrollContainers(page), "no nested vertical scroll panes").toEqual([]);
 
       await expectNoHorizontalOverflow(page, "cost results");
     });
 
-    test("shows the cost composition and the KPI row in place, within the content width", async ({
+    test("keeps every detail section behind one door, and the composition inside it", async ({
       page,
     }) => {
       await openCost(page);
       await calculate(page);
+      await openDetails(page);
 
-      // The cost composition is readable without opening a disclosure.
+      // Everything the primary workflow no longer shows inline is reachable here,
+      // and nowhere else. `포함되지 않은 비용` carries a live count, so it is matched
+      // by prefix rather than exactly.
+      for (const label of [
+        "이 계산의 범위",
+        "지역 자료 범위",
+        "비용 구성",
+        "지역별 공식 투입 데이터",
+        "계산 가정",
+        "출처와 계산 방법",
+        "정밀값과 계산 기준",
+      ]) {
+        await expect(
+          page.getByTestId("facility-cost-details").getByText(label, { exact: false }).first(),
+          label,
+        ).toBeVisible();
+      }
+
+      // The cost composition lives under 비용 구성 and reads in full once opened.
+      await page.getByTestId("facility-cost-breakdown-section-summary").click();
       const funding = page.getByTestId("facility-cost-funding");
       await funding.scrollIntoViewIfNeeded();
       await expect(funding).toBeVisible();
@@ -327,13 +356,16 @@ for (const vp of VIEWPORTS) {
       for (const { id, over } of overflow) {
         expect(over, `${id} does not overflow horizontally`).toBeLessThanOrEqual(1);
       }
+
+      await expectNoHorizontalOverflow(page, "cost details open");
     });
 
-    test("keeps a wide table's overflow inside the table, and the result actions reachable", async ({
+    test("keeps a wide table's overflow inside the table, and edits without a return trip", async ({
       page,
     }) => {
       await openCost(page);
       await calculate(page);
+      await openDetails(page);
 
       await page.getByTestId("facility-cost-region-section-summary").click();
       await expect(page.getByTestId("facility-cost-region-table")).toBeVisible();
@@ -346,13 +378,17 @@ for (const vp of VIEWPORTS) {
       expect(bounded).toBe("auto");
       await expectNoHorizontalOverflow(page, "cost region table open");
 
-      // The result actions area is reachable and its one real action works.
-      const actions = page.getByTestId("facility-cost-result-actions");
-      await actions.scrollIntoViewIfNeeded();
-      await expect(actions).toBeVisible();
-      await page.getByTestId("facility-cost-edit-settings").click();
-      await expect(page.getByTestId("facility-cost-setup-view")).toBeVisible();
+      // Closing the one door returns to the workflow with the selection intact —
+      // there is no 설정 바꾸기 return trip any more, because the setup was never
+      // left. Changing an input marks the standing answer stale rather than
+      // displaying it beside inputs that no longer produced it.
+      await page.getByTestId("facility-cost-details-close").click();
+      await expect(page.getByTestId("facility-cost-details")).toHaveCount(0);
       await expect(page.getByTestId("facility-cost-region-chip")).toHaveCount(1);
+
+      await page.getByTestId("facility-cost-processing-share").fill("60");
+      await expect(page.getByTestId("facility-cost-stale")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-results")).toHaveCount(0);
     });
   });
 }
@@ -398,10 +434,17 @@ test.describe("suitability sub-view regression at 1440×900", () => {
   }) => {
     await openCost(page);
     await expect(page.getByTestId("suitability-view-cost")).toHaveAttribute("aria-pressed", "true");
+    // The regional-screening disclaimer stays VISIBLE without opening anything —
+    // docs/SUITABILITY_PHASE_0_TRANSPARENCY.md requires it in every suitability
+    // sub-view, so the single-screen refresh keeps it standing in card ③.
     await expect(page.getByTestId("suitability-screening-disclaimer")).toBeVisible();
+    // The longer "this page does not advocate" notice moved into 계산 방법과 한계,
+    // under 이 계산의 범위, which opens by default.
+    await openDetails(page);
     await expect(page.getByTestId("facility-cost-disclaimer")).toContainText(
       "권고하거나 반대를 설득하기 위한 페이지가 아닙니다",
     );
+    await page.getByTestId("facility-cost-details-close").click();
     await expect(page.getByTestId("map-container")).toHaveCount(0);
   });
 });

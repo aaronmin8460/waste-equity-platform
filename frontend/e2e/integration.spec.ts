@@ -113,12 +113,21 @@ for (const vp of VIEWPORTS) {
         .filter({ hasText: "서울 종로구" })
         .click();
       await page.getByTestId("facility-cost-calculate").click();
-      // Phase 3: the results view replaces the setup, leading with approximations.
-      await expect(page.getByTestId("facility-cost-results-view")).toBeVisible();
+      // The Figma single-screen workflow: the result appears in card ③ BESIDE the
+      // inputs that produced it — the setup is never replaced, so the inputs stay
+      // on screen next to the figures.
+      await expect(page.getByTestId("facility-cost-results")).toBeVisible();
       await expect(page.getByTestId("fc-standard-cost")).toHaveText("약 121억원");
-      await expect(page.getByTestId("facility-cost-exclusions-summary")).toContainText(
+      await expect(page.getByTestId("facility-cost-step-conditions")).toBeVisible();
+      // The excluded-cost list moved off the primary surface into 계산 방법과 한계,
+      // which is the one door to everything the workflow no longer shows inline.
+      await page.getByTestId("facility-cost-open-details").click();
+      await expect(page.getByTestId("facility-cost-details")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-exclusions")).toContainText(
         "포함되지 않은 비용",
       );
+      await page.getByTestId("facility-cost-details-close").click();
+      await expect(page.getByTestId("facility-cost-details")).toHaveCount(0);
       await expect(page.getByText("총비용")).toHaveCount(0);
       await expectNoHorizontalOverflow(page);
 

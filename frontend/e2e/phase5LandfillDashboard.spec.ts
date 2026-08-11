@@ -119,8 +119,14 @@ for (const vp of VIEWPORTS) {
       const table = page.getByTestId("landfill-region-table");
       await table.scrollIntoViewIfNeeded();
       await expect(table).toBeVisible();
-      // Four columns and one row per served origin, at every width.
-      await expect(table.locator("thead th")).toHaveCount(4);
+      // The Figma redesign groups 폐기물 발생량 and 시설 처리량 beside the landfill
+      // columns, so the header is now TWO rows: three group cells over five leaf
+      // columns, plus 지역 spanning both rows. Every leaf keeps its own scope="col"
+      // so the grouping is announced rather than merely drawn.
+      await expect(table.locator("thead th")).toHaveCount(8);
+      await expect(table.locator('thead th[scope="col"]')).toHaveCount(6);
+      await expect(table.locator("thead th[colspan]")).toHaveCount(2);
+      // One row per served origin, at every width.
       await expect(page.getByTestId("landfill-region-row")).toHaveCount(3);
       // The page itself still never scrolls sideways.
       await expectNoHorizontalOverflow(page);
@@ -192,18 +198,23 @@ test.describe("desktop 1440×900 — states and interaction", () => {
 
     for (const testId of ["landfill-kpi-quantity", "landfill-kpi-fee"]) {
       const card = page.getByTestId(testId);
-      const valueSize = await card.locator("dd").evaluate((el) =>
-        parseFloat(getComputedStyle(el).fontSize),
-      );
+      // The card's PRIMARY value. The 수수료 card now carries two further <dd>s for
+      // the conversions derived from it (Figma 234:441), which are deliberately
+      // smaller and are not the value being ranked against the explanation.
+      const valueSize = await card
+        .locator("dd")
+        .first()
+        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       const captionSize = await card.locator("p").first().evaluate((el) =>
         parseFloat(getComputedStyle(el).fontSize),
       );
       expect(valueSize, `${testId} value must outrank its explanation`).toBeGreaterThan(
         captionSize,
       );
-      const labelSize = await card.locator("dt").evaluate((el) =>
-        parseFloat(getComputedStyle(el).fontSize),
-      );
+      const labelSize = await card
+        .locator("dt")
+        .first()
+        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       expect(valueSize).toBeGreaterThan(labelSize);
     }
   });

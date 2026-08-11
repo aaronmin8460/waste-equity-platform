@@ -444,7 +444,12 @@ for (const vp of VIEWPORTS) {
       );
       await expect(link).toHaveAttribute("rel", /noopener/);
       await expect(link).toHaveAttribute("rel", /noreferrer/);
-      await expect(link).toContainText("새 창");
+      // The redesign takes Figma's visible label (공식 안내 페이지) and moves the
+      // "leaves this tab" warning into the ACCESSIBLE name, which also names the
+      // dataset — so the warning is still announced, just no longer duplicated in
+      // the visible text of every card.
+      await expect(link).toHaveAttribute("aria-label", /새 창/);
+      await expect(link).toHaveAttribute("aria-label", /반입량/);
 
       // The card's diagnostic disclosure opens from the keyboard alone.
       const disclosure = page.getByTestId("transparency-source-card").locator("details");

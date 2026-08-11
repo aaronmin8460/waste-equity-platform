@@ -363,7 +363,11 @@ for (const vp of VIEWPORTS) {
         "https://www.data.go.kr/data/15064381/fileData.do",
       );
       await expect(link).toHaveAttribute("rel", /noreferrer/);
-      await expect(link).toContainText("새 창");
+      // The redesign keeps Figma's visible label (공식 안내 페이지) and moves the
+      // "leaves this tab" warning into the ACCESSIBLE name, alongside the dataset
+      // name — so it is still announced, just not duplicated in visible text.
+      await expect(link).toHaveAttribute("aria-label", /새 창/);
+      await expect(link).toHaveAttribute("aria-label", /반입량/);
 
       // A record whose served URL is not an absolute http(s) URL must not be
       // repaired into a link. (Synthetic id, so no real agency is depicted as having
@@ -548,7 +552,13 @@ for (const vp of VIEWPORTS) {
       // full-bleed — which would stop it reading as a modal. The contract that
       // matters is unchanged: the dashboard fills the box it is given.
       const dialogBody = (await page.getByTestId("data-sources-dialog-body").boundingBox())!;
-      expect(box.width).toBeGreaterThan(dialogBody.width * 0.9);
+      // Measured as an ABSOLUTE gutter rather than a ratio. The catalogue carries its
+      // own ~20px content gutter on each side, which is a fixed cost: at 390px that
+      // is 10.3% of the width, so a `> 90%` rule failed at the narrowest viewport
+      // while passing everywhere else — it was measuring the gutter, not a squeeze.
+      // The cap is also STRICTER than the old ratio at 1280+ (48px of slack rather
+      // than 128px+), so nothing is given up by stating it this way.
+      expect(dialogBody.width - box.width, "catalogue fills the box it is given").toBeLessThanOrEqual(48);
       await expectNoHorizontalOverflow(page);
     });
 

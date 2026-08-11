@@ -145,12 +145,16 @@ for (const vp of VIEWPORTS) {
 
       const hero = page.getByTestId("landfill-kpi-quantity");
       await expect(hero).toBeVisible();
-      await expect(hero.locator("dd")).toContainText(" t");
-      // The headline is bigger than every other value on the screen.
+      await expect(hero.locator("dd").first()).toContainText(" t");
+      // The headline is bigger than every other value on the screen. Measured on
+      // each card's PRIMARY value — the 수수료 card carries two further <dd>s for the
+      // conversions derived from it (Figma 234:441), which are deliberately smaller
+      // still and are not what the hero is being compared against.
       const sizeOf = async (testId: string) =>
         page
           .getByTestId(testId)
           .locator("dd")
+          .first()
           .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       const heroSize = await sizeOf("landfill-kpi-quantity");
       expect(heroSize).toBeGreaterThan(await sizeOf("landfill-kpi-fee"));

@@ -141,7 +141,7 @@ const VIEW_OWNED_TESTIDS: Record<string, string[]> = {
   "지역 지표": ["region-select", "region-ranking", "open-full-ranking", "share-export"],
   "후보지 심층 분석": ["suitability-summary"],
   "후보지 심층 비교": ["scenario-lab"],
-  "후보지 분석": ["facility-cost-dashboard", "facility-cost-form"],
+  "후보지 분석": ["facility-cost-dashboard", "facility-cost-workflow"],
   "폐기물 처리 현황": ["landfill-dashboard", "landfill-filters"],
   "데이터·출처": ["transparency-dashboard", "transparency-sources"],
 };
@@ -168,7 +168,7 @@ async function expectNoHorizontalOverflow(page: Page, where: string): Promise<vo
  *
  * Deliberately a curated list rather than "no `data-testid` repeats": several ids
  * legitimately mark repeated rows (`score-class-row`, `land-cover-legend-row`,
- * `facility-cost-facility-type-card`, region chips, catalog items), so a blanket
+ * `facility-cost-missing-row`, region chips, catalog items), so a blanket
  * uniqueness rule would report list rendering as a defect. Every id below is a
  * SINGLETON by contract — the shell chrome, the one map, and each area's owned
  * top-level surfaces — so a second occurrence means a duplicated control or a stale
@@ -193,8 +193,12 @@ const SINGLETON_TESTIDS = [
   "suitability-summary",
   "scenario-lab",
   "facility-cost-dashboard",
-  "facility-cost-form",
-  "facility-cost-setup-summary",
+  // The Figma single-screen workflow: one three-column container holding the three
+  // step cards, in place of the previous setup ⇄ results view switch.
+  "facility-cost-workflow",
+  "facility-cost-step-regions",
+  "facility-cost-step-conditions",
+  "facility-cost-step-result",
   "facility-cost-calculate",
   "landfill-dashboard",
   "landfill-filters",
@@ -327,7 +331,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
       // the sub-view switch keeps <main> mounted and only swaps its subtree.
       await openView(page, VIEWS[1]); // 후보지 심층 분석
       await page.getByTestId("suitability-view-cost").click();
-      await expect(page.getByTestId("facility-cost-form")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-workflow")).toBeVisible();
 
       await page.evaluate(() => window.scrollTo(0, 0));
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
@@ -347,8 +351,10 @@ for (const vp of DESKTOP_VIEWPORTS) {
       expect(geometry.top, "action starts on screen").toBeGreaterThanOrEqual(0);
       expect(geometry.bottom, `action fits ${vp.height}px`).toBeLessThanOrEqual(vp.height);
       expect(geometry.covered, "action is not overlapped").toBe(false);
-      // The context explaining the action's state is on the same screen.
-      await expect(page.getByTestId("facility-cost-readiness")).toBeInViewport();
+      // The context explaining the action's state is on the same screen. The
+      // 준비 상태 checklist is gone — every row of it restated something already
+      // visible — so the blocked-reason line beside the button is now the single
+      // place that says why the action is unavailable.
       await expect(page.getByTestId("facility-cost-calculate-status")).toBeInViewport();
     });
   });

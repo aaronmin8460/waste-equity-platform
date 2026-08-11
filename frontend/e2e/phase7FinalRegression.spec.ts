@@ -405,7 +405,7 @@ test.describe("area behaviour survives integration", () => {
   test("cost: setup → results → back to setup", async ({ page }) => {
     await mockBackend(page);
     await page.goto("/?v=1&mode=suitability&view=cost");
-    await expect(page.getByTestId("facility-cost-form")).toBeVisible();
+    await expect(page.getByTestId("facility-cost-workflow")).toBeVisible();
     // No map on this branch, at any point in the flow.
     await expect(page.getByTestId("map-container")).toHaveCount(0);
     await expectNoHorizontalOverflow(page, "cost setup");
