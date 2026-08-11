@@ -228,8 +228,11 @@ describe("active-metric summary", () => {
     await renderLoaded();
     const summary = screen.getByTestId("selected-metric-summary");
     const name = within(summary).getByText("인구");
-    expect(name.className).toContain("text-base");
-    expect(name.className).toContain("font-semibold");
+    // Figma frame 220:439 sets this pair at 15/700 (the design's own step for a KPI
+    // value) rather than the previous 16/600. What the assertion is really about is
+    // unchanged: the metric NAME dominates the unit beside it.
+    expect(name.className).toContain("text-[15px]");
+    expect(name.className).toContain("font-bold");
     // The unit is muted secondary text, not the dominant element.
     const unit = within(summary).getByText(/단위/);
     expect(unit.className).toContain("text-xs");
@@ -330,8 +333,11 @@ describe("floating legend keeps every analytical element", () => {
     const heading = within(legend).getByRole("heading", { level: 2 });
     expect(heading.textContent).toContain("범례");
     expect(heading.textContent).not.toContain("(Legend)");
-    // The unit still rides on the heading.
-    expect(heading.textContent).toContain("persons");
+    // Figma frame 74:2054 titles the card `{metric} 범례` and moves the unit to its
+    // own quiet line directly beneath, so the unit is still stated once — beside the
+    // heading rather than inside it.
+    expect(heading.textContent).toContain("인구");
+    expect(within(screen.getByTestId("legend")).getByText("persons")).toBeDefined();
     expect(screen.getByTestId("map-legend-summary").textContent).not.toContain("(Legend)");
   });
 

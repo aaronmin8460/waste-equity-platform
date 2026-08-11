@@ -70,13 +70,16 @@ for (const vp of WIDTHS) {
       ).toHaveCount(0);
       await expect(page.getByTestId("mode-orientation")).toHaveCount(0);
 
-      // The first meaningful thing in the column is the region control, and it
-      // starts directly under the app bar rather than a screenful down.
+      // The first meaningful thing in the column starts directly under the app bar
+      // rather than a screenful down. WHICH control that is changed in Phase 1:
+      // Figma frame 74:2010 opens the panel with 지표 선택 and moves 지역 선택 lower,
+      // directly above the 선택한 지역 card it fills ("좌측 패널 순서 조정: 지역 선택 >
+      // 선택한 지역", page-1 기술요청). The reclaimed-space guarantee is unchanged.
       const navBox = (await page.getByTestId("top-navigation").boundingBox())!;
-      const pickerBox = (await page.getByTestId("region-select").boundingBox())!;
+      const firstControlBox = (await page.getByTestId("equity-metric-selector").boundingBox())!;
       expect(
-        pickerBox.y - (navBox.y + navBox.height),
-        "region control sits close under the app bar",
+        firstControlBox.y - (navBox.y + navBox.height),
+        "the first control sits close under the app bar",
       ).toBeLessThan(140);
 
       await expectNoHorizontalOverflow(page, `${vp.name} equity`);
@@ -129,9 +132,9 @@ for (const vp of WIDTHS) {
     });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 3. 지역 비교 gone; 지표 순위 전체보기 present and usable
+    // 3. 지역 비교 gone; the full-ranking escape present and usable
     // ─────────────────────────────────────────────────────────────────────────
-    test("지역 비교 is gone and 지표 순위 전체보기 opens the complete ranking", async ({
+    test("지역 비교 is gone and 전체보기 opens the complete ranking", async ({
       page,
     }) => {
       await mockEquityBackend(page);
@@ -148,7 +151,9 @@ for (const vp of WIDTHS) {
       const trigger = page.getByTestId("open-full-ranking");
       await trigger.scrollIntoViewIfNeeded();
       await expect(trigger).toBeVisible();
-      await expect(trigger).toHaveText("지표 순위 전체보기");
+      // Figma frame 74:2025 labels the escape from the top-N cut 전체보기 ↗, inside a
+      // card already titled 지역 순위; the dialog it opens keeps the full name.
+      await expect(trigger).toHaveText("전체보기 ↗");
 
       await trigger.click();
       const dialog = page.getByTestId("full-ranking-dialog");

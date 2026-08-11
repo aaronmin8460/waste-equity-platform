@@ -4,17 +4,20 @@
  * 지표 선택 — the eleven equity metrics, presented as the question a citizen
  * actually asks.
  *
- * ── WHAT THE CORRECTION PASS CHANGED ─────────────────────────────────────────────
- * This was one flat list of eleven radios grouped by STATISTICAL FAMILY (총량 지표 /
- * 1인당 형평성 지표 / 시설 부담 지표). Every option was a bare line of text, the same
- * weight as every other, and a reader had to already know the family taxonomy to find
- * anything. It is now three SUBJECT sections — 지역별 인구 · 폐기물 발생량 ·
- * 1인당 시설 처리 수준 — whose rows are selectable cards, and where a waste category
- * carries its own 총량/1인당 switch instead of appearing twice in two different
- * families.
+ * ── WHAT PHASE 1 CHANGED (Figma frame 123:333, inside page-1 74:1992) ────────────
+ * Presentation only. The three subject sections, the eleven served metrics, the one
+ * radio group, and the 총량/1인당 switch are all unchanged; what moved is how they
+ * are drawn:
+ *   - 지역별 인구 is a single row on its own tinted plate, above a rule, because it
+ *     is one metric rather than a family — its `<legend>` would only repeat the row
+ *     label, so it is kept for the accessibility tree and hidden visually.
+ *   - 폐기물 발생량 and 1인당 시설 처리 수준 keep a visible group heading with its
+ *     supporting line, and their rows sit inside ONE hairlined container divided by
+ *     rules, instead of each row being its own bordered card.
+ *   - The 총량/1인당 switch is inside the active row, as before.
  *
- * Same eleven metrics. `lib/metrics.ts` (METRIC_SECTIONS) owns the mapping and
- * explains why the two 사업장 series stay two rows; this file only draws it.
+ * `lib/metrics.ts` (METRIC_SECTIONS) owns the mapping and explains why the two
+ * 사업장 series stay two rows; this file only draws it.
  *
  * ── WHAT DID NOT CHANGE, AND MUST NOT ────────────────────────────────────────────
  *  - Three `<fieldset>`/`<legend>` groups, and only three. `e2e/accessibility.spec.ts`
@@ -27,6 +30,7 @@
  *    directly selectable, no accordion, no `<select>`, no tabs.
  *  - Selection is signalled FOUR ways — the native checked radio, a heavier label, a
  *    stronger border, and the primary tint — so it never depends on colour alone.
+ *  - The `metric-row-*`, `metric-mode-*`, and `metric-section-*` test ids.
  *
  * ── THE MODE SWITCH IS DERIVED STATE ─────────────────────────────────────────────
  * There is no second piece of state here. The active mode is read from the active
@@ -42,6 +46,7 @@ import {
   type MetricKey,
   type MetricMode,
   type MetricRow,
+  type MetricSection,
 } from "../../lib/metrics";
 import SegmentedControl from "../ui/SegmentedControl";
 import type { SegmentedControlOption } from "../ui/SegmentedControl";
@@ -60,6 +65,15 @@ export interface EquityMetricSelectorProps {
   onSelectRow: (row: MetricRow) => void;
   /** Switch the active row between its absolute and per-capita served metric. */
   onSelectMode: (mode: MetricMode) => void;
+}
+
+/**
+ * A section whose only row IS the section — its `<legend>` would say exactly what
+ * the row's own label says. The group still needs a name for assistive technology,
+ * so the legend stays in the tree and is hidden visually rather than dropped.
+ */
+function legendIsRedundant(section: MetricSection): boolean {
+  return section.rows.length === 1 && section.rows[0].label === section.title;
 }
 
 function MetricRowCard({
@@ -85,23 +99,21 @@ function MetricRowCard({
     <div
       data-testid={`metric-row-${row.key}`}
       data-selected={active || undefined}
-      className={`rounded-card border ${
-        active ? "border-primary bg-primary-soft" : "border-hairline bg-surface"
-      }`}
+      className={active ? "bg-primary-soft" : "bg-surface"}
     >
       {/* The supporting line sits OUTSIDE the <label> and is attached with
           aria-describedby instead. Inside it, it would become part of the radio's
           accessible NAME, so a screen reader would read a whole sentence of caveat
           where a name belongs. Name = the label; description = the description. */}
       <label
-        className={`flex min-h-[2.75rem] cursor-pointer items-center gap-2.5 px-3 py-2.5 text-sm ${
-          active ? "font-semibold text-ink" : "text-ink-muted"
-        }`}
+        className={`flex min-h-[2.75rem] cursor-pointer items-start gap-3 px-[18px] pt-[14px] text-[15px] ${
+          active ? "font-bold text-ink" : "font-medium text-ink-muted"
+        } ${row.description || showModes ? "" : "pb-[14px]"}`}
       >
         <input
           type="radio"
           name="metric"
-          className="shrink-0"
+          className="mt-0.5 size-[18px] shrink-0 accent-[var(--color-brand)]"
           value={row.key}
           checked={active}
           aria-describedby={descriptionId}
@@ -112,13 +124,18 @@ function MetricRowCard({
       {row.description && (
         // Supporting text keeps its own weight whichever row is selected, so the
         // bold label above it stays the thing that reads as chosen.
-        <p id={descriptionId} className="-mt-1 px-3 pb-2 pl-9 text-xs font-normal text-ink-subtle">
+        <p
+          id={descriptionId}
+          className={`px-[18px] pl-[48px] text-xs font-normal leading-[15px] text-ink-subtle ${
+            showModes ? "" : "pb-[14px]"
+          }`}
+        >
           {row.description}
         </p>
       )}
 
       {showModes && (
-        <div className="border-t border-primary-border/60 px-3 py-2">
+        <div className="px-[18px] pb-[14px] pl-[48px] pt-2.5">
           <SegmentedControl
             options={MODE_OPTIONS}
             value={mode}
@@ -139,40 +156,71 @@ export default function EquityMetricSelector({
   onSelectMode,
 }: EquityMetricSelectorProps) {
   return (
-    <section aria-label="지표 목록" className="wep-card p-4" data-testid="equity-metric-selector">
-      <h2 className="text-sm font-semibold text-ink">지표 선택</h2>
-      <p className="mt-0.5 text-xs text-ink-subtle">
+    <section
+      aria-label="지표 목록"
+      className="wep-card wep-figma-card"
+      data-testid="equity-metric-selector"
+    >
+      <h2 className="text-xl font-bold leading-6 text-brand">지표 선택</h2>
+      <p className="mt-1.5 text-xs text-ink-subtle">
         지표를 바꾸면 지도와 순위가 모두 같은 값을 따라갑니다.
       </p>
 
-      <div className="mt-3 flex flex-col gap-4">
-        {METRIC_SECTIONS.map((section) => (
-          <fieldset
-            key={section.key}
-            className="m-0 border-0 p-0"
-            data-testid={`metric-section-${section.key}`}
-          >
-            <legend className="p-0 text-sm font-semibold text-ink">{section.title}</legend>
-            {section.description && (
-              <p className="mt-0.5 text-xs text-ink-subtle">{section.description}</p>
-            )}
-            <div className="mt-2 flex flex-col gap-2">
-              {section.rows.map((row) => (
-                <MetricRowCard
-                  key={row.key}
-                  row={row}
-                  // A row is active when the served metric it resolves to in EITHER
-                  // mode is the active one — so 생활계 stays selected when the reader
-                  // flips it to 1인당.
-                  active={metricKeyFor(row, "total") === metricKey || row.perCapita === metricKey}
-                  mode={mode}
-                  onSelectRow={onSelectRow}
-                  onSelectMode={onSelectMode}
-                />
-              ))}
-            </div>
-          </fieldset>
-        ))}
+      <div className="mt-4 flex flex-col gap-4">
+        {METRIC_SECTIONS.map((section, index) => {
+          const quietLegend = legendIsRedundant(section);
+          return (
+            <fieldset
+              key={section.key}
+              className={`m-0 border-0 p-0 ${
+                // Figma rules OFF the first (single-row) plate from the grouped
+                // sections beneath it; the grouped sections are separated by their
+                // own containers, so only this one boundary is drawn.
+                index === 1 ? "border-t border-[var(--figma-rule)] pt-4" : ""
+              }`}
+              data-testid={`metric-section-${section.key}`}
+            >
+              <legend
+                className={
+                  quietLegend ? "sr-only" : "p-0 text-base font-bold leading-[19px] text-brand"
+                }
+              >
+                {section.title}
+              </legend>
+              {section.description && (
+                <p className="mt-[3px] text-xs leading-[15px] text-ink-subtle">
+                  {section.description}
+                </p>
+              )}
+              <div
+                className={
+                  quietLegend
+                    ? // The single row sits on its own tinted plate (Figma's #F9F9F9
+                      // frame), with no group container around it.
+                      "mt-0 overflow-hidden rounded-2xl bg-canvas"
+                    : // Grouped rows share ONE hairlined container, divided by rules.
+                      "mt-3 divide-y divide-[var(--figma-rule)] overflow-hidden rounded-[18px] border border-[var(--figma-rule)]"
+                }
+              >
+                {section.rows.map((row) => (
+                  <MetricRowCard
+                    key={row.key}
+                    row={row}
+                    // A row is active when the served metric it resolves to in EITHER
+                    // mode is the active one — so 생활계 stays selected when the reader
+                    // flips it to 1인당.
+                    active={
+                      metricKeyFor(row, "total") === metricKey || row.perCapita === metricKey
+                    }
+                    mode={mode}
+                    onSelectRow={onSelectRow}
+                    onSelectMode={onSelectMode}
+                  />
+                ))}
+              </div>
+            </fieldset>
+          );
+        })}
       </div>
     </section>
   );

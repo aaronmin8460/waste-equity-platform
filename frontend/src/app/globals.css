@@ -178,6 +178,12 @@
      [데이터/출처] 앞에 세로선 bar 삽입"). A decorative separator, never text, so its
      measured value is kept here rather than promoted to a semantic ink role. */
   --figma-nav-divider: #adadad;
+  /* The 1px separator frames 74:1992 / 123:333 draw between a card's sections and
+     between the rows of a grouped list. One shade lighter than --color-hairline,
+     which the token audit records as a Figma/shipped difference each page phase
+     resolves for itself; used through `border-[var(--figma-rule)]` so Page 1 can
+     adopt it without re-pointing the shared role for the five untouched pages. */
+  --figma-rule: #eff0f6;
 }
 
 /* Reusable component classes for the consistent citizen patterns (cards, the
@@ -195,6 +201,23 @@
   border-radius: var(--radius-card);
   padding: 1rem;
 }
+/* The Figma card elevation, as a MODIFIER on `.wep-card`.
+ *
+ * Frame 74:1992 separates every aside card from the canvas with a soft drop shadow
+ * and no border — the opposite of the rule above. Adding it as a modifier rather
+ * than re-pointing `.wep-card` is deliberate: re-pointing would restyle all six
+ * surfaces at once, and only Page 1 has been redesigned. Later page phases adopt it
+ * as they are reworked; the day the last one does, this collapses back into
+ * `.wep-card` and the modifier disappears. Padding moves 16 -> 18 to match.
+ *
+ * The border is kept at 1px transparent (not removed) so the box model is identical
+ * with and without the modifier — a card cannot shift by 2px when it gains one. */
+.wep-figma-card {
+  border-color: transparent;
+  padding: 18px;
+  box-shadow: 0 6px 20px rgb(17 26 86 / 0.06);
+}
+
 .wep-orient {
   color: var(--color-ink-muted);
   font-size: 0.8125rem;
@@ -1068,7 +1091,13 @@ body {
    stays short and the map is reachable; the <summary> is the tappable label.
    On md+ (desktop/tablet-landscape) the summary is hidden and the body is forced
    visible, so the desktop sidebar renders exactly as before — no toggles are
-   added to the desktop UI and no analytical option is ever permanently hidden. */
+   added to the desktop UI and no analytical option is ever permanently hidden.
+
+   NOTE (Phase 1): 지역 지표 was the only consumer, and its two disclosures moved —
+   the facility control onto the map, 출처와 계산 방법 into the 선택한 지역 card — so
+   this block currently has none. It is kept because Pages 2-6 have not been
+   redesigned yet and the same mobile behaviour is likely to be wanted there; if the
+   last page phase also finds no use for it, delete it then. */
 .mobile-collapsible > summary {
   list-style: none;
   cursor: pointer;
@@ -1167,6 +1196,26 @@ body {
 @media (min-width: 768px) and (max-height: 820px) {
   .map-legend > .map-legend-body {
     max-height: 30vh;
+  }
+}
+
+/* The 폐기물 처리시설 card (components/equity/EquityFacilityLayerCard.tsx) joined that
+   same bottom stack in Phase 1, so it is bounded on exactly the same terms and by the
+   same height query. Without it the stack — legend + facility card + the expanded
+   insight — overflowed the TOP of the map at 768/800-tall viewports, which is the
+   defect this file's note above already describes for the legend alone.
+
+   Capping it costs nothing analytical: the card scrolls internally, so the toggle,
+   every type-legend row, and the served coverage note all stay reachable. The page
+   ALSO bounds the stack structurally (see the overlay column in app/page.tsx), so a
+   future card that outgrows this cap still cannot escape the map. */
+.wep-map-overlay-card {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+@media (min-width: 768px) and (max-height: 820px) {
+  .wep-map-overlay-card {
+    max-height: 26vh;
   }
 }
 
@@ -1291,6 +1340,57 @@ body {
 }
 
 .maplibregl-popup-content small {
+  color: var(--color-ink-subtle);
+}
+
+/* The map popup, from Figma frame 223:449 — ONE card carrying the region's active
+   indicator value and, when a marker was the target, that facility's details. The
+   frame's smallest provenance type is 9px; it is raised to 11px here because 9px is
+   below any usable reading size and the popup has room for the difference. */
+.maplibregl-popup-content .wep-popup-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 19px;
+  color: var(--color-brand);
+  padding-right: 1rem; /* clear of the close button */
+}
+.maplibregl-popup-content .wep-popup-value {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 20px;
+  color: var(--color-brand);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.maplibregl-popup-content .wep-popup-subtitle {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
+  color: var(--color-brand);
+}
+.maplibregl-popup-content .wep-popup-line {
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--color-ink-muted);
+}
+.maplibregl-popup-content .wep-popup-note {
+  color: var(--color-ink-subtle);
+}
+.maplibregl-popup-content .wep-popup-rule {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--figma-rule);
+}
+.maplibregl-popup-content .wep-popup-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--color-ink-secondary);
+}
+.maplibregl-popup-content .wep-popup-meta-label {
+  flex: none;
+  min-width: 4.5rem;
   color: var(--color-ink-subtle);
 }
 

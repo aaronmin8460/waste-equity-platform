@@ -203,7 +203,7 @@ describe("floating control", () => {
   it("keeps long content in a bounded, internally-scrollable container", () => {
     renderEquity();
     const details = screen.getByTestId("map-legend");
-    const body = within(details).getByText("범례 — persons").closest(".map-legend-body");
+    const body = within(details).getByTestId("choropleth-legend").closest(".map-legend-body");
     expect(body).not.toBeNull();
     const cls = body?.getAttribute("class") ?? "";
     expect(cls).toContain("overflow-y-auto");

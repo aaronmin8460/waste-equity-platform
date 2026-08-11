@@ -75,12 +75,12 @@ export default function ShareExportBar({
     <section
       aria-label="공유 및 내보내기"
       data-testid="share-export"
-      className="wep-card p-4 text-xs"
+      className="wep-card wep-figma-card text-xs"
     >
-      <h2 className="text-sm font-semibold text-ink">공유 · 내보내기</h2>
-      <p className="mt-0.5 text-xs text-ink-subtle">
-        현재 지표·지역·순위 설정이 그대로 담깁니다.
-      </p>
+      {/* Figma frame 74:2044 titles this card 공유 및 내보내기 at 16/700 — one step
+          below the four 20px card titles above it, because it is an action tray
+          rather than another analytical section. */}
+      <h2 className="text-base font-bold leading-[19px] text-brand">공유 및 내보내기</h2>
 
       {/* Always-present live region so a restored-link warning is announced even
           when it is injected after mount. The banner is the shared warning
@@ -101,10 +101,13 @@ export default function ShareExportBar({
         )}
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1.5">
+      {/* Three equal buttons on one row, as the design lays them out. `flex-1
+          basis-0` keeps them equal AND lets them wrap to a second row rather than
+          overflow when the sidebar is dragged to its 300px minimum. */}
+      <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
-          className="wep-btn-primary"
+          className="wep-btn-primary min-h-[35px] flex-1 basis-20 px-2 text-sm"
           onClick={copyLink}
           data-testid="share-copy"
         >
@@ -112,7 +115,7 @@ export default function ShareExportBar({
         </button>
         <button
           type="button"
-          className="wep-btn-quiet"
+          className="wep-btn-quiet min-h-[35px] flex-1 basis-20 border-[var(--figma-rule)] px-2 text-sm font-bold text-brand"
           onClick={onDownloadRankingCsv}
           data-testid="csv-ranking"
         >
@@ -121,14 +124,19 @@ export default function ShareExportBar({
         {onDownloadComparisonCsv && (
           <button
             type="button"
-            className="wep-btn-quiet"
+            className="wep-btn-quiet min-h-[35px] flex-1 basis-20 border-[var(--figma-rule)] px-2 text-sm font-bold text-brand"
             onClick={onDownloadComparisonCsv}
             data-testid="csv-comparison"
           >
             비교 CSV
           </button>
         )}
-        <button type="button" className="wep-btn-quiet" onClick={onOpenReport} data-testid="open-report">
+        <button
+          type="button"
+          className="wep-btn-quiet min-h-[35px] flex-1 basis-20 border-[var(--figma-rule)] px-2 text-sm font-bold text-brand"
+          onClick={onOpenReport}
+          data-testid="open-report"
+        >
           보고서 보기
         </button>
       </div>
@@ -147,8 +155,8 @@ export default function ShareExportBar({
         )}
       </div>
 
-      <p className="mt-1 text-xs text-ink-subtle">
-        보고서 이미지에는 지도가 포함되지 않습니다.
+      <p className="mt-1 text-[11px] text-ink-subtle">
+        현재 지표·지역·순위 설정이 그대로 담깁니다. 보고서 이미지에는 지도가 포함되지 않습니다.
       </p>
     </section>
   );

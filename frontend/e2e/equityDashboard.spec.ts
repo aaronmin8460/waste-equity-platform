@@ -175,10 +175,14 @@ for (const vp of VIEWPORTS) {
       await openEquity(page);
       // The visible header is GONE (correction pass), so there is nothing to keep
       // above the fold except the controls themselves — which is the point of having
-      // removed it. 지역 선택 then 지표 선택 LEAD the column (spec §3): they are what
-      // a reader acts on. The summary is the RESULT of those two choices, below them.
-      await expect(page.getByTestId("region-select")).toBeInViewport();
+      // removed it. Phase 1 reorders which control leads: Figma frame 74:2010 opens
+      // the panel with 지표 선택, then 지역 순위, and places 지역 선택 lower so it sits
+      // directly above the 선택한 지역 card it fills. 지표 선택 is the choice every
+      // other card follows, so it is the one that must be actionable unscrolled;
+      // 지역 선택 stays reachable by scrolling the column (and the map and the ranking
+      // rows are two other ways to make the same selection).
       await expect(page.getByTestId("equity-metric-selector")).toBeInViewport();
+      await expect(page.getByTestId("region-select")).toBeAttached();
     });
 
     test("keeps the selection summary's facts on screen, never only in a tooltip", async ({
@@ -270,7 +274,7 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
     await page.getByTestId("open-full-ranking").click();
     const dialog = page.getByTestId("full-ranking-dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("지표 순위 전체보기");
+    await expect(dialog).toContainText("지역 순위 전체보기");
     await expect(dialog.getByTestId("full-ranking-row").first()).toBeVisible();
     // A region with no served value is stated as missing, never ranked as a 0.
     await expect(dialog.getByTestId("full-ranking-unranked")).toContainText(

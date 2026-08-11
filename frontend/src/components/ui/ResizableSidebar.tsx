@@ -185,7 +185,18 @@ export default function ResizableSidebar({
         // `wep-sidebar` owns the width; the utilities keep the column's existing
         // stacking, scrolling, and surface behaviour. The desktop right border
         // moved to the divider, which now draws that line.
-        className={`wep-sidebar flex w-full flex-col gap-3 border-b border-hairline bg-surface-sunken p-4 md:flex-none md:overflow-y-auto md:border-b-0 ${className}`}
+        //
+        // `relative` IS LOAD-BEARING, and not for positioning anything: it makes this
+        // element the containing block for its absolutely-positioned descendants.
+        // `sr-only` is `position: absolute`, and `overflow` only clips descendants
+        // whose containing-block chain passes through the scroller — so with a STATIC
+        // aside, an `sr-only` label resolved against the initial containing block
+        // instead, escaped `md:overflow-y-auto`, and extended the DOCUMENT's scroll
+        // height to its own static position. Page 1 surfaced it (the 지역 선택 label
+        // sits ~1300px down the column, which gave the page a vertical scrollbar the
+        // fixed-height map shell forbids), but any visually-hidden text low in this
+        // column would have done the same.
+        className={`wep-sidebar relative flex w-full flex-col gap-3 border-b border-hairline bg-surface-sunken p-4 md:flex-none md:overflow-y-auto md:border-b-0 ${className}`}
         style={{ "--wep-sidebar-width": `${width}px` } as CSSProperties}
       >
         {children}

@@ -216,10 +216,13 @@ describe("equity page header", () => {
     const picker = screen.getByTestId("region-select");
     const selector = screen.getByTestId("equity-metric-selector");
     // DOCUMENT_POSITION_FOLLOWING — the sr-only h1 still leads the column in document
-    // order, and the two controls a reader acts on come immediately after it.
-    expect(h1.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // order, and the two controls a reader acts on come after it. Their ORDER within
+    // the column swapped in Phase 1: Figma frame 74:2010 opens the panel with
+    // 지표 선택 and places 지역 선택 lower, directly above the 선택한 지역 card it
+    // fills ("좌측 패널 순서 조정: 지역 선택 > 선택한 지역", page-1 기술요청).
+    expect(h1.compareDocumentPosition(selector) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
-      picker.compareDocumentPosition(selector) & Node.DOCUMENT_POSITION_FOLLOWING,
+      selector.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 });
@@ -383,8 +386,10 @@ describe("metric selection", () => {
     expect(checked.checked).toBe(true);
     // The label carries a heavier weight; the card around it carries the border, in
     // addition to the tint — so selection survives grayscale and colour deficiency.
-    expect(checked.closest("label")!.className).toContain("font-semibold");
-    expect(screen.getByTestId("metric-row-population").className).toContain("border-primary");
+    expect(checked.closest("label")!.className).toContain("font-bold");
+    expect(screen.getByTestId("metric-row-population").className).toContain("bg-primary-soft");
+    // …and the row is marked as selected in the DOM independently of any class.
+    expect(screen.getByTestId("metric-row-population").getAttribute("data-selected")).toBe("true");
   });
 
   it("drives the map, the summary, and the strip from one metric change", async () => {
@@ -442,7 +447,9 @@ describe("ranking and comparison interaction", () => {
 
     const before = within(screen.getByTestId("rank-high")).getAllByTestId("rank-row").length;
     const trigger = screen.getByTestId("open-full-ranking");
-    expect(trigger.textContent).toBe("지표 순위 전체보기");
+    // Figma frame 74:2025 labels the escape from the top-N cut 전체보기 ↗, inside a
+    // card already titled 지역 순위; the dialog it opens keeps the full name.
+    expect(trigger.textContent).toBe("전체보기 ↗");
     fireEvent.click(trigger);
 
     expect(screen.getByTestId("full-ranking-dialog")).toBeDefined();

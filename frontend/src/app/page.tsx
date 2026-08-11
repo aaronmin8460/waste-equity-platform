@@ -98,6 +98,7 @@ import type {
   StatusVisibility,
 } from "../components/MapView";
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
+import EquityFacilityLayerCard from "../components/equity/EquityFacilityLayerCard";
 import EquityMapInsightStrip from "../components/equity/EquityMapInsightStrip";
 import EquityMetricSelector from "../components/equity/EquityMetricSelector";
 import EquityRegionPicker from "../components/equity/EquityRegionPicker";
@@ -153,6 +154,7 @@ import Skeleton from "../components/ui/Skeleton";
 import {
   rankRegions,
   type RankableRegion,
+  type RankDirection,
   type ScopeSelection,
 } from "../lib/ranking";
 import {
@@ -396,6 +398,13 @@ export default function Home() {
   // its existing "which model?" shape if a second report is ever added back.
   const [scope, setScope] = useState<ScopeSelection>("all");
   const [topN, setTopN] = useState(10);
+  /**
+   * Which end of the ranking 지역 순위 shows (Figma frame 74:2025's ↑/↓ toggle). It
+   * chooses between the two lists `rankRegions` already returns, so it changes no
+   * ordering, no tie-break, and no exclusion rule. Deliberately NOT a URL parameter:
+   * the URL contract is frozen for this phase, and `topN` is likewise page-only.
+   */
+  const [rankDirection, setRankDirection] = useState<RankDirection>("high");
   const [fullRankingOpen, setFullRankingOpen] = useState(false);
   const [reportKind, setReportKind] = useState<"ranking" | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<string[]>([]);
@@ -1723,7 +1732,14 @@ export default function Home() {
           />
         </CollapsiblePanel>
       ) : (
-        <ResizableSidebar>
+        // Figma frame 74:2010 gives the 지역 지표 aside 20px of padding and a 16px
+        // gap between cards; the shared sidebar ships 16/12. The difference is a
+        // desktop-only override passed in HERE rather than changed inside
+        // ResizableSidebar, because that component is also the 후보지 심층 분석 / 비교
+        // column and those pages have not been redesigned yet. Media-query variants
+        // are emitted after the base utilities, so `md:*` wins from md up and the
+        // stacked phone layout is untouched.
+        <ResizableSidebar className={viewMode === "equity" ? "md:gap-4 md:p-5" : ""}>
         {/* 지역 지표 HAS NO VISIBLE TITLE BLOCK (correction pass).
 
             The area used to open with a three-line header — the destination name, the
@@ -1772,18 +1788,13 @@ export default function Home() {
 
         {viewMode === "equity" && (
           <>
-            {/* REGION SEARCH & SELECTION — the keyboard path to the same canonical
-                `selectedRegionCode`, now its own labelled section instead of a form
-                control wedged inside the summary above. `selectedRegion?.regionCode`
-                (not the raw code) is passed deliberately: when a metric change moves
-                to a geography that lacks the stored region the derived selection is
-                null, and the select must return to its empty option rather than hold
-                a value no longer in its option list. */}
-            <EquityRegionPicker
-              regionOptions={regionOptions}
-              selectedRegionCode={selectedRegion?.regionCode ?? null}
-              onSelectRegion={(code) => setSelectedRegionCode(code)}
-            />
+            {/* THE PAGE-1 COLUMN ORDER IS THE FIGMA ORDER (frame 74:2010):
+                  지표 선택 → 지역 순위 → 지역 선택 → 선택한 지역 → 공유 및 내보내기.
+                The `page-1 기술요청` annotation states the rules behind it —
+                "좌측 패널 순서 조정: 지역 선택 > 선택한 지역" (the picker precedes the
+                summary it fills) and the removal of the 지표 출처 / 해석·주의·출처 보기 /
+                내륙습지 목록 entries from the panel. None of those three is deleted;
+                each note below says where it went. */}
 
             {/* 지표 선택 — three SUBJECT sections (인구 · 발생량 · 시설 처리 수준) of
                 selectable rows, with a 총량/1인당 switch on the rows that have both.
@@ -1797,33 +1808,15 @@ export default function Home() {
               onSelectMode={selectMetricMode}
             />
 
-            {/* CURRENT SELECTION — the answer to the two choices above, so it now
-                sits BELOW them rather than opening the column (spec §3: 지역 선택 →
-                지표 선택 → the resulting context). Nothing about the card changed:
-                region → value → what is measured → when the data is from → source,
-                with the provenance printed once, the role="status" live region, the
-                contracted test IDs, and the "a missing value shows its served
-                reason, never a 0" rule (docs/ui-refresh/equity-dashboard.md). */}
-            <EquityRegionSummary
-              metricLabel={metric.label}
-              unit={unit}
-              referencePeriod={metricReferencePeriod}
-              metricStatus={metricDataStatus}
-              metricProvenance={metricProvenance}
-              selected={selectedRegion}
-              onClear={() => setSelectedRegionCode(null)}
-            />
+            {/* 지역 순위 — reads the active metric's served values, so it follows the
+                metric automatically, and selecting a row drives the ONE canonical
+                selected-region state (map + summary stay in sync).
 
-            {/* 지표 순위, then share/export. Both read the active metric's served
-                values, so they follow the metric automatically, and selecting a
-                region in either drives the ONE canonical selected-region state (map +
-                summary stay in sync).
-
-                The 지역 비교 card that used to sit between them is gone (correction
-                pass). Picking up to three regions by hand was a way of asking "how do
-                these stand against each other?", and 지표 순위 전체보기 — the button
-                inside this card — answers that for EVERY region at once, from the
-                same served values, with no top-N cut. */}
+                `전체보기 ↗` opens the same ranking with no top-N cut. That dialog is
+                what replaced the 지역 비교 card (correction pass): picking three
+                regions by hand was a way of asking "how do these stand against each
+                other?", and the full ranking answers it for EVERY region at once,
+                from the same served values. */}
             <RegionRanking
               regions={rankableRegions}
               metricLabel={metric.label}
@@ -1833,9 +1826,54 @@ export default function Home() {
               setScope={setScope}
               topN={topN}
               setTopN={setTopN}
+              direction={rankDirection}
+              setDirection={setRankDirection}
               selectedRegionCode={selectedRegionCode}
               onSelectRegion={(code) => setSelectedRegionCode(code)}
               onOpenFullRanking={() => setFullRankingOpen(true)}
+            />
+
+            {/* REGION SEARCH & SELECTION — the keyboard path to the same canonical
+                `selectedRegionCode`. `selectedRegion?.regionCode` (not the raw code)
+                is passed deliberately: when a metric change moves to a geography that
+                lacks the stored region the derived selection is null, and the select
+                must return to its empty option rather than hold a value no longer in
+                its option list. */}
+            <EquityRegionPicker
+              regionOptions={regionOptions}
+              selectedRegionCode={selectedRegion?.regionCode ?? null}
+              onSelectRegion={(code) => setSelectedRegionCode(code)}
+            />
+
+            {/* CURRENT SELECTION — the answer to the choices above. Region → value →
+                what is measured → when the data is from → source, with the provenance
+                printed once, the role="status" live region, the contracted test IDs,
+                and the "a missing value shows its served reason, never a 0" rule
+                (docs/ui-refresh/equity-dashboard.md).
+
+                출처와 계산 방법 IS RELOCATED HERE, not removed. The annotation drops
+                the 지표 출처 entry from the panel and the Figma aside has no card for
+                it, but deleting it would take the derivation method, the numerator /
+                denominator sources, the boundary provenance, and the metric caveat
+                with it — everything a displayed value needs to be justifiable. It is
+                now a closed disclosure at the foot of the card whose value it
+                explains: same panels, same components, one interaction away. */}
+            <EquityRegionSummary
+              metricLabel={metric.label}
+              unit={unit}
+              referencePeriod={metricReferencePeriod}
+              metricStatus={metricDataStatus}
+              metricProvenance={metricProvenance}
+              selected={selectedRegion}
+              onClear={() => setSelectedRegionCode(null)}
+              methodAndSources={
+                derivedInfo || sourceInfo ? (
+                  <>
+                    {derivedInfo && <DerivedPanel info={derivedInfo} caveat={metric.caveat} />}
+                    {sourceInfo && <SourcePanel info={sourceInfo} boundaries={activeBoundaries} />}
+                  </>
+                ) : undefined
+              }
             />
 
             <ShareExportBar
@@ -1845,51 +1883,12 @@ export default function Home() {
               urlWarnings={urlWarnings}
             />
 
-            {/* The equity map legend is no longer duplicated here — it floats over
-                the map as a single source of truth (MapLegendOverlay below), built
-                from the SAME activeScale palette/breaks the map fill uses. */}
-
-            {(derivedInfo || sourceInfo) && (
-              <CollapsibleSection label="출처와 계산 방법">
-                {derivedInfo && <DerivedPanel info={derivedInfo} caveat={metric.caveat} />}
-                {sourceInfo && <SourcePanel info={sourceInfo} boundaries={activeBoundaries} />}
-              </CollapsibleSection>
-            )}
-
-            <CollapsibleSection label="시설 위치 표시">
-              <section aria-label="시설 레이어">
-                <h2 className="mb-2 text-sm font-semibold text-slate-800">
-                  폐기물 처리시설
-                </h2>
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={showFacilities}
-                    onChange={(event) => setShowFacilities(event.target.checked)}
-                    data-testid="facilities-toggle"
-                  />
-                  지도에 시설 위치 표시
-                </label>
-                {facilitySummary && (
-                  <div
-                    className="mt-2 rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"
-                    data-testid="facility-metadata"
-                  >
-                    <p>
-                      좌표 보유 시설 {formatCount(facilitySummary.withCoordinates)} /{" "}
-                      {formatCount(facilitySummary.total)}개 표시.{" "}
-                      <strong>{formatCount(facilitySummary.withoutCoordinates)}개</strong>는 공식
-                      지오코딩이 실패하여 지도에 표시하지 않습니다.
-                    </p>
-                    <p className="mt-1">
-                      출처: waste_statistics · 기준 기간: {facilitySummary.referencePeriod} · 갱신
-                      주기: {facilitySummary.frequency}
-                    </p>
-                    <p className="mt-1">집계 기준: {accountingBasisLabel(facilitySummary.accountingBasis)}</p>
-                  </div>
-                )}
-              </section>
-            </CollapsibleSection>
+            {/* The equity map legend is not duplicated here — it floats over the map
+                as a single source of truth (MapLegendOverlay below), built from the
+                SAME activeScale palette/breaks the map fill uses. The facility layer
+                control (시설 위치 표시) has joined it there for the same reason: a
+                layer control belongs beside its layer, which is what frame 222:439
+                and the annotation's "폐기물 처리시설 버튼 위치 수정" ask for. */}
           </>
         )}
 
@@ -2070,9 +2069,21 @@ export default function Home() {
             The legend never recomputes colors/breaks: equity mode receives the
             page's active scale rows (same palette/breaks as the fill); suitability
             mode receives the candidate palette/breaks and the CANONICAL
-            statusVisibility state (its checkboxes drive the filter the map reads). */}
-        <div className="pointer-events-none absolute bottom-8 left-2 right-2 z-10 flex flex-col items-start gap-2 md:left-3 md:right-3">
-          <div className="pointer-events-auto">
+            statusVisibility state (its checkboxes drive the filter the map reads).
+
+            THE COLUMN IS BOUNDED AT BOTH ENDS. It is anchored to `bottom` and now
+            also to `top`, with `justify-end` keeping every card at the bottom exactly
+            as before whenever there is room. The bound only bites when there is not:
+            the cards then shrink (each wrapper is `min-h-0`, and each card scrolls
+            internally) instead of growing off the top of the map and over the
+            environmental-layer controls. Phase 1 made that reachable by adding the
+            폐기물 처리시설 card to the stack — at a 768-tall viewport the legend, that
+            card, and an EXPANDED insight together exceed the map's height — but the
+            same overflow was always possible with a tall enough legend. The column
+            stays `pointer-events-none` with `pointer-events-auto` children, so
+            spanning the full height intercepts nothing. */}
+        <div className="pointer-events-none absolute bottom-8 left-2 right-2 top-2 z-10 flex flex-col items-start justify-end gap-2 md:left-3 md:right-3 md:top-3">
+          <div className="pointer-events-auto min-h-0">
             {viewMode === "equity" ? (
               <MapLegendOverlay
                 mode="equity"
@@ -2117,6 +2128,28 @@ export default function Home() {
               />
             )}
           </div>
+          {/* 폐기물 처리시설 — the facility layer's own control and its type legend.
+              Figma frame 222:439 places it in this bottom-left stack directly UNDER
+              the choropleth legend, which is also where the annotation's "폐기물
+              처리시설 버튼 위치 수정 및 신규 아이콘 삽입" puts it. It joins the same flex
+              column as the legend, so non-collision with it stays structural rather
+              than a hand-tuned offset, and it is capped + internally scrollable so
+              opening its disclosure cannot push the stack off the top of the map at
+              a short viewport.
+
+              The Chrome audit's second finding is answered here: the markers were
+              colour-coded with no legend anywhere. `EquityFacilityLayerCard` reads
+              the SAME FACILITY_CATEGORY_* constants the MapLibre circle layer paints
+              from, so a swatch cannot drift from the dot it explains. */}
+          {viewMode === "equity" ? (
+            <div className="pointer-events-auto min-h-0">
+              <EquityFacilityLayerCard
+                show={showFacilities}
+                onToggleShow={setShowFacilities}
+                coverage={facilitySummary}
+              />
+            </div>
+          ) : null}
           {viewMode === "equity" ? (
             <EquityMapInsightStrip
               metricLabel={metric.label}
@@ -2216,6 +2249,7 @@ export default function Home() {
         unit={unit}
         referencePeriod={metricReferencePeriod}
         scope={scope}
+        direction={rankDirection}
         selectedRegionCode={selectedRegionCode}
         onSelectRegion={(code) => setSelectedRegionCode(code)}
       />
@@ -2252,47 +2286,6 @@ function ModeOrientation({ destination }: { destination: NavDestination }) {
     <p className="wep-orient" data-testid="mode-orientation">
       {destination.orientation}
     </p>
-  );
-}
-
-// --------------------------------------------------------------------------- //
-// Collapsible control section.
-//
-// A native <details> disclosure so no UI dependency or focus-management code is
-// introduced. On small screens the summary is a tappable header that collapses
-// the body, keeping the stacked mobile sidebar short so the map stays reachable.
-// On md+ the summary is hidden and the body is forced open by CSS (see
-// globals.css), so the desktop sidebar is visually unchanged and no analytical
-// option is ever permanently hidden. Children keep their own headings, testids,
-// and aria labels.
-// --------------------------------------------------------------------------- //
-
-function CollapsibleSection({
-  label,
-  defaultOpen = false,
-  children,
-}: {
-  label: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    // Phase 4: the sidebar is now a sunken surface, so the disclosure reads as a card
-    // (surface + hairline) instead of the old slate-100 fill, which would otherwise be
-    // invisible against the new background. The <details> element, the
-    // `.mobile-collapsible` class that the desktop force-open CSS keys on, and the
-    // labelled (never icon-only) summary are all unchanged.
-    <details className="mobile-collapsible wep-card" open={defaultOpen}>
-      <summary className="flex cursor-pointer items-center justify-between gap-2 rounded-card px-4 py-3 text-sm font-semibold text-ink">
-        <span>{label}</span>
-        <span aria-hidden className="mobile-collapsible-chevron text-xs text-ink-subtle">
-          ▾
-        </span>
-      </summary>
-      {/* At md+ the summary is hidden by CSS, so the body supplies its own top
-          padding there; on mobile the visible summary already provides it. */}
-      <div className="mobile-collapsible-body flex flex-col gap-4 px-4 pb-4 md:pt-4">{children}</div>
-    </details>
   );
 }
 

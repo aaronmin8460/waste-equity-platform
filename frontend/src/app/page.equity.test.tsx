@@ -87,6 +87,7 @@ vi.mock("../lib/api", async (importOriginal) => {
   };
 });
 
+import { RANKING_FULL_VIEW_LABEL } from "../lib/ranking";
 import Home from "./page";
 
 beforeEach(() => {
@@ -110,13 +111,24 @@ async function renderEquity() {
 describe("regional ranking", () => {
   it("ranks by the served value, highest and lowest, with an official 0 ranked", async () => {
     await renderEquity();
+    // Since Phase 1 the card shows ONE list at a time with a ↑/↓ direction toggle
+    // (Figma frame 74:2025) instead of the two side-by-side columns. Both orderings
+    // are still `rankRegions`' own `high`/`low`; the toggle only chooses which is
+    // rendered, and the list keeps the `rank-high`/`rank-low` test id of the end it
+    // is showing.
     const high = screen.getByTestId("rank-high");
-    const low = screen.getByTestId("rank-low");
-    // Highest value first (수원시 장안구 500,000); lowest first is the official 0 (옹진군).
+    // Highest value first (수원시 장안구 500,000).
     expect(within(high).getAllByTestId("rank-row")[0].textContent).toContain("수원시 장안구");
     expect(within(high).getAllByTestId("rank-row")[0].textContent).toContain("500,000");
+
+    fireEvent.click(screen.getByTestId("rank-direction-low"));
+    const low = screen.getByTestId("rank-low");
+    // Lowest first is the official 0 (옹진군) — a measured 0 is ranked, not excluded.
     expect(within(low).getAllByTestId("rank-row")[0].textContent).toContain("옹진군");
     expect(within(low).getAllByTestId("rank-row")[0].textContent).toContain("0");
+    // The two ends are the same ranking seen from opposite directions, so only one
+    // list is on screen at a time.
+    expect(screen.queryByTestId("rank-high")).toBeNull();
   });
 
   it("reports how many regions were excluded because the value was unavailable", async () => {
@@ -159,7 +171,7 @@ describe("regional ranking", () => {
  * lives on here: an official 0 is ranked, and a region with no served value is stated
  * as missing rather than shown as a 0.
  */
-describe("지표 순위 전체보기", () => {
+describe("지역 순위 전체보기", () => {
   /** Focus, then click — so the dialog records a real opener to restore focus to. */
   function openFullRanking(): HTMLElement {
     const trigger = screen.getByTestId("open-full-ranking");
@@ -176,7 +188,7 @@ describe("지표 순위 전체보기", () => {
     expect(dialog.getAttribute("role")).toBe("dialog");
     expect(dialog.getAttribute("aria-modal")).toBe("true");
     // The accessible name is the visible title.
-    expect(within(dialog).getByText("지표 순위 전체보기")).toBeDefined();
+    expect(within(dialog).getByText(RANKING_FULL_VIEW_LABEL)).toBeDefined();
     // …and the basis names the ACTIVE metric, not a fixed string.
     expect(dialog.textContent).toContain("인구");
 
