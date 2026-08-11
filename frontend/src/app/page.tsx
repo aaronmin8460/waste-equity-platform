@@ -2306,11 +2306,13 @@ export default function Home() {
             statusColors={CANDIDATE_STATUS_COLORS}
             relativeGradePanel={
               /* Nothing at all while the population is still being read — a
-                 placeholder band would be a claim we cannot yet make. */
+                 placeholder band would be a claim we cannot yet make.
+                 `nested`: in this workspace the band is the first block of
+                 ③ 종합 점수와 후보 순위, not a card of its own (Figma 136:8684). */
               !gradeSettled ? null : gradeDistribution ? (
-                <RelativeGradePanel distribution={gradeDistribution} />
+                <RelativeGradePanel distribution={gradeDistribution} nested />
               ) : (
-                <RelativeGradeUnavailable />
+                <RelativeGradeUnavailable nested />
               )
             }
           />

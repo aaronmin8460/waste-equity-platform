@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * 점수 반영 기준 — the active scoring basis, and the control that changes it.
+ * ② 계산 모델 가중치 설정 — the active scoring basis, the four factors it combines,
+ * and the control that changes it (Figma 136:8684, card ②).
  *
  * Split out of the former `SuitabilityPanel` in `app/page.tsx`. It is PURE
  * PRESENTATION: the active profile, the profile list, and every weight it renders
@@ -10,10 +11,18 @@
  * never populated — exactly as before). It computes no weight, no score, and no
  * ranking, and it invents no profile.
  *
- * The restructure is one of hierarchy, not content: the ACTIVE basis is now stated
+ * The restructure is one of hierarchy, not content: the ACTIVE basis is stated
  * first as an answer — name, plain-Korean method, the four weights as labelled rows
  * — and the radio list that changes it follows. Before, a reader had to work out
  * which of five equally-weighted rows was checked to learn what the map was showing.
+ *
+ * PAGE 4A adds the Figma shape on top of that same content: a segmented weight bar
+ * over the four served weights, and one card per factor. The Figma card also carries
+ * a free "가중치 설정 __%" input per factor; this view has no such control, because
+ * the scores and ranks on the map are a STORED run — editing a weight here would
+ * imply a recomputation that does not happen. Weight experimentation already has its
+ * own screen (후보지 심층 비교), which recomputes explicitly and labels the result as
+ * a user scenario, so the profile radios below stay the honest control for this one.
  *
  * Wording rules this component keeps (docs/SUITABILITY_CRITIC_STABILITY.md):
  *   - the fixed policy-assumption bases are labelled 운영 가정, never expert AHP;
@@ -23,12 +32,19 @@
  *   - the raw profile keys (`baseline`, `critic`, …) stay in the diagnostic layer.
  */
 
-import type { SuitabilityPolicy, SuitabilityProfile, SuitabilityRun } from "../../lib/api";
+import type {
+  CandidateDetail,
+  SuitabilityPolicy,
+  SuitabilityProfile,
+  SuitabilityRun,
+} from "../../lib/api";
 import { PROFILE_META, profileLabel } from "../../lib/glossary";
 import { formatCount } from "../../lib/metrics";
 import { namedWeightRows, namedWeights } from "../../lib/suitability";
 import SectionCard from "../ui/SectionCard";
-import { OLD_RUN_NO_CRITIC_MESSAGE, PROFILE_OPTIONS } from "./shared";
+import SuitabilityFactorCards from "./SuitabilityFactorCards";
+import SuitabilityWeightBar from "./SuitabilityWeightBar";
+import { OLD_RUN_NO_CRITIC_MESSAGE, PROFILE_OPTIONS, STABILITY_RULE_SHORT } from "./shared";
 
 export interface SuitabilityScoringBasisProps {
   policy: SuitabilityPolicy;
@@ -40,6 +56,10 @@ export interface SuitabilityScoringBasisProps {
   runProfiles: SuitabilityProfile[];
   /** Whether the run carries CRITIC + stability results. */
   stabilityAvailable: boolean;
+  /** The one selected candidate, so each factor card can show its served score. */
+  selected: CandidateDetail | null;
+  /** Whether the map is currently restricted to stable candidates (reported only). */
+  stableOnly: boolean;
 }
 
 /**
@@ -62,6 +82,8 @@ export default function SuitabilityScoringBasis({
   onSelectProfile,
   runProfiles,
   stabilityAvailable,
+  selected,
+  stableOnly,
 }: SuitabilityScoringBasisProps) {
   const activeWeights = weightsFor(run, policy, profile);
   const activeRows = namedWeightRows(activeWeights);
@@ -69,9 +91,10 @@ export default function SuitabilityScoringBasis({
 
   return (
     <SectionCard
-      title="점수 반영 기준"
+      title="② 계산 모델 가중치 설정"
       description="네 항목을 어떤 비율로 반영해 후보 점수를 계산할지 결정합니다."
       testId="scoring-basis"
+      className="wep-figma-card"
     >
       {/* THE ACTIVE BASIS, answer-first. Everything here is already-served state:
           the profile's glossary label + method sentence, and the run's own weights. */}
@@ -88,6 +111,11 @@ export default function SuitabilityScoringBasis({
             {activeMeta.detail}
           </p>
         ) : null}
+        {/* The Figma segmented distribution strip, drawn from the SAME served rows
+            the labelled list below prints. It adds a shape, never a number. */}
+        <div className="mt-2">
+          <SuitabilityWeightBar rows={activeRows} />
+        </div>
         {/* The four weights as labelled rows with their numeric percentage beside
             the bar — the bar is never the only carrier of the value. */}
         <dl className="mt-2 flex flex-col gap-1" data-testid="active-basis-weights">
@@ -115,13 +143,17 @@ export default function SuitabilityScoringBasis({
         </p>
       </div>
 
+      {/* THE FOUR FACTORS, one card each (Figma card ②). Same weights, same order,
+          same glossary names — this is the active basis broken out per factor. */}
+      <SuitabilityFactorCards weights={activeRows} selected={selected} />
+
       {/* THE CONTROL. Native radios in one `name="profile"` group, so arrow keys
           traverse the whole list; the checked input, the heavier label weight, and
           the stronger border all mark the selection alongside the tint. Test ids
           `profile-selector` / `profile-radio-*` are unchanged. */}
       <fieldset className="mt-3 m-0 border-0 p-0" data-testid="profile-selector">
         <legend className="mb-1 text-xs font-semibold text-ink-subtle">
-          점수 반영 기준 선택
+          점수 반영 기준
         </legend>
         <div className="flex flex-col gap-1">
           {PROFILE_OPTIONS.filter((option) => runProfiles.includes(option.key)).map((option) => {
@@ -174,6 +206,29 @@ export default function SuitabilityScoringBasis({
           data-testid="critic-unavailable"
         >
           {OLD_RUN_NO_CRITIC_MESSAGE}
+        </p>
+      )}
+
+      {/* 안정 후보 — the Figma frame closes card ② with this. It is a REPORT of the
+          canonical `stableOnly` state, not a second control: the one checkbox that
+          drives it lives in the map's own legend, beside the outline it explains,
+          and the screen is contracted to have exactly one
+          (app/page.suitabilityDashboard.test.tsx). Duplicating it here would give a
+          reader two switches for one state.
+
+          The rule is stated as the production definition actually is: THREE
+          comparison bases (기본 · 모두 똑같이 · 데이터 분포), not four. Nothing is
+          recomputed here — the classification comes from the stored run. */}
+      {stabilityAvailable && (
+        <p
+          className="mt-2 rounded-card border border-hairline bg-surface-muted p-2 text-[11px] leading-relaxed text-ink-muted"
+          data-testid="scoring-basis-stability"
+        >
+          <span className="font-semibold text-ink">안정 후보</span> — {STABILITY_RULE_SHORT} 현재{" "}
+          <span className="font-semibold text-ink">
+            {stableOnly ? "안정 후보만 보기가 켜져 있습니다" : "안정 후보만 보기가 꺼져 있습니다"}
+          </span>
+          . 표시 설정은 지도 왼쪽 아래 범례에서 바꿀 수 있으며, 후보 수와 점수는 바뀌지 않습니다.
         </p>
       )}
     </SectionCard>

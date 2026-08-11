@@ -9,7 +9,7 @@
  */
 
 import type { SuitabilityProfile, SuitabilityStatus } from "../../lib/api";
-import { PROFILE_META, statusLabel } from "../../lib/glossary";
+import { PROFILE_META, statusLabel, type ScoreComponent } from "../../lib/glossary";
 
 /**
  * Plain-Korean score-basis (weight-profile) options in their fixed display order.
@@ -67,3 +67,34 @@ export const OLD_RUN_NO_CRITIC_MESSAGE =
  */
 export const SCORE_RANK_FRAMING =
   "현재 점수 반영 기준에서 점수가 높은 순서이며, 최적지·추천지 판정이 아닙니다.";
+
+/**
+ * WHICH WAY EACH COMPONENT SCORE POINTS — one sentence per factor, for the factor
+ * cards in ② 계산 모델 가중치 설정.
+ *
+ * This is PRESENTATION of the existing model, not a new one. Every sentence states
+ * the direction of the SAME Z/R/E/D scores the backend already computes; nothing
+ * here changes, re-weights, or re-derives a score.
+ *
+ * Two of them exist specifically to stop a misreading:
+ *   - `equity` — a HIGH E score means the area carries LESS existing facility
+ *     burden. Naming the factor after the burden alone ("시설 부담 정도") would
+ *     invert it, so the direction is spelled out instead.
+ *   - `demand` — D is PRESENT-DAY served demand for the run's reference year. There
+ *     is no future-generation forecast in this model, so the sentence says so
+ *     rather than letting 장래 발생량 be inferred.
+ */
+export const COMPONENT_DIRECTION: Record<ScoreComponent, string> = {
+  zoning: "점수가 높을수록 법정 용도지역 대분류상 상충이 적은 행정적 맥락입니다.",
+  road: "점수가 높을수록 후보 격자 중심점에서 가장 가까운 도로까지의 거리가 가깝습니다.",
+  equity: "점수가 높을수록 이미 지고 있는 폐기물 처리시설 부담이 적은 지역입니다.",
+  demand: "점수가 높을수록 기준연도 자료에서 폐기물 처리 수요가 큽니다. 장래 발생량 예측이 아닙니다.",
+};
+
+/**
+ * The stability rule in one citizen-facing sentence, and the three profiles it is
+ * computed over. THREE, not four: the production definition compares baseline,
+ * equal, and the data-distribution (CRITIC) basis only.
+ */
+export const STABILITY_RULE_SHORT =
+  "세 계산식 모두에서 상위 10%에 드는 후보를 안정 후보로 표시합니다.";

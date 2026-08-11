@@ -4,10 +4,18 @@
  * 후보지 점수 — the score sub-view's analysis sidebar.
  *
  * The former `SuitabilityPanel` from `app/page.tsx`, now a composition of the
- * sections in this folder, in the order the screen's workflow reads:
+ * sections in this folder, in the numbered order Figma 136:8684 reads:
  *
- *   scoring basis → status totals → stability → candidate list →
- *   selected candidate → exclusion / review reasons → coverage gaps → method
+ *   LEFT   ① 분석 범위 → ② 계산 모델 가중치 설정 → 후보 상태 요약 →
+ *          자료 공백 → 계산 방법과 가정
+ *   RIGHT  ③ 종합 점수와 후보 순위 (상대 점수 구간 + 순위 보기) →
+ *          안정 후보 목록 → 선택한 후보 구역 → 제외 / 검토 사유
+ *
+ * ④ 시나리오 저장 and ⑤ 비교할 시나리오 선택 are NOT rendered. Their real storage
+ * and A/B comparison behaviour belongs to Page 4D; an empty container with a dead
+ * name field and a dead save button would read as broken functionality, and any
+ * populated one would be fabricated. Honest absence over fake completeness — the
+ * numbering therefore runs ① ② ③ on this screen and picks up ④ ⑤ when they work.
  *
  * (The screening disclaimer is rendered ABOVE this by the page, so it heads both
  * map sub-views; the page's `<h1>` and orientation line precede that.)
@@ -33,6 +41,7 @@ import InfoBanner from "../ui/InfoBanner";
 import SectionCard from "../ui/SectionCard";
 import SuitabilityCandidateList from "./SuitabilityCandidateList";
 import SuitabilityCandidateSummary from "./SuitabilityCandidateSummary";
+import SuitabilityScopeCard from "./SuitabilityScopeCard";
 import SuitabilityScoringBasis from "./SuitabilityScoringBasis";
 import SuitabilityStabilitySummary from "./SuitabilityStabilitySummary";
 import SuitabilityStatusSummary from "./SuitabilityStatusSummary";
@@ -134,6 +143,10 @@ export default function SuitabilitySidebar({
       </p>
       )}
 
+      {/* ① 분석 범위 — what this run actually covered, from the served 시·도
+          breakdown. Not a picker: see SuitabilityScopeCard's header. */}
+      {showLeft && <SuitabilityScopeCard summary={summary} />}
+
       {showLeft && (
       <SuitabilityScoringBasis
         policy={suit.policy}
@@ -142,6 +155,8 @@ export default function SuitabilitySidebar({
         onSelectProfile={setProfile}
         runProfiles={runProfiles}
         stabilityAvailable={stabilityAvailable}
+        selected={selected}
+        stableOnly={stableOnly}
       />
       )}
 
@@ -157,24 +172,70 @@ export default function SuitabilitySidebar({
       />
       )}
 
-      {showRight && relativeGradePanel}
+      {/* ③ 종합 점수와 후보 순위 — ONE card holding the relative band legend and the
+          ranking, the way Figma 136:8684 groups them. The band explains how to read
+          a score; the ranking is that score applied. Splitting them into two cards
+          (as before) put a full card of caveats between a reader and the list.
 
-      {showRight && (
-      <SuitabilityStabilitySummary summary={summary} available={stabilityAvailable} />
+          In the single-column shapes (`part="all"` — the stacked phone layout and
+          후보지 심층 비교) the two stay separate cards: the grouping is a
+          three-column desktop idea, and nesting them in a narrow stack would add a
+          heading level for nothing. */}
+      {showRight && part === "right" ? (
+        <SectionCard
+          title="③ 종합 점수와 후보 순위"
+          description="설정한 점수 반영 기준으로 합산한 점수와 그 순위입니다."
+          testId="suitability-results"
+          className="wep-figma-card"
+        >
+          <div className="flex flex-col gap-3">
+            {relativeGradePanel}
+            <SuitabilityCandidateList
+              summary={summary}
+              profile={profile}
+              selected={selected}
+              onSelect={onSelect}
+              stabilityAvailable={stabilityAvailable}
+              nested
+              section="ranking"
+            />
+          </div>
+        </SectionCard>
+      ) : (
+        showRight && (
+          <>
+            {relativeGradePanel}
+            <SuitabilityCandidateList
+              summary={summary}
+              profile={profile}
+              selected={selected}
+              onSelect={onSelect}
+              stabilityAvailable={stabilityAvailable}
+            />
+          </>
+        )
       )}
 
-      {showRight && (
-      <SuitabilityCandidateList
-        summary={summary}
-        profile={profile}
-        selected={selected}
-        onSelect={onSelect}
-        stabilityAvailable={stabilityAvailable}
-      />
+      {/* 기준을 바꿔도 상위권인 후보지 — a DIFFERENT population from the ranking
+          above, so it stays its own card beside ③ rather than inside it. */}
+      {showRight && part === "right" && (
+        <SuitabilityCandidateList
+          summary={summary}
+          profile={profile}
+          selected={selected}
+          onSelect={onSelect}
+          stabilityAvailable={stabilityAvailable}
+          nested
+          section="stable"
+        />
       )}
 
       {showRight && (
       <SuitabilityCandidateSummary detail={selected} clearSelected={clearSelected} />
+      )}
+
+      {showRight && (
+      <SuitabilityStabilitySummary summary={summary} available={stabilityAvailable} />
       )}
 
       {showRight && (
