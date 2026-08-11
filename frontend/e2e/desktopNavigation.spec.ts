@@ -94,9 +94,13 @@ for (const vp of DESKTOP_VIEWPORTS) {
       for (let i = 1; i < boxes.length; i += 1) {
         expect(boxes[i].x).toBeGreaterThanOrEqual(boxes[i - 1].x + boxes[i - 1].width - 1);
       }
-      // The whole nav is one line tall — its height is a single button's height.
-      const nav = await navBox(page);
-      expect(nav.height).toBeLessThan(boxes[0].height * 1.8);
+      // The nav TRACK is one line tall — its height is one button's height plus the
+      // track's own padding. (The assertion used to compare against the whole app
+      // bar; since the Figma redesign the bar is 78px around a 50px track holding
+      // 38px pills, so the bar/button ratio no longer measures wrapping. The track
+      // is what would grow if the six labels wrapped.)
+      const track = (await page.getByTestId("mode-switch").boundingBox())!;
+      expect(track.height).toBeLessThan(boxes[0].height * 1.8);
 
       await expectNoHorizontalOverflow(page);
     });
@@ -144,7 +148,14 @@ for (const vp of DESKTOP_VIEWPORTS) {
       }
     });
 
-    test("marks the active mode with a bottom indicator, not color alone", async ({ page }) => {
+    /**
+     * The active-state IDIOM changed with the Figma redesign: a 2px bottom
+     * indicator became a white pill on the grey nav track (frame 74:2000). The
+     * requirement it was written for did not change — state must carry more than
+     * colour — so the assertions now measure the pill and the weight rather than a
+     * border that the design no longer draws.
+     */
+    test("marks the active mode with a pill and a weight, not color alone", async ({ page }) => {
       await gotoView(page, "/?v=1&mode=flow");
 
       const active = page.getByTestId("mode-flow");
@@ -157,24 +168,27 @@ for (const vp of DESKTOP_VIEWPORTS) {
         locator.evaluate((el) => {
           const s = getComputedStyle(el);
           return {
-            borderBottomWidth: parseFloat(s.borderBottomWidth),
-            borderBottomColor: s.borderBottomColor,
+            backgroundColor: s.backgroundColor,
+            boxShadow: s.boxShadow,
             fontWeight: Number(s.fontWeight),
+            borderRadius: parseFloat(s.borderTopLeftRadius),
           };
         });
 
       const activeStyle = await styles(active);
       const inactiveStyle = await styles(inactive);
 
-      // A real, visible indicator line under the active tab…
-      expect(activeStyle.borderBottomWidth).toBeGreaterThanOrEqual(2);
-      expect(activeStyle.borderBottomColor).not.toBe(inactiveStyle.borderBottomColor);
-      expect(activeStyle.borderBottomColor).not.toMatch(/rgba\(.*,\s*0\)$/);
-      // …and a second, non-color signal: a heavier weight.
+      // A real, filled pill under the active tab — a SHAPE, present vs absent…
+      expect(activeStyle.backgroundColor).not.toBe(inactiveStyle.backgroundColor);
+      expect(activeStyle.backgroundColor).not.toMatch(/rgba\(.*,\s*0\)$/);
+      expect(activeStyle.borderRadius).toBeGreaterThanOrEqual(inactiveStyle.borderRadius);
+      // …carrying a visible edge, because white on the #F9F9F9 track alone is not a
+      // dependable boundary…
+      expect(activeStyle.boxShadow).not.toBe("none");
+      // …and a second, non-colour signal: a heavier weight.
       expect(activeStyle.fontWeight).toBeGreaterThan(inactiveStyle.fontWeight);
       // It is NOT the old large dark filled rectangle.
-      const activeBg = await active.evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(activeBg).not.toBe("rgb(30, 41, 59)");
+      expect(activeStyle.backgroundColor).not.toBe("rgb(30, 41, 59)");
     });
 
     test("renders no sub-view bar anywhere — the six destinations replace it", async ({

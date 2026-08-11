@@ -174,6 +174,10 @@
   --figma-nav-tab-pad-y: 9px;
   --figma-nav-tab-gap: 7px; /* icon -> label */
   --figma-nav-icon-slot: 14px;
+  /* The 1x20 rule Figma places before 데이터·출처 (page-1 기술요청: "상단 메뉴창
+     [데이터/출처] 앞에 세로선 bar 삽입"). A decorative separator, never text, so its
+     measured value is kept here rather than promoted to a semantic ink role. */
+  --figma-nav-divider: #adadad;
 }
 
 /* Reusable component classes for the consistent citizen patterns (cards, the
@@ -258,35 +262,51 @@
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-hairline);
 }
-/* The app-bar content row: [brand] … [primary navigation]. A constant 4rem (64px)
-   at desktop, which keeps the chrome well inside the 12%-of-viewport budget the
-   responsive spec asserts (96px at 1280×800) so the map keeps its height.
-   `align-items: stretch` makes each tab as tall as the bar, so the active tab's
-   bottom indicator sits flush with the bar's bottom border instead of floating in
-   the middle of it. `flex-wrap` is retained for phone widths, where the brand and
-   the nav take one line each (each wrapped line still stretches to its own
-   content height, so the desktop row height is unaffected). */
+/* The app-bar content row: [brand] … [primary navigation].
+ *
+ * PHASE 1 (Figma frame 74:1992 "Header"): the bar is 1440x78 with 28px/14px
+ * padding, and the navigation is a rounded TRACK holding pill tabs — not a row of
+ * full-bleed tabs with a bottom indicator. `align-items` is therefore `center`
+ * (the 50px track is centred in the 78px bar) where it used to be `stretch`.
+ *
+ * The Figma geometry applies from 1280px up, which is the width at which it fits:
+ * brand 194 + nav 907 + 2x28 padding = 1157px, so 1280 clears it with ~120px of
+ * slack while 1024 does not. Below 1280 the same SHAPE is kept (pill track, pill
+ * active tab) at compact metrics, so no width gets a different active-state idiom.
+ * 78px is still inside the 12%-of-viewport chrome budget the responsive spec holds
+ * the bar to (96px at 1280x800), so the map keeps its height.
+ *
+ * Horizontal padding lives HERE rather than on Tailwind utilities in the JSX: the
+ * `.wep-*` layer is unlayered and would win against them anyway, so two sources for
+ * one value would only be able to disagree. */
 .wep-appbar-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
   gap: 0 1rem;
-  min-height: 4rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 1rem;
+}
+@media (min-width: 640px) {
+  .wep-appbar-row {
+    padding-inline: 1.5rem;
+  }
 }
 /* SIX destinations have to share one row with the brand from 1024px up, so the
-   gap between the two blocks tightens as the width does. Measured budget at
-   1024px: brand ≈ 180px + nav ≈ 713px + the container's 64px padding ≈ 957px,
-   leaving ~67px of slack — see docs/YEOGIDA_UI_REDESIGN_SPEC.md §2. */
+   gap between the two blocks tightens as the width does. */
 @media (min-width: 1024px) {
   .wep-appbar-row {
     flex-wrap: nowrap;
     gap: 0 1rem;
+    padding-inline: 2rem;
   }
 }
 @media (min-width: 1280px) {
   .wep-appbar-row {
     gap: 0 2rem;
+    min-height: var(--figma-header-height);
+    padding: var(--figma-header-pad-y) var(--figma-header-pad-x);
   }
 }
 
@@ -300,38 +320,71 @@
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
-  padding: 0.5rem 0;
 }
+@media (min-width: 1280px) {
+  .wep-brand {
+    gap: var(--figma-brand-gap);
+  }
+}
+/* The mark is the exact Figma `target-01` vector (components/ui/FigmaIcon.tsx),
+   drawn in the brand navy on the bar's own surface. Figma's Logo frame is a 42x42
+   box whose fill is #1B59F8 at opacity 0 — i.e. TRANSPARENT — holding a 38x38
+   glyph, so the filled navy tile the hand-drawn mark used to sit on is gone. The
+   two sizes are custom properties because the wrapper box and the glyph inside it
+   scale together. */
 .wep-brand-mark {
+  --wep-brand-mark-size: 2.125rem;
+  --wep-brand-glyph-size: 1.9375rem;
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 1.875rem;
-  height: 1.875rem;
-  border-radius: var(--radius-control);
-  background: var(--color-brand);
-  color: var(--color-primary-ink);
+  width: var(--wep-brand-mark-size);
+  height: var(--wep-brand-mark-size);
+  border-radius: var(--figma-brand-logo-radius);
+  background: transparent;
+  color: var(--color-brand);
+}
+.wep-brand-mark > svg {
+  width: var(--wep-brand-glyph-size);
+  height: var(--wep-brand-glyph-size);
+}
+@media (min-width: 1280px) {
+  .wep-brand-mark {
+    --wep-brand-mark-size: var(--figma-brand-logo-size);
+    --wep-brand-glyph-size: 38px;
+  }
 }
 .wep-brand-text {
   display: flex;
   min-width: 0;
   flex-direction: column;
   justify-content: center;
+  gap: 2px;
 }
 .wep-brand-name {
   color: var(--color-brand);
-  font-size: 1.0625rem;
-  font-weight: 800;
+  font-size: 1.125rem;
+  font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.2;
   white-space: nowrap;
 }
+@media (min-width: 1280px) {
+  .wep-brand-name {
+    font-size: 25px;
+    line-height: 30px;
+  }
+}
+/* Figma sets this line in #848A95 (--color-ink-faint). At 11px that is 3.47:1 on
+   white, under the 4.5:1 the palette is held to, so the shipped --color-ink-subtle
+   (#646676, 5.83:1) is DELIBERATELY retained — see docs/figma-redesign/
+   DESIGN_TOKENS_FIGMA_AUDIT.md §3 on not adopting low-contrast Figma inks for text. */
 .wep-brand-sub {
   color: var(--color-ink-subtle);
   font-size: 0.6875rem;
-  font-weight: 500;
-  line-height: 1.3;
+  font-weight: 400;
+  line-height: 13px;
   white-space: nowrap;
 }
 /* Phone widths have no room for the subtitle; the product name always stays
@@ -342,34 +395,48 @@
   }
 }
 
-/* A top-level navigation tab. The SELECTED tab is marked by three independent,
-   non-color signals — strong ink, a heavier weight, and a 2px bottom indicator
-   (a shape, present vs absent) — plus `aria-pressed`, so state is never conveyed
-   by color alone. Deliberately NOT a large filled dark rectangle.
-   `white-space: nowrap` keeps a Korean label from breaking mid-label; the track
-   itself still wraps between tabs at phone widths. The min-height is constant at
-   every breakpoint (no `md:min-h-0` reset), so the desktop target does not shrink
-   below the mobile one. */
-/* The tab track. `align-items: stretch` is what makes each tab as tall as the bar,
-   so the active indicator is flush with the bar's bottom border.
+/* The tab track — Figma frame 74:2000: a 907x50 pill (radius 999) filled with the
+   canvas grey, 6px of padding and a 2px gap, holding the six tabs.
 
    It NEVER wraps. Six Korean labels cannot wrap gracefully, and the spec requires
    one row from 1024px up, so the track instead SCROLLS horizontally at narrow
    widths. `min-width: 0` is load-bearing: without it the flex item refuses to
    shrink below its content and the PAGE gains a horizontal scrollbar — exactly
    what the mobile contract forbids. Scrolling the track keeps the overflow inside
-   the nav. */
+   the nav, and is why the track (not the row) owns the pill background. */
 .wep-nav-track {
   display: flex;
-  align-items: stretch;
-  gap: 0 0.125rem;
+  align-items: center;
+  gap: 0 var(--figma-nav-track-gap);
   min-width: 0;
+  padding: 0.25rem;
+  border-radius: var(--figma-nav-track-radius);
+  background: var(--color-canvas);
   overflow-x: auto;
   scrollbar-width: none; /* the tabs are the affordance; a bar here reads as chrome */
 }
 .wep-nav-track::-webkit-scrollbar {
   display: none;
 }
+@media (min-width: 1280px) {
+  .wep-nav-track {
+    height: var(--figma-nav-track-height);
+    padding: var(--figma-nav-track-pad);
+  }
+}
+/* A top-level navigation tab. Figma marks the SELECTED one with a white pill on the
+   grey track plus a 700 weight (the other five are 500), and gives every label the
+   same brand navy — so the OLD 2px bottom indicator is gone, replaced by the state
+   the design actually specifies.
+ *
+ * State is still never colour alone: the pill is a SHAPE (present vs absent), the
+ * weight changes, and `aria-pressed` carries it to assistive technology. The 1px
+ * shadow is the one deliberate addition — white-on-#F9F9F9 is a ~1.02:1 edge, which
+ * is not a dependable visual boundary, and the shadow restores it without altering
+ * any Figma colour, radius, or metric.
+ *
+ * `min-height` stays 2.75rem (44px) below 1280 so the touch target does not shrink;
+ * only at desktop does it take Figma's 38px, where the pointer is the input. */
 .wep-nav-tab {
   display: inline-flex;
   flex: none;
@@ -377,45 +444,58 @@
   justify-content: center;
   gap: 0.3125rem;
   min-height: 2.75rem;
-  padding: 0 0.5rem;
-  /* The transparent TOP border mirrors the indicator so the label stays optically
-     centred whether or not the tab is active. */
-  border-top: 2px solid transparent;
-  border-bottom: 2px solid transparent;
+  padding: 0.25rem 0.625rem;
+  border: 0;
+  border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-ink-muted);
+  color: var(--color-brand);
   font-size: 0.8125rem;
   font-weight: 500;
+  /* Figma sets the label's line box to 1.2x its size (16 -> 19). Left at `normal`
+     the 1.5x box makes the tab 42px tall where the design says 38. */
+  line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
 }
-/* The icon inherits the tab's color, so it carries the active state with the
-   label rather than becoming a second, independent signal. */
+/* The icon inherits the tab's colour. Below the Figma breakpoint the glyphs are
+   capped by HEIGHT with an auto width, so each keeps the aspect ratio it was drawn
+   at (they are 18x20, 20x17, 14x14 — never square) instead of being squashed. */
 .wep-nav-icon {
   flex: none;
-  opacity: 0.75;
+  width: auto;
+  height: 1rem;
 }
 .wep-nav-tab:hover {
-  color: var(--color-ink);
   background: var(--color-surface-muted);
 }
 .wep-nav-tab[aria-pressed="true"] {
-  color: var(--color-primary);
+  background: var(--color-surface);
+  border-radius: var(--figma-nav-tab-radius);
   font-weight: 700;
-  border-bottom-color: var(--color-primary);
+  box-shadow: 0 1px 2px rgb(17 26 86 / 0.1);
 }
-.wep-nav-tab[aria-pressed="true"] .wep-nav-icon {
-  opacity: 1;
+.wep-nav-tab[aria-pressed="true"]:hover {
+  background: var(--color-surface);
 }
-/* Above 1280px there is room to relax back toward the previous rhythm. */
+/* A decorative 1x20 rule before 데이터·출처, as the page-1 annotation asks. */
+.wep-nav-divider {
+  flex: none;
+  align-self: center;
+  width: 1px;
+  height: 20px;
+  background: var(--figma-nav-divider);
+}
+/* Exact Figma metrics, at the width they were measured for. */
 @media (min-width: 1280px) {
   .wep-nav-tab {
-    gap: 0.375rem;
-    padding: 0 0.75rem;
-    font-size: 0.875rem;
+    gap: var(--figma-nav-tab-gap);
+    min-height: var(--figma-nav-tab-height);
+    padding: var(--figma-nav-tab-pad-y) var(--figma-nav-tab-pad-x);
+    font-size: 1rem;
   }
-  .wep-nav-track {
-    gap: 0 0.25rem;
+  .wep-nav-icon {
+    width: auto;
+    height: auto;
   }
 }
 

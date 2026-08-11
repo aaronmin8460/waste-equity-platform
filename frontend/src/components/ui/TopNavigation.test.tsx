@@ -14,7 +14,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { NavDestinationKey } from "../../lib/glossary";
 import { NAV_DESTINATIONS } from "../../lib/glossary";
+import { FIGMA_ICONS, type FigmaIconName } from "./figmaIcons.generated";
 import TopNavigation, { BRAND_NAME, BRAND_SUBTITLE } from "./TopNavigation";
 
 afterEach(cleanup);
@@ -73,6 +75,73 @@ describe("TopNavigation", () => {
       (d) => screen.getByTestId(d.testId).querySelector("svg")!.innerHTML,
     );
     expect(new Set(shapes).size).toBe(NAV_DESTINATIONS.length);
+  });
+
+  /**
+   * The committed SVG text and the rendered DOM differ only in serialization —
+   * `<path … />` in the file, `<path …></path>` once parsed. Round-tripping the
+   * expected markup through the SAME parser normalises that away, so the comparison
+   * is about geometry rather than about which serializer wrote the string.
+   */
+  function asRenderedMarkup(body: string): string {
+    const host = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    host.innerHTML = body;
+    return host.innerHTML;
+  }
+
+  /**
+   * The six nav glyphs and the brand mark are the EXACT vectors exported from the
+   * Figma file, not approximations of them. Each assertion below compares against
+   * `figmaIcons.generated.ts`, which is itself re-checked against the committed
+   * SVGs by `figmaIcons.generated.test.ts` — so a hand-drawn substitute, a
+   * third-party icon, or a silently edited path fails here.
+   *
+   * The mapping is the one Phase 0 read from layer visibility inside each Figma
+   * `Nav Button` instance (docs/figma-redesign/FIGMA_ASSET_INVENTORY.md), NOT one
+   * inferred from the Korean labels.
+   */
+  const FIGMA_NAV_ICONS: Record<NavDestinationKey, FigmaIconName> = {
+    "regional-indicators": "nav-region-marker-02",
+    "waste-treatment": "nav-waste-barchart",
+    "candidate-analysis": "nav-candidate-file-02",
+    "candidate-deep-analysis": "nav-analysis-audio-settings-01",
+    "candidate-deep-comparison": "nav-compare-column-vertical-01",
+    "data-sources": "nav-data-server-02",
+  };
+
+  it("renders the exact Figma vector each destination was designed with", () => {
+    renderNav();
+    for (const destination of NAV_DESTINATIONS) {
+      const icon = screen.getByTestId(destination.testId).querySelector("svg")!;
+      const expected = FIGMA_NAV_ICONS[destination.key];
+      expect(icon.getAttribute("data-figma-icon"), destination.key).toBe(expected);
+      // Geometry, not just the name: the rendered markup IS the committed export.
+      expect(icon.innerHTML, destination.key).toBe(asRenderedMarkup(FIGMA_ICONS[expected].body));
+      expect(icon.getAttribute("viewBox"), destination.key).toBe(FIGMA_ICONS[expected].viewBox);
+    }
+  });
+
+  it("draws the brand mark from the Figma target-01 export", () => {
+    const { container } = renderNav();
+    const mark = container.querySelector(".wep-brand-mark svg")!;
+    expect(mark.getAttribute("data-figma-icon")).toBe("logo-target-01");
+    expect(mark.innerHTML).toBe(asRenderedMarkup(FIGMA_ICONS["logo-target-01"].body));
+  });
+
+  it("separates 데이터·출처 with a decorative rule that joins no button", () => {
+    renderNav();
+    // The Figma header (and the page-1 기술요청 annotation) puts a vertical bar
+    // before 데이터·출처. It must not become a seventh control, and must not land
+    // inside a button, whose textContent is compared exactly.
+    const divider = screen.getByTestId("nav-divider");
+    expect(divider.tagName).toBe("SPAN");
+    expect(divider.getAttribute("aria-hidden")).toBe("true");
+    expect(divider.textContent).toBe("");
+    expect(divider.closest("button")).toBeNull();
+    expect(screen.getByTestId("mode-switch").contains(divider)).toBe(true);
+    expect(screen.getByTestId("mode-switch").querySelectorAll("button")).toHaveLength(6);
+    // It sits immediately before the 데이터·출처 tab, not anywhere in the track.
+    expect(divider.nextElementSibling).toBe(screen.getByTestId("mode-transparency"));
   });
 
   it("uses native buttons so keyboard activation is built in", () => {
@@ -163,8 +232,11 @@ describe("TopNavigation", () => {
     const mark = container.querySelector(".wep-brand-mark");
     expect(mark?.getAttribute("aria-hidden")).toBe("true");
     expect(mark?.textContent).toBe("");
-    // The target/crosshair motif (spec §1): concentric rings, not the old stack.
-    expect(mark?.querySelectorAll("circle").length).toBeGreaterThanOrEqual(3);
+    // The target/crosshair motif (spec §1). It used to be asserted as ">= 3
+    // <circle> elements", which pinned the SHAPE of the hand-drawn approximation;
+    // the real Figma export draws the same motif as one filled <path>, so the
+    // assertion now pins the ASSET instead (see the exact-vector test above).
+    expect(mark?.querySelector("svg")?.getAttribute("data-figma-icon")).toBe("logo-target-01");
   });
 
   it("still renders no heading once the brand is present", () => {

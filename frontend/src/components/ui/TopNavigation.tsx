@@ -45,120 +45,60 @@
  * page-level control with its own context; lifting one into the bar would either
  * duplicate it or add a decorative button that looks like an export and does
  * nothing.
+ *
+ * ── PHASE 1: the icons are now the EXACT Figma vectors ───────────────────────────
+ * Every glyph in this bar used to be inline `<path>` data drawn by hand, because
+ * the Figma file was unreachable when the 여기다 redesign shipped. All seven are now
+ * the real exports — `logo-target-01` for the brand and one per destination —
+ * rendered through `ui/FigmaIcon`, whose registry is closed so a name that was never
+ * exported from Figma is a type error rather than a silent lookalike. The mapping
+ * below is not inferred from the labels: Phase 0 read it from layer visibility
+ * inside each `Nav Button` instance, and it is identical across all five full-page
+ * frames (docs/figma-redesign/FIGMA_ASSET_INVENTORY.md).
+ *
+ * The other Figma change here is the ACTIVE STATE. It was a 2px bottom indicator on
+ * a full-bleed tab; frame 74:2000 instead puts the six tabs inside a rounded track
+ * and marks the active one with a white pill. The obsolete indicator is gone rather
+ * than kept alongside — see `.wep-nav-tab` in globals.css for how the state stays
+ * more than colour. The 1x20 rule before 데이터·출처 is likewise from the design (the
+ * `page-1 기술요청` annotation asks for it by name); it is a decorative `<span>`
+ * OUTSIDE every button, so the group still holds exactly six controls and no
+ * button's `textContent` gains a character.
  */
+
+import { Fragment } from "react";
 
 import type { NavDestination, NavDestinationKey } from "../../lib/glossary";
 import { NAV_DESTINATIONS } from "../../lib/glossary";
+import FigmaIcon, { type FigmaIconName } from "./FigmaIcon";
 
 /** The citizen-facing product identity (spec §1). */
 export const BRAND_NAME = "여기다";
 export const BRAND_SUBTITLE = "쓰레기 매립지 입지 추천 플랫폼";
 
 /**
- * The official visual motif: a target / crosshair. Concentric rings, four ticks,
- * and a filled centre — "this is the spot", which is what the product recommends.
+ * Destination → its exact Figma vector.
  *
- * Authored inline from simple circles and lines because the Figma source was not
- * reachable (docs/YEOGIDA_UI_UNSUPPORTED_REQUIREMENTS.md U1); the spec explicitly
- * authorises this fallback. It carries no `<title>`, so it adds no text to the
- * brand's accessible name.
+ * Read from layer visibility inside the `Nav Button` instances, NOT guessed from
+ * the labels, and identical across all five full-page frames. `Record<…>` over the
+ * closed `NavDestinationKey`/`FigmaIconName` unions means a new destination cannot
+ * be added without choosing a real exported asset for it.
  */
-function BrandMark() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      focusable="false"
-      aria-hidden
-    >
-      <circle cx="12" cy="12" r="8.25" />
-      <circle cx="12" cy="12" r="3.75" />
-      <path d="M12 1.75v3.25M12 19v3.25M1.75 12H5M19 12h3.25" />
-      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
+const DESTINATION_ICONS: Record<NavDestinationKey, FigmaIconName> = {
+  "regional-indicators": "nav-region-marker-02",
+  "waste-treatment": "nav-waste-barchart",
+  "candidate-analysis": "nav-candidate-file-02",
+  "candidate-deep-analysis": "nav-analysis-audio-settings-01",
+  "candidate-deep-comparison": "nav-compare-column-vertical-01",
+  "data-sources": "nav-data-server-02",
+};
 
 /**
- * One small meaningful glyph per destination. Every icon is `aria-hidden` and
- * text-free: the visible Korean label is the button's accessible name, and adding
- * a `<title>` here would both duplicate it and break the exact-`textContent`
- * terminology audit.
+ * The destination the Figma header separates from the other five with a vertical
+ * rule. 데이터·출처 is the reference surface rather than a fifth analysis, which is
+ * what the rule says visually.
  */
-function DestinationIcon({ destination }: { destination: NavDestinationKey }) {
-  const paths: Record<NavDestinationKey, React.ReactNode> = {
-    // Bar chart — regional indicators compared side by side.
-    "regional-indicators": (
-      <>
-        <path d="M3.5 20.5h17" />
-        <path d="M7.5 20.5V13M12 20.5V6.5M16.5 20.5v-5" />
-      </>
-    ),
-    // Material falling into a container — generation flowing to treatment.
-    "waste-treatment": (
-      <>
-        <path d="M12 3v7.5" />
-        <path d="m8.75 7.5 3.25 3.25L15.25 7.5" />
-        <path d="M3.75 13.5h16.5V19a2 2 0 0 1-2 2H5.75a2 2 0 0 1-2-2z" />
-      </>
-    ),
-    // The brand crosshair — siting a candidate.
-    "candidate-analysis": (
-      <>
-        <circle cx="12" cy="12" r="7.25" />
-        <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
-        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-      </>
-    ),
-    // Candidate grid under a magnifier — deep analysis of the 500 m cells.
-    "candidate-deep-analysis": (
-      <>
-        <path d="M3.5 4.5h6v6h-6zM14.5 4.5h6v6h-6zM3.5 14.5h6v6h-6z" />
-        <circle cx="16.75" cy="16.75" r="2.75" />
-        <path d="m18.9 18.9 1.85 1.85" />
-      </>
-    ),
-    // Two ranked lists split by a rule — A안 against B안.
-    "candidate-deep-comparison": (
-      <>
-        <path d="M12 3.5v17" />
-        <path d="M3.5 8h5M3.5 12h5M3.5 16h5" />
-        <path d="M15.5 8h5M15.5 12h5M15.5 16h5" />
-      </>
-    ),
-    // A source document.
-    "data-sources": (
-      <>
-        <path d="M6.5 3h7l4.5 4.5V20a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
-        <path d="M13.25 3.25V8h4.75" />
-        <path d="M9 13h6M9 16.5h4.5" />
-      </>
-    ),
-  };
-
-  return (
-    <svg
-      className="wep-nav-icon"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      focusable="false"
-      aria-hidden
-    >
-      {paths[destination]}
-    </svg>
-  );
-}
+const DIVIDED_DESTINATION: NavDestinationKey = "data-sources";
 
 export interface TopNavigationProps {
   /** The destination currently rendered. */
@@ -170,12 +110,16 @@ export interface TopNavigationProps {
 export default function TopNavigation({ active, onNavigate }: TopNavigationProps) {
   return (
     <header className="wep-appbar" data-testid="top-navigation">
-      <div className="wep-appbar-row mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-8">
+      {/* Horizontal padding comes from `.wep-appbar-row` (globals.css), which owns
+          the Figma 28px at desktop; the utilities here only centre the row. */}
+      <div className="wep-appbar-row mx-auto w-full max-w-screen-2xl">
         <div className="wep-brand" data-testid="app-brand">
           {/* aria-hidden: the product name beside it is the accessible text, so
-              the mark adds no duplicate announcement. */}
+              the mark adds no duplicate announcement. FigmaIcon is decorative by
+              default, so this wrapper's aria-hidden is belt-and-braces rather than
+              the only thing keeping the glyph out of the accessible name. */}
           <span className="wep-brand-mark" aria-hidden>
-            <BrandMark />
+            <FigmaIcon name="logo-target-01" />
           </span>
           <span className="wep-brand-text">
             {/* A span, never a heading — every view owns its own single <h1>. */}
@@ -190,11 +134,10 @@ export default function TopNavigation({ active, onNavigate }: TopNavigationProps
         <span id="mode-switch-label" className="sr-only">
           분석 영역 선택
         </span>
-        {/* `.wep-nav-track` stretches each tab to the full bar height so the active
-            tab's indicator is flush with the bar's bottom border. It NEVER wraps:
-            at desktop the six labels fit one row down to 1024px on compressed
-            spacing, and at phone widths the track itself scrolls horizontally so
-            the PAGE never gains a horizontal scrollbar. */}
+        {/* `.wep-nav-track` is the Figma pill track (74:2000) the six tabs sit
+            inside. It NEVER wraps: at desktop the six labels fit one row down to
+            1024px on compressed spacing, and at phone widths the track itself
+            scrolls horizontally so the PAGE never gains a horizontal scrollbar. */}
         <div
           className="wep-nav-track"
           role="group"
@@ -202,18 +145,25 @@ export default function TopNavigation({ active, onNavigate }: TopNavigationProps
           data-testid="mode-switch"
         >
           {NAV_DESTINATIONS.map((destination) => (
-            <button
-              key={destination.key}
-              type="button"
-              aria-pressed={destination.key === active.key}
-              onClick={() => onNavigate(destination)}
-              className="wep-nav-tab"
-              data-testid={destination.testId}
-              data-destination={destination.key}
-            >
-              <DestinationIcon destination={destination.key} />
-              <span className="wep-nav-tab-label">{destination.label}</span>
-            </button>
+            <Fragment key={destination.key}>
+              {/* Decorative and OUTSIDE the button: a rule inside one would join
+                  that button's textContent, which the terminology audit compares
+                  with `.toBe`. */}
+              {destination.key === DIVIDED_DESTINATION && (
+                <span className="wep-nav-divider" aria-hidden data-testid="nav-divider" />
+              )}
+              <button
+                type="button"
+                aria-pressed={destination.key === active.key}
+                onClick={() => onNavigate(destination)}
+                className="wep-nav-tab"
+                data-testid={destination.testId}
+                data-destination={destination.key}
+              >
+                <FigmaIcon name={DESTINATION_ICONS[destination.key]} className="wep-nav-icon" />
+                <span className="wep-nav-tab-label">{destination.label}</span>
+              </button>
+            </Fragment>
           ))}
         </div>
       </div>
