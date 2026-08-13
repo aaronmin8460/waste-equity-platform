@@ -130,6 +130,21 @@ def _synthetic_population(code: str) -> int:
 
 @pytest.fixture
 def session_factory() -> Iterator[sessionmaker[Session]]:
+    yield from _make_session_factory()
+
+
+def session_factory_for_clean_database() -> Iterator[sessionmaker[Session]]:
+    """A second, independent seeded database for same-test comparisons.
+
+    Used where a test has to compare a database that saw a superseded delivery
+    against one that only ever saw the current one; the caller must ``close()``
+    the generator so the engine is disposed.
+    """
+
+    return _make_session_factory()
+
+
+def _make_session_factory() -> Iterator[sessionmaker[Session]]:
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -1354,3 +1369,487 @@ def test_unsupported_reference_year_is_refused(
         run_municipal_cost_ingestion(
             source_dir=str(source_tree), year=2023, write=False, session_factory=session_factory
         )
+
+
+# ---------------------------------------------------------------------------
+# Authoritative source refresh — retiring a superseded delivery
+# ---------------------------------------------------------------------------
+#
+# ``municipal_cost_source_files`` is keyed on the workbook SHA-256, so a
+# re-delivery of the same reference year ships rows that collide with nothing
+# already stored. Before the reconciliation these tests pin, a second delivery
+# left the table holding **both**, and the API — which selects every stored
+# source file for the year — served the union as the release's provenance.
+#
+# ``superseded_tree`` is a genuinely different earlier delivery: different bytes,
+# and one municipality (종로구) that the refresh does not deliver at all.
+
+
+def build_superseded_source_tree(root: Path) -> Path:
+    """An earlier, superseded delivery of the same reference year.
+
+    Deliberately overlapping but not identical: 광명시 and 미추홀구 are delivered
+    again by ``build_source_tree`` under the same filenames with **different
+    bytes**, and 성동구 is delivered only here — the two ways a stored row can be
+    superseded. 성동구 appears nowhere in ``build_source_tree``, so its survival
+    can be tested by filename without colliding with a current workbook.
+    """
+
+    write_workbook(
+        root / "DATA_A" / "서울" / "성동구.xlsx",
+        HEADERS_FAMILY_2,
+        [
+            contract_row(
+                organisation="서울특별시 성동구",
+                name="성동구 생활폐기물 수집·운반 대행용역",
+                payment=777_000_000,
+                pairs=["A업체:", 1234],
+            )
+        ],
+    )
+    write_workbook(
+        root / "DATA_A" / GYEONGGI_A_FOLDER / "광명시.xlsx",
+        HEADERS_FAMILY_2,
+        [
+            contract_row(
+                organisation="광명시청",
+                name="광명시 생활폐기물 수집·운반 용역(구 계약)",
+                payment=42_000_000,
+                pairs=["구업체:", 111],
+            )
+        ],
+    )
+    write_workbook(
+        root / "DATA_B" / "인천" / "미추홀구.xlsx",
+        HEADERS_DATA_B,
+        data_b_rows(
+            [1111.0] * 12,
+            [2222.0] * 12,
+            ["-"] * 12,
+            (13332.0, 26664.0, "-", 39996.0),
+            combined=[3333.0] * 12,
+        ),
+        sheet_name="2024년",
+    )
+    return root
+
+
+@pytest.fixture
+def superseded_tree(tmp_path: Path) -> Path:
+    return build_superseded_source_tree(tmp_path / "2024-superseded")
+
+
+def _official_landfill_row(run_id: int) -> LandfillInboundMonthly:
+    """One SYNTHETIC official landfill inbound row.
+
+    Same shape as the backend suite's fixture. Its only purpose is to be a row
+    the municipal loader must not touch: a count check alone cannot distinguish
+    "untouched" from "deleted and rewritten".
+    """
+
+    now = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    return LandfillInboundMonthly(
+        reference_month="2024-01",
+        reference_year=2024,
+        origin_region_code="KR-SGIS-11",
+        origin_source_name="서울시",
+        origin_region_level="SIDO",
+        destination_code="SUDOKWON_LANDFILL",
+        waste_name="생활폐기물",
+        quantity_kg=Decimal("1000"),
+        inbound_fee_krw=Decimal("2000"),
+        quantity_unit="kg",
+        fee_currency="KRW",
+        accounting_basis="VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW",
+        quantity_source_dataset_id="15064381",
+        quantity_source_snapshot_uuid="uddi-quantity",
+        quantity_source_snapshot_date=datetime.date(2026, 5, 31),
+        fee_source_dataset_id="15064394",
+        fee_source_snapshot_uuid="uddi-fee",
+        fee_source_snapshot_date=datetime.date(2026, 5, 31),
+        quantity_evidence_status="OFFICIAL_REPORTED_VALUE",
+        fee_evidence_status="OFFICIAL_REPORTED_VALUE",
+        retrieved_at=now,
+        transformation_version="landfill-inbound-v1",
+        ingestion_run_id=run_id,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _landfill_digest(session: Session) -> tuple[Any, ...]:
+    """Row count plus every stored landfill value, for an exact comparison."""
+
+    rows = session.execute(
+        select(
+            LandfillInboundMonthly.id,
+            LandfillInboundMonthly.reference_month,
+            LandfillInboundMonthly.origin_region_code,
+            LandfillInboundMonthly.quantity_kg,
+            LandfillInboundMonthly.inbound_fee_krw,
+            LandfillInboundMonthly.accounting_basis,
+            LandfillInboundMonthly.updated_at,
+        ).order_by(LandfillInboundMonthly.id)
+    ).all()
+    return (len(rows), tuple(tuple(row) for row in rows))
+
+
+def _stored_shas(session: Session) -> set[str]:
+    return set(session.scalars(select(MunicipalCostSourceFile.sha256)).all())
+
+
+def _delivered_shas(tree: Path) -> set[str]:
+    return {item.sha256 for item in discover_files(tree)}
+
+
+def _indicator_snapshot(session: Session) -> dict[str, tuple[Any, ...]]:
+    """Every served indicator keyed by municipality, ignoring row identity."""
+
+    geographies = {
+        row.id: row.municipality_key for row in session.scalars(select(MunicipalCostGeography))
+    }
+    return {
+        geographies[row.geography_id]: (
+            row.status,
+            row.value,
+            row.numerator_amount_krw,
+            row.denominator_population,
+            row.numerator_contract_count,
+            tuple(row.reason_codes),
+            tuple(row.limitations),
+        )
+        for row in session.scalars(select(MunicipalCostIndicatorValue))
+    }
+
+
+def test_superseded_delivery_does_not_survive_as_union_provenance(
+    superseded_tree: Path, source_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """Required proof 1 — old snapshot + new snapshot is not a union."""
+
+    first = run(superseded_tree, session_factory, write=True)
+    assert first.status == "SUCCEEDED"
+    with session_factory() as session:
+        assert len(_stored_shas(session)) == 3
+
+    second = run(source_tree, session_factory, write=True)
+    assert second.status == "SUCCEEDED"
+    with session_factory() as session:
+        stored = _stored_shas(session)
+    assert stored == _delivered_shas(source_tree)
+    assert len(stored) == 10
+    # The union would have been 13: three superseded rows plus the ten delivered.
+    assert not stored & (_delivered_shas(superseded_tree) - _delivered_shas(source_tree))
+    assert second.writes["source_files_retired"] == 3
+    assert {entry["filename"] for entry in second.retired_source_files} == {
+        "성동구.xlsx",
+        "광명시.xlsx",
+        "미추홀구.xlsx",
+    }
+
+
+def test_retired_source_rows_leave_no_orphan_observations(
+    superseded_tree: Path, source_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """Required proof 2/4 — stale rows leave the active surface, once."""
+
+    run(superseded_tree, session_factory, write=True)
+    run(source_tree, session_factory, write=True)
+
+    with session_factory() as session:
+        live_ids = set(session.scalars(select(MunicipalCostSourceFile.id)).all())
+        contract_parents = set(session.scalars(select(MunicipalWasteContract.source_file_id)).all())
+        quantity_parents = set(session.scalars(select(MunicipalWasteQuantity.source_file_id)).all())
+        # No contract row is duplicated across the two deliveries: the pair is
+        # unique per source file, so a survivor would show up as a second row for
+        # the same municipality and worksheet row.
+        pairs = session.execute(
+            select(MunicipalWasteContract.source_file_id, MunicipalWasteContract.source_row)
+        ).all()
+    assert contract_parents <= live_ids
+    assert quantity_parents <= live_ids
+    assert len(pairs) == len(set(pairs))
+    # 성동구 was delivered only by the superseded tree; nothing of it survives.
+    with session_factory() as session:
+        seongdong = session.scalars(
+            select(MunicipalCostSourceFile).where(MunicipalCostSourceFile.filename == "성동구.xlsx")
+        ).all()
+    assert seongdong == []
+
+
+def test_refresh_source_coverage_describes_only_the_current_delivery(
+    superseded_tree: Path, source_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """Required proof 3/10 — coverage and provenance are the reviewed snapshot."""
+
+    run(superseded_tree, session_factory, write=True)
+    run(source_tree, session_factory, write=True)
+
+    delivered = {item.sha256: item for item in discover_files(source_tree)}
+    with session_factory() as session:
+        rows = list(session.scalars(select(MunicipalCostSourceFile)))
+    assert len(rows) == len(delivered)
+    for row in rows:
+        item = delivered[row.sha256]
+        # Provenance of a surviving row is intact, not merely present.
+        assert row.filename == item.filename
+        assert row.relative_path == item.relative_path
+        assert row.dataset_role == item.dataset_role
+        assert row.file_size_bytes == item.size_bytes
+        assert row.reference_year == YEAR
+    accepted = [row for row in rows if row.ingestion_decision == INGESTION_DECISION_ACCEPTED]
+    rejected = [row for row in rows if row.ingestion_decision == INGESTION_DECISION_REJECTED]
+    assert len(accepted) == 8
+    assert len(rejected) == 2
+
+
+def test_refresh_reproduces_a_clean_database_exactly(
+    superseded_tree: Path,
+    source_tree: Path,
+    session_factory: sessionmaker[Session],
+    tmp_path: Path,
+) -> None:
+    """Required proof 9 — status, value and reason semantics survive retirement.
+
+    The strongest available statement: refreshing over a superseded delivery must
+    land on exactly the state a first-ever load of the same delivery produces,
+    including every PARTIAL and UNAVAILABLE reason code and its rendered
+    limitation sentence.
+    """
+
+    run(superseded_tree, session_factory, write=True)
+    run(source_tree, session_factory, write=True)
+    with session_factory() as session:
+        refreshed = _indicator_snapshot(session)
+        refreshed_counts = _row_counts(session)
+
+    # A second, independent database that only ever saw the current delivery.
+    clean_factory_gen = session_factory_for_clean_database()
+    clean_factory = next(clean_factory_gen)
+    try:
+        run(source_tree, clean_factory, write=True)
+        with clean_factory() as session:
+            clean = _indicator_snapshot(session)
+            clean_counts = _row_counts(session)
+    finally:
+        clean_factory_gen.close()
+
+    assert refreshed == clean
+    assert refreshed_counts == clean_counts
+    assert sum(1 for value in refreshed.values() if value[0] == STATUS_PARTIAL) == sum(
+        1 for value in clean.values() if value[0] == STATUS_PARTIAL
+    )
+
+
+def test_refresh_leaves_other_years_and_official_landfill_untouched(
+    superseded_tree: Path, source_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """Required proof 5/6 — the retirement is scoped to this dataset and year."""
+
+    with session_factory() as session:
+        run_id = session.scalars(select(IngestionRun.run_id)).first()
+        session.add(
+            MunicipalCostSourceFile(
+                relative_path="DATA_A/2023/유령구.xlsx",
+                filename="유령구.xlsx",
+                sha256="0" * 64,
+                file_size_bytes=1,
+                dataset_role="DATA_A",
+                region_folder="서울",
+                workbook_sheet="Sheet1",
+                used_range="A1:I2",
+                layout_family="DATA_A_CONTRACT_QUANTITY_PAIRS",
+                source_municipality_name=None,
+                resolved_geography_id=None,
+                resolution_basis="UNRESOLVED",
+                resolution_evidence=None,
+                reference_year=2023,
+                boundary_vintage="2024",
+                primary_classification="EMPTY_OR_NO_DATA",
+                ingestion_decision=INGESTION_DECISION_REJECTED,
+                rejection_reasons=[],
+                source_notes=[],
+                ingestion_run_id=run_id,
+                transformation_version="other-year-fixture",
+                imported_at=datetime.datetime(2025, 1, 1, tzinfo=datetime.UTC),
+            )
+        )
+        session.add(_official_landfill_row(int(run_id)))
+        session.commit()
+        landfill_before = _landfill_digest(session)
+    assert landfill_before[0] == 1
+
+    run(superseded_tree, session_factory, write=True)
+    run(source_tree, session_factory, write=True)
+
+    with session_factory() as session:
+        other_year = session.scalars(
+            select(MunicipalCostSourceFile).where(MunicipalCostSourceFile.reference_year == 2023)
+        ).all()
+        assert len(other_year) == 1
+        assert other_year[0].sha256 == "0" * 64
+        assert other_year[0].transformation_version == "other-year-fixture"
+        # Not merely the same count: the same row, field for field.
+        assert _landfill_digest(session) == landfill_before
+
+
+def test_dry_run_over_a_superseded_delivery_retires_nothing(
+    superseded_tree: Path, source_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """Required proof 7 — a dry run never reconciles."""
+
+    run(superseded_tree, session_factory, write=True)
+    with session_factory() as session:
+        before = _row_counts(session)
+        before_shas = _stored_shas(session)
+        run_count = session.scalar(select(func.count()).select_from(IngestionRun))
+
+    report = run(source_tree, session_factory, write=False)
+    assert report.status == "DRY_RUN_OK"
+    assert report.writes == {}
+    assert report.retired_source_files == []
+    assert report.ingestion_run_id is None
+
+    with session_factory() as session:
+        assert _row_counts(session) == before
+        assert _stored_shas(session) == before_shas
+        assert session.scalar(select(func.count()).select_from(IngestionRun)) == run_count
+
+
+def test_refresh_then_identical_write_retires_nothing_more(
+    superseded_tree: Path, source_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """Required proof 8 — reconciliation does not churn on a re-run."""
+
+    run(superseded_tree, session_factory, write=True)
+    run(source_tree, session_factory, write=True)
+    with session_factory() as session:
+        counts = _row_counts(session)
+        snapshot = _indicator_snapshot(session)
+        imported = {
+            row.sha256: row.imported_at for row in session.scalars(select(MunicipalCostSourceFile))
+        }
+
+    third = run(source_tree, session_factory, write=True)
+    assert third.idempotent_no_op is True
+    assert third.retired_source_files == []
+    assert third.writes.get("source_files_retired", 0) == 0
+    assert third.writes.get("retired_contracts_deleted", 0) == 0
+    assert third.writes.get("retired_quantities_deleted", 0) == 0
+    for key, value in third.writes.items():
+        if key.endswith("_unchanged"):
+            continue
+        assert value == 0, f"{key} wrote {value} rows on an unchanged re-run"
+
+    with session_factory() as session:
+        assert _row_counts(session) == counts
+        assert _indicator_snapshot(session) == snapshot
+        assert {
+            row.sha256: row.imported_at for row in session.scalars(select(MunicipalCostSourceFile))
+        } == imported
+
+
+def test_a_stale_row_that_escapes_retirement_fails_the_write_loudly(
+    source_tree: Path, session_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The snapshot gate is proven by disabling the retirement it guards.
+
+    Without the gate this write would commit a union provenance surface silently;
+    with it the whole transaction is refused and the database keeps its prior
+    state.
+    """
+
+    from waste_equity_ingestion import municipal_cost_ingestion as module
+
+    run(source_tree, session_factory, write=True)
+    with session_factory() as session:
+        before = _row_counts(session)
+
+    monkeypatch.setattr(module, "_retire_superseded_source_files", lambda *a, **k: None)
+    # A delivery that no longer contains the stored workbooks at all.
+    with session_factory() as session:
+        for row in session.scalars(select(MunicipalCostSourceFile)):
+            row.sha256 = "f" * 63 + str(row.id % 10)
+        session.commit()
+
+    with pytest.raises(Exception, match="did not converge"):
+        run(source_tree, session_factory, write=True)
+
+    with session_factory() as session:
+        # Rolled back: the stale shas are still exactly what the test set, and no
+        # partially-reconciled state was committed.
+        assert _row_counts(session) == before
+        assert all(sha.startswith("f" * 63) for sha in _stored_shas(session))
+        failed = session.scalars(select(IngestionRun).where(IngestionRun.status == "FAILED")).all()
+        assert len(failed) == 1
+        assert failed[0].error_message is not None
+        assert "did not converge" in failed[0].error_message
+
+
+def test_available_row_with_a_null_value_fails_the_write_loudly(
+    source_tree: Path, session_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 4 — the AVAILABLE/NULL state the schema would legally accept.
+
+    ``municipal_cost_indicator_values`` CHECKs that an UNAVAILABLE row has no
+    value but not the mirror, so the database would store a row whose status
+    promises a number and whose value is absent. The loader refuses it.
+    """
+
+    from waste_equity_ingestion import municipal_cost_ingestion as module
+
+    real = module.evaluate_indicator
+    blanked: list[str] = []
+
+    def blank_one_available(**kwargs: Any):
+        outcome = real(**kwargs)
+        if outcome.status == STATUS_AVAILABLE and not blanked:
+            blanked.append(outcome.status)
+            outcome.value = None
+        return outcome
+
+    monkeypatch.setattr(module, "evaluate_indicator", blank_one_available)
+
+    with pytest.raises(Exception, match="invariant violated"):
+        run(source_tree, session_factory, write=True)
+    assert blanked
+
+    with session_factory() as session:
+        assert set(_row_counts(session).values()) == {0}
+
+
+def test_evaluate_indicator_never_returns_available_without_a_value() -> None:
+    """The loader-side guarantee the write gate defends, stated directly."""
+
+    populations = [None, 0, 1, 250_000]
+    numerators = [None, Decimal("0"), Decimal("1"), Decimal("1098984023933")]
+    reason_sets: list[list[str]] = [
+        [],
+        [REASON_MISSING_QUANTITY],
+        [REASON_PARTIAL_WASTE_SCOPE],
+        [REASON_PARTIAL_PERIOD_COVERAGE, REASON_NON_COLLECTION_TRANSPORT_BASIS],
+        [REASON_BOUNDARY_MISMATCH],
+        [REASON_AMBIGUOUS_REGION_MAPPING],
+    ]
+    seen = set()
+    for population in populations:
+        for numerator in numerators:
+            for reasons in reason_sets:
+                for has_file in (True, False):
+                    for count in (0, 1, 7):
+                        outcome = evaluate_indicator(
+                            population=None if population == 0 else population,
+                            numerator_krw=numerator,
+                            contract_count=count,
+                            has_source_file=has_file,
+                            reason_codes=reasons,
+                        )
+                        seen.add(outcome.status)
+                        assert (outcome.value is None) == (outcome.status == STATUS_UNAVAILABLE), (
+                            f"{outcome.status} with value {outcome.value}"
+                        )
+                        if outcome.status != STATUS_UNAVAILABLE:
+                            assert outcome.numerator_krw is not None
+                            assert outcome.denominator_population is not None
+                            assert outcome.denominator_population > 0
+    assert seen == {STATUS_AVAILABLE, STATUS_PARTIAL, STATUS_UNAVAILABLE}

@@ -69,8 +69,11 @@ from waste_equity_backend.models.landfill_inbound import (
 from waste_equity_backend.models.municipal_cost import (
     ACCOUNTING_BASIS_MUNICIPAL_CONTRACT_PAYMENT,
     BOUNDARY_VINTAGE,
+    CLASS_DATA_A_PAYMENT_AND_QUANTITY,
     EVIDENCE_OFFICIAL_DERIVED,
     INDICATOR_UNIT,
+    INGESTION_DECISION_ACCEPTED,
+    LAYOUT_DATA_A_CONTRACT_QUANTITY_PAIRS,
     METHODOLOGY_VERSION,
     MUNICIPAL_COLLECTION_TRANSPORT_PAYMENT_PER_CAPITA,
     MUNICIPALITY_LEVEL_SIGUNGU,
@@ -81,6 +84,7 @@ from waste_equity_backend.models.municipal_cost import (
     STATUS_AVAILABLE,
     STATUS_PARTIAL,
     STATUS_UNAVAILABLE,
+    TRANSFORMATION_VERSION,
 )
 from waste_equity_backend.schemas.municipal_cost import (
     MunicipalCostQuantityCoverage,
@@ -1172,3 +1176,90 @@ def test_a_second_identical_request_serves_a_byte_identical_body(
     client: TestClient, seeded: dict[str, int]
 ) -> None:
     assert client.get(ENDPOINT).text == client.get(ENDPOINT).text
+
+
+# ---------------------------------------------------------------------------
+# 8. The served value/status biconditional, and honest source provenance
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("params", FILTER_COMBINATIONS, ids=str)
+def test_a_served_value_is_null_exactly_when_the_status_is_unavailable(
+    client: TestClient, seeded: dict[str, int], params: dict[str, str]
+) -> None:
+    """AVAILABLE promises a number; UNAVAILABLE promises its absence.
+
+    ``municipal_cost_indicator_values`` CHECKs only the UNAVAILABLE half
+    (``unavailable_is_null``), so the schema alone would let a row claim
+    "계산 가능" over a blank figure. The loader refuses to commit that state and
+    this pins the wire contract a consumer branches on.
+    """
+
+    for row in get(client, **params)["municipalities"]:
+        is_unavailable = row["status"] == STATUS_UNAVAILABLE
+        assert (row["payment_per_capita_krw"] is None) == is_unavailable, row["display_name"]
+        assert (row["total_eligible_payment_krw"] is None) == is_unavailable, row["display_name"]
+        if not is_unavailable:
+            assert Decimal(row["payment_per_capita_krw"]) > 0, row["display_name"]
+            assert isinstance(row["population"], int) and row["population"] > 0
+
+
+def test_source_coverage_mirrors_stored_rows_and_never_silently_hides_a_stale_one(
+    client: TestClient, seeded: dict[str, int], session: Session
+) -> None:
+    """The endpoint is an honest mirror of the stored source set, by design.
+
+    A superseded delivery is retired by the *loader*, inside the authoritative
+    write transaction — never by filtering here. That division matters: if the
+    API quietly dropped source rows it did not recognise, a database still
+    holding two deliveries would look correct while serving provenance for a
+    source snapshot nobody reviewed, and the release's golden-result comparison
+    would have nothing to catch.
+
+    So this asserts the opposite of a fix: a stale row **must** move the served
+    coverage, which is exactly what makes ``municipal-cost-verify-api.sh``
+    able to fail the release on it.
+    """
+
+    before = get(client)["meta"]["source_coverage"]
+
+    session.add(
+        MunicipalCostSourceFile(
+            relative_path="DATA_A/서울/이전배송분.xlsx",
+            filename="이전배송분.xlsx",
+            sha256="d" * 64,
+            file_size_bytes=4321,
+            dataset_role="DATA_A",
+            region_folder="서울",
+            workbook_sheet="Sheet1",
+            used_range="A1:I10",
+            layout_family=LAYOUT_DATA_A_CONTRACT_QUANTITY_PAIRS,
+            source_municipality_name="서울특별시 종로구",
+            resolved_geography_id=seeded["종로구"],
+            resolution_basis="WORKBOOK_ORGANISATION_NAME",
+            resolution_evidence="워크북 기관명 셀: 서울특별시 종로구",
+            reference_year=2024,
+            boundary_vintage=BOUNDARY_VINTAGE,
+            primary_classification=CLASS_DATA_A_PAYMENT_AND_QUANTITY,
+            ingestion_decision=INGESTION_DECISION_ACCEPTED,
+            rejection_reasons=[],
+            source_notes=[],
+            ingestion_run_id=None,
+            transformation_version=TRANSFORMATION_VERSION,
+            imported_at=NOW,
+        )
+    )
+    session.commit()
+
+    after = get(client)["meta"]["source_coverage"]
+    assert after["discovered_file_count"] == before["discovered_file_count"] + 1
+    assert after["accepted_file_count"] == before["accepted_file_count"] + 1
+    assert after["data_a_file_count"] == before["data_a_file_count"] + 1
+
+    # And it surfaces in the municipality's own provenance, not just the totals.
+    jongno = next(
+        row
+        for row in get(client)["municipalities"]
+        if row["municipality_key"] == nfc(f"{METROPOLITAN_SEOUL}-종로구")
+    )
+    assert "이전배송분.xlsx" in {ref["filename"] for ref in jongno["source_files"]}

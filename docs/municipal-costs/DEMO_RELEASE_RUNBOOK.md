@@ -34,7 +34,36 @@ release outcome.** It was measured before the semantic corrections. The only
 approved expectation is whatever the final integrated local dry run produces and
 `check` accepts.
 
-### 0.1 Known blocker to settle before the write — superseded source files
+### 0.1 Superseded source files — RESOLVED at integration (option 1)
+
+> **Status: resolved.** The integration took **option 1** below: the loader now
+> reconciles superseded source files itself, inside the authoritative write
+> transaction. `municipal-cost-verify-api.sh --golden` still fails loudly on a
+> union, so the gate that would have caught the blocker stays in place as a
+> regression check rather than as the decision point.
+>
+> The reviewed semantics, the scope limits, the dry-run guarantee and the
+> historical-auditability argument are written up in
+> [`METHODOLOGY.md` §10](METHODOLOGY.md). Ten regression tests pin the behaviour
+> (`ingestion/tests/test_municipal_cost_ingestion.py`, "Authoritative source
+> refresh"), and six of them fail if the retirement or either pre-commit gate is
+> removed.
+>
+> Consequences for this runbook:
+>
+> - the production `--write` at step 32 retires the 64 superseded rows and their
+>   contracts and quantities; the run report lists every one under
+>   `retired_source_files`, and `writes.source_files_retired` must equal the
+>   number of previously-stored workbooks that the refresh does not re-deliver;
+> - the pre-write database backup (step 20) is what makes that reversible —
+>   take it, verify it, and do not skip it;
+> - the production **dry run** at step 31 still retires nothing, so the
+>   pre-write and post-dry-run states must be identical;
+> - `meta.source_coverage.discovered_file_count` after the write must equal the
+>   delivered workbook count, not the union.
+>
+> The original analysis is kept below because it is what the decision was made
+> against.
 
 Production currently holds the **previous** 2024 delivery (64 workbooks,
 20/5/41, ingestion runs 601/602). The refresh is a different delivery with

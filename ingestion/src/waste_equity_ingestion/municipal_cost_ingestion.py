@@ -21,6 +21,17 @@ unchanged inputs inserts no source file, contract, quantity, or indicator row,
 updates no stored value, and leaves every timestamp untouched. Nothing outside
 these six tables is ever written — in particular no ``regions`` row is created or
 modified, and no row is ever added to ``landfill_inbound_monthly``.
+
+A ``--write`` is an **authoritative full-source refresh** of its reference year,
+not an accumulation. The source tree that is read defines the year's source
+snapshot in full: workbooks it no longer contains are retired from
+``municipal_cost_source_files`` (with their contracts and quantities) inside the
+same transaction, so the served provenance and coverage describe exactly the
+delivery that was loaded and never the union of a superseded delivery and this
+one. See :func:`_retire_superseded_source_files`. Two invariants are proven
+against the database before the commit and roll the whole write back if they do
+not hold: the stored source set equals the delivered source set, and an
+indicator row carries a value if and only if its status is not ``UNAVAILABLE``.
 """
 
 from __future__ import annotations
@@ -570,6 +581,10 @@ class MunicipalCostReport:
     writes: dict[str, int] = field(default_factory=dict)
     idempotent_no_op: bool | None = None
     ingestion_run_id: int | None = None
+    # Stored source files of a superseded delivery that this authoritative
+    # refresh retired. Always empty on a dry run and on a re-run of the same
+    # delivery; see :func:`_retire_superseded_source_files`.
+    retired_source_files: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def sanitized_summary(self) -> dict[str, Any]:
@@ -620,6 +635,7 @@ class MunicipalCostReport:
             },
             "municipalities": self.municipalities,
             "writes": dict(sorted(self.writes.items())),
+            "retired_source_files": self.retired_source_files,
             "idempotent_no_op": self.idempotent_no_op,
             "warnings": self.warnings,
         }
@@ -971,8 +987,14 @@ def _write_all(
         report.ingestion_run_id = int(run.run_id)
 
         geography_ids = _upsert_registry(session, registry, now, counters)
-        _upsert_source_files(session, outcomes, geography_ids, run, now, counters)
+        _upsert_source_files(session, outcomes, geography_ids, run, now, counters, report)
         _upsert_indicators(session, registry, indicators, geography_ids, run, now, counters)
+
+        # Both gates run before the commit, inside this transaction: a violation
+        # raises, the except branch rolls the whole write back, and the database
+        # keeps the pre-run state.
+        _assert_authoritative_source_snapshot(session, outcomes)
+        _assert_indicator_value_invariant(session)
 
         inserted = sum(value for key, value in counters.items() if key.endswith("_inserted"))
         updated = sum(value for key, value in counters.items() if key.endswith("_updated"))
@@ -1133,6 +1155,7 @@ def _upsert_source_files(
     run: IngestionRun,
     now: datetime.datetime,
     counters: Counter[str],
+    report: MunicipalCostReport,
 ) -> None:
     existing = {
         row.sha256: row
@@ -1203,6 +1226,170 @@ def _upsert_source_files(
             # written by the earlier run from the same parse and are left exactly
             # as they are (no delete, no reinsert, no timestamp movement).
             counters["observations_unchanged"] += _count_observations(session, int(row.id))
+
+    _retire_superseded_source_files(session, outcomes, existing, report, counters)
+
+
+def _retire_superseded_source_files(
+    session: Session,
+    outcomes: Sequence[_FileOutcome],
+    existing: dict[str, MunicipalCostSourceFile],
+    report: MunicipalCostReport,
+    counters: Counter[str],
+) -> None:
+    """Retire stored 2024 source files the current delivery no longer contains.
+
+    ``municipal_cost_source_files`` is keyed on the workbook SHA-256 and a
+    re-delivery ships different bytes under different filenames, so without this
+    the table accumulates every delivery ever loaded. That is not a harmless
+    surplus: the API selects **every** stored source file for the year, so
+    ``meta.source_coverage``, each row's ``source_files[]`` provenance and the
+    database-read ``quantity_coverage`` would describe the union of a superseded
+    delivery and this one — a provenance surface that describes a source snapshot
+    that was never reviewed as a whole.
+
+    The reviewed semantics of a municipal ``--write`` are therefore
+    **authoritative full-source refresh**: after it commits, the active source
+    surface for the reference year is exactly the delivery that was just read.
+
+    Scope and safety:
+
+    - only ``municipal_cost_source_files`` rows of ``REFERENCE_YEAR`` are
+      considered — ``existing`` is already filtered to it, so no other year and
+      no other dataset can be reached;
+    - it runs inside :func:`_write_all`'s single transaction, so a later failure
+      rolls the retirement back with everything else;
+    - ``--dry-run`` never reaches this function at all (it never calls
+      ``_write_all``), so a dry run stays a zero-write operation;
+    - children are deleted **explicitly** rather than left to
+      ``ON DELETE CASCADE``. The cascade is declared on both child foreign keys
+      and does fire on PostgreSQL, but SQLite enforces foreign keys only under
+      ``PRAGMA foreign_keys = ON``, which the test engine does not set. Deleting
+      in Python makes the behaviour identical on both engines and keeps the
+      counters honest instead of silently correct on one database and silently
+      orphaning on the other;
+    - ``landfill_inbound_monthly`` and every other official table are untouched:
+      nothing here selects, deletes, or writes outside the two child tables and
+      this one.
+
+    A re-run of the same delivery finds nothing to retire, so the counters stay
+    zero and the run remains a true no-op.
+    """
+
+    delivered = {outcome.discovered.sha256 for outcome in outcomes}
+    superseded = [row for sha256, row in sorted(existing.items()) if sha256 not in delivered]
+    if not superseded:
+        return
+
+    for row in superseded:
+        for stored_quantity in session.scalars(
+            select(MunicipalWasteQuantity).where(MunicipalWasteQuantity.source_file_id == row.id)
+        ):
+            session.delete(stored_quantity)
+            counters["retired_quantities_deleted"] += 1
+        for stored_contract in session.scalars(
+            select(MunicipalWasteContract).where(MunicipalWasteContract.source_file_id == row.id)
+        ):
+            session.delete(stored_contract)
+            counters["retired_contracts_deleted"] += 1
+        session.flush()
+        report.retired_source_files.append(
+            {
+                "filename": row.filename,
+                "relative_path": row.relative_path,
+                "dataset_role": row.dataset_role,
+                "sha256": row.sha256,
+                "ingestion_decision": row.ingestion_decision,
+            }
+        )
+        session.delete(row)
+        counters["source_files_retired"] += 1
+    session.flush()
+    report.warnings.append(
+        f"retired {len(superseded)} superseded 2024 source file(s) from a previous "
+        "delivery so the served provenance describes only the current source snapshot"
+    )
+
+
+def _assert_authoritative_source_snapshot(
+    session: Session, outcomes: Sequence[_FileOutcome]
+) -> None:
+    """The stored 2024 source set must equal the delivery that was just read.
+
+    Verified against the database rather than the counters, so an incomplete
+    retirement, a stray row inserted by something else, or a future edit that
+    reintroduces the union all fail here — before the commit — instead of
+    reaching a citizen-facing provenance surface.
+    """
+
+    # The session is created with ``autoflush=False``, so pending inserts and
+    # deletes are invisible to a SELECT until they are flushed. Without this the
+    # gate would read the pre-run state and pass vacuously.
+    session.flush()
+    stored = set(
+        session.scalars(
+            select(MunicipalCostSourceFile.sha256).where(
+                MunicipalCostSourceFile.reference_year == REFERENCE_YEAR
+            )
+        ).all()
+    )
+    delivered = {outcome.discovered.sha256 for outcome in outcomes}
+    if stored == delivered:
+        return
+    stale = len(stored - delivered)
+    missing = len(delivered - stored)
+    raise IngestionError(
+        "authoritative source refresh did not converge: "
+        f"{len(stored)} stored {REFERENCE_YEAR} source files vs {len(delivered)} delivered "
+        f"({stale} stale, {missing} missing). The write was rolled back."
+    )
+
+
+def _assert_indicator_value_invariant(session: Session) -> None:
+    """``value IS NULL`` if and only if the status is ``UNAVAILABLE``.
+
+    ``evaluate_indicator`` already guarantees this by construction — it returns
+    UNAVAILABLE with a NULL value before a value is ever computed, and every
+    other path computes one — and the table's ``unavailable_is_null`` CHECK
+    covers the UNAVAILABLE half in the database. The AVAILABLE/PARTIAL half has
+    no CHECK, so the schema would legally accept a served row whose status
+    promises a number and whose value is absent: the dashboard would render
+    "계산 가능" over a blank figure, which is exactly the missing-is-not-zero
+    defect this dataset exists to avoid.
+
+    Adding the mirror CHECK would need a migration, and the reviewed decision was
+    not to turn a no-migration release into a migration one for an invariant with
+    a single writer (see ``METHODOLOGY.md`` §10). Instead the loader proves it
+    against the rows it is about to commit and refuses the whole write otherwise.
+    """
+
+    session.flush()  # see _assert_authoritative_source_snapshot: autoflush is off
+    violations = session.execute(
+        select(
+            MunicipalCostIndicatorValue.geography_id,
+            MunicipalCostIndicatorValue.status,
+            MunicipalCostIndicatorValue.value,
+        )
+        .where(MunicipalCostIndicatorValue.reference_year == REFERENCE_YEAR)
+        .where(
+            MunicipalCostIndicatorValue.indicator_code
+            == MUNICIPAL_COLLECTION_TRANSPORT_PAYMENT_PER_CAPITA
+        )
+        .where(MunicipalCostIndicatorValue.methodology_version == METHODOLOGY_VERSION)
+    ).all()
+    offending = [
+        (int(geography_id), str(status))
+        for geography_id, status, value in violations
+        if (value is None) != (status == STATUS_UNAVAILABLE)
+    ]
+    if not offending:
+        return
+    detail = ", ".join(f"geography {gid} is {status}" for gid, status in sorted(offending))
+    raise IngestionError(
+        f"indicator value/status invariant violated for {len(offending)} row(s): {detail}. "
+        "A non-UNAVAILABLE row must carry a value and an UNAVAILABLE row must not. "
+        "The write was rolled back."
+    )
 
 
 def _count_observations(session: Session, source_file_id: int) -> int:

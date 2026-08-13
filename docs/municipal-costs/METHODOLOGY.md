@@ -412,3 +412,104 @@ Unchanged by this work, and verified so:
 
 Municipal contract payments are a separate accounting basis and are never
 inserted into `landfill_inbound_monthly`.
+
+---
+
+## 10. Write semantics — authoritative full-source refresh
+
+A municipal-cost `--write` is an **authoritative refresh of its reference year**,
+not an accumulation. The source tree it reads defines that year's source snapshot
+in full.
+
+### Why this had to be decided
+
+`municipal_cost_source_files` is keyed on the workbook **SHA-256**. A
+re-delivery of the same year ships different bytes under (partly) different
+filenames, so its rows collide with nothing already stored and the loader had no
+delete path for a stored workbook the new delivery no longer contains. Contracts
+and quantities are delete-and-reinserted *per processed source file*, so a
+workbook that is no longer delivered was never processed and its children
+survived too.
+
+Indicator values were never wrong — they are recomputed from the in-memory parse
+of the current delivery — but the *provenance surface* was:
+
+- `meta.source_coverage` counts every stored source file for the year;
+- each municipality's `source_files[]` lists every stored file resolved to it;
+- `quantity_coverage` is read from `municipal_waste_quantities`.
+
+All three would have described the union of a superseded delivery and the current
+one. For the 2024 refresh that is 64 + 102 = 166 workbooks presented as the
+release's source — a snapshot no reviewer ever approved, attached to values that
+came from 102 of them.
+
+### The rule
+
+After a successful `--write`, the active source surface for the reference year is
+**exactly** the delivery that was read. Stored source files of the year whose
+SHA-256 is absent from the delivery are retired inside the same transaction,
+together with their contracts and quantities
+(`_retire_superseded_source_files`).
+
+Scope and safety:
+
+- only `municipal_cost_source_files` rows of the reference year are considered;
+  no other year, no other dataset, and nothing official is reachable;
+- it happens inside the single write transaction, so a later failure rolls the
+  retirement back with everything else;
+- `--dry-run` never opens that transaction and therefore never retires anything;
+- children are deleted explicitly rather than left to `ON DELETE CASCADE`. The
+  cascade is declared on both child foreign keys and fires on PostgreSQL, but
+  SQLite enforces foreign keys only under `PRAGMA foreign_keys = ON`, which the
+  test engine does not set. Deleting in Python makes the two engines behave
+  identically;
+- every retired file is listed in the run report (`retired_source_files`) with
+  its filename, dataset role and SHA-256, so the retirement is auditable from the
+  run output and the ingestion-run history is unchanged.
+
+Historical auditability is preserved where the schema supports it: `ingestion_runs`
+keeps every previous run with its row counts, the release procedure takes a
+verified database backup before the write, and the superseded delivery's own
+archive and SHA-256 inventory are retained outside the database. What is not
+preserved is a *live* provenance row for a workbook that no longer belongs to the
+published snapshot — which is the point.
+
+A re-run of the same delivery finds nothing to retire, so the run stays a true
+no-op.
+
+### Two invariants proven before the commit
+
+Both are checked against the database inside the write transaction; a violation
+raises and rolls the whole write back.
+
+**1. The stored source set equals the delivered source set.**
+Verified against the database rather than the counters, so an incomplete
+retirement, a stray row, or a future edit that reintroduces the union fails here
+instead of reaching a citizen-facing provenance surface.
+
+**2. `value IS NULL` if and only if the status is `UNAVAILABLE`.**
+`evaluate_indicator` guarantees this by construction — it returns UNAVAILABLE
+with a NULL value before a value is ever computed, and every other path computes
+one — and the table's `unavailable_is_null` CHECK covers the UNAVAILABLE half.
+The AVAILABLE/PARTIAL half has **no** CHECK, so the schema would legally accept a
+served row whose status promises a number and whose value is absent; the
+dashboard would render `계산 가능` over a blank figure, which is precisely the
+missing-is-not-zero defect §6 exists to prevent.
+
+The reviewed decision was **not** to add a migration for it. The mirror CHECK
+would be
+`status = 'UNAVAILABLE' OR value IS NOT NULL`, and it is correct — but this table
+has exactly one writer, the release is otherwise migration-free at `0021`, and
+the release's own rollback policy forbids `alembic downgrade` (fix forward or
+restore the backup). Turning a no-migration release into a migration release for
+an invariant the sole writer already guarantees was judged the larger risk. It is
+instead enforced at three points, each of which fails loudly:
+
+| Where | What happens |
+| --- | --- |
+| `evaluate_indicator` | structurally cannot return a non-UNAVAILABLE outcome without a value; proven exhaustively by test |
+| the write transaction | `_assert_indicator_value_invariant` raises and the write is rolled back |
+| the release gate | `municipal_cost_release_result.py check` reports it as a hard no-go |
+
+If a second writer to `municipal_cost_indicator_values` is ever introduced, the
+constraint above should be added at that point, not before.
