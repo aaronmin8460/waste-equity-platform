@@ -1645,8 +1645,9 @@ export function fetchLandfillTrends(query: LandfillTrendsQuery = {}): Promise<La
 // never be summed, differenced, or ratio'd against each other.
 //
 // Every money field is an exact decimal string kept as a string, and `null` always
-// means "no defensible value exists" — never 0. 41 of the 66 municipalities are
-// null in the published 2024 release.
+// means "no defensible value exists" — never 0. How many of the 66 are null is a
+// property of the current ingestion, not of this contract: read it from
+// `meta.unavailable_count` rather than assuming a fixed number here.
 // --------------------------------------------------------------------------- //
 
 /** Metropolitan SGIS sido code: 11 서울, 28 인천, 41 경기. */

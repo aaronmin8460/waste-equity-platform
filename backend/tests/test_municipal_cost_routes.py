@@ -23,6 +23,7 @@ from waste_equity_backend.analysis.municipal_cost import (
     METROPOLITAN_GYEONGGI,
     METROPOLITAN_INCHEON,
     METROPOLITAN_SEOUL,
+    describe_reasons,
 )
 from waste_equity_backend.models import (
     MunicipalCostGeography,
@@ -185,7 +186,12 @@ def _seed(session: Session) -> dict[str, int]:
                     evidence_status=EVIDENCE_LOCAL_GOVERNMENT_DERIVED,
                     status=status,
                     reason_codes=[REASON_PARTIAL_WASTE_SCOPE] if partial else [],
-                    limitations=["부분 품목만 포함"] if partial else [],
+                    # The loader stores describe_reasons(reason_codes) verbatim
+                    # (municipal_cost_ingestion.py). Seeding the same derivation
+                    # keeps the fixture faithful to the shipped payload — an
+                    # invented sentence would hide the one-sentence-per-code
+                    # alignment the frontend pairs positionally.
+                    limitations=(describe_reasons([REASON_PARTIAL_WASTE_SCOPE]) if partial else []),
                     methodology_version=METHODOLOGY_VERSION,
                     ingestion_run_id=None,
                     computed_at=NOW,
@@ -212,7 +218,7 @@ def _seed(session: Session) -> dict[str, int]:
                     evidence_status=EVIDENCE_LOCAL_GOVERNMENT_DERIVED,
                     status=STATUS_UNAVAILABLE,
                     reason_codes=reasons,
-                    limitations=[],
+                    limitations=describe_reasons(reasons),
                     methodology_version=METHODOLOGY_VERSION,
                     ingestion_run_id=None,
                     computed_at=NOW,
@@ -476,6 +482,13 @@ def test_total_payment_desc(client: TestClient, seeded: dict[str, int]) -> None:
     rows = get(client, sort="total_payment_desc")["municipalities"]
     assert rows[0]["display_name"] == "광명시"
     assert rows[1]["display_name"] == "서구"
+    # The same nulls-last promise the per-capita sort makes. Asserted here too
+    # because the two orderings are separate lambdas and only one of them was
+    # pinned; a null total must never be ordered as if it were the cheapest.
+    values = [row["total_eligible_payment_krw"] for row in rows]
+    valued = [Decimal(value) for value in values if value is not None]
+    assert valued == sorted(valued, reverse=True)
+    assert values[len(valued) :] == [None] * (len(values) - len(valued))
 
 
 def test_region_name_asc_is_grouped_by_metropolitan(

@@ -15,6 +15,10 @@ Full scope always returns exactly one row per expected 2024 municipality — 66 
 them — including the ones with no value. An unavailable municipality carries
 ``null`` for population, payment, and per-capita value, plus the reason codes
 that say why; it is never returned as 0.
+
+That 66-row scope is enforced here and not merely assumed: a stored geography
+whose key is not in the reviewed registry is dropped before serialization, so a
+post-2024 unit can never be displayed as an observation of the published year.
 """
 
 from dataclasses import dataclass, field
@@ -29,10 +33,12 @@ from ...analysis.municipal_cost import (
     EXPECTED_COUNT_BY_METROPOLITAN,
     EXPECTED_MUNICIPALITY_COUNT,
     GEOGRAPHY_POLICY_KO,
+    MUNICIPALITIES_BY_KEY,
     POPULATION_POLICY_KO,
     REFERENCE_YEAR,
     REJECTED_FILE_RULES,
     describe_reasons,
+    nfc,
 )
 from ...models import (
     MunicipalCostGeography,
@@ -115,17 +121,31 @@ CAVEATS = [
 _SORTS = {
     # Nulls last on both value sorts: an unavailable municipality is never
     # ordered as if it were the cheapest.
+    #
+    # ``municipality_key`` is the final tiebreak on every ordering. Without it the
+    # dozens of rows that share a null value tie on the whole key, Python's stable
+    # sort then falls back to the order the rows arrived in, and that order is
+    # whatever the database happened to return for a SELECT with no ORDER BY — so
+    # two identical requests could serve two different orderings. The key is unique
+    # per municipality (``<metropolitan_code>-<display_name>``), which also keeps
+    # 서울 중구 and 인천 중구 apart where ``display_name`` alone cannot.
     "payment_per_capita_desc": lambda row: (
         row.payment_per_capita_krw is None,
         -(row.payment_per_capita_krw or Decimal(0)),
         row.display_name,
+        row.municipality_key,
     ),
     "total_payment_desc": lambda row: (
         row.total_eligible_payment_krw is None,
         -(row.total_eligible_payment_krw or Decimal(0)),
         row.display_name,
+        row.municipality_key,
     ),
-    "region_name_asc": lambda row: (row.metropolitan_code, row.display_name),
+    "region_name_asc": lambda row: (
+        row.metropolitan_code,
+        row.display_name,
+        row.municipality_key,
+    ),
 }
 
 
@@ -137,11 +157,25 @@ def get_municipal_costs(
     status: StatusParam = None,
     sort: SortParam = "payment_per_capita_desc",
 ) -> MunicipalCostOut:
-    geographies = list(
-        session.scalars(
+    geographies = [
+        geography
+        for geography in session.scalars(
             select(MunicipalCostGeography).where(MunicipalCostGeography.reference_year == year)
         )
-    )
+        # Published-scope guard. Only the reviewed analytical municipalities of the
+        # requested vintage are ever served, whatever a later ingestion writes. A
+        # post-2024 Incheon district (제물포구·영종구·서해구·검단구) is not 2024
+        # geography and must never be *displayed* as a 2024 observation, so it is
+        # dropped here rather than trusted through to a citizen-facing dashboard.
+        # This is a geography-scope check against the shared registry, not a
+        # recomputation of the indicator: statuses, values and reasons are still
+        # served exactly as the backend stored them.
+        #
+        # The key is NFC-normalized first. macOS hands Korean text back in NFD, and
+        # an unnormalized comparison would fail to match *every* Korean key and
+        # blank the whole response instead of dropping only what is out of scope.
+        if nfc(geography.municipality_key) in MUNICIPALITIES_BY_KEY
+    ]
     indicators = {
         row.geography_id: row
         for row in session.scalars(
