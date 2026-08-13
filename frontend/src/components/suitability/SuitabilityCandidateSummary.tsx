@@ -81,7 +81,7 @@ export default function SuitabilityCandidateSummary({
       <SectionCard title={TITLE} testId="candidate-detail-empty">
         <EmptyState
           title="선택한 후보 구역이 없습니다."
-          description="지도에서 구역을 클릭하거나 위의 '점수가 높은 후보 구역' 목록에서 하나를 선택하면 점수·구성요소·근거와 한계를 여기에 표시합니다."
+          description="지도에서 구역을 클릭하거나 위의 '순위 보기' 목록에서 하나를 선택하면 점수·구성요소·근거와 한계를 여기에 표시합니다."
         />
       </SectionCard>
     );

@@ -4,10 +4,22 @@
  * 후보지 점수 — the score sub-view's analysis sidebar.
  *
  * The former `SuitabilityPanel` from `app/page.tsx`, now a composition of the
- * sections in this folder, in the order the screen's workflow reads:
+ * sections in this folder, in the numbered order Figma 136:8684 reads:
  *
- *   scoring basis → status totals → stability → candidate list →
- *   selected candidate → exclusion / review reasons → coverage gaps → method
+ *   LEFT   ① 분석 범위 → ② 계산 모델 가중치 설정 → 후보 상태 요약 →
+ *          자료 공백 → 계산 방법과 가정
+ *   RIGHT  ③ 종합 점수와 후보 순위 (상대 점수 구간 + 순위 보기) →
+ *          안정 후보 목록 → 선택한 후보 구역 → 제외 / 검토 사유
+ *
+ * ④ 시나리오 저장 and ⑤ 비교할 시나리오 선택 now WORK (Page 4D) and close the
+ * numbering: they are injected as ready-made nodes (`scenarioSavePanel` /
+ * `scenarioComparePanel`) the way `relativeGradePanel` already is, because the page
+ * owns the localStorage list, the preview re-validation and the A/B state — this
+ * column stays pure presentation with no storage access of its own.
+ *
+ * They sit at the FOOT of the right column, which is where the page-4 기술요청
+ * annotation (Figma 225:443) puts the call to action: "우측 맨 하단
+ * [두 시나리오 비교하기] 누르면 다음 페이지로 자동 이동".
  *
  * (The screening disclaimer is rendered ABOVE this by the page, so it heads both
  * map sub-views; the page's `<h1>` and orientation line precede that.)
@@ -20,12 +32,15 @@
 
 import type {
   CandidateDetail,
+  SuitabilityCandidateCollection,
   SuitabilityPolicy,
   SuitabilityProfile,
   SuitabilityRun,
+  SuitabilitySort,
   SuitabilityStatus,
   SuitabilitySummary,
 } from "../../lib/api";
+import type { ScopeRegionOption, SuitabilityScope } from "../../lib/suitabilityScope";
 import type { StatusVisibility } from "../MapView";
 import { profileLabel, statusLabel } from "../../lib/glossary";
 import { formatCount } from "../../lib/metrics";
@@ -33,6 +48,7 @@ import InfoBanner from "../ui/InfoBanner";
 import SectionCard from "../ui/SectionCard";
 import SuitabilityCandidateList from "./SuitabilityCandidateList";
 import SuitabilityCandidateSummary from "./SuitabilityCandidateSummary";
+import SuitabilityScopeCard from "./SuitabilityScopeCard";
 import SuitabilityScoringBasis from "./SuitabilityScoringBasis";
 import SuitabilityStabilitySummary from "./SuitabilityStabilitySummary";
 import SuitabilityStatusSummary from "./SuitabilityStatusSummary";
@@ -77,6 +93,35 @@ export interface SuitabilitySidebarProps {
   part?: "left" | "right" | "all";
   /** The A/B/C panel, injected by the page (it owns the distribution fetch). */
   relativeGradePanel?: React.ReactNode;
+  /**
+   * ④ 시나리오 저장 and ⑤ 비교할 시나리오 선택, injected by the page for the same
+   * reason the A/B/C panel is: their state (the browser's saved-scenario list, the
+   * preview re-validation, the A/B pair mirrored into `cmpA`/`cmpB`) belongs to the
+   * one page, and a second copy of it in this column could disagree with the URL.
+   * Rendered only in the three-column workspace (`part="right"`), which is the only
+   * shape Figma 136:8684 places them in.
+   */
+  scenarioSavePanel?: React.ReactNode;
+  scenarioComparePanel?: React.ReactNode;
+  /**
+   * ① 분석 범위 and ③ 순위 방향. Owned by the page — this column reports them, and
+   * the ONE scope drives the ranking read, the A/B/C population, the map filter and
+   * the selected-candidate check together, so no two surfaces can disagree.
+   */
+  scope: SuitabilityScope;
+  onScopeChange: (scope: SuitabilityScope) => void;
+  regionOptions: readonly ScopeRegionOption[];
+  scopeName: string;
+  mapFollowsScope: boolean;
+  ranking: SuitabilityCandidateCollection | null;
+  rankingError: string | null;
+  sort: SuitabilitySort;
+  onSortChange: (sort: SuitabilitySort) => void;
+  /**
+   * Open 순위 전체보기. Passed straight through to the ranking block — this column
+   * neither owns the dialog nor knows what it renders, it only reports the intent.
+   */
+  onOpenFullRanking?: () => void;
 }
 
 export default function SuitabilitySidebar({
@@ -94,6 +139,18 @@ export default function SuitabilitySidebar({
   statusColors,
   part = "all",
   relativeGradePanel,
+  scenarioSavePanel,
+  scenarioComparePanel,
+  scope,
+  onScopeChange,
+  regionOptions,
+  scopeName,
+  mapFollowsScope,
+  ranking,
+  rankingError,
+  sort,
+  onSortChange,
+  onOpenFullRanking,
 }: SuitabilitySidebarProps) {
   // The error and loading states belong to ONE column. Rendering them in both
   // would duplicate a single failure into two identical messages on one screen.
@@ -121,6 +178,20 @@ export default function SuitabilitySidebar({
   const summary = suit.summary;
   const showLeft = part === "left" || part === "all";
   const showRight = part === "right" || part === "all";
+  // The scope/sort props every SuitabilityCandidateList below shares. One object so
+  // the ranking cannot be rendered with a different scope from the one ① is showing.
+  const rankingProps = {
+    ranking,
+    rankingError,
+    sort,
+    onSortChange,
+    scopeName,
+    scopeActive: scope.kind !== "all",
+    mapFollowsScope,
+    // Only the ranking block renders the trigger; the stability short-list is a
+    // different population and `showRanking` already gates it out there.
+    onOpenFullRanking,
+  };
   return (
     <>
       {/* Screen-reader status: announced when the score basis changes and when the
@@ -134,6 +205,17 @@ export default function SuitabilitySidebar({
       </p>
       )}
 
+      {/* ① 분석 범위 — the real scope control. Its state is the ONE thing that
+          narrows the ranking, the counts and the A/B/C population together. */}
+      {showLeft && (
+        <SuitabilityScopeCard
+          summary={summary}
+          scope={scope}
+          onScopeChange={onScopeChange}
+          regionOptions={regionOptions}
+        />
+      )}
+
       {showLeft && (
       <SuitabilityScoringBasis
         policy={suit.policy}
@@ -142,6 +224,8 @@ export default function SuitabilitySidebar({
         onSelectProfile={setProfile}
         runProfiles={runProfiles}
         stabilityAvailable={stabilityAvailable}
+        selected={selected}
+        stableOnly={stableOnly}
       />
       )}
 
@@ -157,24 +241,73 @@ export default function SuitabilitySidebar({
       />
       )}
 
-      {showRight && relativeGradePanel}
+      {/* ③ 종합 점수와 후보 순위 — ONE card holding the relative band legend and the
+          ranking, the way Figma 136:8684 groups them. The band explains how to read
+          a score; the ranking is that score applied. Splitting them into two cards
+          (as before) put a full card of caveats between a reader and the list.
 
-      {showRight && (
-      <SuitabilityStabilitySummary summary={summary} available={stabilityAvailable} />
+          In the single-column shapes (`part="all"` — the stacked phone layout and
+          후보지 심층 비교) the two stay separate cards: the grouping is a
+          three-column desktop idea, and nesting them in a narrow stack would add a
+          heading level for nothing. */}
+      {showRight && part === "right" ? (
+        <SectionCard
+          title="③ 종합 점수와 후보 순위"
+          description="설정한 점수 반영 기준으로 합산한 점수와 그 순위입니다."
+          testId="suitability-results"
+          className="wep-figma-card"
+        >
+          <div className="flex flex-col gap-3">
+            {relativeGradePanel}
+            <SuitabilityCandidateList
+              summary={summary}
+              profile={profile}
+              selected={selected}
+              onSelect={onSelect}
+              stabilityAvailable={stabilityAvailable}
+              {...rankingProps}
+              nested
+              section="ranking"
+            />
+          </div>
+        </SectionCard>
+      ) : (
+        showRight && (
+          <>
+            {relativeGradePanel}
+            <SuitabilityCandidateList
+              summary={summary}
+              profile={profile}
+              selected={selected}
+              onSelect={onSelect}
+              stabilityAvailable={stabilityAvailable}
+              {...rankingProps}
+            />
+          </>
+        )
       )}
 
-      {showRight && (
-      <SuitabilityCandidateList
-        summary={summary}
-        profile={profile}
-        selected={selected}
-        onSelect={onSelect}
-        stabilityAvailable={stabilityAvailable}
-      />
+      {/* 기준을 바꿔도 상위권인 후보지 — a DIFFERENT population from the ranking
+          above, so it stays its own card beside ③ rather than inside it. */}
+      {showRight && part === "right" && (
+        <SuitabilityCandidateList
+          summary={summary}
+          profile={profile}
+          selected={selected}
+          onSelect={onSelect}
+          stabilityAvailable={stabilityAvailable}
+          {...rankingProps}
+          nested
+          section="stable"
+        />
       )}
 
       {showRight && (
       <SuitabilityCandidateSummary detail={selected} clearSelected={clearSelected} />
+      )}
+
+      {showRight && (
+      <SuitabilityStabilitySummary summary={summary} available={stabilityAvailable} />
       )}
 
       {showRight && (
@@ -191,6 +324,13 @@ export default function SuitabilitySidebar({
         testId="review-reason-summary"
       />
       )}
+
+      {/* ④ → ⑤, in that order, at the foot of the right column (Figma 225:443:
+          "우측 맨 하단 [두 시나리오 비교하기]"). ⑤ follows ④ because you cannot
+          select a scenario you have not saved, and the CTA that leaves this screen
+          is the last thing on it. */}
+      {showRight && part === "right" && scenarioSavePanel}
+      {showRight && part === "right" && scenarioComparePanel}
 
       {showLeft && summary.coverage_notes.length > 0 && (
         <SectionCard title="자료 공백 안내" testId="coverage-warnings">

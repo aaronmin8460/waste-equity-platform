@@ -46,6 +46,7 @@ vi.mock("../lib/api", async (importOriginal) => {
 
 import Home from "./page";
 import * as api from "../lib/api";
+import { rankingCollection } from "./homeApiMock";
 
 function setUrl(query: string) {
   window.history.replaceState(null, "", `/${query}`);
@@ -213,23 +214,29 @@ describe("Phase 0 — candidate detail carries the meaning + limitations", () =>
 
   it("shows the status meaning, the '현재 분석에 포함되지 않은 항목' disclosure, and revised component labels", async () => {
     // Serve one clickable top candidate and its detail, on top of the shared mock.
+    const TOP = [
+      {
+        candidate_id: 501,
+        rank: 1,
+        sigungu: "강화군",
+        total_score: "88.1234",
+        stability_class: "STABLE",
+        stable_count: 3,
+      },
+    ];
     const baseSummary = await api.fetchSuitabilitySummary("baseline");
     vi.mocked(api.fetchSuitabilitySummary).mockResolvedValue({
       ...baseSummary,
-      top_candidates: [
-        {
-          candidate_id: 501,
-          rank: 1,
-          sigungu: "강화군",
-          total_score: "88.1234",
-          stability_class: "STABLE",
-          stable_count: 3,
-        },
-      ],
+      top_candidates: TOP,
     });
+    // ③ renders the SCOPED ranking from `/suitability/candidates` — the same row.
+    vi.mocked(api.fetchSuitabilityCandidates).mockResolvedValue(
+      rankingCollection(TOP) as unknown as api.SuitabilityCandidateCollection,
+    );
     vi.mocked(api.fetchSuitabilityCandidateDetail).mockResolvedValue(CANDIDATE_DETAIL);
 
     await enterSuitability();
+    await waitFor(() => expect(screen.getByTestId("candidate-ranking-counts")).toBeDefined());
     fireEvent.click(screen.getByTestId("top-candidate-item"));
     const detail = await screen.findByTestId("candidate-detail");
 

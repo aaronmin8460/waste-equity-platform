@@ -41,16 +41,60 @@ export function RelativeGradeChip({ grade }: { grade: RelativeGrade }) {
  * The legend/explanation panel. Rendered only when a distribution was actually
  * derived from the complete authoritative population; when it could not be, the
  * caller renders {@link RelativeGradeUnavailable} instead of guessing.
+ *
+ * ── THE FIGMA ROW SHAPE, WITHOUT THE FIGMA MEANING ───────────────────────────────
+ * Figma 136:8684 draws three stacked rows in green / amber / red reading
+ * "A · 점 이상 → 스크리닝 통과", "B · ~ 점 → 추가 검토 필요", "C · 미만 → 스크리닝
+ * 제외". That is the exact misreading these bands exist to prevent: A/B/C is a
+ * relative position in the ELIGIBLE score distribution and has no authority over the
+ * official screening status, which the backend already decided for every cell.
+ *
+ * So this panel takes the row LAYOUT and rejects the row CONTENT: the boundary is
+ * printed as the served percentile it is (≥ P75 / P25 이상 ~ P75 미만 / < P25), the
+ * arrow-to-status text is not rendered at all, and the chips keep their deliberately
+ * non-status navy ramp (globals.css `.wep-grade-*`) instead of a traffic light.
+ *
+ * `nested` drops the card chrome so the panel can sit inside ③ 종합 점수와 후보 순위
+ * as its first block, which is where the Figma hierarchy puts it. The testids, the
+ * copy, and every served value are identical in both shapes.
  */
-export function RelativeGradePanel({ distribution }: { distribution: GradeDistribution }) {
-  const rows: { grade: RelativeGrade; range: string; count: number }[] = [
-    { grade: "A", range: `${distribution.p75} 이상`, count: distribution.countA },
-    { grade: "B", range: `${distribution.p25} – ${distribution.p75}`, count: distribution.countB },
-    { grade: "C", range: `${distribution.p25} 미만`, count: distribution.countC },
+export function RelativeGradePanel({
+  distribution,
+  scopeName,
+  nested = false,
+}: {
+  distribution: GradeDistribution;
+  /**
+   * The active ① 분석 범위. The bands are relative to THIS population, so the basis
+   * line names it — "상위 25%" of 인천 is a different score from 상위 25% of the
+   * capital region, and a band shown without its population is unreadable.
+   */
+  scopeName?: string;
+  nested?: boolean;
+}) {
+  const rows: { grade: RelativeGrade; range: string; band: string; count: number }[] = [
+    {
+      grade: "A",
+      range: `${distribution.p75} 이상`,
+      band: "상대점수 상위 구간",
+      count: distribution.countA,
+    },
+    {
+      grade: "B",
+      range: `${distribution.p25} 이상 ~ ${distribution.p75} 미만`,
+      band: "상대점수 중간 구간",
+      count: distribution.countB,
+    },
+    {
+      grade: "C",
+      range: `${distribution.p25} 미만`,
+      band: "상대점수 하위 구간",
+      count: distribution.countC,
+    },
   ];
 
-  return (
-    <SectionCard title={RELATIVE_GRADE_TITLE} testId="relative-grade-panel">
+  const body = (
+    <>
       {/* The disclaimer is NOT collapsible: it is the notice that stops A/B/C
           being read as 적격/부적격, which is a critical analytical limitation
           (spec §9). */}
@@ -59,16 +103,25 @@ export function RelativeGradePanel({ distribution }: { distribution: GradeDistri
       </p>
       <dl className="mt-2 flex flex-col gap-1.5" data-testid="relative-grade-bands">
         {rows.map((row) => (
-          <div key={row.grade} className="flex items-center gap-2 text-xs">
-            <dt className="flex flex-none items-center gap-1.5">
+          <div
+            key={row.grade}
+            className="flex items-center gap-2 rounded-card border border-hairline bg-surface-muted px-2 py-1.5 text-xs"
+            data-testid={`relative-grade-row-${row.grade}`}
+          >
+            <dt className="flex min-w-0 flex-1 items-center gap-1.5">
               <RelativeGradeChip grade={row.grade} />
-              <span className="text-ink">{GRADE_LABELS[row.grade]}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-ink">{GRADE_LABELS[row.grade]}</span>
+                <span className="block truncate text-[11px] text-ink-subtle">{row.band}</span>
+              </span>
             </dt>
-            <dd className="ml-auto text-right text-ink-muted">
+            <dd className="flex-none text-right text-ink-muted">
               {/* The numeric range and the exact count, so the band is legible
                   without relying on the swatch at all. */}
-              <span data-testid={`relative-grade-range-${row.grade}`}>{row.range}</span>
-              <span className="ml-2 text-ink-subtle">
+              <span className="block tabular-nums" data-testid={`relative-grade-range-${row.grade}`}>
+                {row.range}
+              </span>
+              <span className="block text-[11px] tabular-nums text-ink-subtle">
                 {row.count.toLocaleString("ko-KR")}곳
               </span>
             </dd>
@@ -76,8 +129,22 @@ export function RelativeGradePanel({ distribution }: { distribution: GradeDistri
         ))}
       </dl>
       <p className="mt-2 text-[0.6875rem] leading-relaxed text-ink-subtle" data-testid="relative-grade-basis">
-        {relativeGradeBasis(distribution)}
+        {relativeGradeBasis(distribution, scopeName)}
       </p>
+    </>
+  );
+
+  if (nested) {
+    return (
+      <section aria-label={RELATIVE_GRADE_TITLE} data-testid="relative-grade-panel">
+        <h3 className="text-xs font-semibold text-ink">{RELATIVE_GRADE_TITLE}</h3>
+        <div className="mt-1.5">{body}</div>
+      </section>
+    );
+  }
+  return (
+    <SectionCard title={RELATIVE_GRADE_TITLE} testId="relative-grade-panel">
+      {body}
     </SectionCard>
   );
 }
@@ -89,13 +156,50 @@ export function RelativeGradePanel({ distribution }: { distribution: GradeDistri
  * computed from whatever happened to be loaded — the "insufficient population"
  * rule in spec §6.4.
  */
-export function RelativeGradeUnavailable() {
+export function RelativeGradeUnavailable({
+  nested = false,
+  /**
+   * The active ① 분석 범위, when it is narrower than 수도권 전체.
+   *
+   * WHY THIS MATTERS. Before the scope control existed, the population was always
+   * the whole run, so a missing distribution could only mean a failed read — and the
+   * copy said so. Under a scope it has a second, entirely different cause: the range
+   * genuinely holds too few scored 구역 to divide into quartiles (서울 holds ZERO
+   * eligible cells in run 47). Calling that "불러오지 못해" would report a real
+   * analytical answer as a malfunction, which is the very confusion the scoped empty
+   * state exists to prevent. So the reason is named, not guessed at.
+   */
+  scopeName,
+  emptyScope = false,
+}: {
+  nested?: boolean;
+  scopeName?: string;
+  /** True when the scoped ELIGIBLE population is genuinely too small to band. */
+  emptyScope?: boolean;
+}) {
+  const body = emptyScope ? (
+    <p className="text-xs leading-relaxed text-ink-muted" data-testid="relative-grade-empty-scope">
+      {scopeName ?? "선택한 범위"} 안에는 점수가 계산된 스크리닝 통과 구역이 상대 구간을 나눌 만큼
+      있지 않아 상대 점수 구간을 표시하지 않습니다. 자료를 불러오지 못한 것이 아니라, 이 범위의 실제
+      결과입니다.
+    </p>
+  ) : (
+    <p className="text-xs leading-relaxed text-ink-muted">
+      전체 스크리닝 통과 구역의 점수 분포를 불러오지 못해 상대 점수 구간을 표시하지 않습니다.
+      일부만으로 구간을 계산하면 실제 분포와 달라지므로 추정값을 대신 표시하지 않습니다.
+    </p>
+  );
+  if (nested) {
+    return (
+      <section aria-label={RELATIVE_GRADE_TITLE} data-testid="relative-grade-unavailable">
+        <h3 className="text-xs font-semibold text-ink">{RELATIVE_GRADE_TITLE}</h3>
+        <div className="mt-1.5">{body}</div>
+      </section>
+    );
+  }
   return (
     <SectionCard title={RELATIVE_GRADE_TITLE} testId="relative-grade-unavailable">
-      <p className="text-xs leading-relaxed text-ink-muted">
-        전체 스크리닝 통과 구역의 점수 분포를 불러오지 못해 상대 점수 구간을 표시하지 않습니다.
-        일부만으로 구간을 계산하면 실제 분포와 달라지므로 추정값을 대신 표시하지 않습니다.
-      </p>
+      {body}
     </SectionCard>
   );
 }

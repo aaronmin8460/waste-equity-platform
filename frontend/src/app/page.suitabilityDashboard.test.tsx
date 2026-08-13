@@ -67,6 +67,7 @@ vi.mock("../lib/api", async (importOriginal) => {
 
 import Home from "./page";
 import * as api from "../lib/api";
+import { rankingCollection } from "./homeApiMock";
 
 // --------------------------------------------------------------------------- //
 // Fixtures
@@ -297,6 +298,11 @@ function setUrl(query: string) {
 
 /** Serve a populated summary on top of the shared mock. */
 async function serveSummary(): Promise<void> {
+  // ③ reads the scoped ranking from `/suitability/candidates`; the SAME rows the
+  // summary declares below, so every existing row assertion is unchanged.
+  vi.mocked(api.fetchSuitabilityCandidates).mockResolvedValue(
+    rankingCollection(TOP_CANDIDATES) as unknown as api.SuitabilityCandidateCollection,
+  );
   const base = await api.fetchSuitabilitySummary("baseline");
   vi.mocked(api.fetchSuitabilitySummary).mockResolvedValue({
     ...base,
@@ -326,6 +332,9 @@ async function enterScore() {
   const utils = await renderLoaded();
   fireEvent.click(screen.getByTestId("mode-suitability"));
   await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
+  // ③ reads the scoped ranking one tick after the summary, so waiting for its
+  // count line keeps row assertions from racing that read.
+  await waitFor(() => expect(screen.getByTestId("candidate-ranking-counts")).toBeDefined());
   return utils;
 }
 

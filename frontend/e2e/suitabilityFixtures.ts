@@ -147,10 +147,85 @@ function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
+/**
+ * The scoped ranking, as `/suitability/candidates` serves it.
+ *
+ * ③ 종합 점수와 후보 순위 reads the ranking from this endpoint rather than from
+ * `summary.top_candidates`, because the summary has no scope parameters — it always
+ * describes the whole run. The fixture therefore honours the two things the page
+ * actually varies, so a spec can drive the controls and see the result change:
+ *
+ *   - `sort=score_asc` reverses the served order (the BACKEND does the reversing;
+ *     the page never flips a loaded page of rows);
+ *   - a `sido`/`sigungu` scope restricts the rows, and `total_matched` moves with
+ *     them — the count is the filtered total, never the page length.
+ *
+ * The scope filter here is a fixture convenience keyed on the row's own
+ * `sigungu_region_name`; the real backend filters on the stored region CODES.
+ */
+function rankingCollection(url: URL) {
+  const sort = url.searchParams.get("sort") ?? "score_desc";
+  const sigungu = url.searchParams.getAll("sigungu").filter((code) => code !== "");
+  const sido = url.searchParams.get("sido");
+
+  let rows = TOP_CANDIDATES.filter((row) => row.total_score !== null);
+  if (sido !== null) rows = rows.filter((row) => SIDO_OF[row.sigungu] === sido);
+  if (sigungu.length > 0) rows = rows.filter((row) => sigungu.includes(SIGUNGU_OF[row.sigungu]));
+  if (sort === "score_asc") rows = [...rows].reverse();
+
+  return {
+    type: "FeatureCollection",
+    indicator: "SUITABILITY_SCREENING",
+    derivation_version: "suitability-screening-v3",
+    policy_version: "suitability-policy-v2",
+    candidate_grid_version: "capital-grid-500m-v1",
+    weight_profile: url.searchParams.get("profile") ?? "baseline",
+    reference_year: 2024,
+    run_id: 47,
+    count: rows.length,
+    total_matched: rows.length,
+    limit: 10,
+    offset: 0,
+    sido,
+    sigungu,
+    sort,
+    features: rows.map((row) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [126.5, 37.7] },
+      properties: {
+        ...row,
+        sigungu_region_name: row.sigungu,
+        sigungu_region_code: SIGUNGU_OF[row.sigungu] ?? null,
+        sido_region_code: SIDO_OF[row.sigungu] ?? null,
+      },
+    })),
+    assumptions: [],
+    disclaimer: "Analytical screening only — not a legal determination.",
+  };
+}
+
+/** Synthetic code assignments for the three fixture rows. */
+const SIGUNGU_OF: Record<string, string> = {
+  강화군: "KR-SGIS-23510",
+  옹진군: "KR-SGIS-23520",
+  "수원시 장안구": "KR-SGIS-31011",
+};
+const SIDO_OF: Record<string, string> = {
+  강화군: "KR-SGIS-23",
+  옹진군: "KR-SGIS-23",
+  "수원시 장안구": "KR-SGIS-31",
+};
+
 /** Install the base mock plus the populated suitability overrides. */
 export async function mockSuitabilityBackend(page: Page): Promise<void> {
   await mockBackend(page);
   await page.route("**/api/v1/suitability/summary**", (r) => json(r, SUMMARY));
+  // The LIST endpoint. Registered BEFORE the detail route below so the detail's
+  // more specific `/candidates/<id>` pattern is matched first (Playwright tries the
+  // most recently registered route first).
+  await page.route("**/api/v1/suitability/candidates?*", (r) =>
+    json(r, rankingCollection(new URL(r.request().url()))),
+  );
   await page.route("**/api/v1/suitability/candidates/*", (r) => {
     const match = new URL(r.request().url()).pathname.match(/\/candidates\/(\d+)$/);
     return json(r, candidateDetail(Number(match?.[1] ?? 701)));

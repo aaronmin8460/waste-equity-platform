@@ -55,6 +55,7 @@
 
 import type { SuitabilityProfile, SuitabilityStatus } from "./api";
 import { fetchSuitabilityCandidates } from "./api";
+import { SCOPE_ALL, scopeKey, scopeToQuery, type SuitabilityScope } from "./suitabilityScope";
 
 /** The three relative bands. Deliberately not named after any official status. */
 export type RelativeGrade = "A" | "B" | "C";
@@ -76,7 +77,16 @@ export interface GradeThresholds {
   runId: number;
   /** The weight profile these thresholds were computed for. */
   profile: SuitabilityProfile;
-  /** N — the COMPLETE authoritative ELIGIBLE-with-rank population size. */
+  /**
+   * The analysis scope these thresholds were computed for.
+   *
+   * The bands are relative to a POPULATION, so narrowing ① 분석 범위 genuinely
+   * changes them: 상위 25% of 인천 is a different score from 상위 25% of 수도권
+   * 전체. The scope is carried on the result so a band can never be shown beside a
+   * ranking it was not computed for.
+   */
+  scope: SuitabilityScope;
+  /** N — the COMPLETE authoritative ELIGIBLE-with-rank population size IN SCOPE. */
   population: number;
   /** 25th percentile score (nearest-rank). */
   p25: number;
@@ -147,9 +157,22 @@ export const RELATIVE_GRADE_EXPLANATION =
  * the bands were computed from so a reader is never left guessing whether it was
  * the whole set or just what is on screen.
  */
-export function relativeGradeBasis(distribution: GradeDistribution): string {
+export function relativeGradeBasis(
+  distribution: GradeDistribution,
+  /**
+   * The active ① 분석 범위, resolved to its visible name by the caller (only the
+   * page holds the region registry). The bands are relative to THIS population, so
+   * naming it is the difference between "상위 25%" meaning the capital region and
+   * meaning 인천. Omitted ⇒ the sentence keeps its 수도권-wide wording.
+   */
+  scopeName?: string,
+): string {
+  const population =
+    scopeName === undefined || distribution.scope.kind === "all"
+      ? "전체 스크리닝 통과 구역"
+      : `${scopeName} 안의 스크리닝 통과 구역`;
   return (
-    `분석 실행 ${distribution.runId} · 점수 반영 기준별 전체 스크리닝 통과 구역 ` +
+    `분석 실행 ${distribution.runId} · 점수 반영 기준별 ${population} ` +
     `${distribution.population.toLocaleString("ko-KR")}곳의 점수 분포 기준 ` +
     `(하위 25% 경계 ${distribution.p25}, 상위 25% 경계 ${distribution.p75})`
   );
@@ -197,11 +220,15 @@ export function __resetGradeCache(): void {
 export function computeGradeDistribution(
   runId: number,
   profile: SuitabilityProfile,
+  scope: SuitabilityScope = SCOPE_ALL,
 ): Promise<GradeDistribution | null> {
-  const key = `${runId}:${profile}`;
+  // The scope is part of the key: a stored run's scores are immutable, but the
+  // POPULATION they are ranked within is exactly what ① changes, so 서울's bands
+  // must never be served from 수도권 전체's memo.
+  const key = `${runId}:${profile}:${scopeKey(scope)}`;
   const cached = distributionCache.get(key);
   if (cached) return cached;
-  const pending = readGradeDistribution(runId, profile).then((result) => {
+  const pending = readGradeDistribution(runId, profile, scope).then((result) => {
     // Forget a failure so the next visit retries; keep a success forever, since
     // a stored run's scores cannot change.
     if (result === null) distributionCache.delete(key);
@@ -214,7 +241,12 @@ export function computeGradeDistribution(
 async function readGradeDistribution(
   runId: number,
   profile: SuitabilityProfile,
+  scope: SuitabilityScope,
 ): Promise<GradeDistribution | null> {
+  // The SAME scope on every one of the four reads. Mixing an unscoped population
+  // size with scoped order statistics (or vice versa) would produce a threshold no
+  // candidate actually has — the exact approximation this module exists to refuse.
+  const scopeQuery = scopeToQuery(scope);
   try {
     // 1. N, from the same filtered query the thresholds come from.
     const probe = await fetchSuitabilityCandidates({
@@ -223,6 +255,7 @@ async function readGradeDistribution(
       status: "ELIGIBLE",
       top: TOP_FILTER_SENTINEL,
       limit: 1,
+      ...scopeQuery,
     });
     const population = probe.total_matched;
     if (!Number.isFinite(population) || population < 4) return null;
@@ -238,6 +271,7 @@ async function readGradeDistribution(
         top: TOP_FILTER_SENTINEL,
         limit: 1,
         offset: rank25 - 1,
+        ...scopeQuery,
       }),
       fetchSuitabilityCandidates({
         runId,
@@ -246,6 +280,7 @@ async function readGradeDistribution(
         top: TOP_FILTER_SENTINEL,
         limit: 1,
         offset: rank75 - 1,
+        ...scopeQuery,
       }),
     ]);
     const p25 = parseScore(at25.features[0]?.properties.total_score);
@@ -257,8 +292,22 @@ async function readGradeDistribution(
 
     // 3. Exact band sizes, counted by the backend under the SAME filter.
     const [aBand, from25] = await Promise.all([
-      fetchSuitabilityCandidates({ runId, profile, status: "ELIGIBLE", minScore: p75, limit: 1 }),
-      fetchSuitabilityCandidates({ runId, profile, status: "ELIGIBLE", minScore: p25, limit: 1 }),
+      fetchSuitabilityCandidates({
+        runId,
+        profile,
+        status: "ELIGIBLE",
+        minScore: p75,
+        limit: 1,
+        ...scopeQuery,
+      }),
+      fetchSuitabilityCandidates({
+        runId,
+        profile,
+        status: "ELIGIBLE",
+        minScore: p25,
+        limit: 1,
+        ...scopeQuery,
+      }),
     ]);
     const countA = aBand.total_matched;
     const countC = population - from25.total_matched;
@@ -269,7 +318,7 @@ async function readGradeDistribution(
     if (countA < 0 || countB < 0 || countC < 0) return null;
     if (countA + countB + countC !== population) return null;
 
-    return { runId, profile, population, p25, p75, countA, countB, countC };
+    return { runId, profile, scope, population, p25, p75, countA, countB, countC };
   } catch {
     // Any request failure disables the grade. It is decoration over an analytical
     // surface; degrading to "no grade" is always safe, guessing never is.

@@ -31,6 +31,10 @@ const BASE: AppUrlState = {
   // encodes to an explicit `mcStatus=all` token.
   municipalCostStatus: MUNICIPAL_COST_DEFAULT_STATUS,
   municipalCostSort: "payment_per_capita_desc",
+  suitScope: { kind: "all" },
+  suitSort: "score_desc",
+  cmpA: null,
+  cmpB: null,
 };
 
 describe("decodeUrlState — version gate", () => {
@@ -179,6 +183,10 @@ describe("encode → decode round trip", () => {
       municipalCostSido: null,
       municipalCostStatus: null,
       municipalCostSort: "payment_per_capita_desc",
+  suitScope: { kind: "all" },
+  suitSort: "score_desc",
+      cmpA: null,
+      cmpB: null,
     };
     const { state, warnings } = decodeUrlState(encodeUrlState(full));
     expect(warnings).toEqual([]);
@@ -455,5 +463,274 @@ describe("municipal-payment filters", () => {
     expect(state.municipalCostStatus).toBeUndefined();
     expect(state.municipalCostSort).toBeUndefined();
     expect(warnings).toEqual([]);
+  });
+});
+
+describe("후보지 심층 분석 ① 분석 범위 / ③ 순위 방향 in the URL", () => {
+  const suit = (extra: Partial<AppUrlState> = {}): AppUrlState => ({
+    ...BASE,
+    mode: "suitability",
+    ...extra,
+  });
+
+  it("writes nothing for the defaults (수도권 전체 · 높은 순)", () => {
+    const encoded = encodeUrlState(suit());
+    expect(encoded).not.toContain("suitScope=");
+    expect(encoded).not.toContain("suitSort=");
+  });
+
+  it("round-trips each 시·도 scope in canonical form", () => {
+    for (const sido of ["KR-SGIS-11", "KR-SGIS-23", "KR-SGIS-31"] as const) {
+      const encoded = encodeUrlState(suit({ suitScope: { kind: "sido", sido } }));
+      expect(encoded).toContain(`suitScope=KR-SGIS-${sido.slice(-2)}`);
+      expect(decodeUrlState(encoded).state.suitScope).toEqual({ kind: "sido", sido });
+    }
+  });
+
+  it("round-trips a multi-code city selection", () => {
+    const scope = { kind: "sigungu" as const, codes: ["KR-SGIS-31091", "KR-SGIS-31092"] };
+    const encoded = encodeUrlState(suit({ suitScope: scope }));
+    expect(decodeUrlState(encoded).state.suitScope).toEqual(scope);
+  });
+
+  it("round-trips 낮은 순", () => {
+    const encoded = encodeUrlState(suit({ suitSort: "score_asc" }));
+    expect(encoded).toContain("suitSort=score_asc");
+    expect(decodeUrlState(encoded).state.suitSort).toBe("score_asc");
+  });
+
+  it("cannot express a sido AND a sigungu selection at once", () => {
+    // One key holds the whole scope, so the pair the API forbids has no spelling.
+    const encoded = encodeUrlState(
+      suit({ suitScope: { kind: "sigungu", codes: ["KR-SGIS-31150"] } }),
+    );
+    const params = new URLSearchParams(encoded.slice(1));
+    expect(params.getAll("suitScope")).toHaveLength(1);
+    const restored = decodeUrlState(encoded).state.suitScope!;
+    expect(restored.kind).toBe("sigungu");
+  });
+
+  it("drops a malformed region code with a warning and keeps the valid ones", () => {
+    const { state, warnings } = decodeUrlState(
+      "?v=1&mode=suitability&suitScope=KR-SGIS-31091,notacode,KR-SGIS-31092",
+    );
+    expect(state.suitScope).toEqual({
+      kind: "sigungu",
+      codes: ["KR-SGIS-31091", "KR-SGIS-31092"],
+    });
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("refuses the BARE code spelling, so a MOIS code can never scope this ranking", () => {
+    // `28`/`41` are Incheon/Gyeonggi in the landfill space but mean nothing here.
+    // Accepting bare digits would let such a link silently scope to zero rows.
+    const { state, warnings } = decodeUrlState("?v=1&mode=suitability&suitScope=28");
+    expect(state.suitScope).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+
+    const bare = decodeUrlState("?v=1&mode=suitability&suitScope=31091");
+    expect(bare.state.suitScope).toBeUndefined();
+  });
+
+  it("widens to 수도권 전체 when every code in the link is invalid", () => {
+    // Never a blank ranking: an unusable scope drops to no restriction.
+    const { state } = decodeUrlState("?v=1&mode=suitability&suitScope=bad,worse");
+    expect(state.suitScope).toBeUndefined();
+  });
+
+  it("drops an unknown sort with a warning", () => {
+    const { state, warnings } = decodeUrlState("?v=1&mode=suitability&suitSort=name_asc");
+    expect(state.suitSort).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("does not change Page-1 scope/top semantics", () => {
+    // The 지역 부담 ranking keeps its own keys and its own bare vocabulary.
+    const { state } = decodeUrlState("?v=1&mode=equity&scope=31&top=20");
+    expect(state.scope).toBe("31");
+    expect(state.top).toBe(20);
+    expect(state.suitScope).toBeUndefined();
+  });
+
+  it("writes no suitability scope outside 후보지 분석", () => {
+    const encoded = encodeUrlState({
+      ...BASE,
+      mode: "equity",
+      suitScope: { kind: "sido", sido: "KR-SGIS-11" },
+      suitSort: "score_asc",
+    });
+    expect(encoded).not.toContain("suitScope=");
+    expect(encoded).not.toContain("suitSort=");
+  });
+
+  it("leaves a link written before the scope filters existed fully valid", () => {
+    const { state, warnings } = decodeUrlState("?v=1&mode=suitability&profile=critic");
+    expect(state.profile).toBe("critic");
+    expect(state.suitScope).toBeUndefined();
+    expect(state.suitSort).toBeUndefined();
+    expect(warnings).toEqual([]);
+  });
+});
+
+/**
+ * PAGE 4D — ⑤ 비교할 시나리오 선택 (`cmpA` / `cmpB`).
+ *
+ * The pair names two SAVED SCENARIOS by id. The ids live in the reader's own
+ * browser, so this module can only screen their SHAPE; the page resolves them
+ * against `lib/savedScenarios.ts` and renders an explicit state for one it cannot
+ * find. The tests below therefore pin exactly that division of labour, plus the
+ * one rule the URL layer does own: A and B must differ.
+ */
+describe("decode/encode — cmpA / cmpB (Page 4D)", () => {
+  const suit = (extra: Partial<AppUrlState> = {}): AppUrlState => ({
+    ...BASE,
+    mode: "suitability",
+    ...extra,
+  });
+
+  it("round-trips a well-formed pair and preserves A/B order", () => {
+    const encoded = encodeUrlState(suit({ cmpA: "aaa-111", cmpB: "bbb-222" }));
+    expect(encoded).toContain("cmpA=aaa-111");
+    expect(encoded).toContain("cmpB=bbb-222");
+
+    const { state, warnings } = decodeUrlState(encoded);
+    expect(state.cmpA).toBe("aaa-111");
+    expect(state.cmpB).toBe("bbb-222");
+    expect(warnings).toEqual([]);
+  });
+
+  it("round-trips a real UUID id, the shape the storage layer mints", () => {
+    const id = "0b8f7a1e-4c3d-4f2a-9b6e-1d2c3e4f5a6b";
+    const { state } = decodeUrlState(encodeUrlState(suit({ cmpA: id })));
+    expect(state.cmpA).toBe(id);
+  });
+
+  it("writes nothing when no scenario is selected", () => {
+    const encoded = encodeUrlState(suit());
+    expect(encoded).not.toContain("cmpA=");
+    expect(encoded).not.toContain("cmpB=");
+  });
+
+  it("writes the pair in view=score too — the selection is MADE on Page 4", () => {
+    // Restricting it to `view=scenario` would drop the pair from a link shared
+    // from the very screen the reader chose it on.
+    const encoded = encodeUrlState(suit({ view: "score", cmpA: "a1", cmpB: "b2" }));
+    expect(encoded).toContain("cmpA=a1");
+    expect(encoded).toContain("cmpB=b2");
+  });
+
+  it("writes a lone B, because clearing A is a state the reader can be in", () => {
+    // Suppressing it would make the link disagree with the screen: B would still
+    // show as selected while a reload silently dropped it.
+    const encoded = encodeUrlState(suit({ cmpA: null, cmpB: "only-b" }));
+    expect(encoded).toContain("cmpB=only-b");
+    expect(encoded).not.toContain("cmpA=");
+
+    const { state } = decodeUrlState(encoded);
+    expect(state.cmpA).toBeUndefined();
+    expect(state.cmpB).toBe("only-b");
+  });
+
+  it("never writes B when it equals A", () => {
+    const encoded = encodeUrlState(suit({ cmpA: "same", cmpB: "same" }));
+    const params = new URLSearchParams(encoded.slice(1));
+    expect(params.get("cmpA")).toBe("same");
+    expect(params.get("cmpB")).toBeNull();
+  });
+
+  it("drops an equal pair on decode, keeping A and warning", () => {
+    const { state, warnings } = decodeUrlState("?v=1&mode=suitability&cmpA=dup&cmpB=dup");
+    expect(state.cmpA).toBe("dup");
+    expect(state.cmpB).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+  });
+
+  it.each([
+    ["a path traversal", "..%2F..%2Fetc"],
+    ["a reserved profile prefix", "profile%3Acritic"],
+    ["an over-long id", "a".repeat(65)],
+    ["an empty value", ""],
+  ])("drops %s with a warning", (_label, raw) => {
+    const { state, warnings } = decodeUrlState(`?v=1&mode=suitability&cmpA=${raw}`);
+    expect(state.cmpA).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("keeps a valid B when A is malformed, rather than failing the whole link", () => {
+    const { state, warnings } = decodeUrlState("?v=1&mode=suitability&cmpA=bad%20id&cmpB=good");
+    expect(state.cmpA).toBeUndefined();
+    expect(state.cmpB).toBe("good");
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("KEEPS a well-formed id this browser may not hold — existence is not decided here", () => {
+    // A link shared from another device is not malformed. The page resolves it and
+    // says "이 브라우저에 없습니다"; silently dropping it here would look like the
+    // reader had simply not chosen anything.
+    const { state, warnings } = decodeUrlState("?v=1&mode=suitability&cmpA=from-another-device");
+    expect(state.cmpA).toBe("from-another-device");
+    expect(warnings).toEqual([]);
+  });
+
+  it("writes no comparison pair outside 후보지 분석", () => {
+    const encoded = encodeUrlState({ ...BASE, mode: "equity", cmpA: "a1", cmpB: "b2" });
+    expect(encoded).not.toContain("cmpA=");
+    expect(encoded).not.toContain("cmpB=");
+  });
+
+  it("does not disturb the legacy Page-5 scenario link", () => {
+    // wz/wr/we/wd + cmpProfile are ONE ad-hoc scenario's weights; cmpA/cmpB name
+    // two stored scenarios. A pre-4D link must decode exactly as it always did.
+    const legacy =
+      "?v=1&mode=suitability&view=scenario&wz=0.4&wr=0.2&we=0.2&wd=0.2&cmpProfile=equal&cand=4242";
+    const { state, warnings } = decodeUrlState(legacy);
+
+    expect(state.weights).toEqual({ zoning: "0.4", road: "0.2", equity: "0.2", demand: "0.2" });
+    expect(state.cmpProfile).toBe("equal");
+    expect(state.candidate).toBe(4242);
+    expect(state.cmpA).toBeUndefined();
+    expect(state.cmpB).toBeUndefined();
+    expect(warnings).toEqual([]);
+  });
+
+  it("carries the legacy weights and the new pair in one link without either changing", () => {
+    const encoded = encodeUrlState(
+      suit({
+        view: "scenario",
+        weights: { zoning: "0.4", road: "0.2", equity: "0.2", demand: "0.2" },
+        cmpProfile: "equal",
+        cmpA: "a1",
+        cmpB: "b2",
+      }),
+    );
+    const { state, warnings } = decodeUrlState(encoded);
+    expect(state.weights).toEqual({ zoning: "0.4", road: "0.2", equity: "0.2", demand: "0.2" });
+    expect(state.cmpProfile).toBe("equal");
+    expect(state.cmpA).toBe("a1");
+    expect(state.cmpB).toBe("b2");
+    expect(warnings).toEqual([]);
+  });
+
+  it("leaves the Page-4 scope and sort keys working alongside the pair", () => {
+    const encoded = encodeUrlState(
+      suit({ suitScope: { kind: "sido", sido: "KR-SGIS-11" }, suitSort: "score_asc", cmpA: "a1" }),
+    );
+    const { state } = decodeUrlState(encoded);
+    expect(state.suitScope).toEqual({ kind: "sido", sido: "KR-SGIS-11" });
+    expect(state.suitSort).toBe("score_asc");
+    expect(state.cmpA).toBe("a1");
+  });
+
+  it("leaves Page 1/2/3 semantics untouched", () => {
+    const { state } = decodeUrlState(
+      "?v=1&mode=equity&metric=population&region=KR-SGIS-11&scope=31&top=20&cmpA=a1",
+    );
+    expect(state.metric).toBe("population");
+    expect(state.region).toBe("KR-SGIS-11");
+    expect(state.scope).toBe("31");
+    expect(state.top).toBe(20);
+    // Decoding is mode-agnostic (the mode may itself be restored from the link);
+    // the ENCODER is what confines the pair to 후보지 분석.
+    expect(state.cmpA).toBe("a1");
   });
 });

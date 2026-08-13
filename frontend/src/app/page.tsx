@@ -42,6 +42,7 @@ import {
   fetchWasteStatistics,
   hasCriticStability,
   landCoverCellTileUrl,
+  previewUserWeightScenario,
   suitabilityTileUrl,
   userScenarioTileUrl,
   wetlandTileUrl,
@@ -64,9 +65,14 @@ import {
   type ReportingBoundaryCollection,
   type ReportingPerCapitaEnvelope,
   type ReportingWasteStatisticsEnvelope,
+  fetchSuitabilityCandidates,
+  SUITABILITY_DEFAULT_SORT,
+  type SuitabilityCandidateCollection,
   type SuitabilityProfile,
+  type SuitabilitySort,
   type SuitabilityStatus,
   type UserScenarioCandidateDetail,
+  type UserScenarioWeights,
   type WasteStatisticsItem,
 } from "../lib/api";
 import {
@@ -119,6 +125,15 @@ import {
   RelativeGradeUnavailable,
 } from "../components/suitability/RelativeGradeChip";
 import { computeGradeDistribution, type GradeDistribution } from "../lib/relativeGrade";
+import {
+  SCOPE_ALL,
+  buildScopeRegionOptions,
+  isCandidateInScope,
+  scopeKey,
+  scopeLabel,
+  scopeToQuery,
+  type SuitabilityScope,
+} from "../lib/suitabilityScope";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import LandCoverLayerControl from "../components/LandCoverLayerControl";
 import type { ClassLevel } from "../lib/landCover";
@@ -141,6 +156,10 @@ import SuitabilitySidebar, {
   type SuitabilityMeta,
 } from "../components/suitability/SuitabilitySidebar";
 import { STATUS_LABELS } from "../components/suitability/shared";
+import SuitabilityScenarioSaveCard from "../components/suitability/SuitabilityScenarioSaveCard";
+import SuitabilityScenarioComparePicker from "../components/suitability/SuitabilityScenarioComparePicker";
+import SuitabilityScenarioComparison from "../components/suitability/SuitabilityScenarioComparison";
+import SuitabilityScenarioAnalysisSections from "../components/suitability/page5/SuitabilityScenarioAnalysisSections";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import TransparencyDashboard from "../components/TransparencyDashboard";
 import WetlandLayerControl from "../components/WetlandLayerControl";
@@ -148,6 +167,7 @@ import type { WetlandType } from "../lib/wetland";
 import { defaultWetlandTypeVisibility } from "../lib/wetland";
 import RegionRanking from "../components/RegionRanking";
 import FullRankingDialog from "../components/FullRankingDialog";
+import SuitabilityRankingDialog from "../components/suitability/SuitabilityRankingDialog";
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
 import PageHeader from "../components/ui/PageHeader";
@@ -170,12 +190,24 @@ import { downloadCsv, safeFilename } from "../lib/csv";
 import { buildRankingCsv } from "../lib/exports";
 import { buildEquityReport, type ReportModel } from "../lib/report";
 import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario";
+import { hasComparisonIntent } from "../lib/scenarioComparison";
+import {
+  deleteSavedScenario,
+  isCanonicalWeights,
+  readSavedScenarios,
+  renameSavedScenario,
+  resolveComparisonPair,
+  saveScenario,
+  type ComparisonSlot,
+  type SavedScenario,
+} from "../lib/savedScenarios";
 import { namedWeightRows } from "../lib/suitability";
 import {
   SUITABILITY_SCREENING_SHORT_LABEL,
   accountingBasisLabel,
   destinationFor,
   plainError,
+  profileLabel,
   type DashboardArea,
   type DataStatus,
   type NavDestination,
@@ -202,6 +234,13 @@ type DashboardMode = MapMode | "flow" | "transparency";
  * drift apart. Eligible cells are score-shaded, so the representative swatch is
  * the same mid class the legend's ELIGIBLE checkbox uses.
  */
+/**
+ * Rows shown in ③ 순위 보기. Ten, the same length `/suitability/summary` has always
+ * served as `top_candidates`, so the default unscoped view is unchanged. The
+ * `범위 내` count beside it is the backend's `total_matched`, never this number.
+ */
+const RANKING_TOP_N = 10;
+
 const CANDIDATE_STATUS_COLORS: Record<SuitabilityStatus, string> = {
   ELIGIBLE: CANDIDATE_SCORE_PALETTE_5[3],
   REVIEW_REQUIRED: CANDIDATE_REVIEW_COLOR,
@@ -439,6 +478,36 @@ export default function Home() {
   // is what the hand-picked three were being used to approximate. `reportKind` is
   // therefore a one-member union rather than a boolean, so the report preview keeps
   // its existing "which model?" shape if a second report is ever added back.
+  // ① 분석 범위 / ③ 순위 방향 for 후보지 심층 분석. Deliberately SEPARATE from the
+  // 지역 부담 `scope`/`topN` below: that pair belongs to Page 1's 지역 순위, uses the
+  // bare "11"/"23"/"31" vocabulary, and must keep its meaning unchanged.
+  const [suitScope, setSuitScope] = useState<SuitabilityScope>(SCOPE_ALL);
+  const [suitSort, setSuitSort] = useState<SuitabilitySort>(SUITABILITY_DEFAULT_SORT);
+  const [ranking, setRanking] = useState<SuitabilityCandidateCollection | null>(null);
+  const [rankingError, setRankingError] = useState<string | null>(null);
+
+  // ④ 시나리오 저장 / ⑤ 비교할 시나리오 선택 (Page 4D).
+  //
+  // The saved list is a MIRROR of this browser's localStorage, held in state so
+  // React can render it; `lib/savedScenarios.ts` remains the only module that
+  // touches storage, and every mutator returns the new list, so the mirror is
+  // replaced from the store rather than patched here (another tab may have written
+  // in between). It starts EMPTY and is filled by a mount effect — reading storage
+  // in a `useState` initialiser would run on the server too and produce a
+  // hydration mismatch, since the server has no localStorage.
+  const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
+  const [savedScenarioWarnings, setSavedScenarioWarnings] = useState<string[]>([]);
+  const [scenarioSaving, setScenarioSaving] = useState(false);
+  const [scenarioSaveError, setScenarioSaveError] = useState<string | null>(null);
+  const [scenarioSaveNotice, setScenarioSaveNotice] = useState<string | null>(null);
+  // The A/B pair, as saved-scenario IDS — mirrored into `cmpA`/`cmpB`. Ids, not
+  // scenarios: the scenario a slot names can be renamed or deleted underneath it,
+  // and `resolveComparisonPair` is what turns an id back into a row (or into an
+  // explicit "이 브라우저에 없습니다" state).
+  const [cmpA, setCmpA] = useState<string | null>(null);
+  const [cmpB, setCmpB] = useState<string | null>(null);
+  const savedScenariosLoaded = useRef(false);
+
   const [scope, setScope] = useState<ScopeSelection>("all");
   const [topN, setTopN] = useState(10);
   /**
@@ -449,6 +518,12 @@ export default function Home() {
    */
   const [rankDirection, setRankDirection] = useState<RankDirection>("high");
   const [fullRankingOpen, setFullRankingOpen] = useState(false);
+  /**
+   * 순위 전체보기 (Page 4C) — the ③ ranking with the top-N cut removed. Page-only
+   * state, like `fullRankingOpen` above: the URL contract stays frozen, and an
+   * overlay is not something a shared link should restore.
+   */
+  const [suitRankingOpen, setSuitRankingOpen] = useState(false);
   const [reportKind, setReportKind] = useState<"ranking" | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<string[]>([]);
   // A scenario / candidate restored from a shared URL, held until consumed (the
@@ -581,12 +656,99 @@ export default function Home() {
       .catch(() => undefined);
   }, [profile, mode]);
 
+  // --- ① 분석 범위 --------------------------------------------------------- //
+
+  // The selectable cities, from the SERVED region registry already loaded for the
+  // map — no extra request, and no hardcoded list of codes. The parent-city
+  // relationship (안산시 = its two 일반구) is read from the registry's own names.
+  const scopeRegionOptions = useMemo(
+    () => (data === null ? [] : buildScopeRegionOptions(data.boundaries.features)),
+    [data],
+  );
+  const suitScopeName = useMemo(
+    () => scopeLabel(suitScope, scopeRegionOptions),
+    [suitScope, scopeRegionOptions],
+  );
+  // The map filters on `sigungu_region_code`, the one scope attribute the vector
+  // tile carries. A 시·도 scope yields null: the tile has no `sido_region_code`, and
+  // inferring one from the 시·군·구 code would filter a different population from the
+  // one the ranking counted. The list says so rather than showing a silent near-miss.
+  const candidateScopeCodes = suitScope.kind === "sigungu" ? suitScope.codes : null;
+  const mapFollowsScope = suitScope.kind !== "sido";
+
+  // The scoped ranking. `/suitability/summary` has no scope parameters — it always
+  // describes the whole run — so ③ reads `/suitability/candidates`, whose top-10
+  // ELIGIBLE query is the same one the summary's `top_candidates` runs. Unscoped and
+  // 높은 순 the rows are therefore identical to before; scoped, both the rows AND
+  // `total_matched` narrow together.
+  const suitRunId = suit?.run.id ?? null;
+  const suitScopeQueryKey = scopeKey(suitScope);
+  useEffect(() => {
+    if (mode !== "suitability" || suitabilityView !== "score" || suitRunId === null) return;
+    const controller = new AbortController();
+    /* eslint-disable react-hooks/set-state-in-effect -- clear the PREVIOUS scope's
+       ranking before the new one lands. Leaving it on screen would show 서울's rows
+       under an 인천 heading for one frame — a scoped list is only ever as honest as
+       the scope it is labelled with. */
+    setRanking(null);
+    setRankingError(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    fetchSuitabilityCandidates(
+      {
+        runId: suitRunId,
+        profile,
+        status: "ELIGIBLE",
+        // `top` makes the endpoint order by the REQUESTED profile's rank; without it
+        // the listing orders by the run's active-profile rank column.
+        top: RANKING_TOP_N,
+        limit: RANKING_TOP_N,
+        sort: suitSort,
+        // The ONE serializer — a `sido` + `sigungu` pair is unrepresentable.
+        ...scopeToQuery(suitScope),
+      },
+      controller.signal,
+    )
+      .then((collection) => {
+        if (controller.signal.aborted) return;
+        setRanking(collection);
+        setRankingError(null);
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        // An error is NEVER folded into the empty state: `범위 내 0개` is a real
+        // analytical answer and must stay distinguishable from "we could not ask".
+        setRanking(null);
+        setRankingError(
+          cause instanceof ApiError
+            ? plainError(cause.detail?.error ?? cause.message).primary
+            : "후보 순위를 불러올 수 없습니다.",
+        );
+      });
+    return () => controller.abort();
+    // `suitScopeQueryKey` stands in for `suitScope`: a new object with the same codes
+    // must not re-request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, suitabilityView, suitRunId, profile, suitSort, suitScopeQueryKey]);
+
+  // A candidate outside the new scope is no longer part of the active ranking, so it
+  // is deselected rather than left on screen as though it still were. The check uses
+  // the SAME attribute the request filtered on (never the other code), so a boundary
+  // cell is judged the way the backend judged it.
+  useEffect(() => {
+    if (selected === null) return;
+    if (isCandidateInScope(suitScope, selected)) return;
+    /* eslint-disable-next-line react-hooks/set-state-in-effect -- dropping a
+       selection the scope excludes is precisely this effect's job. */
+    setSelected(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suitScopeQueryKey, selected]);
+
   // Load the relative-band thresholds for the run+profile currently on the map.
   //
   // Four ~1 KB order-statistic reads (see lib/relativeGrade.ts), and only while
   // 후보지 심층 분석 is actually open — the bands are not shown anywhere else, so
-  // no other view pays for them. Keyed on run + profile because a different
-  // profile is a genuinely different score distribution.
+  // no other view pays for them. Keyed on run + profile + SCOPE, because each is a
+  // genuinely different score distribution.
   useEffect(() => {
     if (mode !== "suitability" || suitabilityView !== "score" || !suit) return;
     let cancelled = false;
@@ -599,7 +761,10 @@ export default function Home() {
     setGradeSettled(false);
     setGradeDistribution(null);
     /* eslint-enable react-hooks/set-state-in-effect */
-    computeGradeDistribution(runId, profile)
+    // The SAME scope as the ranking. A/B/C is a position in a POPULATION, so the
+    // bands are recomputed exactly (four scoped order-statistic reads), never
+    // approximated from the rows already on screen.
+    computeGradeDistribution(runId, profile, suitScope)
       .then((distribution) => {
         if (cancelled) return;
         setGradeDistribution(distribution);
@@ -614,7 +779,9 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [mode, suitabilityView, suit, profile]);
+    // `suitScopeQueryKey` stands in for `suitScope` (stable identity for equal scopes).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, suitabilityView, suit, profile, suitScopeQueryKey]);
 
   // No candidate fetch here anymore: the map serves the complete suitability grid
   // as PostGIS vector tiles (see suitabilityTileUrl / MapView's vector source), so
@@ -859,6 +1026,8 @@ export default function Home() {
         // must not leave an overlay armed to reappear when the reader comes back.
         setFullRankingOpen(false);
       }
+      // The same rule for 후보지 심층 분석's 순위 전체보기.
+      if (next !== "suitability") setSuitRankingOpen(false);
       setMode(next);
     },
     [clearScenario],
@@ -866,6 +1035,9 @@ export default function Home() {
   const changeSuitabilityView = useCallback(
     (next: SuitabilityView) => {
       if (next !== "scenario") clearScenario();
+      // 순위 전체보기 belongs to the 점수 sub-view's ③ card; leaving that sub-view
+      // must not leave it armed to reappear over a different screen.
+      if (next !== "score") setSuitRankingOpen(false);
       setSuitabilityView(next);
     },
     [clearScenario],
@@ -888,6 +1060,170 @@ export default function Home() {
     },
     [changeMode, changeSuitabilityView],
   );
+
+  // ------------------------------------------------------------------------- //
+  // ④ 시나리오 저장 / ⑤ 비교할 시나리오 선택 (Page 4D)
+  // ------------------------------------------------------------------------- //
+
+  /** Load this browser's saved scenarios once, on the client. Never throws. */
+  useEffect(() => {
+    if (savedScenariosLoaded.current || typeof window === "undefined") return;
+    savedScenariosLoaded.current = true;
+    // A one-time read of browser-external state on mount — the same shape as the
+    // URL restore below, not a render-derived computation, so it cannot cascade.
+    const { scenarios, warnings } = readSavedScenarios();
+    setSavedScenarios(scenarios);
+    setSavedScenarioWarnings(warnings);
+  }, []);
+
+  /**
+   * The Z/R/E/D weights ④ would save: the SERVED weights of the active 점수 반영
+   * 기준, resolved exactly as ② 계산 모델 가중치 설정 resolves them (the run's own
+   * profile, falling back to the policy's static profile only for a pre-CRITIC run
+   * that stored none). `null` when the run served nothing usable for that basis —
+   * never a fabricated default, and never a partially-filled vector.
+   */
+  const activeScenarioWeights = useMemo<UserScenarioWeights | null>(() => {
+    if (suit === null) return null;
+    const served =
+      (suit.run.weight_profiles ?? {})[profile] ?? suit.policy.weight_profiles[profile] ?? null;
+    return isCanonicalWeights(served) ? served : null;
+  }, [suit, profile]);
+
+  const activeRunId = suit?.run.id ?? null;
+
+  const scenarioSelection = useMemo(
+    () => resolveComparisonPair(savedScenarios, cmpA, cmpB),
+    [savedScenarios, cmpA, cmpB],
+  );
+
+  /** Apply a mutator's result: replace the mirror, or report why it was refused. */
+  const applyScenarioWrite = useCallback(
+    (result: ReturnType<typeof saveScenario>, successNotice: string | null) => {
+      setSavedScenarios(result.scenarios);
+      setSavedScenarioWarnings(result.warnings);
+      if (result.ok) {
+        setScenarioSaveError(null);
+        setScenarioSaveNotice(successNotice);
+      } else {
+        setScenarioSaveError(result.message);
+        setScenarioSaveNotice(null);
+      }
+      return result.ok;
+    },
+    [],
+  );
+
+  /**
+   * Save the active weights under a name — but ONLY after the backend has accepted
+   * them for this run.
+   *
+   * `POST /suitability/scenarios/preview` is the canonicalisation authority: it
+   * parses the weights as exact decimals, rejects an unusable vector with a
+   * structured 422, and echoes back `canonical_weights` and the `run_id` it applied
+   * them to. Those two echoed values are what gets persisted — not the client's
+   * copy — so a stored scenario is by construction one the analysis engine has
+   * already run. The preview's SCORES AND RANKS are deliberately discarded: they
+   * describe one run at one moment, and a stored copy would go stale while still
+   * looking authoritative (docs/figma-redesign/PAGE_5_SCENARIO_CONTRACT.md §6).
+   *
+   * `top_n: 1` because nothing in the response is displayed — this is a validation
+   * call, and asking for fifty candidates to throw them away would be waste.
+   */
+  const handleSaveScenario = useCallback(
+    (name: string) => {
+      if (activeScenarioWeights === null || activeRunId === null) return;
+      setScenarioSaving(true);
+      setScenarioSaveError(null);
+      setScenarioSaveNotice(null);
+      void previewUserWeightScenario({
+        run_id: activeRunId,
+        weights: activeScenarioWeights,
+        compare_profile: "baseline",
+        top_n: 1,
+      })
+        .then((preview) => {
+          applyScenarioWrite(
+            saveScenario({
+              name,
+              weights: preview.canonical_weights,
+              runId: preview.run_id,
+              profileSource: profile,
+            }),
+            `"${name.trim()}" 시나리오를 저장했습니다.`,
+          );
+        })
+        .catch((cause: unknown) => {
+          // A refused save says WHY. The backend's own weight message is preferred
+          // over a generic one, because it names the offending value.
+          setScenarioSaveNotice(null);
+          setScenarioSaveError(
+            cause instanceof ApiError && cause.detail
+              ? cause.detail.detail
+              : "가중치를 확인하지 못해 시나리오를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+          );
+        })
+        .finally(() => setScenarioSaving(false));
+    },
+    [activeScenarioWeights, activeRunId, profile, applyScenarioWrite],
+  );
+
+  const handleRenameScenario = useCallback(
+    (id: string, name: string) => {
+      // Identity is preserved by the storage layer, so any `cmpA`/`cmpB` pointing
+      // at this scenario keeps pointing at it — no slot bookkeeping is needed here.
+      applyScenarioWrite(renameSavedScenario(id, name), "시나리오 이름을 변경했습니다.");
+    },
+    [applyScenarioWrite],
+  );
+
+  const handleDeleteScenario = useCallback(
+    (id: string) => {
+      const ok = applyScenarioWrite(deleteSavedScenario(id), "시나리오를 삭제했습니다.");
+      if (!ok) return;
+      // Clear the slot IN THE SAME UPDATE as the delete. A `cmpA` left pointing at
+      // a deleted scenario would survive into the shared URL and into Page 5 as a
+      // dangling reference — the one failure this section must not have.
+      setCmpA((current) => (current === id ? null : current));
+      setCmpB((current) => (current === id ? null : current));
+    },
+    [applyScenarioWrite],
+  );
+
+  /**
+   * Put a scenario in a slot. A scenario can occupy only ONE slot: assigning it to
+   * A while it is already B empties B, so the pair can never degenerate into a
+   * scenario compared with itself.
+   */
+  const handleAssignScenarioSlot = useCallback((slot: ComparisonSlot, id: string) => {
+    if (slot === "A") {
+      setCmpA(id);
+      setCmpB((current) => (current === id ? null : current));
+    } else {
+      setCmpB(id);
+      setCmpA((current) => (current === id ? null : current));
+    }
+  }, []);
+
+  const handleClearScenarioSlot = useCallback((slot: ComparisonSlot) => {
+    if (slot === "A") setCmpA(null);
+    else setCmpB(null);
+  }, []);
+
+  const handleResetScenarioSlots = useCallback(() => {
+    setCmpA(null);
+    setCmpB(null);
+  }, []);
+
+  /**
+   * 두 시나리오 비교하기 → — move to 후보지 심층 비교 carrying the pair (Figma
+   * 225:443). The ids stay in state and therefore in the URL; this phase does not
+   * render the comparison itself, and Page 5A will re-verify both sides through the
+   * preview API before showing any number.
+   */
+  const handleCompareScenarios = useCallback(() => {
+    changeSuitabilityView("scenario");
+  }, [changeSuitabilityView]);
 
   useEffect(() => {
     if (mode === "transparency") return;
@@ -1372,6 +1708,16 @@ export default function Home() {
       municipalCostSido: mcSido,
       municipalCostStatus: mcStatus,
       municipalCostSort: mcSort,
+      // 후보지 심층 분석 ① 분석 범위 / ③ 순위 방향 — their own keys, so a shared
+      // Page-4 link cannot change what `scope`/`top` mean on Page 1.
+      suitScope,
+      suitSort,
+      // ⑤ 비교할 시나리오 선택. The RAW selected ids, not the resolved rows: a slot
+      // whose scenario this browser cannot find must survive into the link exactly
+      // as chosen, so the reader who opens it sees the explicit "이 브라우저에
+      // 없습니다" state instead of a silently shortened selection.
+      cmpA,
+      cmpB,
     }),
     [
       mode,
@@ -1398,6 +1744,13 @@ export default function Home() {
       mcSido,
       mcStatus,
       mcSort,
+      // Load-bearing: without these the mirror effect keeps its identity and a scope
+      // or sort change would never reach the URL.
+      suitScope,
+      suitSort,
+      // Load-bearing for the same reason: an A/B choice must reach the URL.
+      cmpA,
+      cmpB,
     ],
   );
 
@@ -1462,6 +1815,17 @@ export default function Home() {
     if (state.municipalCostSido !== undefined) setMcSido(state.municipalCostSido);
     if (state.municipalCostStatus !== undefined) setMcStatus(state.municipalCostStatus);
     if (state.municipalCostSort !== undefined) setMcSort(state.municipalCostSort);
+    // 후보지 심층 분석 scope + sort. Restored in the SAME batch as `mode`, so the
+    // ranking effect issues ONE request for the restored scope rather than one for
+    // 수도권 전체 and another for the shared one.
+    if (state.suitScope !== undefined) setSuitScope(state.suitScope);
+    if (state.suitSort !== undefined) setSuitSort(state.suitSort);
+    // ⑤ A/B pair. Restored as IDS only — whether either id names a scenario THIS
+    // browser holds is answered by `resolveComparisonPair` against the saved list,
+    // not here, so a link from another device restores its selection and is then
+    // shown as unresolvable rather than being quietly discarded.
+    if (state.cmpA !== undefined) setCmpA(state.cmpA);
+    if (state.cmpB !== undefined) setCmpB(state.cmpB);
     setUrlWarnings(warnings);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data]);
@@ -1736,6 +2100,57 @@ export default function Home() {
     );
   }
 
+  // 적합성 → 후보지 심층 비교 WITH AN A/B PAIR: the Page-5 comparison foundation, a
+  // full-width dashboard with no map (Figma 167:10554).
+  //
+  // ── THE DISPATCH ─────────────────────────────────────────────────────────────
+  // The branch is taken only when the URL carries a comparison intent — at least
+  // one `cmpA`/`cmpB` id. With neither, this area keeps its pre-existing 시나리오
+  // 실험실 behaviour untouched, which is what preserves every legacy Page-5 link:
+  // `wz`/`wr`/`we`/`wd`, `cmpProfile` and `cand` carry ad-hoc WEIGHTS and a
+  // candidate, never a saved-scenario id, so such a link has no comparison intent
+  // and lands in the lab exactly as before. The legacy keys are still decoded, still
+  // held in state, and still re-encoded unchanged when a pair is also present — this
+  // branch reads none of them and changes none of their meanings
+  // (docs/figma-redesign/PAGE_5_SCENARIO_CONTRACT.md §5).
+  //
+  // ONE id is enough to take the branch. A lone `cmpA` is a legal state the encoder
+  // writes on purpose; answering it with the weight editor would silently discard a
+  // half-made selection instead of saying B안 is still needed.
+  if (
+    viewMode === "suitability" &&
+    viewSubview === "scenario" &&
+    hasComparisonIntent(cmpA, cmpB)
+  ) {
+    return withDataDialog(
+      <DashboardShell destination={destination} onNavigate={navigate} variant="page">
+        <SuitabilityScenarioComparison
+          selection={scenarioSelection}
+          run={suit?.run ?? null}
+          runError={suitError}
+          title={destination.label}
+          orientation={<ModeOrientation destination={destination} />}
+          // Recovery only NAVIGATES. The pair is deliberately left in place so the
+          // reader arrives at ⑤ with their current selection shown, and nothing in
+          // localStorage is written on their behalf.
+          onBackToSelection={() => changeSuitabilityView("score")}
+          // Every analytical section below the shell — ranking analytics, then the
+          // selected candidate — drawn from the ONE comparison it loaded. The
+          // foundation resolved the pair, validated the run and ran the two previews
+          // exactly once; the composition below re-derives nothing. `restoredCandidate`
+          // is the decoded legacy `cand`, passed as a SEED only: the section never
+          // writes it back, so no derived state reaches the URL.
+          analysisSections={(comparison) => (
+            <SuitabilityScenarioAnalysisSections
+              comparison={comparison}
+              initialCandidateId={restoredCandidate}
+            />
+          )}
+        />
+      </DashboardShell>,
+    );
+  }
+
   // Legend rows read the exact active palette + breaks the map fill uses, so the
   // swatch count (effective classes) and colors always match the polygons. Each
   // row carries a class number and the numeric lower–upper range, so a region's
@@ -1822,6 +2237,15 @@ export default function Home() {
             statusVisibility={statusVisibility}
             stableOnly={stableOnly && stabilityAvailable}
             statusColors={CANDIDATE_STATUS_COLORS}
+            scope={suitScope}
+            onScopeChange={setSuitScope}
+            regionOptions={scopeRegionOptions}
+            scopeName={suitScopeName}
+            mapFollowsScope={mapFollowsScope}
+            ranking={ranking}
+            rankingError={rankingError}
+            sort={suitSort}
+            onSortChange={setSuitSort}
           />
         </CollapsiblePanel>
       ) : (
@@ -2038,6 +2462,15 @@ export default function Home() {
                 statusVisibility={statusVisibility}
                 stableOnly={stableOnly && stabilityAvailable}
                 statusColors={CANDIDATE_STATUS_COLORS}
+                scope={suitScope}
+                onScopeChange={setSuitScope}
+                regionOptions={scopeRegionOptions}
+                scopeName={suitScopeName}
+                mapFollowsScope={mapFollowsScope}
+                ranking={ranking}
+                rankingError={rankingError}
+                sort={suitSort}
+                onSortChange={setSuitSort}
               />
             )}
           </>
@@ -2087,6 +2520,7 @@ export default function Home() {
           candidateContext={scenarioActive ? "scenario" : "stored"}
           statusVisibility={statusVisibility}
           stableOnly={stableOnly && stabilityAvailable}
+          candidateScopeCodes={candidateScopeCodes}
           selectedCandidate={mapSelectedCandidate}
           onCandidateClick={mapCandidateClick}
           ariaLabel={
@@ -2313,13 +2747,70 @@ export default function Home() {
             statusColors={CANDIDATE_STATUS_COLORS}
             relativeGradePanel={
               /* Nothing at all while the population is still being read — a
-                 placeholder band would be a claim we cannot yet make. */
+                 placeholder band would be a claim we cannot yet make.
+                 `nested`: in this workspace the band is the first block of
+                 ③ 종합 점수와 후보 순위, not a card of its own (Figma 136:8684). */
               !gradeSettled ? null : gradeDistribution ? (
-                <RelativeGradePanel distribution={gradeDistribution} />
+                <RelativeGradePanel
+                  distribution={gradeDistribution}
+                  scopeName={suitScopeName}
+                  nested
+                />
               ) : (
-                <RelativeGradeUnavailable />
+                <RelativeGradeUnavailable
+                  nested
+                  scopeName={suitScopeName}
+                  // A scoped ranking that matched nothing is a REAL answer, not a
+                  // failed read — and only the ranking's own `total_matched` can
+                  // tell the two apart, so the distinction is drawn from it.
+                  emptyScope={suitScope.kind !== "all" && ranking?.total_matched === 0}
+                />
               )
             }
+            scenarioSavePanel={
+              // ④ — rendered only once the run is known, because the card's whole
+              // subject is "the weights currently in force on THIS run".
+              suit ? (
+                <SuitabilityScenarioSaveCard
+                  weights={activeScenarioWeights}
+                  weightsSourceLabel={profileLabel(profile)}
+                  activeRunId={activeRunId}
+                  scenarios={savedScenarios}
+                  storageWarnings={savedScenarioWarnings}
+                  saving={scenarioSaving}
+                  error={scenarioSaveError}
+                  notice={scenarioSaveNotice}
+                  onSave={handleSaveScenario}
+                  onRename={handleRenameScenario}
+                  onDelete={handleDeleteScenario}
+                  selection={scenarioSelection}
+                  onAssignSlot={handleAssignScenarioSlot}
+                  onClearSlot={handleClearScenarioSlot}
+                />
+              ) : null
+            }
+            scenarioComparePanel={
+              suit ? (
+                <SuitabilityScenarioComparePicker
+                  selection={scenarioSelection}
+                  activeRunId={activeRunId}
+                  savedCount={savedScenarios.length}
+                  onClearSlot={handleClearScenarioSlot}
+                  onReset={handleResetScenarioSlots}
+                  onCompare={handleCompareScenarios}
+                />
+              ) : null
+            }
+            scope={suitScope}
+            onScopeChange={setSuitScope}
+            regionOptions={scopeRegionOptions}
+            scopeName={suitScopeName}
+            mapFollowsScope={mapFollowsScope}
+            ranking={ranking}
+            rankingError={rankingError}
+            sort={suitSort}
+            onSortChange={setSuitSort}
+            onOpenFullRanking={() => setSuitRankingOpen(true)}
           />
         </CollapsiblePanel>
       )}
@@ -2345,6 +2836,29 @@ export default function Home() {
         direction={rankDirection}
         selectedRegionCode={selectedRegionCode}
         onSelectRegion={(code) => setSelectedRegionCode(code)}
+      />
+
+      {/* 순위 전체보기 — the ③ ranking with the top-N cut removed (Figma 138:415).
+          It INHERITS the active run, ② 점수 반영 기준, ① 분석 범위 and ③ 순위 방향
+          rather than choosing its own, reads its pages through the same query
+          builder the card uses, and drives the page's own `setSuitSort` so the two
+          can never disagree. Mounted beside the map rather than inside the sidebar
+          so the dialog is not a child of a column that scrolls or can be resized
+          under it. Renders nothing while closed. */}
+      <SuitabilityRankingDialog
+        open={mode === "suitability" && suitabilityView === "score" && suitRankingOpen}
+        onClose={() => setSuitRankingOpen(false)}
+        runId={suit?.run.id ?? null}
+        profile={profile}
+        scope={suitScope}
+        scopeName={suitScopeName}
+        sort={suitSort}
+        onSortChange={setSuitSort}
+        // The SAME scoped bands the ③ card shows. Null (bands unavailable) leaves
+        // every grade cell empty rather than inventing one.
+        thresholds={gradeDistribution}
+        selectedCandidateId={selected?.candidate_id ?? null}
+        onSelect={onCandidateClick}
       />
 
       {/* Print / PNG report preview overlay (map-free). Opened from the equity

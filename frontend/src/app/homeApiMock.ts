@@ -27,6 +27,56 @@ import type * as ApiModule from "../lib/api";
 
 type Api = typeof ApiModule;
 
+/**
+ * A well-formed `/suitability/candidates` collection built from top-candidate-shaped
+ * rows, for the ③ 종합 점수와 후보 순위 ranking.
+ *
+ * ③ reads the SCOPED ranking from that endpoint rather than from
+ * `summary.top_candidates`, because `/suitability/summary` has no scope parameters —
+ * it always describes the whole run. Unscoped and 높은 순 the two are the same rows
+ * (the summary's top-10 query IS `top=10&status=ELIGIBLE` by the profile's rank), so
+ * a test that already declares `top_candidates` can hand the SAME rows to this
+ * helper and keep asserting exactly what it asserted before.
+ *
+ * `total_matched` defaults to the row count, which is only true for a short fixture
+ * list; a test exercising the `표시 N개 · 범위 내 M개` distinction passes it
+ * explicitly.
+ */
+export function rankingCollection(
+  rows: readonly Record<string, unknown>[],
+  totalMatched = rows.length,
+): Record<string, unknown> {
+  return {
+    type: "FeatureCollection",
+    indicator: "SUITABILITY_SCREENING",
+    derivation_version: "suitability-screening-v3",
+    policy_version: "suitability-policy-v2",
+    candidate_grid_version: "capital-grid-500m-v1",
+    weight_profile: "baseline",
+    reference_year: 2024,
+    run_id: 47,
+    count: rows.length,
+    total_matched: totalMatched,
+    limit: 10,
+    offset: 0,
+    sido: null,
+    sigungu: [],
+    sort: "score_desc",
+    features: rows.map((row) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [126.5, 37.7] },
+      properties: {
+        ...row,
+        // The summary spells the location `sigungu`; the candidate feature spells it
+        // `sigungu_region_name`. Accept either so a fixture needs no rewrite.
+        sigungu_region_name: row.sigungu_region_name ?? row.sigungu ?? null,
+      },
+    })),
+    assumptions: [],
+    disclaimer: "Analytical screening only — not a legal determination.",
+  };
+}
+
 /** Overrides object for `vi.mock("../lib/api", …)`; spread over the real module. */
 export function homeApiMock(actual: Api): Api {
   const emptyEnvelope = { reference_year: 2024, count: 0, items: [] };
@@ -192,6 +242,31 @@ export function homeApiMock(actual: Api): Api {
       },
       stability_available: true,
       coverage_notes: [],
+      assumptions: [],
+      disclaimer: "Analytical screening only — not a legal determination.",
+    }),
+    // ③ 종합 점수와 후보 순위 reads the scoped ranking from `/suitability/candidates`
+    // (the summary has no scope parameters). A genuinely EMPTY, well-formed
+    // collection is the honest default for a layout fixture: `total_matched: 0`
+    // renders the real "범위 내 0개" state and fabricates no candidate. Tests that
+    // need rows override this fetcher with their own synthetic collection.
+    fetchSuitabilityCandidates: vi.fn().mockResolvedValue({
+      type: "FeatureCollection",
+      indicator: "SUITABILITY_SCREENING",
+      derivation_version: "suitability-screening-v3",
+      policy_version: "suitability-policy-v2",
+      candidate_grid_version: "capital-grid-500m-v1",
+      weight_profile: "baseline",
+      reference_year: 2024,
+      run_id: 47,
+      count: 0,
+      total_matched: 0,
+      limit: 10,
+      offset: 0,
+      sido: null,
+      sigungu: [],
+      sort: "score_desc",
+      features: [],
       assumptions: [],
       disclaimer: "Analytical screening only — not a legal determination.",
     }),
