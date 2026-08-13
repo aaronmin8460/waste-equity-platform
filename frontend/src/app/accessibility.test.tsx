@@ -88,7 +88,7 @@ const fixtures = vi.hoisted(() => ({
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
-  const { homeApiMock } = await import("./homeApiMock");
+  const { homeApiMock, rankingCollection } = await import("./homeApiMock");
   const base = homeApiMock(actual);
   const baseSummary = await base.fetchSuitabilitySummary("baseline");
   return {
@@ -145,6 +145,11 @@ vi.mock("../lib/api", async (importOriginal) => {
     fetchSuitabilitySummary: vi
       .fn()
       .mockResolvedValue({ ...baseSummary, top_candidates: [fixtures.TOP_CANDIDATE] }),
+    // ③ 종합 점수와 후보 순위 reads the SCOPED ranking from `/suitability/candidates`
+    // (the summary endpoint has no scope parameters) — the same single row.
+    fetchSuitabilityCandidates: vi
+      .fn()
+      .mockResolvedValue(rankingCollection([fixtures.TOP_CANDIDATE])),
     fetchSuitabilityCandidateDetail: vi.fn().mockResolvedValue(fixtures.CANDIDATE_DETAIL),
   };
 });
@@ -167,6 +172,8 @@ async function renderLoaded() {
 async function enterSuitability() {
   fireEvent.click(screen.getByTestId("mode-suitability"));
   await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
+  // The ranking lands one tick later; wait for it so row assertions do not race it.
+  await waitFor(() => expect(screen.getByTestId("candidate-ranking-counts")).toBeDefined());
 }
 
 describe("loading announcement", () => {

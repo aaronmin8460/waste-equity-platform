@@ -29,8 +29,11 @@ import type {
   MunicipalCostSort,
   MunicipalCostStatus,
   SuitabilityProfile,
+  SuitabilitySort,
   SuitabilityStatus,
 } from "./api";
+import { SUITABILITY_DEFAULT_SORT } from "./api";
+import { isSuitabilitySidoCode, sigunguScope, type SuitabilityScope } from "./suitabilityScope";
 
 export const URL_STATE_VERSION = "1";
 
@@ -60,6 +63,22 @@ const MUNICIPAL_COST_STATUSES: readonly MunicipalCostStatus[] = [
   "PARTIAL",
   "UNAVAILABLE",
 ];
+/** 후보지 심층 분석 ranking direction. Two values; the default writes no key. */
+const SUITABILITY_SORTS: readonly SuitabilitySort[] = ["score_desc", "score_asc"];
+/**
+ * A canonical SGIS region code, the ONLY spelling this key accepts. The bare form
+ * is deliberately rejected: `11` is 서울 in the SGIS space but 서울 in the MOIS
+ * space too, while `28`/`41` are Incheon/Gyeonggi ONLY in MOIS — accepting bare
+ * digits would let a landfill-space link silently scope the suitability ranking to
+ * nothing. `KR-SGIS-` cannot be misread.
+ */
+const SGIS_SIGUNGU_CODE_RE = /^KR-SGIS-\d{5}$/;
+/**
+ * Upper bound on a shared 시·군·구 selection. The registry holds 79 SIGUNGU codes,
+ * so this cannot truncate a real selection; it only bounds a hostile URL.
+ */
+const MAX_SUITABILITY_SIGUNGU = 100;
+
 const MUNICIPAL_COST_SORTS: readonly MunicipalCostSort[] = [
   "payment_per_capita_desc",
   "total_payment_desc",
@@ -132,6 +151,29 @@ export interface AppUrlState {
   municipalCostSido: MunicipalCostSido | null;
   municipalCostStatus: MunicipalCostStatus | null;
   municipalCostSort: MunicipalCostSort;
+  /**
+   * ① 분석 범위 and ③ 순위 방향 for 후보지 심층 분석 (Page 4).
+   *
+   * DELIBERATELY NOT the existing `scope` / `top` keys. Those belong to the 지역
+   * 부담 ranking on Page 1, carry the bare `"11" | "23" | "31" | "all"` vocabulary,
+   * and are read in a different mode; reusing them would make one shared link mean
+   * two different things and change Page-1 semantics. These three keys are new,
+   * suitability-only, and written only in `mode=suitability`.
+   *
+   * `suitScope` is the whole scope in ONE key, because the scope is a sum type and
+   * two independent keys could express the illegal `sido`+`sigungu` pair that
+   * docs/SUITABILITY_SCOPE_FILTER_API.md forbids:
+   *
+   *   (absent)                              → 수도권 전체
+   *   `KR-SGIS-11`                          → the 서울 시·도 scope
+   *   `KR-SGIS-31091,KR-SGIS-31092`         → a 시·군·구 multi-select (안산시)
+   *
+   * A single 시·도 code and a list of 시·군·구 codes are distinguishable by length
+   * (a SIDO code has 2 digits, a SIGUNGU code 5), so one key round-trips both
+   * without a discriminator — and a link can never carry both scopes at once.
+   */
+  suitScope: SuitabilityScope;
+  suitSort: SuitabilitySort;
 }
 
 export interface DecodedUrlState {
@@ -314,6 +356,40 @@ export function decodeUrlState(search: string): DecodedUrlState {
     else warnings.push("알 수 없는 지급액 정렬 설정은 무시했습니다.");
   }
 
+  // 후보지 심층 분석 ① 분석 범위. One key, so a link can never carry the forbidden
+  // sido+sigungu pair. A single SIDO code is the 시·도 scope; anything else is read
+  // as a 시·군·구 list. Whether a code EXISTS is not decided here — an unknown but
+  // well-formed code is forwarded and answered with an honest empty ranking, the
+  // same way the region key elsewhere defers existence to the loaded data.
+  const suitScope = params.get("suitScope");
+  if (suitScope !== null) {
+    const tokens = suitScope.split(",").filter((token) => token.length > 0);
+    if (tokens.length === 1 && isSuitabilitySidoCode(tokens[0])) {
+      state.suitScope = { kind: "sido", sido: tokens[0] };
+    } else {
+      const valid: string[] = [];
+      let dropped = false;
+      for (const token of tokens) {
+        if (SGIS_SIGUNGU_CODE_RE.test(token) && valid.length < MAX_SUITABILITY_SIGUNGU) {
+          valid.push(token);
+        } else {
+          dropped = true;
+        }
+      }
+      // `sigunguScope` de-duplicates and sorts, and returns 수도권 전체 for an empty
+      // list — an all-invalid link widens the scope rather than blanking the page.
+      if (valid.length > 0) state.suitScope = sigunguScope(valid);
+      if (dropped) warnings.push("잘못된 분석 범위 지역은 제외했습니다.");
+    }
+  }
+
+  const suitSort = params.get("suitSort");
+  if (suitSort !== null) {
+    if ((SUITABILITY_SORTS as readonly string[]).includes(suitSort))
+      state.suitSort = suitSort as SuitabilitySort;
+    else warnings.push("알 수 없는 후보 순위 정렬은 무시했습니다.");
+  }
+
   return { state, warnings };
 }
 
@@ -373,6 +449,13 @@ export function encodeUrlState(state: AppUrlState): string {
       if (state.cmpProfile !== "baseline") params.set("cmpProfile", state.cmpProfile);
     }
     if (state.candidate) params.set("cand", String(state.candidate));
+    // ① 분석 범위 — omitted for 수도권 전체, the default. The two non-default shapes
+    // write the SAME key, so the sido/sigungu exclusivity survives sharing.
+    if (state.suitScope.kind === "sido") params.set("suitScope", state.suitScope.sido);
+    else if (state.suitScope.kind === "sigungu")
+      params.set("suitScope", state.suitScope.codes.join(","));
+    // ③ 순위 방향 — 높은 순 is the served default and adds no parameter.
+    if (state.suitSort !== SUITABILITY_DEFAULT_SORT) params.set("suitSort", state.suitSort);
   }
 
   // Landfill-only fields, written only in that area — the same rule the suitability

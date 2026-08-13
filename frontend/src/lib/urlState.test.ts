@@ -28,6 +28,8 @@ const BASE: AppUrlState = {
   municipalCostSido: null,
   municipalCostStatus: null,
   municipalCostSort: "payment_per_capita_desc",
+  suitScope: { kind: "all" },
+  suitSort: "score_desc",
 };
 
 describe("decodeUrlState — version gate", () => {
@@ -176,6 +178,8 @@ describe("encode → decode round trip", () => {
       municipalCostSido: null,
       municipalCostStatus: null,
       municipalCostSort: "payment_per_capita_desc",
+  suitScope: { kind: "all" },
+  suitSort: "score_desc",
     };
     const { state, warnings } = decodeUrlState(encodeUrlState(full));
     expect(warnings).toEqual([]);
@@ -426,6 +430,112 @@ describe("municipal-payment filters", () => {
     expect(state.municipalCostSido).toBeUndefined();
     expect(state.municipalCostStatus).toBeUndefined();
     expect(state.municipalCostSort).toBeUndefined();
+    expect(warnings).toEqual([]);
+  });
+});
+
+describe("후보지 심층 분석 ① 분석 범위 / ③ 순위 방향 in the URL", () => {
+  const suit = (extra: Partial<AppUrlState> = {}): AppUrlState => ({
+    ...BASE,
+    mode: "suitability",
+    ...extra,
+  });
+
+  it("writes nothing for the defaults (수도권 전체 · 높은 순)", () => {
+    const encoded = encodeUrlState(suit());
+    expect(encoded).not.toContain("suitScope=");
+    expect(encoded).not.toContain("suitSort=");
+  });
+
+  it("round-trips each 시·도 scope in canonical form", () => {
+    for (const sido of ["KR-SGIS-11", "KR-SGIS-23", "KR-SGIS-31"] as const) {
+      const encoded = encodeUrlState(suit({ suitScope: { kind: "sido", sido } }));
+      expect(encoded).toContain(`suitScope=KR-SGIS-${sido.slice(-2)}`);
+      expect(decodeUrlState(encoded).state.suitScope).toEqual({ kind: "sido", sido });
+    }
+  });
+
+  it("round-trips a multi-code city selection", () => {
+    const scope = { kind: "sigungu" as const, codes: ["KR-SGIS-31091", "KR-SGIS-31092"] };
+    const encoded = encodeUrlState(suit({ suitScope: scope }));
+    expect(decodeUrlState(encoded).state.suitScope).toEqual(scope);
+  });
+
+  it("round-trips 낮은 순", () => {
+    const encoded = encodeUrlState(suit({ suitSort: "score_asc" }));
+    expect(encoded).toContain("suitSort=score_asc");
+    expect(decodeUrlState(encoded).state.suitSort).toBe("score_asc");
+  });
+
+  it("cannot express a sido AND a sigungu selection at once", () => {
+    // One key holds the whole scope, so the pair the API forbids has no spelling.
+    const encoded = encodeUrlState(
+      suit({ suitScope: { kind: "sigungu", codes: ["KR-SGIS-31150"] } }),
+    );
+    const params = new URLSearchParams(encoded.slice(1));
+    expect(params.getAll("suitScope")).toHaveLength(1);
+    const restored = decodeUrlState(encoded).state.suitScope!;
+    expect(restored.kind).toBe("sigungu");
+  });
+
+  it("drops a malformed region code with a warning and keeps the valid ones", () => {
+    const { state, warnings } = decodeUrlState(
+      "?v=1&mode=suitability&suitScope=KR-SGIS-31091,notacode,KR-SGIS-31092",
+    );
+    expect(state.suitScope).toEqual({
+      kind: "sigungu",
+      codes: ["KR-SGIS-31091", "KR-SGIS-31092"],
+    });
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("refuses the BARE code spelling, so a MOIS code can never scope this ranking", () => {
+    // `28`/`41` are Incheon/Gyeonggi in the landfill space but mean nothing here.
+    // Accepting bare digits would let such a link silently scope to zero rows.
+    const { state, warnings } = decodeUrlState("?v=1&mode=suitability&suitScope=28");
+    expect(state.suitScope).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+
+    const bare = decodeUrlState("?v=1&mode=suitability&suitScope=31091");
+    expect(bare.state.suitScope).toBeUndefined();
+  });
+
+  it("widens to 수도권 전체 when every code in the link is invalid", () => {
+    // Never a blank ranking: an unusable scope drops to no restriction.
+    const { state } = decodeUrlState("?v=1&mode=suitability&suitScope=bad,worse");
+    expect(state.suitScope).toBeUndefined();
+  });
+
+  it("drops an unknown sort with a warning", () => {
+    const { state, warnings } = decodeUrlState("?v=1&mode=suitability&suitSort=name_asc");
+    expect(state.suitSort).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("does not change Page-1 scope/top semantics", () => {
+    // The 지역 부담 ranking keeps its own keys and its own bare vocabulary.
+    const { state } = decodeUrlState("?v=1&mode=equity&scope=31&top=20");
+    expect(state.scope).toBe("31");
+    expect(state.top).toBe(20);
+    expect(state.suitScope).toBeUndefined();
+  });
+
+  it("writes no suitability scope outside 후보지 분석", () => {
+    const encoded = encodeUrlState({
+      ...BASE,
+      mode: "equity",
+      suitScope: { kind: "sido", sido: "KR-SGIS-11" },
+      suitSort: "score_asc",
+    });
+    expect(encoded).not.toContain("suitScope=");
+    expect(encoded).not.toContain("suitSort=");
+  });
+
+  it("leaves a link written before the scope filters existed fully valid", () => {
+    const { state, warnings } = decodeUrlState("?v=1&mode=suitability&profile=critic");
+    expect(state.profile).toBe("critic");
+    expect(state.suitScope).toBeUndefined();
+    expect(state.suitSort).toBeUndefined();
     expect(warnings).toEqual([]);
   });
 });

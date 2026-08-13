@@ -28,12 +28,15 @@
 
 import type {
   CandidateDetail,
+  SuitabilityCandidateCollection,
   SuitabilityPolicy,
   SuitabilityProfile,
   SuitabilityRun,
+  SuitabilitySort,
   SuitabilityStatus,
   SuitabilitySummary,
 } from "../../lib/api";
+import type { ScopeRegionOption, SuitabilityScope } from "../../lib/suitabilityScope";
 import type { StatusVisibility } from "../MapView";
 import { profileLabel, statusLabel } from "../../lib/glossary";
 import { formatCount } from "../../lib/metrics";
@@ -86,6 +89,20 @@ export interface SuitabilitySidebarProps {
   part?: "left" | "right" | "all";
   /** The A/B/C panel, injected by the page (it owns the distribution fetch). */
   relativeGradePanel?: React.ReactNode;
+  /**
+   * ① 분석 범위 and ③ 순위 방향. Owned by the page — this column reports them, and
+   * the ONE scope drives the ranking read, the A/B/C population, the map filter and
+   * the selected-candidate check together, so no two surfaces can disagree.
+   */
+  scope: SuitabilityScope;
+  onScopeChange: (scope: SuitabilityScope) => void;
+  regionOptions: readonly ScopeRegionOption[];
+  scopeName: string;
+  mapFollowsScope: boolean;
+  ranking: SuitabilityCandidateCollection | null;
+  rankingError: string | null;
+  sort: SuitabilitySort;
+  onSortChange: (sort: SuitabilitySort) => void;
 }
 
 export default function SuitabilitySidebar({
@@ -103,6 +120,15 @@ export default function SuitabilitySidebar({
   statusColors,
   part = "all",
   relativeGradePanel,
+  scope,
+  onScopeChange,
+  regionOptions,
+  scopeName,
+  mapFollowsScope,
+  ranking,
+  rankingError,
+  sort,
+  onSortChange,
 }: SuitabilitySidebarProps) {
   // The error and loading states belong to ONE column. Rendering them in both
   // would duplicate a single failure into two identical messages on one screen.
@@ -130,6 +156,17 @@ export default function SuitabilitySidebar({
   const summary = suit.summary;
   const showLeft = part === "left" || part === "all";
   const showRight = part === "right" || part === "all";
+  // The scope/sort props every SuitabilityCandidateList below shares. One object so
+  // the ranking cannot be rendered with a different scope from the one ① is showing.
+  const rankingProps = {
+    ranking,
+    rankingError,
+    sort,
+    onSortChange,
+    scopeName,
+    scopeActive: scope.kind !== "all",
+    mapFollowsScope,
+  };
   return (
     <>
       {/* Screen-reader status: announced when the score basis changes and when the
@@ -143,9 +180,16 @@ export default function SuitabilitySidebar({
       </p>
       )}
 
-      {/* ① 분석 범위 — what this run actually covered, from the served 시·도
-          breakdown. Not a picker: see SuitabilityScopeCard's header. */}
-      {showLeft && <SuitabilityScopeCard summary={summary} />}
+      {/* ① 분석 범위 — the real scope control. Its state is the ONE thing that
+          narrows the ranking, the counts and the A/B/C population together. */}
+      {showLeft && (
+        <SuitabilityScopeCard
+          summary={summary}
+          scope={scope}
+          onScopeChange={onScopeChange}
+          regionOptions={regionOptions}
+        />
+      )}
 
       {showLeft && (
       <SuitabilityScoringBasis
@@ -196,6 +240,7 @@ export default function SuitabilitySidebar({
               selected={selected}
               onSelect={onSelect}
               stabilityAvailable={stabilityAvailable}
+              {...rankingProps}
               nested
               section="ranking"
             />
@@ -211,6 +256,7 @@ export default function SuitabilitySidebar({
               selected={selected}
               onSelect={onSelect}
               stabilityAvailable={stabilityAvailable}
+              {...rankingProps}
             />
           </>
         )
@@ -225,6 +271,7 @@ export default function SuitabilitySidebar({
           selected={selected}
           onSelect={onSelect}
           stabilityAvailable={stabilityAvailable}
+          {...rankingProps}
           nested
           section="stable"
         />

@@ -135,6 +135,7 @@ describe("citizen-facing wording", () => {
     const basis = relativeGradeBasis({
       runId: 48,
       profile: "baseline",
+      scope: { kind: "all" },
       population: 17501,
       p25: 47.6779,
       p75: 57.811,
@@ -306,5 +307,83 @@ describe("the production distribution (run 48 / baseline)", () => {
       countB: 8403,
       countC: 4184,
     });
+  });
+});
+
+describe("scoped bands (① 분석 범위)", () => {
+  it("applies the SAME scope to all four reads, so the bands are exact not approximate", async () => {
+    wireHappyPath(1099, "44.1", "58.9", 300, 820);
+    const d = await computeGradeDistribution(48, "baseline", {
+      kind: "sido",
+      sido: "KR-SGIS-23",
+    });
+    expect(d).not.toBeNull();
+    // The population probe, both order statistics, and both band counts.
+    expect(spy.mock.calls.length).toBe(5);
+    for (const [query] of spy.mock.calls as unknown as [api.CandidateQuery][]) {
+      // Every read — the population probe, both order statistics, and both band
+      // counts — carries the scope. Mixing an unscoped N with scoped percentiles
+      // would produce a threshold no candidate actually has.
+      expect(query.sido).toBe("KR-SGIS-23");
+      expect(query.sigungu).toBeUndefined();
+      expect(query.status).toBe("ELIGIBLE");
+    }
+    // The population is the SCOPED one, so 상위 25% means 상위 25% of 인천.
+    expect(d!.population).toBe(1099);
+    expect(d!.scope).toEqual({ kind: "sido", sido: "KR-SGIS-23" });
+  });
+
+  it("sends a repeatable sigungu list, never a sido alongside it", async () => {
+    wireHappyPath(777, "43.2", "55.0", 190, 580);
+    const scope = { kind: "sigungu" as const, codes: ["KR-SGIS-31150", "KR-SGIS-23510"] };
+    await computeGradeDistribution(48, "baseline", scope);
+    for (const [query] of spy.mock.calls as unknown as [api.CandidateQuery][]) {
+      expect(query.sigungu).toEqual(["KR-SGIS-31150", "KR-SGIS-23510"]);
+      expect(query.sido, "sido + sigungu would intersect two populations").toBeUndefined();
+    }
+  });
+
+  it("caches per scope, so one scope's bands never serve another's", async () => {
+    wireHappyPath(17501, "47.6779", "57.811", 4914, 13317);
+    await computeGradeDistribution(48, "baseline");
+    const afterFirst = spy.mock.calls.length;
+    // Same run+profile, DIFFERENT scope → a genuinely different distribution.
+    await computeGradeDistribution(48, "baseline", { kind: "sido", sido: "KR-SGIS-31" });
+    expect(spy.mock.calls.length).toBeGreaterThan(afterFirst);
+    // Repeating the first scope is served from the memo.
+    const afterSecond = spy.mock.calls.length;
+    await computeGradeDistribution(48, "baseline");
+    expect(spy.mock.calls.length).toBe(afterSecond);
+  });
+
+  it("refuses bands for a scope too small to have quartiles, rather than inventing them", async () => {
+    // 서울 has ZERO eligible cells in run 47 — a real answer, not a failure.
+    spy.mockImplementation((() => Promise.resolve(coll(0))) as typeof api.fetchSuitabilityCandidates);
+    const d = await computeGradeDistribution(48, "baseline", {
+      kind: "sido",
+      sido: "KR-SGIS-11",
+    });
+    expect(d).toBeNull();
+  });
+
+  it("names the scoped population in the basis sentence", () => {
+    const basis = relativeGradeBasis(
+      {
+        runId: 48,
+        profile: "baseline",
+        scope: { kind: "sido", sido: "KR-SGIS-23" },
+        population: 1099,
+        p25: 44.1,
+        p75: 58.9,
+        countA: 300,
+        countB: 520,
+        countC: 279,
+      },
+      "인천",
+    );
+    // A band without its population is unreadable — 상위 25% of WHAT.
+    expect(basis).toContain("인천 안의 스크리닝 통과 구역");
+    expect(basis).toContain("1,099");
+    expect(basis).not.toContain("전체 스크리닝 통과 구역");
   });
 });

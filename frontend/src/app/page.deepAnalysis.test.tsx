@@ -43,6 +43,7 @@ import Home from "./page";
 const DISTRIBUTION = {
   runId: 48,
   profile: "baseline" as const,
+  scope: { kind: "all" as const },
   population: 17501,
   p25: 47.6779,
   p75: 57.811,

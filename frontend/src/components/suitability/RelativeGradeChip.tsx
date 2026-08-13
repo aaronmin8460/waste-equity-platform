@@ -60,9 +60,16 @@ export function RelativeGradeChip({ grade }: { grade: RelativeGrade }) {
  */
 export function RelativeGradePanel({
   distribution,
+  scopeName,
   nested = false,
 }: {
   distribution: GradeDistribution;
+  /**
+   * The active ① 분석 범위. The bands are relative to THIS population, so the basis
+   * line names it — "상위 25%" of 인천 is a different score from 상위 25% of the
+   * capital region, and a band shown without its population is unreadable.
+   */
+  scopeName?: string;
   nested?: boolean;
 }) {
   const rows: { grade: RelativeGrade; range: string; band: string; count: number }[] = [
@@ -122,7 +129,7 @@ export function RelativeGradePanel({
         ))}
       </dl>
       <p className="mt-2 text-[0.6875rem] leading-relaxed text-ink-subtle" data-testid="relative-grade-basis">
-        {relativeGradeBasis(distribution)}
+        {relativeGradeBasis(distribution, scopeName)}
       </p>
     </>
   );
@@ -149,8 +156,34 @@ export function RelativeGradePanel({
  * computed from whatever happened to be loaded — the "insufficient population"
  * rule in spec §6.4.
  */
-export function RelativeGradeUnavailable({ nested = false }: { nested?: boolean }) {
-  const body = (
+export function RelativeGradeUnavailable({
+  nested = false,
+  /**
+   * The active ① 분석 범위, when it is narrower than 수도권 전체.
+   *
+   * WHY THIS MATTERS. Before the scope control existed, the population was always
+   * the whole run, so a missing distribution could only mean a failed read — and the
+   * copy said so. Under a scope it has a second, entirely different cause: the range
+   * genuinely holds too few scored 구역 to divide into quartiles (서울 holds ZERO
+   * eligible cells in run 47). Calling that "불러오지 못해" would report a real
+   * analytical answer as a malfunction, which is the very confusion the scoped empty
+   * state exists to prevent. So the reason is named, not guessed at.
+   */
+  scopeName,
+  emptyScope = false,
+}: {
+  nested?: boolean;
+  scopeName?: string;
+  /** True when the scoped ELIGIBLE population is genuinely too small to band. */
+  emptyScope?: boolean;
+}) {
+  const body = emptyScope ? (
+    <p className="text-xs leading-relaxed text-ink-muted" data-testid="relative-grade-empty-scope">
+      {scopeName ?? "선택한 범위"} 안에는 점수가 계산된 스크리닝 통과 구역이 상대 구간을 나눌 만큼
+      있지 않아 상대 점수 구간을 표시하지 않습니다. 자료를 불러오지 못한 것이 아니라, 이 범위의 실제
+      결과입니다.
+    </p>
+  ) : (
     <p className="text-xs leading-relaxed text-ink-muted">
       전체 스크리닝 통과 구역의 점수 분포를 불러오지 못해 상대 점수 구간을 표시하지 않습니다.
       일부만으로 구간을 계산하면 실제 분포와 달라지므로 추정값을 대신 표시하지 않습니다.

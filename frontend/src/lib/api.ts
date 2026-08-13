@@ -698,6 +698,15 @@ export interface SuitabilityCandidateCollection {
   total_matched: number;
   limit: number;
   offset: number;
+  /**
+   * The scope and ordering the server ACTUALLY applied, after normalizing the bare
+   * SGIS spelling and de-duplicating (Page-4B). Echoed so a caller can confirm the
+   * scope was read the way it meant it, instead of inferring that from an empty
+   * result — a real 0 and a mis-sent filter look identical otherwise.
+   */
+  sido: string | null;
+  sigungu: string[];
+  sort: SuitabilitySort;
   features: CandidateFeature[];
   assumptions: string[];
   disclaimer: string;
@@ -759,12 +768,39 @@ export function fetchSuitabilitySummary(profile: SuitabilityProfile): Promise<Su
   return fetchJson<SuitabilitySummary>(`/api/v1/suitability/summary?profile=${profile}`);
 }
 
+/**
+ * Ranking DIRECTION over the screening's own rank ordering — deliberately not a
+ * sort-field selector, so no caller can reorder the screening by a column the
+ * methodology never ranked on. Unscored REVIEW_REQUIRED / EXCLUDED cells stay last
+ * in BOTH directions: an unscored cell is not "the lowest-scoring one".
+ */
+export type SuitabilitySort = "score_desc" | "score_asc";
+
+export const SUITABILITY_DEFAULT_SORT: SuitabilitySort = "score_desc";
+
 export interface CandidateQuery {
   profile: SuitabilityProfile;
   bbox?: string;
   status?: SuitabilityStatus;
   stability_class?: StabilityClass;
+  /**
+   * SIDO scope, canonical `KR-SGIS-11 | 23 | 31`.
+   *
+   * MUST NOT be combined with {@link CandidateQuery.sigungu}: the two codes come
+   * from independent point-in-polygon lookups against non-coincident layers, so
+   * sending both intersects them and silently drops the boundary cells. Build both
+   * fields through `lib/suitabilityScope.ts::scopeToQuery`, whose scope type makes
+   * the illegal pair unrepresentable.
+   */
   sido?: string;
+  /**
+   * SIGUNGU scope, repeatable with OR semantics — one citizen-facing city can be
+   * several codes (안산시 is its two 일반구). An empty/absent list means NO
+   * restriction, never "match none".
+   */
+  sigungu?: string[];
+  /** Ranking direction. Omitted ⇒ the server default, `score_desc`. */
+  sort?: SuitabilitySort;
   top?: number;
   limit?: number;
   /**
@@ -795,6 +831,13 @@ export function fetchSuitabilityCandidates(
   if (query.status) params.set("status", query.status);
   if (query.stability_class) params.set("stability_class", query.stability_class);
   if (query.sido) params.set("sido", query.sido);
+  // Repeatable, one `sigungu=` per code — NOT a comma-joined value, which the
+  // backend would read as a single unknown code and answer with an empty result.
+  // Empty strings are dropped here so a cleared multi-select sends no restriction.
+  for (const code of query.sigungu ?? []) {
+    if (code !== "") params.append("sigungu", code);
+  }
+  if (query.sort) params.set("sort", query.sort);
   if (query.top !== undefined) params.set("top", String(query.top));
   if (query.limit !== undefined) params.set("limit", String(query.limit));
   if (query.runId !== undefined) params.set("run_id", String(query.runId));

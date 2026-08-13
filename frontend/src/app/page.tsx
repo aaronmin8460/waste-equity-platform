@@ -64,7 +64,11 @@ import {
   type ReportingBoundaryCollection,
   type ReportingPerCapitaEnvelope,
   type ReportingWasteStatisticsEnvelope,
+  fetchSuitabilityCandidates,
+  SUITABILITY_DEFAULT_SORT,
+  type SuitabilityCandidateCollection,
   type SuitabilityProfile,
+  type SuitabilitySort,
   type SuitabilityStatus,
   type UserScenarioCandidateDetail,
   type WasteStatisticsItem,
@@ -119,6 +123,15 @@ import {
   RelativeGradeUnavailable,
 } from "../components/suitability/RelativeGradeChip";
 import { computeGradeDistribution, type GradeDistribution } from "../lib/relativeGrade";
+import {
+  SCOPE_ALL,
+  buildScopeRegionOptions,
+  isCandidateInScope,
+  scopeKey,
+  scopeLabel,
+  scopeToQuery,
+  type SuitabilityScope,
+} from "../lib/suitabilityScope";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import LandCoverLayerControl from "../components/LandCoverLayerControl";
 import type { ClassLevel } from "../lib/landCover";
@@ -201,6 +214,13 @@ type DashboardMode = MapMode | "flow" | "transparency";
  * drift apart. Eligible cells are score-shaded, so the representative swatch is
  * the same mid class the legend's ELIGIBLE checkbox uses.
  */
+/**
+ * Rows shown in ③ 순위 보기. Ten, the same length `/suitability/summary` has always
+ * served as `top_candidates`, so the default unscoped view is unchanged. The
+ * `범위 내` count beside it is the backend's `total_matched`, never this number.
+ */
+const RANKING_TOP_N = 10;
+
 const CANDIDATE_STATUS_COLORS: Record<SuitabilityStatus, string> = {
   ELIGIBLE: CANDIDATE_SCORE_PALETTE_5[3],
   REVIEW_REQUIRED: CANDIDATE_REVIEW_COLOR,
@@ -432,6 +452,14 @@ export default function Home() {
   // is what the hand-picked three were being used to approximate. `reportKind` is
   // therefore a one-member union rather than a boolean, so the report preview keeps
   // its existing "which model?" shape if a second report is ever added back.
+  // ① 분석 범위 / ③ 순위 방향 for 후보지 심층 분석. Deliberately SEPARATE from the
+  // 지역 부담 `scope`/`topN` below: that pair belongs to Page 1's 지역 순위, uses the
+  // bare "11"/"23"/"31" vocabulary, and must keep its meaning unchanged.
+  const [suitScope, setSuitScope] = useState<SuitabilityScope>(SCOPE_ALL);
+  const [suitSort, setSuitSort] = useState<SuitabilitySort>(SUITABILITY_DEFAULT_SORT);
+  const [ranking, setRanking] = useState<SuitabilityCandidateCollection | null>(null);
+  const [rankingError, setRankingError] = useState<string | null>(null);
+
   const [scope, setScope] = useState<ScopeSelection>("all");
   const [topN, setTopN] = useState(10);
   /**
@@ -574,12 +602,99 @@ export default function Home() {
       .catch(() => undefined);
   }, [profile, mode]);
 
+  // --- ① 분석 범위 --------------------------------------------------------- //
+
+  // The selectable cities, from the SERVED region registry already loaded for the
+  // map — no extra request, and no hardcoded list of codes. The parent-city
+  // relationship (안산시 = its two 일반구) is read from the registry's own names.
+  const scopeRegionOptions = useMemo(
+    () => (data === null ? [] : buildScopeRegionOptions(data.boundaries.features)),
+    [data],
+  );
+  const suitScopeName = useMemo(
+    () => scopeLabel(suitScope, scopeRegionOptions),
+    [suitScope, scopeRegionOptions],
+  );
+  // The map filters on `sigungu_region_code`, the one scope attribute the vector
+  // tile carries. A 시·도 scope yields null: the tile has no `sido_region_code`, and
+  // inferring one from the 시·군·구 code would filter a different population from the
+  // one the ranking counted. The list says so rather than showing a silent near-miss.
+  const candidateScopeCodes = suitScope.kind === "sigungu" ? suitScope.codes : null;
+  const mapFollowsScope = suitScope.kind !== "sido";
+
+  // The scoped ranking. `/suitability/summary` has no scope parameters — it always
+  // describes the whole run — so ③ reads `/suitability/candidates`, whose top-10
+  // ELIGIBLE query is the same one the summary's `top_candidates` runs. Unscoped and
+  // 높은 순 the rows are therefore identical to before; scoped, both the rows AND
+  // `total_matched` narrow together.
+  const suitRunId = suit?.run.id ?? null;
+  const suitScopeQueryKey = scopeKey(suitScope);
+  useEffect(() => {
+    if (mode !== "suitability" || suitabilityView !== "score" || suitRunId === null) return;
+    const controller = new AbortController();
+    /* eslint-disable react-hooks/set-state-in-effect -- clear the PREVIOUS scope's
+       ranking before the new one lands. Leaving it on screen would show 서울's rows
+       under an 인천 heading for one frame — a scoped list is only ever as honest as
+       the scope it is labelled with. */
+    setRanking(null);
+    setRankingError(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    fetchSuitabilityCandidates(
+      {
+        runId: suitRunId,
+        profile,
+        status: "ELIGIBLE",
+        // `top` makes the endpoint order by the REQUESTED profile's rank; without it
+        // the listing orders by the run's active-profile rank column.
+        top: RANKING_TOP_N,
+        limit: RANKING_TOP_N,
+        sort: suitSort,
+        // The ONE serializer — a `sido` + `sigungu` pair is unrepresentable.
+        ...scopeToQuery(suitScope),
+      },
+      controller.signal,
+    )
+      .then((collection) => {
+        if (controller.signal.aborted) return;
+        setRanking(collection);
+        setRankingError(null);
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        // An error is NEVER folded into the empty state: `범위 내 0개` is a real
+        // analytical answer and must stay distinguishable from "we could not ask".
+        setRanking(null);
+        setRankingError(
+          cause instanceof ApiError
+            ? plainError(cause.detail?.error ?? cause.message).primary
+            : "후보 순위를 불러올 수 없습니다.",
+        );
+      });
+    return () => controller.abort();
+    // `suitScopeQueryKey` stands in for `suitScope`: a new object with the same codes
+    // must not re-request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, suitabilityView, suitRunId, profile, suitSort, suitScopeQueryKey]);
+
+  // A candidate outside the new scope is no longer part of the active ranking, so it
+  // is deselected rather than left on screen as though it still were. The check uses
+  // the SAME attribute the request filtered on (never the other code), so a boundary
+  // cell is judged the way the backend judged it.
+  useEffect(() => {
+    if (selected === null) return;
+    if (isCandidateInScope(suitScope, selected)) return;
+    /* eslint-disable-next-line react-hooks/set-state-in-effect -- dropping a
+       selection the scope excludes is precisely this effect's job. */
+    setSelected(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suitScopeQueryKey, selected]);
+
   // Load the relative-band thresholds for the run+profile currently on the map.
   //
   // Four ~1 KB order-statistic reads (see lib/relativeGrade.ts), and only while
   // 후보지 심층 분석 is actually open — the bands are not shown anywhere else, so
-  // no other view pays for them. Keyed on run + profile because a different
-  // profile is a genuinely different score distribution.
+  // no other view pays for them. Keyed on run + profile + SCOPE, because each is a
+  // genuinely different score distribution.
   useEffect(() => {
     if (mode !== "suitability" || suitabilityView !== "score" || !suit) return;
     let cancelled = false;
@@ -592,7 +707,10 @@ export default function Home() {
     setGradeSettled(false);
     setGradeDistribution(null);
     /* eslint-enable react-hooks/set-state-in-effect */
-    computeGradeDistribution(runId, profile)
+    // The SAME scope as the ranking. A/B/C is a position in a POPULATION, so the
+    // bands are recomputed exactly (four scoped order-statistic reads), never
+    // approximated from the rows already on screen.
+    computeGradeDistribution(runId, profile, suitScope)
       .then((distribution) => {
         if (cancelled) return;
         setGradeDistribution(distribution);
@@ -607,7 +725,9 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [mode, suitabilityView, suit, profile]);
+    // `suitScopeQueryKey` stands in for `suitScope` (stable identity for equal scopes).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, suitabilityView, suit, profile, suitScopeQueryKey]);
 
   // No candidate fetch here anymore: the map serves the complete suitability grid
   // as PostGIS vector tiles (see suitabilityTileUrl / MapView's vector source), so
@@ -1365,6 +1485,10 @@ export default function Home() {
       municipalCostSido: mcSido,
       municipalCostStatus: mcStatus,
       municipalCostSort: mcSort,
+      // 후보지 심층 분석 ① 분석 범위 / ③ 순위 방향 — their own keys, so a shared
+      // Page-4 link cannot change what `scope`/`top` mean on Page 1.
+      suitScope,
+      suitSort,
     }),
     [
       mode,
@@ -1391,6 +1515,10 @@ export default function Home() {
       mcSido,
       mcStatus,
       mcSort,
+      // Load-bearing: without these the mirror effect keeps its identity and a scope
+      // or sort change would never reach the URL.
+      suitScope,
+      suitSort,
     ],
   );
 
@@ -1455,6 +1583,11 @@ export default function Home() {
     if (state.municipalCostSido !== undefined) setMcSido(state.municipalCostSido);
     if (state.municipalCostStatus !== undefined) setMcStatus(state.municipalCostStatus);
     if (state.municipalCostSort !== undefined) setMcSort(state.municipalCostSort);
+    // 후보지 심층 분석 scope + sort. Restored in the SAME batch as `mode`, so the
+    // ranking effect issues ONE request for the restored scope rather than one for
+    // 수도권 전체 and another for the shared one.
+    if (state.suitScope !== undefined) setSuitScope(state.suitScope);
+    if (state.suitSort !== undefined) setSuitSort(state.suitSort);
     setUrlWarnings(warnings);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data]);
@@ -1815,6 +1948,15 @@ export default function Home() {
             statusVisibility={statusVisibility}
             stableOnly={stableOnly && stabilityAvailable}
             statusColors={CANDIDATE_STATUS_COLORS}
+            scope={suitScope}
+            onScopeChange={setSuitScope}
+            regionOptions={scopeRegionOptions}
+            scopeName={suitScopeName}
+            mapFollowsScope={mapFollowsScope}
+            ranking={ranking}
+            rankingError={rankingError}
+            sort={suitSort}
+            onSortChange={setSuitSort}
           />
         </CollapsiblePanel>
       ) : (
@@ -2031,6 +2173,15 @@ export default function Home() {
                 statusVisibility={statusVisibility}
                 stableOnly={stableOnly && stabilityAvailable}
                 statusColors={CANDIDATE_STATUS_COLORS}
+                scope={suitScope}
+                onScopeChange={setSuitScope}
+                regionOptions={scopeRegionOptions}
+                scopeName={suitScopeName}
+                mapFollowsScope={mapFollowsScope}
+                ranking={ranking}
+                rankingError={rankingError}
+                sort={suitSort}
+                onSortChange={setSuitSort}
               />
             )}
           </>
@@ -2080,6 +2231,7 @@ export default function Home() {
           candidateContext={scenarioActive ? "scenario" : "stored"}
           statusVisibility={statusVisibility}
           stableOnly={stableOnly && stabilityAvailable}
+          candidateScopeCodes={candidateScopeCodes}
           selectedCandidate={mapSelectedCandidate}
           onCandidateClick={mapCandidateClick}
           ariaLabel={
@@ -2310,11 +2462,31 @@ export default function Home() {
                  `nested`: in this workspace the band is the first block of
                  ③ 종합 점수와 후보 순위, not a card of its own (Figma 136:8684). */
               !gradeSettled ? null : gradeDistribution ? (
-                <RelativeGradePanel distribution={gradeDistribution} nested />
+                <RelativeGradePanel
+                  distribution={gradeDistribution}
+                  scopeName={suitScopeName}
+                  nested
+                />
               ) : (
-                <RelativeGradeUnavailable nested />
+                <RelativeGradeUnavailable
+                  nested
+                  scopeName={suitScopeName}
+                  // A scoped ranking that matched nothing is a REAL answer, not a
+                  // failed read — and only the ranking's own `total_matched` can
+                  // tell the two apart, so the distinction is drawn from it.
+                  emptyScope={suitScope.kind !== "all" && ranking?.total_matched === 0}
+                />
               )
             }
+            scope={suitScope}
+            onScopeChange={setSuitScope}
+            regionOptions={scopeRegionOptions}
+            scopeName={suitScopeName}
+            mapFollowsScope={mapFollowsScope}
+            ranking={ranking}
+            rankingError={rankingError}
+            sort={suitSort}
+            onSortChange={setSuitSort}
           />
         </CollapsiblePanel>
       )}

@@ -272,6 +272,14 @@ interface MapViewProps {
    * unstable. STABLE eligible cells always receive a distinct outline regardless.
    */
   stableOnly: boolean;
+  /**
+   * ① 분석 범위, as the exact SIGUNGU codes the ranking request carried, or null
+   * when the scope is 수도권 전체 / a 시·도 (see `candidateScopeFilter`). Applied
+   * with `setFilter` on the existing source — the vector tiles are immutable and
+   * scope-independent, so narrowing the scope never re-points, reloads, or remounts
+   * the map.
+   */
+  candidateScopeCodes?: readonly string[] | null;
   /** Currently-selected candidate (list or map). Drives highlight + map movement. */
   selectedCandidate: SelectedCandidate | null;
   onCandidateClick: (candidateId: number) => void;
@@ -354,6 +362,32 @@ const CANDIDATE_OPACITY: maplibregl.ExpressionSpecification = [
   0.8,
 ] as unknown as maplibregl.ExpressionSpecification;
 
+/**
+ * ① 분석 범위, as a tile-attribute predicate — or null when the scope cannot be
+ * expressed exactly.
+ *
+ * The candidate tile carries `sigungu_region_code`, so a 시·군·구 scope filters the
+ * map on THE SAME attribute the `/candidates` request filtered on, and the two
+ * surfaces show exactly the same cells.
+ *
+ * A 시·도 scope returns null — deliberately. The tile does not carry
+ * `sido_region_code`, and the two codes come from independent `ST_Covers` lookups
+ * against non-coincident layers, so deriving a 시·도 from the 시·군·구 code would
+ * filter a DIFFERENT population from the one the ranking counted (that inference is
+ * exactly why "서울" has three different totals). Showing the unfiltered grid and
+ * saying so is honest; showing a near-miss silently is not.
+ */
+function candidateScopeFilter(
+  sigunguCodes: readonly string[] | null,
+): maplibregl.ExpressionSpecification | null {
+  if (sigunguCodes === null || sigunguCodes.length === 0) return null;
+  return [
+    "in",
+    ["get", "sigungu_region_code"],
+    ["literal", [...sigunguCodes]],
+  ] as unknown as maplibregl.ExpressionSpecification;
+}
+
 // Candidate fill filter. The canonical statusVisibility state is always honored;
 // `stableOnly` is an independent, additive restriction that limits ELIGIBLE cells
 // to weight-stable ones (stable_count = 3) without touching how REVIEW_REQUIRED /
@@ -361,29 +395,50 @@ const CANDIDATE_OPACITY: maplibregl.ExpressionSpecification = [
 function candidateFillFilter(
   visibility: StatusVisibility,
   stableOnly: boolean,
+  sigunguCodes: readonly string[] | null = null,
 ): maplibregl.FilterSpecification {
   const visible = (Object.keys(visibility) as SuitabilityStatus[]).filter((s) => visibility[s]);
   const statusIn = ["in", ["get", "status"], ["literal", visible]];
-  if (!stableOnly) {
-    return statusIn as unknown as maplibregl.FilterSpecification;
+  const scope = candidateScopeFilter(sigunguCodes);
+  const clauses: unknown[] = [statusIn];
+  if (stableOnly) {
+    clauses.push([
+      "any",
+      ["!=", ["get", "status"], "ELIGIBLE"],
+      ["==", ["get", "stable_count"], 3],
+    ]);
   }
-  return [
-    "all",
-    statusIn,
-    ["any", ["!=", ["get", "status"], "ELIGIBLE"], ["==", ["get", "stable_count"], 3]],
-  ] as unknown as maplibregl.FilterSpecification;
+  if (scope !== null) clauses.push(scope);
+  if (clauses.length === 1) return statusIn as unknown as maplibregl.FilterSpecification;
+  return ["all", ...clauses] as unknown as maplibregl.FilterSpecification;
+}
+
+// Dashed outline for REVIEW_REQUIRED cells, narrowed by the same scope predicate so
+// it can never outline a cell the scoped fill has removed.
+function reviewOutlineFilter(
+  sigunguCodes: readonly string[] | null = null,
+): maplibregl.FilterSpecification {
+  const isReview = ["==", ["get", "status"], "REVIEW_REQUIRED"];
+  const scope = candidateScopeFilter(sigunguCodes);
+  if (scope === null) return isReview as unknown as maplibregl.FilterSpecification;
+  return ["all", isReview, scope] as unknown as maplibregl.FilterSpecification;
 }
 
 // Distinct outline for STABLE eligible cells, shown whenever ELIGIBLE cells are
 // visible (independent of stableOnly). Matches nothing when ELIGIBLE is hidden.
-function stableOutlineFilter(visibility: StatusVisibility): maplibregl.FilterSpecification {
+function stableOutlineFilter(
+  visibility: StatusVisibility,
+  sigunguCodes: readonly string[] | null = null,
+): maplibregl.FilterSpecification {
   if (!visibility.ELIGIBLE) {
     return ["==", ["get", "status"], "__none__"] as unknown as maplibregl.FilterSpecification;
   }
+  const scope = candidateScopeFilter(sigunguCodes);
   return [
     "all",
     ["==", ["get", "status"], "ELIGIBLE"],
     ["==", ["get", "stable_count"], 3],
+    ...(scope !== null ? [scope] : []),
   ] as unknown as maplibregl.FilterSpecification;
 }
 
@@ -622,6 +677,7 @@ export default function MapView({
   candidateTileUrl,
   candidateBreaks,
   statusVisibility,
+  candidateScopeCodes = null,
   stableOnly,
   selectedCandidate,
   onCandidateClick,
@@ -1160,7 +1216,7 @@ export default function MapView({
           type: "line",
           source: "candidates",
           "source-layer": SUITABILITY_TILE_SOURCE_LAYER,
-          filter: ["==", ["get", "status"], "REVIEW_REQUIRED"],
+          filter: reviewOutlineFilter(candidateScopeCodes),
           paint: { "line-color": "#b45309", "line-width": 0.9, "line-dasharray": [2, 1.5] },
         });
         // Distinct solid outline for STABLE eligible cells (stable across
@@ -1172,7 +1228,7 @@ export default function MapView({
           type: "line",
           source: "candidates",
           "source-layer": SUITABILITY_TILE_SOURCE_LAYER,
-          filter: stableOutlineFilter(statusVisibility),
+          filter: stableOutlineFilter(statusVisibility, candidateScopeCodes),
           paint: { "line-color": STABLE_OUTLINE_COLOR, "line-width": 1.8 },
         });
       };
@@ -1201,9 +1257,18 @@ export default function MapView({
           "fill-color",
           candidateColorExpression(candidateBreaks),
         );
-        map.setFilter("candidates-fill", candidateFillFilter(statusVisibility, stableOnly));
+        map.setFilter(
+          "candidates-fill",
+          candidateFillFilter(statusVisibility, stableOnly, candidateScopeCodes),
+        );
+        if (map.getLayer("candidates-review-outline")) {
+          map.setFilter("candidates-review-outline", reviewOutlineFilter(candidateScopeCodes));
+        }
         if (map.getLayer("candidates-stable-outline")) {
-          map.setFilter("candidates-stable-outline", stableOutlineFilter(statusVisibility));
+          map.setFilter(
+            "candidates-stable-outline",
+            stableOutlineFilter(statusVisibility, candidateScopeCodes),
+          );
         }
       } else {
         // No run to render (e.g. equity mode): ensure the refresh indicator can
@@ -1457,6 +1522,7 @@ export default function MapView({
     candidateBreaks,
     statusVisibility,
     stableOnly,
+    candidateScopeCodes,
   ]);
 
   // Close any pinned region popup when the active metric (label/unit/reference

@@ -55,6 +55,7 @@ import * as api from "../lib/api";
 const DISTRIBUTION = {
   runId: 47,
   profile: "baseline" as const,
+  scope: { kind: "all" as const },
   population: 17501,
   p25: 47.6779,
   p75: 57.811,
@@ -131,8 +132,49 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+/**
+ * The scoped ranking, as `/suitability/candidates` serves it. ③ reads this rather
+ * than `summary.top_candidates`, because the summary endpoint has no scope
+ * parameters — see SuitabilityCandidateList's `ranking` prop.
+ */
+function serveRanking(rows: typeof TOP_CANDIDATES, totalMatched = rows.length): void {
+  vi.mocked(api.fetchSuitabilityCandidates).mockResolvedValue({
+    type: "FeatureCollection",
+    indicator: "SUITABILITY_SCREENING",
+    derivation_version: "suitability-screening-v3",
+    policy_version: "suitability-policy-v2",
+    candidate_grid_version: "capital-grid-500m-v1",
+    weight_profile: "baseline",
+    reference_year: 2024,
+    run_id: 47,
+    count: rows.length,
+    total_matched: totalMatched,
+    limit: 10,
+    offset: 0,
+    sido: null,
+    sigungu: [],
+    sort: "score_desc",
+    features: rows.map((row) => ({
+      type: "Feature" as const,
+      geometry: { type: "Point" as const, coordinates: [126.5, 37.7] },
+      properties: {
+        ...DETAIL,
+        candidate_id: row.candidate_id,
+        rank: row.rank,
+        sigungu_region_name: row.sigungu,
+        total_score: row.total_score,
+        stability_class: row.stability_class,
+        stable_count: row.stable_count,
+      },
+    })),
+    assumptions: [],
+    disclaimer: "Analytical screening only — not a legal determination.",
+  } as unknown as api.SuitabilityCandidateCollection);
+}
+
 /** Serve a populated summary, including the 시·도 breakdown card ① reads. */
 async function serveSummary(): Promise<void> {
+  serveRanking(TOP_CANDIDATES);
   const base = await api.fetchSuitabilitySummary("baseline");
   vi.mocked(api.fetchSuitabilitySummary).mockResolvedValue({
     ...base,
@@ -153,6 +195,10 @@ async function enterDeepAnalysis() {
   await waitFor(() => expect(screen.queryByTestId("loading")).toBeNull());
   fireEvent.click(screen.getByTestId("mode-suitability"));
   await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
+  // ③ now reads the SCOPED ranking from `/suitability/candidates`, so the rows land
+  // one tick after the summary. Waiting for the count line keeps every row
+  // assertion below from racing that read.
+  await waitFor(() => expect(screen.getByTestId("candidate-ranking-counts")).toBeDefined());
   return utils;
 }
 
@@ -204,9 +250,14 @@ describe("the Figma numbered hierarchy", () => {
     // absent, never printed as a 0 the UI invented.
     expect(rows[1].textContent).toContain("경기도");
     expect(rows[1].textContent).not.toContain("추가 검토 필요");
+    // ① is a real picker as of the Page-4B wiring, so the old "cannot yet be
+    // narrowed" sentence is gone. What replaces it is the standing limit that DOES
+    // still hold: narrowing selects cells, it never aggregates a 시·군·구, and the
+    // two region filters are never combined.
     expect(within(scope).getByTestId("suitability-scope-note").textContent).toContain(
-      "시·군·구를 직접 골라 범위를 좁힐 수",
+      "시·군·구 자체를 점수로 매기거나 하나로 합치지 않습니다",
     );
+    expect(within(scope).getByTestId("suitability-scope-pill-all")).toBeDefined();
   });
 
   it("renders NO ④ 시나리오 저장 or ⑤ 비교할 시나리오 선택 shell", async () => {
