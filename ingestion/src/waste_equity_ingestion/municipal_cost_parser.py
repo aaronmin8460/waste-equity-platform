@@ -7,10 +7,18 @@ database access, and returns the same result for the same bytes every time.
 Two source families, seven audited worksheet layouts:
 
 ``DATA_A`` — contract rows carrying the payment in the 총 금액(총 지급액) /
-총 금액(원) column, with a variable number of ``[label, value]`` quantity pair
-columns between the payment column and the trailing
-``최종 처리시설 / 처리방식 / 비고`` block. Every column is located **by header
-name**, never by index, so the 9/11/13/14/15-column variants share one code path.
+총 금액(원) / ``<year>년 금액`` column, with a variable number of
+``[label, value]`` quantity pair columns between the payment column and the
+trailing ``최종 처리시설 / 처리방식 / 비고`` block. Every column is located **by
+header name**, never by index, so the 7/9/11/13/14/15-column variants share one
+code path, and the year header is accepted as either 년도 or 연도. Locating the
+payment column never decides what the amount means: the actual-paid / contract-award
+/ budget-estimate distinction stays with :func:`classify_payment_type`, which only
+ever reclassifies on wording the source itself wrote.
+
+An amount delivered as formatted text ("6,556,861,120원") is read as that exact
+number by :func:`parse_money_text` under an anchored pattern; anything that is not
+a well-formed currency literal stays missing rather than becoming a number.
 
 ``DATA_B`` — a fixed ``구분 / 1월…12월 / 계`` × ``일반, 음식물, 재활용, 계``
 tonnage grid. It carries **no monetary field anywhere**, and this parser
@@ -112,7 +120,10 @@ class MunicipalCostParseError(RuntimeError):
 
 
 # --- header vocabulary (all matched after NFC + whitespace normalization) ---
-HEADER_YEAR = "년도"
+# 년도 and 연도 are two orthographic spellings of the same word and are used
+# interchangeably by different suppliers (오산시 writes 연도). Both are matched
+# exactly against this enumerated tuple, never by substring.
+HEADER_YEAR_VARIANTS = ("년도", "연도")
 HEADER_ORGANISATION = "기관명"
 HEADER_CONTRACT_NAME = "계약명"
 HEADER_PAYMENT_PREFIX = "총 금액"
@@ -134,6 +145,49 @@ DATA_B_CATEGORY_TO_WASTE = {
 }
 
 TOTAL_ROW_TOKENS = ("합계", "총계", "소계", "계")
+
+
+def payment_header_variants(reference_year: int) -> tuple[str, ...]:
+    """Exact payment-column header spellings, beyond the 총 금액… prefix.
+
+    ``오산시`` labels the same column ``2024년 금액``. The form is enumerated and
+    anchored to the reference year rather than matched as "a header containing
+    금액", so ``계약금액`` / ``낙찰금액`` / ``예산액`` can never be picked up.
+
+    Locating a column decides **where** the amount is, never **what it means**:
+    payment semantics remain with :func:`classify_payment_type`, which reclassifies
+    away from ``ACTUAL_PAID_AMOUNT`` only when the source itself writes 계약금액 or
+    예산·예상금액. This function therefore adds no new way for a non-payment figure
+    to enter the numerator.
+    """
+
+    return (f"{reference_year}년 금액",)
+
+
+# A monetary cell delivered as *text* rather than as a number
+# ("6,556,861,120원" — 미추홀구 formats every payment this way). The pattern is
+# anchored and strict: well-formed thousands groups or plain digits, an optional
+# decimal part, an optional 원 suffix, and nothing else. A dash, a "확인 불가"
+# placeholder, a range, or any prose fails to match and the amount stays missing.
+# This never produces a zero and never guesses.
+_MONEY_TEXT_PATTERN = re.compile(r"^(?P<int>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?P<frac>\d+))?\s*원?$")
+
+
+def parse_money_text(raw: Any) -> Decimal | None:
+    """Exact Decimal for a source-formatted KRW literal held as text; else None."""
+
+    if not isinstance(raw, str):
+        return None
+    match = _MONEY_TEXT_PATTERN.match(_text(raw))
+    if match is None:
+        return None
+    digits = match.group("int").replace(",", "")
+    fraction = match.group("frac")
+    try:
+        return Decimal(f"{digits}.{fraction}") if fraction else Decimal(digits)
+    except InvalidOperation:  # pragma: no cover - the pattern guarantees a number
+        return None
+
 
 # Source placeholders. A dash means "the source declared no data for this cell";
 # these prose tokens mean "the source states the data does not exist". Neither is
@@ -627,7 +681,7 @@ class _DataAColumns:
     pair_headers: tuple[str, ...]
 
 
-def _locate_data_a_columns(sheet: Worksheet) -> _DataAColumns | None:
+def _locate_data_a_columns(sheet: Worksheet, reference_year: int) -> _DataAColumns | None:
     header = {index: _text(cell.value) for index, cell in enumerate(sheet[1], start=1)}
 
     def find_exact(name: str) -> int | None:
@@ -636,16 +690,25 @@ def _locate_data_a_columns(sheet: Worksheet) -> _DataAColumns | None:
                 return index
         return None
 
+    def find_any_exact(names: Sequence[str]) -> int | None:
+        for name in names:
+            found = find_exact(name)
+            if found is not None:
+                return found
+        return None
+
     def find_prefix(prefix: str) -> int | None:
         for index, text in header.items():
             if text.startswith(prefix):
                 return index
         return None
 
-    year = find_exact(HEADER_YEAR)
+    year = find_any_exact(HEADER_YEAR_VARIANTS)
     organisation = find_exact(HEADER_ORGANISATION)
     contract_name = find_exact(HEADER_CONTRACT_NAME)
     payment = find_prefix(HEADER_PAYMENT_PREFIX)
+    if payment is None:
+        payment = find_any_exact(payment_header_variants(reference_year))
     facility = find_exact(HEADER_FACILITY)
     method = find_exact(HEADER_METHOD)
     note = find_exact(HEADER_NOTE)
@@ -706,7 +769,7 @@ def _classify_data_a_layout(sheet: Worksheet, columns: _DataAColumns) -> str:
 def _parse_data_a(
     sheet: Worksheet, *, reference_year: int, filename_annotation: str
 ) -> ParsedWorkbook:
-    columns = _locate_data_a_columns(sheet)
+    columns = _locate_data_a_columns(sheet, reference_year)
     if columns is None:
         return ParsedWorkbook(
             dataset_role=DATASET_ROLE_A,
@@ -754,7 +817,13 @@ def _parse_data_a(
         contract_name = _text(sheet.cell(row, columns.contract_name).value)
         raw_payment = sheet.cell(row, columns.payment).value
         amount = _decimal(raw_payment)
-        payment_text = None if amount is not None else (_text(raw_payment) or None)
+        if amount is None:
+            # A numeric cell delivered as formatted text ("6,556,861,120원").
+            amount = parse_money_text(raw_payment)
+        # The verbatim source text is kept whenever the cell was text, including
+        # when it parsed cleanly, so the provenance of a text-formatted amount is
+        # never lost.
+        payment_text = _text(raw_payment) or None if isinstance(raw_payment, str) else None
         payment_type = classify_payment_type(note)
         eligible = amount is not None and payment_type == PAYMENT_ACTUAL_PAID
 
@@ -823,6 +892,10 @@ def _parse_data_a(
         raw_total = sheet.cell(total_row, columns.payment).value
         parsed.source_total_krw = _decimal(raw_total)
         if parsed.source_total_krw is None:
+            # Same text-formatted-number case as the contract rows; parsing it is
+            # what lets the reconciliation check actually run on those workbooks.
+            parsed.source_total_krw = parse_money_text(raw_total)
+        if parsed.source_total_krw is None:
             parsed.source_total_text = _text(raw_total) or None
     recomputed = [
         c.payment_amount_krw for c in parsed.contracts if c.payment_amount_krw is not None
@@ -871,6 +944,13 @@ def _iter_contract_blocks(sheet: Worksheet, columns: _DataAColumns) -> Iterator[
     for row in range(2, sheet.max_row + 1):
         name = _text(sheet.cell(row, columns.contract_name).value)
         if not name:
+            continue
+        if name == HEADER_CONTRACT_NAME:
+            # A repeated header row inside the data region: 미추홀구 restates the
+            # whole header on row 2 with a different payment-column spelling. It is
+            # a header, not a contract literally named "계약명", and reading it as
+            # one would invent a contract and pollute the 기관명 signal used to
+            # resolve the municipality.
             continue
         if name in TOTAL_ROW_TOKENS:
             boundary = min(boundary, row)

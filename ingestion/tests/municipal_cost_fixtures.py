@@ -127,8 +127,30 @@ HEADERS_FAMILY_7 = [
     *HEADER_TAIL,
 ]
 
+# Family 8 — the 2024-refresh delivery: seven columns, no quantity pair block at
+# all (tonnage moved wholly into DATA_B). The payment column sits immediately
+# before the 최종 처리시설 tail, so the pair span is empty.
+HEADERS_FAMILY_8 = [
+    "년도",
+    "기관명",
+    "계약명",
+    "총 금액(총 지급액)",
+    *HEADER_TAIL,
+]
+# Family 8 with the alternative header spellings one supplier uses: 연도 for the
+# year column and "<year>년 금액" for the payment column.
+HEADERS_FAMILY_8_ALT_SPELLING = [
+    "연도",
+    "기관명",
+    "계약명",
+    "2024년 금액",
+    *HEADER_TAIL,
+]
+
 # Family 1 — the fixed DATA_B tonnage grid.
 HEADERS_DATA_B = ["구분", *[f"{month}월" for month in range(1, 13)], "계"]
+# The 2024-refresh DATA_B grid carries a trailing unit-annotation column.
+HEADERS_DATA_B_WITH_UNIT_NOTE = [*HEADERS_DATA_B, "(단위:톤)"]
 
 
 def write_workbook(
@@ -178,7 +200,9 @@ def contract_row(
         organisation,
         name,
         payment,
-        *(pairs or [None, None]),
+        # ``pairs=[]`` is meaningful (the 2024-refresh 7-column spine has no pair
+        # block at all), so only ``None`` falls back to the one-pair default.
+        *([None, None] if pairs is None else pairs),
         facility,
         method,
         note,

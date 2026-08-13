@@ -19,7 +19,9 @@ from pathlib import Path
 
 import pytest
 from municipal_cost_fixtures import (
+    HEADER_TAIL,
     HEADERS_DATA_B,
+    HEADERS_DATA_B_WITH_UNIT_NOTE,
     HEADERS_FAMILY_2,
     HEADERS_FAMILY_2_WIDE,
     HEADERS_FAMILY_2_WIDEST,
@@ -28,6 +30,8 @@ from municipal_cost_fixtures import (
     HEADERS_FAMILY_5,
     HEADERS_FAMILY_6,
     HEADERS_FAMILY_7,
+    HEADERS_FAMILY_8,
+    HEADERS_FAMILY_8_ALT_SPELLING,
     contract_row,
     data_b_rows,
     inject_cached_formula,
@@ -87,11 +91,13 @@ from waste_equity_backend.models.municipal_cost import (
 )
 
 from waste_equity_ingestion.municipal_cost_parser import (
+    ParsedWorkbook,
     classify_contract_waste_scope,
     classify_value,
     covers_all_streams,
     extract_contractor,
     parse_label_period,
+    parse_money_text,
     parse_period_label,
     parse_workbook,
     quantize_quantity,
@@ -101,13 +107,13 @@ from waste_equity_ingestion.municipal_cost_parser import (
 YEAR = 2024
 
 
-def parse_a(path: Path, annotation: str = "") -> object:
+def parse_a(path: Path, annotation: str = "") -> ParsedWorkbook:
     return parse_workbook(
         path, dataset_role=DATASET_ROLE_A, reference_year=YEAR, filename_annotation=annotation
     )
 
 
-def parse_b(path: Path) -> object:
+def parse_b(path: Path) -> ParsedWorkbook:
     return parse_workbook(path, dataset_role=DATASET_ROLE_B, reference_year=YEAR)
 
 
@@ -915,3 +921,171 @@ def test_split_list_cell_preserves_elements() -> None:
 
 def test_parse_period_label_whole_year() -> None:
     assert parse_period_label("2024", YEAR) == (None, None, False)
+
+
+# ---------------------------------------------------------------------------
+# 2024-refresh delivery: seven-column spine, alternative header spellings, and
+# amounts delivered as formatted text
+# ---------------------------------------------------------------------------
+
+
+def test_seven_column_spine_with_no_quantity_pairs_parses(tmp_path: Path) -> None:
+    """The refresh DATA_A spine puts the payment directly before 최종 처리시설."""
+
+    path = write_workbook(
+        tmp_path / "no_pairs.xlsx",
+        HEADERS_FAMILY_8,
+        [contract_row(payment=1_234_567, pairs=[])],
+    )
+    parsed = parse_a(path)
+    assert parsed.layout_family == LAYOUT_DATA_A_CONTRACT_QUANTITY_PAIRS
+    assert parsed.primary_classification == CLASS_DATA_A_PAYMENT_ONLY
+    assert len(parsed.contracts) == 1
+    assert parsed.contracts[0].payment_amount_krw == Decimal(1_234_567)
+    assert parsed.contracts[0].is_primary_numerator_eligible is True
+    assert parsed.quantities == []
+
+
+def test_alternative_year_and_payment_header_spellings_are_located(tmp_path: Path) -> None:
+    """연도 + '2024년 금액' name the same two columns as 년도 + 총 금액(총 지급액)."""
+
+    canonical = write_workbook(
+        tmp_path / "canonical.xlsx",
+        HEADERS_FAMILY_8,
+        [contract_row(payment=4_873_944_335, pairs=[])],
+    )
+    variant = write_workbook(
+        tmp_path / "variant.xlsx",
+        HEADERS_FAMILY_8_ALT_SPELLING,
+        [contract_row(payment=4_873_944_335, pairs=[])],
+    )
+    first, second = parse_a(canonical), parse_a(variant)
+
+    assert second.layout_family == first.layout_family != LAYOUT_UNSUPPORTED
+    assert second.primary_classification == first.primary_classification
+    assert second.contracts[0].payment_amount_krw == Decimal(4_873_944_335)
+    assert second.contracts[0].payment_type == PAYMENT_ACTUAL_PAID
+    assert second.contracts[0].is_primary_numerator_eligible is True
+    assert second.source_municipality_names == first.source_municipality_names
+
+
+def test_alternative_payment_header_still_honours_the_source_note(tmp_path: Path) -> None:
+    """Locating the column by a new spelling must not bypass payment semantics."""
+
+    path = write_workbook(
+        tmp_path / "variant_award.xlsx",
+        HEADERS_FAMILY_8_ALT_SPELLING,
+        [contract_row(payment=500, pairs=[], note="총 금액은 계약금액이며 지급액이 아님")],
+    )
+    contract = parse_a(path).contracts[0]
+    assert contract.payment_type == PAYMENT_CONTRACT_AWARD
+    assert contract.is_primary_numerator_eligible is False
+
+
+def test_contract_award_and_budget_headers_are_never_read_as_the_payment(
+    tmp_path: Path,
+) -> None:
+    """계약금액 / 낙찰금액 / 예산액 must not satisfy the payment-column locator."""
+
+    for header in ("계약금액", "낙찰금액", "예산액", "2024년 계약금액"):
+        path = write_workbook(
+            tmp_path / f"{header}.xlsx",
+            ["년도", "기관명", "계약명", header, *["최종 처리시설", "처리방식", "비고"]],
+            [contract_row(payment=999, pairs=[])],
+        )
+        parsed = parse_a(path)
+        assert parsed.layout_family == LAYOUT_UNSUPPORTED, header
+        assert REASON_UNSUPPORTED_SOURCE_LAYOUT in parsed.payment_limitation_reasons
+        assert parsed.contracts == []
+
+
+def test_repeated_header_row_inside_the_data_is_not_a_contract(tmp_path: Path) -> None:
+    """미추홀구 restates the header on row 2 with a different payment spelling."""
+
+    path = write_workbook(
+        tmp_path / "double_header.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            ["연도", "기관명", "계약명", "총 금액(2024년 실제 지급액)", *HEADER_TAIL],
+            contract_row(organisation="미추홀구청", payment=6_556_861_120, pairs=[]),
+        ],
+    )
+    parsed = parse_a(path)
+    assert len(parsed.contracts) == 1
+    assert parsed.contracts[0].payment_amount_krw == Decimal(6_556_861_120)
+    # The header row must not pollute the 기관명 signal used to resolve the
+    # municipality: '기관명' itself must never be offered as an organisation name.
+    assert parsed.source_municipality_names == ("미추홀구청",)
+
+
+def test_text_formatted_amount_is_read_as_that_exact_number(tmp_path: Path) -> None:
+    """'6,556,861,120원' is the source's own number, merely stored as text."""
+
+    path = write_workbook(
+        tmp_path / "text_money.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            contract_row(payment="6,556,861,120원", pairs=[]),
+            [None, None, "합계", "6,556,861,120원", None, None, None],
+        ],
+    )
+    parsed = parse_a(path)
+    contract = parsed.contracts[0]
+    assert contract.payment_amount_krw == Decimal(6_556_861_120)
+    assert contract.is_primary_numerator_eligible is True
+    # Provenance of a text-delivered amount is kept, not discarded.
+    assert contract.payment_source_text == "6,556,861,120원"
+    assert parsed.source_total_krw == Decimal(6_556_861_120)
+    assert REASON_INCONSISTENT_TOTAL not in parsed.quantity_limitation_reasons
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "확인 불가",
+        "-",
+        "미제공",
+        "약 6,000,000원",
+        "6,556,861,120원 (예정)",
+        "1,23,456원",
+        "6,556,861,120~7,000,000,000원",
+        "",
+        "원",
+    ],
+)
+def test_non_numeric_money_text_never_becomes_a_number(tmp_path: Path, raw: str) -> None:
+    """Anything that is not a well-formed currency literal stays missing."""
+
+    path = write_workbook(
+        tmp_path / "not_money.xlsx", HEADERS_FAMILY_8, [contract_row(payment=raw, pairs=[])]
+    )
+    contract = parse_a(path).contracts[0]
+    assert contract.payment_amount_krw is None
+    assert contract.is_primary_numerator_eligible is False
+
+
+def test_parse_money_text_unit() -> None:
+    assert parse_money_text("6,556,861,120원") == Decimal(6_556_861_120)
+    assert parse_money_text("18,403,834,210") == Decimal(18_403_834_210)
+    assert parse_money_text("1000") == Decimal(1000)
+    assert parse_money_text("1,000.50원") == Decimal("1000.50")
+    # Never invents a number from a placeholder, prose, or a non-string.
+    assert parse_money_text("확인 불가") is None
+    assert parse_money_text("-") is None
+    assert parse_money_text(None) is None
+    assert parse_money_text(1000) is None
+    assert parse_money_text("0") == Decimal(0)
+
+
+def test_data_b_grid_tolerates_a_trailing_unit_annotation_column(tmp_path: Path) -> None:
+    """The refresh DATA_B grid appends a '(단위:톤)' header after 계."""
+
+    path = write_workbook(
+        tmp_path / "unit_note.xlsx",
+        HEADERS_DATA_B_WITH_UNIT_NOTE,
+        data_b_rows([1] * 12, [2] * 12, [3] * 12),
+    )
+    parsed = parse_b(path)
+    assert parsed.layout_family == LAYOUT_DATA_B_MONTHLY_CATEGORY_GRID
+    assert parsed.primary_classification == CLASS_DATA_B_QUANTITY_VALIDATION
+    assert parsed.has_numeric_quantity is True
