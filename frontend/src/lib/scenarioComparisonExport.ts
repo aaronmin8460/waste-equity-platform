@@ -82,17 +82,30 @@ export interface ScenarioComparisonExportInput {
 }
 
 /**
- * Extra sheets appended after Page 5C's own.
+ * Extra sheets appended after this lane's own.
  *
- * Reserved for the Page-5 integration lane (a Page-5B ranking-analysis sheet). It is
- * OPTIONAL and unset in this branch: `buildScenarioComparisonWorkbook` produces a
- * complete workbook without it, and adding one later requires no change to any sheet
- * built here.
+ * The Page-5 integration supplies one (`lib/scenarioRankingExport.ts`, the 시나리오 순위
+ * 비교 sheet built from the Page-5B model). It stays OPTIONAL: with no extension
+ * `buildScenarioComparisonWorkbook` still produces a complete, correct workbook, and
+ * nothing here imports or knows the ranking module — the dependency runs one way only.
  */
 export interface ScenarioComparisonExportExtension {
   sheets: AnyXlsxSheet[];
   /** Appended to the metadata sheet's preamble, so added scope is stated too. */
   metadataNotes?: string[];
+  /**
+   * REPLACES the second half of {@link comparisonExportScopeNote} when the extension
+   * adds sheets that widen what the file covers.
+   *
+   * Without it the note ends "전체 후보 구역에 대한 비교나 순위 분석이 아닙니다", which is
+   * exact for this lane's three single-candidate sheets and becomes FALSE the moment a
+   * ranking sheet is appended. A workbook whose sheets state different scopes is worse
+   * than one that states a wide scope plainly, so the extension supplies the sentence
+   * that is true of the assembled file and every sheet prints that one.
+   */
+  scopeNote?: string;
+  /** Appended to the filename, so the file names the wider scope its sheets carry. */
+  filenameMarker?: string;
 }
 
 // --------------------------------------------------------------------------- //
@@ -117,8 +130,16 @@ function sideLine(side: ComparisonSide): string {
  * The scope sentence. Exported so the UI can print the SAME words next to the button —
  * a workbook's scope must not be a claim only the file makes.
  */
-export function comparisonExportScopeNote(input: ScenarioComparisonExportInput): string {
+export function comparisonExportScopeNote(
+  input: ScenarioComparisonExportInput,
+  extension?: ScenarioComparisonExportExtension,
+): string {
   const key = input.candidateKey ?? "선택된 후보 구역";
+  // With extension sheets the file is no longer single-candidate, so the closing
+  // sentence comes from whoever added them rather than being quietly left wrong.
+  if (extension?.scopeNote) {
+    return `이 파일은 선택한 후보 구역 1곳(${key})의 A안·B안 상세 비교와 ${extension.scopeNote}`;
+  }
   return (
     `이 파일은 선택한 후보 구역 1곳(${key})의 A안·B안 비교만 포함합니다. ` +
     "전체 후보 구역에 대한 비교나 순위 분석이 아닙니다."
@@ -126,7 +147,10 @@ export function comparisonExportScopeNote(input: ScenarioComparisonExportInput):
 }
 
 /** The lines every sheet repeats, so a single detached sheet still states its basis. */
-function commonPreamble(input: ScenarioComparisonExportInput): string[] {
+function commonPreamble(
+  input: ScenarioComparisonExportInput,
+  extension?: ScenarioComparisonExportExtension,
+): string[] {
   const { comparison } = input;
   const ready = comparison.sideA.preview ?? comparison.sideB.preview;
   const lines = [
@@ -141,7 +165,7 @@ function commonPreamble(input: ScenarioComparisonExportInput): string[] {
     sideLine(comparison.sideA),
     sideLine(comparison.sideB),
     `비교 기준 프로필: ${ready ? profileLabel(ready.compare_profile as never) : NOT_SERVED}`,
-    comparisonExportScopeNote(input),
+    comparisonExportScopeNote(input, extension),
   ];
   // The backend's own disclaimers, verbatim rather than paraphrased.
   if (ready) {
@@ -194,7 +218,7 @@ export function buildMetadataSheet(
     },
   ];
 
-  const preamble = [...commonPreamble(input)];
+  const preamble = [...commonPreamble(input, extension)];
   // The stored-scenario caveat: a saved weight vector is the reader's bookmark, not
   // an official basis, even when its numbers happen to equal a stored profile's.
   preamble.push(
@@ -232,6 +256,7 @@ function rankCell(placement: PreviewPlacement): string | number {
 
 export function buildSelectedCandidateSheet(
   input: ScenarioComparisonExportInput,
+  extension?: ScenarioComparisonExportExtension,
 ): XlsxSheet<CandidateRow> {
   const { detailA, detailB, placementA, placementB } = input;
   const anyDetail = detailA ?? detailB;
@@ -274,7 +299,7 @@ export function buildSelectedCandidateSheet(
 
   return {
     name: "선택 후보 구역",
-    preamble: commonPreamble(input),
+    preamble: commonPreamble(input, extension),
     columns: [
       { header: "항목", value: (r) => r.item, width: 34 },
       { header: "A안", value: (r) => r.a, width: 22 },
@@ -291,9 +316,10 @@ export function buildSelectedCandidateSheet(
 
 export function buildContributionSheet(
   input: ScenarioComparisonExportInput,
+  extension?: ScenarioComparisonExportExtension,
 ): XlsxSheet<CandidateContributionRow> {
   const preamble = [
-    ...commonPreamble(input),
+    ...commonPreamble(input, extension),
     // The formula, stated in the file: a reader must be able to check the columns
     // against each other without the app.
     "가중 기여도 = 요소 점수 × 가중치 (분석 서버가 계산해 제공한 값이며, 네 요소의 합이 종합 점수입니다).",
@@ -335,11 +361,21 @@ export function buildContributionSheet(
 // Workbook
 // --------------------------------------------------------------------------- //
 
-/** Filename base. Carries the run, the cell, and the single-candidate scope. */
-export function comparisonExportFilenameBase(input: ScenarioComparisonExportInput): string {
+/**
+ * Filename base. Carries the run, the cell, and the scope of what is actually inside.
+ *
+ * The `단일후보` marker stays — the workbook is still built around one cell — but an
+ * extension that adds a ranking sheet appends its own marker, so a file sitting in a
+ * downloads folder does not describe itself more narrowly than its contents.
+ */
+export function comparisonExportFilenameBase(
+  input: ScenarioComparisonExportInput,
+  extension?: ScenarioComparisonExportExtension,
+): string {
   const run = input.comparison.runId ?? "미확인";
   const key = input.candidateKey ?? (input.candidateId !== null ? `id${input.candidateId}` : "후보미선택");
-  return `후보지_심층비교_run${run}_${key}_단일후보`;
+  const extra = extension?.filenameMarker ? `_${extension.filenameMarker}` : "";
+  return `후보지_심층비교_run${run}_${key}_단일후보${extra}`;
 }
 
 /**
@@ -354,8 +390,8 @@ export function buildScenarioComparisonWorkbook(
 ): AnyXlsxSheet[] {
   return [
     sealSheet(buildMetadataSheet(input, extension)),
-    sealSheet(buildSelectedCandidateSheet(input)),
-    sealSheet(buildContributionSheet(input)),
+    sealSheet(buildSelectedCandidateSheet(input, extension)),
+    sealSheet(buildContributionSheet(input, extension)),
     ...(extension?.sheets ?? []),
   ];
 }
@@ -366,7 +402,7 @@ export function downloadScenarioComparisonWorkbook(
   extension?: ScenarioComparisonExportExtension,
 ): Promise<string> {
   return downloadXlsx(
-    comparisonExportFilenameBase(input),
+    comparisonExportFilenameBase(input, extension),
     buildScenarioComparisonWorkbook(input, extension),
   );
 }

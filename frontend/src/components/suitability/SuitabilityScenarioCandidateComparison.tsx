@@ -74,6 +74,7 @@ import {
 import {
   comparisonExportScopeNote,
   downloadScenarioComparisonWorkbook,
+  type ScenarioComparisonExportExtension,
   type ScenarioComparisonExportInput,
 } from "../../lib/scenarioComparisonExport";
 import { WETLAND_TYPES, type WetlandType } from "../../lib/wetland";
@@ -134,11 +135,18 @@ export interface SuitabilityScenarioCandidateComparisonProps {
    * preview lists still resolves through the detail contract.
    */
   initialCandidateId?: number | null;
+  /**
+   * Extra workbook sheets contributed by another Page-5 lane (the integration passes
+   * the Page-5B ranking sheet). Optional: without it the export is exactly this lane's
+   * three single-candidate sheets, and the scope note printed by the button says so.
+   */
+  exportExtension?: ScenarioComparisonExportExtension;
 }
 
 export default function SuitabilityScenarioCandidateComparison({
   comparison,
   initialCandidateId = null,
+  exportExtension,
 }: SuitabilityScenarioCandidateComparisonProps) {
   const { sideA, sideB } = comparison;
 
@@ -201,6 +209,7 @@ export default function SuitabilityScenarioCandidateComparison({
         placementB={placementB}
         candidateKey={candidateKey}
         exportInput={exportInput}
+        exportExtension={exportExtension}
       />
       <ScenarioMapCard
         sideA={sideA}
@@ -227,6 +236,7 @@ interface DetailCardProps {
   placementB: ReturnType<typeof previewPlacement>;
   candidateKey: string | null;
   exportInput: ScenarioComparisonExportInput;
+  exportExtension?: ScenarioComparisonExportExtension;
 }
 
 function CandidateDetailCard({
@@ -240,6 +250,7 @@ function CandidateDetailCard({
   placementB,
   candidateKey,
   exportInput,
+  exportExtension,
 }: DetailCardProps) {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -247,10 +258,10 @@ function CandidateDetailCard({
   const onExport = useCallback(() => {
     setExporting(true);
     setExportError(null);
-    downloadScenarioComparisonWorkbook(exportInput)
+    downloadScenarioComparisonWorkbook(exportInput, exportExtension)
       .catch(() => setExportError("파일을 만들지 못했습니다. 잠시 후 다시 시도해 주세요."))
       .finally(() => setExporting(false));
-  }, [exportInput]);
+  }, [exportInput, exportExtension]);
 
   // Both sides served a detail: the only state in which the contribution table is a
   // like-for-like comparison. One side alone is reported, not half-drawn.
@@ -344,7 +355,7 @@ function CandidateDetailCard({
           {/* The scope the workbook will state, printed where the button is, so the
               reader knows what they are downloading before they download it. */}
           <p className="text-[11px] leading-snug text-ink-subtle" data-testid="scenario-candidate-export-scope">
-            {comparisonExportScopeNote(exportInput)}
+            {comparisonExportScopeNote(exportInput, exportExtension)}
           </p>
           {exportError ? (
             <p className="text-[11px] text-danger" role="alert" data-testid="scenario-candidate-export-error">

@@ -32,6 +32,7 @@ import {
   RANKING_MOVEMENT_LIST_SIZE,
   buildScenarioRankingComparison,
   topRankMovements,
+  type ScenarioRankingComparison,
 } from "../../../lib/scenarioRankingComparison";
 import type { ScenarioComparison } from "../../../lib/scenarioComparison";
 import ScenarioRankMovementList from "./ScenarioRankMovementList";
@@ -41,12 +42,27 @@ import ScenarioRankingTable from "./ScenarioRankingTable";
 
 export interface SuitabilityScenarioRankingAnalyticsProps {
   comparison: ScenarioComparison;
+  /**
+   * The already-derived model, when the caller needs the SAME one for something else
+   * (the Page-5 integration also feeds it to the XLSX ranking sheet).
+   *
+   * Omitted, this derives its own from `comparison` — the standalone behaviour. Passed,
+   * the derivation happens once for the whole page, so the sheet a reader downloads
+   * cannot be built from a different model than the table they are looking at.
+   */
+  model?: ScenarioRankingComparison | null;
 }
 
 export default function SuitabilityScenarioRankingAnalytics({
   comparison,
+  model: providedModel,
 }: SuitabilityScenarioRankingAnalyticsProps) {
-  const model = useMemo(() => buildScenarioRankingComparison(comparison), [comparison]);
+  const derived = useMemo(
+    // Skipped entirely when the caller already derived it.
+    () => (providedModel === undefined ? buildScenarioRankingComparison(comparison) : null),
+    [comparison, providedModel],
+  );
+  const model = providedModel === undefined ? derived : providedModel;
   const movements = useMemo(() => (model === null ? [] : topRankMovements(model)), [model]);
 
   if (model === null) return null;
