@@ -124,7 +124,7 @@ test.describe("1440×900 — primary desktop target", () => {
   test("후보지 분석 — 비용 살펴보기 setup and results", async ({ page }) => {
     await mockBackend(page);
     await page.goto("/?v=1&mode=suitability&view=cost");
-    await expect(page.getByTestId("facility-cost-form")).toBeVisible();
+    await expect(page.getByTestId("facility-cost-workflow")).toBeVisible();
     await capture(page, "cost-setup-1440x900");
 
     // Drive the real Phase 2 combobox (the pre-Phase-2 multi-select is gone), then
@@ -179,7 +179,7 @@ test.describe("1280×800 — secondary desktop target", () => {
   test("비용 살펴보기 — results", async ({ page }) => {
     await mockBackend(page);
     await page.goto("/?v=1&mode=suitability&view=cost");
-    await expect(page.getByTestId("facility-cost-form")).toBeVisible();
+    await expect(page.getByTestId("facility-cost-workflow")).toBeVisible();
     const search = page.getByTestId("facility-cost-region-search");
     if (await search.isVisible()) {
       await search.click();

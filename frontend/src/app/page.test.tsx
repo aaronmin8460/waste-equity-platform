@@ -308,9 +308,21 @@ describe("suitability map uses vector tiles, not a limited GeoJSON slice", () =>
     await renderHome();
     fireEvent.click(screen.getByTestId("mode-suitability"));
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
-    // The map renders from /tiles/{run}/{profile}/{z}/{x}/{y}.mvt; the old
-    // bbox+limit=2000 candidate fetch is never invoked.
-    expect(vi.mocked(fetchSuitabilityCandidates)).not.toHaveBeenCalled();
+    // The map renders from /tiles/{run}/{profile}/{z}/{x}/{y}.mvt. The contract
+    // being protected is that no bbox/viewport-limited candidate GeoJSON fetch
+    // ever feeds the map again — that was the defect the MVT migration removed.
+    //
+    // It used to be written as "never called at all", which was equivalent while
+    // nothing else used the endpoint. 후보지 심층 분석 now also reads the A/B/C
+    // thresholds through it (lib/relativeGrade.ts), so the assertion is restated
+    // as what it always meant: any call must be a bounded threshold read, never a
+    // rendering payload.
+    for (const [query] of vi.mocked(fetchSuitabilityCandidates).mock.calls) {
+      // No viewport dependency…
+      expect(query.bbox, "a bbox fetch would be map rendering").toBeUndefined();
+      // …and a single row, never a page of geometry to draw.
+      expect(query.limit, "a rendering fetch would pull many features").toBe(1);
+    }
   });
 });
 
@@ -321,10 +333,13 @@ describe("가중치 실험실 (weight scenario) sub-view", () => {
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
   }
 
-  it("adds a 가중치 바꿔보기 sub-view button under 후보지 분석", async () => {
+  it("offers 후보지 심층 비교 as a top-level destination in the global navigation", async () => {
     await enterSuitability();
     const button = screen.getByTestId("suitability-view-scenario");
-    expect(button.textContent).toContain("가중치 바꿔보기");
+    // Promoted out of the retired sub-view bar into the six-destination nav, and
+    // renamed with it (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2).
+    expect(button.textContent).toBe("후보지 심층 비교");
+    expect(screen.getByTestId("mode-switch").contains(button)).toBe(true);
   });
 
   it("navigates score → scenario → cost with exactly one MapView and never a second", async () => {

@@ -9,13 +9,15 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "icons:generate": "node scripts/generate-figma-icons.mjs"
   },
   "dependencies": {
     "maplibre-gl": "^5.24.0",
     "next": "16.2.10",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

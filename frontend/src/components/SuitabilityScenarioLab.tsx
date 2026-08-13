@@ -47,6 +47,7 @@ import {
 import { stabilityBadgeLabel } from "../lib/suitability";
 import InfoBanner from "./ui/InfoBanner";
 import SectionCard from "./ui/SectionCard";
+import { downloadScenarioComparison, scenarioScopeNote } from "../lib/scenarioExport";
 
 /** The applied scenario the page needs to build the custom tile URL + detail fetches. */
 export interface AppliedScenario {
@@ -396,6 +397,7 @@ export default function SuitabilityScenarioLab({
             selectedId={scenarioSelected?.candidate_id ?? null}
             onSelect={onSelectCandidate}
           />
+          <ScenarioExport result={result} />
         </>
       )}
 
@@ -1013,5 +1015,46 @@ function ScenarioMethodology() {
         <li>새 공식 분석 실행·저장 프로파일·CRITIC·안정성 정의를 만들지 않으며 데이터베이스에 저장되지 않습니다.</li>
       </ul>
     </details>
+  );
+}
+
+/**
+ * The A안 / B안 comparison download.
+ *
+ * The button prints the SAME scope sentence the workbook's preamble carries, so
+ * a reader knows before clicking that this is the displayed TOP-N list and not
+ * the whole candidate population. `scenarioScopeNote` is the single source of
+ * that wording — the button and the file cannot drift apart.
+ */
+function ScenarioExport({ result }: { result: UserScenarioPreview }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <SectionCard title="비교 결과 내려받기" testId="scenario-export">
+      <p className="text-xs leading-relaxed text-ink-muted" data-testid="scenario-export-scope">
+        {scenarioScopeNote(result)}
+      </p>
+      <button
+        type="button"
+        className="wep-btn-quiet mt-2"
+        data-testid="scenario-export-xlsx"
+        disabled={busy || result.top_candidates.length === 0}
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          downloadScenarioComparison(result)
+            .catch(() => setError("파일을 만들지 못했습니다. 잠시 후 다시 시도해 주세요."))
+            .finally(() => setBusy(false));
+        }}
+      >
+        {busy ? "엑셀 파일 만드는 중…" : `엑셀(.xlsx) 내려받기 — 상위 ${result.top_candidates.length}개`}
+      </button>
+      {error && (
+        <p className="mt-2 text-xs text-danger" role="alert" data-testid="scenario-export-error">
+          {error}
+        </p>
+      )}
+    </SectionCard>
   );
 }

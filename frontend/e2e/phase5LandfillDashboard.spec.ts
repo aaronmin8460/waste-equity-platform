@@ -61,7 +61,7 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText("수도권매립지 반입 현황");
+      await expect(page.locator("h1")).toHaveText("폐기물 처리 현황");
       await expect(page.locator("#main-content")).toHaveCount(1);
       await expect(page.locator("main")).toHaveCount(1);
 
@@ -104,10 +104,11 @@ for (const vp of VIEWPORTS) {
       }
 
       await expect(page.getByTestId("landfill-region-table")).toBeVisible();
-      await expect(page.getByTestId("landfill-origin-comparison")).toBeVisible();
-      await expect(page.getByTestId("landfill-waste-composition")).toBeVisible();
-      await expect(page.getByTestId("landfill-trend-quantity")).toBeVisible();
-      await expect(page.getByTestId("landfill-trend-fee")).toBeVisible();
+      await expect(page.getByTestId("landfill-flow-structure")).toBeVisible();
+      await expect(page.getByTestId("landfill-composition")).toBeVisible();
+      // ONE trend chart with a metric switch, not two side-by-side charts.
+      await expect(page.getByTestId("landfill-trend-chart")).toBeVisible();
+      await expect(page.getByTestId("landfill-trend-metric-fee")).toBeVisible();
 
       await expectNoHorizontalOverflow(page);
     });
@@ -118,8 +119,14 @@ for (const vp of VIEWPORTS) {
       const table = page.getByTestId("landfill-region-table");
       await table.scrollIntoViewIfNeeded();
       await expect(table).toBeVisible();
-      // Four columns and one row per served origin, at every width.
-      await expect(table.locator("thead th")).toHaveCount(4);
+      // The Figma redesign groups 폐기물 발생량 and 시설 처리량 beside the landfill
+      // columns, so the header is now TWO rows: three group cells over five leaf
+      // columns, plus 지역 spanning both rows. Every leaf keeps its own scope="col"
+      // so the grouping is announced rather than merely drawn.
+      await expect(table.locator("thead th")).toHaveCount(8);
+      await expect(table.locator('thead th[scope="col"]')).toHaveCount(6);
+      await expect(table.locator("thead th[colspan]")).toHaveCount(2);
+      // One row per served origin, at every width.
       await expect(page.getByTestId("landfill-region-row")).toHaveCount(3);
       // The page itself still never scrolls sideways.
       await expectNoHorizontalOverflow(page);
@@ -191,18 +198,23 @@ test.describe("desktop 1440×900 — states and interaction", () => {
 
     for (const testId of ["landfill-kpi-quantity", "landfill-kpi-fee"]) {
       const card = page.getByTestId(testId);
-      const valueSize = await card.locator("dd").evaluate((el) =>
-        parseFloat(getComputedStyle(el).fontSize),
-      );
+      // The card's PRIMARY value. The 수수료 card now carries two further <dd>s for
+      // the conversions derived from it (Figma 234:441), which are deliberately
+      // smaller and are not the value being ranked against the explanation.
+      const valueSize = await card
+        .locator("dd")
+        .first()
+        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       const captionSize = await card.locator("p").first().evaluate((el) =>
         parseFloat(getComputedStyle(el).fontSize),
       );
       expect(valueSize, `${testId} value must outrank its explanation`).toBeGreaterThan(
         captionSize,
       );
-      const labelSize = await card.locator("dt").evaluate((el) =>
-        parseFloat(getComputedStyle(el).fontSize),
-      );
+      const labelSize = await card
+        .locator("dt")
+        .first()
+        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       expect(valueSize).toBeGreaterThan(labelSize);
     }
   });
@@ -229,8 +241,22 @@ test.describe("desktop 1440×900 — states and interaction", () => {
       .toBeLessThanOrEqual(kpiBox.y);
     expect(bannerBox.height, "banner does not dominate the viewport").toBeLessThan(900 * 0.25);
 
-    // Exactly one banner on the screen.
-    await expect(page.locator(".wep-banner")).toHaveCount(1);
+    // Exactly one banner in the OFFICIAL LANDFILL section.
+    //
+    // This used to count `.wep-banner` across the whole dashboard, which was the
+    // same thing while the page held one dataset. It no longer is: the municipal
+    // contract-payment section renders its own warning banner — the notice that
+    // stops its 지급액 being read as a landfill fee — and that banner is required,
+    // not surplus. So the count is scoped to the section this test is about
+    // rather than relaxed.
+    const officialBanners = page.locator(
+      '[data-testid="landfill-dashboard"] .wep-banner:not([data-testid="municipal-cost-section"] .wep-banner)',
+    );
+    await expect(officialBanners).toHaveCount(1);
+    // …and the municipal section still carries its own distinct notice.
+    await expect(
+      page.getByTestId("municipal-cost-section").locator(".wep-banner"),
+    ).not.toHaveCount(0);
   });
 
   test("filters drive a load and never leave stale values on screen", async ({ page }) => {
@@ -247,7 +273,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(partial).toContainText("2026-05");
     await expect(partial).toContainText("연간 합계가 아닙니다");
     // Gaps stay gaps: only the five served months are drawn, never twelve.
-    await expect(page.getByTestId("landfill-trend-quantity").locator("rect")).toHaveCount(5);
+    await expect(page.getByTestId("landfill-trend-chart").locator("rect")).toHaveCount(5);
 
     // A month selection narrows the period label.
     await page.getByTestId("landfill-month-select").selectOption("3");
@@ -260,7 +286,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await mockLandfillBackend(page);
     await gotoLandfill(page);
 
-    const comparison = page.getByTestId("landfill-origin-comparison");
+    const comparison = page.getByTestId("landfill-flow-structure");
     await comparison.scrollIntoViewIfNeeded();
     // Region names and exact values with units stay present as text.
     for (const name of ["서울시", "인천시", "경기도"]) {
@@ -282,7 +308,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(rows.nth(2)).toContainText("동일 기간 인구 데이터 없음");
     await expect(rows.nth(2)).not.toContainText("0원/인");
 
-    await expect(page.getByTestId("landfill-waste-composition")).toContainText("생활폐기물");
+    await expect(page.getByTestId("landfill-composition")).toContainText("생활폐기물");
   });
 
   test("evidence and limitations stay reachable behind disclosures", async ({ page }) => {
@@ -393,6 +419,10 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(page.getByTestId("mode-switch")).toBeVisible();
     const before = (await page.getByTestId("top-navigation").boundingBox())!;
 
+    // 데이터·출처 is a dialog and its backdrop correctly makes the nav behind it
+    // inert, so leaving means closing it rather than clicking through it.
+    await page.getByTestId("data-sources-dialog-close").click();
+    await expect(page.getByTestId("data-sources-dialog")).toHaveCount(0);
     await page.getByTestId("mode-flow").click();
     await expect(page.getByTestId("landfill-dashboard")).toBeVisible();
     const after = (await page.getByTestId("top-navigation").boundingBox())!;
@@ -401,7 +431,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     expect(after.y).toBe(before.y);
     expect(after.width).toBe(before.width);
     // The frozen navigation labels are unchanged.
-    await expect(page.getByTestId("mode-flow")).toHaveText("매립지 현황");
+    await expect(page.getByTestId("mode-flow")).toHaveText("폐기물 처리 현황");
     await expect(page.getByTestId("mode-flow")).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -466,7 +496,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(rows).toHaveCount(3);
 
     // The waste filter narrows the composition to the selected category.
-    const composition = page.getByTestId("landfill-waste-composition");
+    const composition = page.getByTestId("landfill-composition");
     await expect(composition).toContainText("건설폐기물");
     await page.getByTestId("landfill-waste-select").selectOption("생활폐기물");
     await expect(composition).toContainText("생활폐기물");
@@ -485,7 +515,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(page.getByTestId("landfill-region-row")).toHaveCount(1);
 
     // The single remaining origin is the whole of the scoped total.
-    await expect(page.getByTestId("landfill-origin-comparison")).toContainText("100%");
+    await expect(page.getByTestId("landfill-flow-structure")).toContainText("100%");
 
     // Read the VALUE elements specifically — a whole-card `innerText` would also
     // sweep in the caption's reference year — and match the tonnage itself rather
@@ -507,10 +537,10 @@ test.describe("desktop 1440×900 — states and interaction", () => {
 
     // And no waste category may exceed the total it is part of.
     await page.getByTestId("landfill-waste-select").selectOption("생활폐기물");
-    await expect(page.getByTestId("landfill-waste-composition")).toContainText("생활폐기물");
+    await expect(page.getByTestId("landfill-composition")).toContainText("생활폐기물");
     const scopedTotal = await totalOf();
     const category = parseTons(
-      await page.getByTestId("landfill-waste-composition").locator("li").first().innerText(),
+      await page.getByTestId("landfill-composition").locator("li").first().innerText(),
     );
     expect(category).toBeLessThanOrEqual(scopedTotal + 1);
   });
@@ -519,7 +549,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await mockLandfillBackend(page);
     await gotoLandfill(page);
     // The complete-year fixture reports twelve trend months.
-    await expect(page.getByTestId("landfill-trend-quantity").locator("rect")).toHaveCount(12);
+    await expect(page.getByTestId("landfill-trend-chart").locator("rect")).toHaveCount(12);
     await expect(page.getByTestId("landfill-dashboard")).toContainText("2024년");
 
     // Hold the next summary open so the transition itself is observable.
@@ -540,7 +570,13 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(page.getByTestId("landfill-loading")).toBeVisible();
     await expect(page.getByTestId("landfill-kpis")).toHaveCount(0);
     await expect(page.getByTestId("landfill-region-table")).toHaveCount(0);
-    await expect(page.getByTestId("landfill-dashboard")).not.toContainText("2024년");
+    // Scoped to the official landfill results, not the whole dashboard: the
+    // municipal section's heading is "… 계약 지급액 — 2024년", a DIFFERENT dataset
+    // with its own fixed year that the landfill period filter does not scope.
+    // Asserting across the whole page made this test depend on a year that has
+    // nothing to do with the transition being tested.
+    await expect(page.getByTestId("landfill-filters")).not.toContainText("2024년");
+    await expect(page.getByTestId("municipal-cost-section")).toBeVisible();
     // The filter controls keep their context throughout.
     await expect(page.getByTestId("landfill-filters")).toBeVisible();
 

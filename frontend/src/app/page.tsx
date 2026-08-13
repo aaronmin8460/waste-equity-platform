@@ -54,6 +54,7 @@ import {
   type FacilityBurdenEnvelope,
   type FacilityItem,
   type LandfillOrigin,
+  type LandfillSummary,
   type MunicipalCostResponse,
   type MunicipalCostSido,
   type MunicipalCostSort,
@@ -74,18 +75,22 @@ import {
   CANDIDATE_SCORE_BREAKS,
   CANDIDATE_SCORE_PALETTE_5,
   CANDIDATE_STABLE_OUTLINE_COLOR,
-  METRIC_GROUPS,
+  METRIC_MODE_LABELS,
   METRICS,
   NO_DATA_COLOR,
+  findMetricRow,
   formatCount,
   formatLegendValue,
   formatQuantity,
   frequencyLabel,
+  metricKeyFor,
   UNKNOWN_FREQUENCY_LABEL,
   resolveActiveScale,
   scaleConfigForMetric,
   scaleMethodNote,
   type MetricKey,
+  type MetricMode,
+  type MetricRow,
 } from "../lib/metrics";
 import type {
   MapMode,
@@ -93,7 +98,8 @@ import type {
   RegionSelection,
   StatusVisibility,
 } from "../components/MapView";
-import { formatRegionMetricDisplay, regionUnavailableReasonLabel } from "../lib/regionDisplay";
+import { formatRegionMetricDisplay } from "../lib/regionDisplay";
+import EquityFacilityLayerCard from "../components/equity/EquityFacilityLayerCard";
 import EquityMapInsightStrip from "../components/equity/EquityMapInsightStrip";
 import EquityMetricSelector from "../components/equity/EquityMetricSelector";
 import EquityRegionPicker from "../components/equity/EquityRegionPicker";
@@ -105,6 +111,14 @@ import { landfillUnavailableFromAll } from "../lib/landfill";
 import type { MunicipalCostErrorState } from "../lib/municipalCost";
 import { municipalCostErrorFrom } from "../lib/municipalCost";
 import DashboardShell from "../components/DashboardShell";
+import ResizableSidebar from "../components/ui/ResizableSidebar";
+import CollapsiblePanel from "../components/ui/CollapsiblePanel";
+import Dialog from "../components/ui/Dialog";
+import {
+  RelativeGradePanel,
+  RelativeGradeUnavailable,
+} from "../components/suitability/RelativeGradeChip";
+import { computeGradeDistribution, type GradeDistribution } from "../lib/relativeGrade";
 import FacilityCostDashboard from "../components/FacilityCostDashboard";
 import LandCoverLayerControl from "../components/LandCoverLayerControl";
 import type { ClassLevel } from "../lib/landCover";
@@ -133,7 +147,7 @@ import WetlandLayerControl from "../components/WetlandLayerControl";
 import type { WetlandType } from "../lib/wetland";
 import { defaultWetlandTypeVisibility } from "../lib/wetland";
 import RegionRanking from "../components/RegionRanking";
-import RegionComparison, { type ComparisonValue } from "../components/RegionComparison";
+import FullRankingDialog from "../components/FullRankingDialog";
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
 import PageHeader from "../components/ui/PageHeader";
@@ -141,34 +155,30 @@ import Skeleton from "../components/ui/Skeleton";
 import {
   rankRegions,
   type RankableRegion,
+  type RankDirection,
   type ScopeSelection,
 } from "../lib/ranking";
 import {
   decodeUrlState,
   encodeUrlState,
   shareableUrl,
-  MAX_COMPARE,
   MUNICIPAL_COST_DEFAULT_SORT,
   MUNICIPAL_COST_DEFAULT_STATUS,
   type AppUrlState,
 } from "../lib/urlState";
 import { downloadCsv, safeFilename } from "../lib/csv";
-import {
-  buildComparisonCsv,
-  buildRankingCsv,
-  type ComparisonRegionRow,
-} from "../lib/exports";
-import { buildComparisonReport, buildEquityReport, type ReportModel } from "../lib/report";
+import { buildRankingCsv } from "../lib/exports";
+import { buildEquityReport, type ReportModel } from "../lib/report";
 import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario";
 import { namedWeightRows } from "../lib/suitability";
 import {
-  MODE_LABELS,
-  MODE_ORIENTATION,
   SUITABILITY_SCREENING_SHORT_LABEL,
   accountingBasisLabel,
+  destinationFor,
   plainError,
   type DashboardArea,
   type DataStatus,
+  type NavDestination,
 } from "../lib/glossary";
 
 /** Sub-view inside suitability mode: the score screening, the weight lab, or cost. */
@@ -210,6 +220,24 @@ export interface LoadedData {
   reportingStats: ReportingWasteStatisticsEnvelope;
   reportingPerCapita: ReportingPerCapitaEnvelope;
   sources: DataSourceItem[];
+}
+
+/**
+ * The identity of the period a 전년 대비 comparison is against.
+ *
+ * Derived from the SERVED period plus the two filters that scope a landfill summary
+ * (origin and waste type), so a delta always describes the same slice of the data as
+ * the value it sits beside. A monthly view compares against the same month of the
+ * prior year, an annual view against the prior year. JSON rather than a joined
+ * string for the same reason as `flowKey`: the waste name is free text.
+ */
+function priorPeriodKey(
+  summary: LandfillSummary,
+  origin: LandfillOrigin | null,
+  waste: string | null,
+): string {
+  const { year, month } = summary.period;
+  return JSON.stringify([year - 1, month ? Number(month.slice(5, 7)) : null, origin, waste]);
 }
 
 export default function Home() {
@@ -254,6 +282,34 @@ export default function Home() {
   const [profile, setProfile] = useState<SuitabilityProfile>("baseline");
   // Sub-view inside suitability mode: 후보지 점수 (score) or 비용 살펴보기 (cost).
   const [suitabilityView, setSuitabilityView] = useState<SuitabilityView>("score");
+
+  // 후보지 심층 분석 workspace: which of the two side columns are collapsed. Local
+  // layout preference only — deliberately NOT in the URL, because a shared link
+  // should restore an ANALYSIS, not someone else's panel arrangement.
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+
+  /**
+   * The destination 데이터·출처 is layered OVER.
+   *
+   * The data-and-sources surface is a dialog, not a page (spec §8), so something
+   * has to be rendered behind it — and closing has to return there. This is the
+   * last non-transparency area the reader was actually on. It defaults to 지역
+   * 지표 so a cold `?v=1&mode=transparency` deep link still has a real page
+   * behind the dialog rather than a blank frame.
+   */
+  const [lastArea, setLastArea] = useState<{
+    // Never "transparency" — that is the dialog, not something it can sit over.
+    mode: Exclude<DashboardMode, "transparency">;
+    view: SuitabilityView;
+  }>({ mode: "equity", view: "score" });
+
+  // The A/B/C relative band distribution for the active run + profile.
+  //   null + settled=false → still loading (render nothing rather than a guess)
+  //   null + settled=true  → the complete population could not be established,
+  //                          so the bands are DISABLED and say so.
+  const [gradeDistribution, setGradeDistribution] = useState<GradeDistribution | null>(null);
+  const [gradeSettled, setGradeSettled] = useState(false);
 
   // The persistent identity of the selected region is its region CODE, not a
   // captured metric-value snapshot. The full RegionSelection (label + value +
@@ -304,6 +360,23 @@ export default function Home() {
   const flowMatchesFilters = flowResult?.key === flowKey;
   const flowData = flowMatchesFilters ? flowResult.data : null;
   const flowUnavailable = flowMatchesFilters ? flowResult.unavailable : null;
+
+  /**
+   * The immediately preceding comparable period, for the 전년 대비 deltas.
+   *
+   * Keyed like every other landfill result, and resolved from the SERVED period
+   * rather than from the filters: `flowYear` is null for "latest complete year", so
+   * the prior period is only knowable once the current answer names its own year.
+   * `summary: null` on a settled key means the backend holds no record for that
+   * period — which the KPI cards render as 비교 자료 없음, never as 0%.
+   */
+  const [flowPrior, setFlowPrior] = useState<{
+    key: string;
+    summary: LandfillSummary | null;
+  } | null>(null);
+  const flowPriorKey = flowData ? priorPeriodKey(flowData.summary, flowOrigin, flowWaste) : null;
+  const flowPriorSettled = flowPriorKey !== null && flowPrior?.key === flowPriorKey;
+  const flowPriorSummary = flowPriorSettled ? (flowPrior?.summary ?? null) : null;
 
   // 시·군·구 수집·운반 계약 지급액 — a SEPARATE dataset sharing the 매립지 현황 area. Its
   // three filters are held apart from the four official-landfill ones above and are
@@ -359,11 +432,24 @@ export default function Home() {
     null,
   );
 
-  // 지역 부담 ranking + comparison + share/export state.
+  // 지역 지표 ranking + share/export state.
+  //
+  // The 지역 비교 (pick-up-to-three) feature that also lived here was removed by the
+  // correction pass: 지표 순위 전체보기 shows EVERY region for the active metric, which
+  // is what the hand-picked three were being used to approximate. `reportKind` is
+  // therefore a one-member union rather than a boolean, so the report preview keeps
+  // its existing "which model?" shape if a second report is ever added back.
   const [scope, setScope] = useState<ScopeSelection>("all");
   const [topN, setTopN] = useState(10);
-  const [comparison, setComparison] = useState<string[]>([]);
-  const [reportKind, setReportKind] = useState<"ranking" | "comparison" | null>(null);
+  /**
+   * Which end of the ranking 지역 순위 shows (Figma frame 74:2025's ↑/↓ toggle). It
+   * chooses between the two lists `rankRegions` already returns, so it changes no
+   * ordering, no tie-break, and no exclusion rule. Deliberately NOT a URL parameter:
+   * the URL contract is frozen for this phase, and `topN` is likewise page-only.
+   */
+  const [rankDirection, setRankDirection] = useState<RankDirection>("high");
+  const [fullRankingOpen, setFullRankingOpen] = useState(false);
+  const [reportKind, setReportKind] = useState<"ranking" | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<string[]>([]);
   // A scenario / candidate restored from a shared URL, held until consumed (the
   // scenario is auto-applied by the lab via the preview API; the candidate is
@@ -432,15 +518,38 @@ export default function Home() {
     load();
   }, [load]);
 
-  // Select a metric while PRESERVING the selected region: the summary is derived
+  // Both metric handlers below PRESERVE the selected region: the summary is derived
   // from `selectedRegionCode` under the active metric, so switching metric simply
   // re-derives the same region's label + value (or its explicit unavailable text
-  // if the new metric serves no value for it). The stored code is retained here —
-  // it is only dropped when the region no longer exists in the active geography
-  // (handled by the derivation returning null; see `selectedRegion`).
-  const selectMetric = useCallback((key: MetricKey) => {
-    setMetricKey(key);
-  }, []);
+  // if the new metric serves no value for it). The stored code is retained — it is
+  // only dropped when the region no longer exists in the active geography (handled
+  // by the derivation returning null; see `selectedRegion`).
+  //
+  // The 지표 선택 card presents the eleven metrics as CATEGORY ROWS with an optional
+  // 총량/1인당 switch (lib/metrics.ts METRIC_SECTIONS). Neither the row nor the mode is
+  // separate state: both are read back off the one canonical `metricKey`, and both
+  // handlers below just resolve a different served key for it. That is what keeps a
+  // shared `?metric=` link, the map, the ranking, and the exports on one value.
+  const activeMetricRow = findMetricRow(metricKey);
+  const metricMode: MetricMode = activeMetricRow?.mode ?? "total";
+
+  // Picking a category keeps the reader's counting choice where that category
+  // supports it; a category with no per-capita counterpart resolves to its absolute
+  // metric rather than silently inventing one (`metricKeyFor`).
+  const selectMetricRow = useCallback(
+    (row: MetricRow) => setMetricKey(metricKeyFor(row, metricMode)),
+    [metricMode],
+  );
+
+  // Flipping 총량/1인당 stays on the SAME category — it only ever swaps between that
+  // row's two served keys.
+  const selectMetricMode = useCallback(
+    (nextMode: MetricMode) => {
+      if (!activeMetricRow) return;
+      setMetricKey(metricKeyFor(activeMetricRow.row, nextMode));
+    },
+    [activeMetricRow],
+  );
 
   // Suitability meta (policy + latest run + summary): load once when entering the mode.
   useEffect(() => {
@@ -471,6 +580,41 @@ export default function Home() {
       .then((summary) => setSuit((prev) => (prev ? { ...prev, summary } : prev)))
       .catch(() => undefined);
   }, [profile, mode]);
+
+  // Load the relative-band thresholds for the run+profile currently on the map.
+  //
+  // Four ~1 KB order-statistic reads (see lib/relativeGrade.ts), and only while
+  // 후보지 심층 분석 is actually open — the bands are not shown anywhere else, so
+  // no other view pays for them. Keyed on run + profile because a different
+  // profile is a genuinely different score distribution.
+  useEffect(() => {
+    if (mode !== "suitability" || suitabilityView !== "score" || !suit) return;
+    let cancelled = false;
+    const runId = suit.run.id;
+    /* eslint-disable react-hooks/set-state-in-effect -- clear the PREVIOUS key's
+       bands before the new key's read begins. Leaving the old distribution on
+       screen would briefly label candidates with thresholds computed for a
+       different profile — exactly the silently-wrong number this feature exists
+       to avoid. Clearing to the honest "not yet known" state is the safe move. */
+    setGradeSettled(false);
+    setGradeDistribution(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    computeGradeDistribution(runId, profile)
+      .then((distribution) => {
+        if (cancelled) return;
+        setGradeDistribution(distribution);
+        setGradeSettled(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Never a fabricated threshold: an error settles into the disabled state.
+        setGradeDistribution(null);
+        setGradeSettled(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, suitabilityView, suit, profile]);
 
   // No candidate fetch here anymore: the map serves the complete suitability grid
   // as PostGIS vector tiles (see suitabilityTileUrl / MapView's vector source), so
@@ -579,6 +723,44 @@ export default function Home() {
     // `flowResult` in step with the request that produced it.
   }, [mode, flowKey, flowYear, flowMonth, flowOrigin, flowWaste]);
 
+  // The prior comparable period, for the 전년 대비 deltas.
+  //
+  // A SEPARATE effect keyed on the RESOLVED period, not a fourth entry in the
+  // `Promise.allSettled` above: `flowYear` is null whenever the reader has not named
+  // a year, so the period to compare against is not known until the current answer
+  // arrives. It must also fail independently — a period the backend does not hold is
+  // the normal case for the earliest year in the dataset, and it must not blank the
+  // official values it sits beside.
+  useEffect(() => {
+    if (mode !== "flow") return;
+    const summary = flowData?.summary;
+    if (!summary) return;
+    const key = priorPeriodKey(summary, flowOrigin, flowWaste);
+    let cancelled = false;
+    // Nothing is cleared here: the result is TAGGED with the period it describes and
+    // `flowPriorSettled` compares that tag against the current one during render, so
+    // a previous period's comparison stops rendering in the same pass that requests
+    // the new one — without a synchronous setState cascade.
+    fetchLandfillSummary({
+      year: summary.period.year - 1,
+      month: summary.period.month ? Number(summary.period.month.slice(5, 7)) : null,
+      origin: flowOrigin,
+      wasteName: flowWaste,
+    })
+      .then((prior) => {
+        if (!cancelled) setFlowPrior({ key, summary: prior });
+      })
+      .catch(() => {
+        // Settled with no summary: "the backend holds no record for that period",
+        // which renders as 비교 자료 없음. Never a zero, and never an alert — the
+        // current period's values are unaffected.
+        if (!cancelled) setFlowPrior({ key, summary: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, flowData, flowOrigin, flowWaste]);
+
   // 시·군·구 수집·운반 계약 지급액: one request per filter combination, issued only in
   // the 매립지 현황 area.
   //
@@ -671,7 +853,12 @@ export default function Home() {
   const changeMode = useCallback(
     (next: DashboardMode) => {
       if (next !== "suitability") clearScenario();
-      if (next !== "equity") setReportKind(null); // close the equity report overlay
+      if (next !== "equity") {
+        setReportKind(null); // close the equity report overlay
+        // …and the equity full-ranking dialog, for the same reason: leaving the area
+        // must not leave an overlay armed to reappear when the reader comes back.
+        setFullRankingOpen(false);
+      }
       setMode(next);
     },
     [clearScenario],
@@ -682,6 +869,53 @@ export default function Home() {
       setSuitabilityView(next);
     },
     [clearScenario],
+  );
+
+  /**
+   * Apply a visible destination: the ONE entry point the global navigation uses.
+   *
+   * The six destinations are a projection over `(mode, view)`
+   * (lib/glossary.NAV_DESTINATIONS), so navigating is just setting both — through
+   * the existing guarded setters, which is what keeps the scenario-clearing and
+   * report-closing side effects intact. `view` is only written for the suitability
+   * destinations, so moving to 지역 지표 or 폐기물 처리 현황 leaves the reader's
+   * last suitability sub-view alone and returning to it is not a surprise.
+   */
+  const navigate = useCallback(
+    (destination: NavDestination) => {
+      if (destination.view !== null) changeSuitabilityView(destination.view);
+      changeMode(destination.mode);
+    },
+    [changeMode, changeSuitabilityView],
+  );
+
+  useEffect(() => {
+    if (mode === "transparency") return;
+    /* eslint-disable react-hooks/set-state-in-effect -- mirror the current area so
+       closing the data dialog can return to it. Derived from state that has
+       already settled; it is a record of where the reader was, not a computation. */
+    setLastArea({ mode: mode as Exclude<DashboardMode, "transparency">, view: suitabilityView });
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [mode, suitabilityView]);
+
+  /**
+   * Close the dialog by navigating back to the area it was layered over.
+   *
+   * This is a state change, not a history pop: in-app area changes mirror to the
+   * URL with `replaceState` (they add no history entries), so "go back to where
+   * you were" has to be expressed as a destination, not as `history.back()` —
+   * which would leave the app entirely. That also makes the close idempotent and
+   * loop-free: `lastArea` is by construction never transparency.
+   */
+  const closeDataDialog = useCallback(() => {
+    changeSuitabilityView(lastArea.view);
+    changeMode(lastArea.mode);
+  }, [lastArea, changeMode, changeSuitabilityView]);
+
+  /** The destination the current analytical state renders as. */
+  const destination = useMemo(
+    () => destinationFor(mode as DashboardArea, suitabilityView),
+    [mode, suitabilityView],
   );
 
   // Flip one suitability status' visibility in the canonical page state. This is the
@@ -1044,7 +1278,7 @@ export default function Home() {
       ? "derived"
       : "reported";
 
-  // --- 지역 부담 ranking + comparison + export derivations ------------------- //
+  // --- 지역 지표 ranking + export derivations -------------------------------- //
 
   // Every region on the active geography paired with its served value (or undefined
   // when unavailable) — the input to the ranking, which never fabricates a 0.
@@ -1056,32 +1290,6 @@ export default function Home() {
         value: regionValues.get(feature.properties.region_code),
       })),
     [activeBoundaries, regionValues],
-  );
-
-  // Resolve one region's comparison cell (exact value or 자료 없음). Reuses the same
-  // formatter path as the summary, so an official 0 stays distinct from unavailable.
-  const resolveComparisonValue = useCallback(
-    (code: string): ComparisonValue | null => {
-      const selection = buildRegionSelection(code);
-      if (!selection) return null;
-      const value = regionValues.get(code);
-      // The SERVED availability reason for a region with no value, so the
-      // comparison row can say WHY the cell is empty instead of only 자료 없음.
-      // Read from the same feature the summary and the map popup read; when the
-      // source attached no reason the label is "" and nothing extra is rendered.
-      const feature = activeBoundaries.features.find((f) => f.properties.region_code === code);
-      return {
-        code,
-        name: selection.regionName,
-        display: value?.display ?? "",
-        hasValue: selection.hasValue,
-        numeric: value?.numeric,
-        unavailableReason: selection.hasValue
-          ? undefined
-          : regionUnavailableReasonLabel(feature?.properties.unavailable_reason) || undefined,
-      };
-    },
-    [buildRegionSelection, regionValues, activeBoundaries],
   );
 
   // Concise source/period/accounting provenance for the CSV + report metadata.
@@ -1098,15 +1306,6 @@ export default function Home() {
     };
   }, [sourceInfo, derivedInfo, metricReferencePeriod]);
 
-  const comparisonExportRows = useCallback((): ComparisonRegionRow[] => {
-    return comparison.map((code) => {
-      const value = resolveComparisonValue(code);
-      return value
-        ? { code, name: value.name, display: value.display, hasValue: value.hasValue }
-        : { code, name: code, display: "", hasValue: false };
-    });
-  }, [comparison, resolveComparisonValue]);
-
   const downloadRankingCsv = useCallback(() => {
     const result = rankRegions(rankableRegions, scope, topN);
     const rows = buildRankingCsv({
@@ -1122,45 +1321,20 @@ export default function Home() {
     downloadCsv(safeFilename(`지역부담순위_${metric.label}`, "csv"), rows);
   }, [rankableRegions, scope, topN, metric.label, unit, exportProvenance]);
 
-  const downloadComparisonCsv = useCallback(() => {
-    const rows = buildComparisonCsv({
-      metricLabel: metric.label,
-      unit,
-      source: exportProvenance.source,
-      referencePeriod: exportProvenance.referencePeriod,
-      accountingBasis: exportProvenance.accountingBasis,
-      regions: comparisonExportRows(),
-      when: new Date(),
-    });
-    downloadCsv(safeFilename(`지역비교_${metric.label}`, "csv"), rows);
-  }, [metric.label, unit, exportProvenance, comparisonExportRows]);
-
   // The report model for the print/PNG preview, built when a report is opened.
   const reportModel = useMemo<ReportModel | null>(() => {
     if (reportKind === null) return null;
-    const when = new Date();
-    if (reportKind === "ranking") {
-      return buildEquityReport({
-        metricLabel: metric.label,
-        unit,
-        source: exportProvenance.source,
-        referencePeriod: exportProvenance.referencePeriod,
-        accountingBasis: exportProvenance.accountingBasis,
-        scope,
-        result: rankRegions(rankableRegions, scope, topN),
-        when,
-      });
-    }
-    return buildComparisonReport({
+    return buildEquityReport({
       metricLabel: metric.label,
       unit,
       source: exportProvenance.source,
       referencePeriod: exportProvenance.referencePeriod,
       accountingBasis: exportProvenance.accountingBasis,
-      regions: comparisonExportRows(),
-      when,
+      scope,
+      result: rankRegions(rankableRegions, scope, topN),
+      when: new Date(),
     });
-  }, [reportKind, metric.label, unit, exportProvenance, scope, topN, rankableRegions, comparisonExportRows]);
+  }, [reportKind, metric.label, unit, exportProvenance, scope, topN, rankableRegions]);
 
   // --- Shareable, validated URL state -------------------------------------- //
 
@@ -1169,7 +1343,11 @@ export default function Home() {
       mode: mode as DashboardArea,
       metric: metricKey,
       region: selectedRegionCode,
-      cmp: comparison,
+      // 지역 비교 is gone, so this page writes no comparison codes. The FIELD stays in
+      // the URL contract (`lib/urlState.ts` still decodes and bounds-checks `cmp`) so
+      // an already-shared legacy link keeps restoring everything else it carries
+      // instead of being rejected — it just no longer selects anything.
+      cmp: [],
       scope,
       top: topN,
       view: suitabilityView,
@@ -1199,7 +1377,6 @@ export default function Home() {
       mode,
       metricKey,
       selectedRegionCode,
-      comparison,
       scope,
       topN,
       suitabilityView,
@@ -1224,10 +1401,10 @@ export default function Home() {
     ],
   );
 
-  // Restore shared state ONCE, after the regions have loaded (so restored region
-  // and comparison codes resolve against real geography; a code the active metric's
-  // geometry does not contain simply shows no value — never a fabricated one). The
-  // decoder has already whitelisted/bounds-checked every field.
+  // Restore shared state ONCE, after the regions have loaded (so a restored region
+  // code resolves against real geography; a code the active metric's geometry does
+  // not contain simply shows no value — never a fabricated one). The decoder has
+  // already whitelisted/bounds-checked every field.
   useEffect(() => {
     if (urlRestored.current || data === null || typeof window === "undefined") return;
     urlRestored.current = true;
@@ -1239,7 +1416,9 @@ export default function Home() {
     if (state.mode) setMode(state.mode);
     if (state.metric) setMetricKey(state.metric);
     if (state.region) setSelectedRegionCode(state.region);
-    if (state.cmp) setComparison(state.cmp.slice(0, MAX_COMPARE));
+    // `state.cmp` is decoded but deliberately NOT applied: the 지역 비교 surface it
+    // fed no longer exists. Ignoring it keeps a legacy shared link working for every
+    // other field rather than failing the whole restore.
     if (state.scope) setScope(state.scope);
     if (state.top) setTopN(state.top);
     if (state.view) setSuitabilityView(state.view);
@@ -1325,6 +1504,34 @@ export default function Home() {
   // regions could be under-offered here even though /facility-cost/calculate
   // (which resolves the latest year PER stream) could still compute them; that
   // would then warrant a backend per-stream coverage endpoint.
+  /**
+   * RCIS reporting geometry, keyed the way the rest of the app keys regions.
+   *
+   * The facility-cost region list comes from `data.waste.items`, which is RCIS
+   * reporting geography — so the selection map has to use the SAME collection, or
+   * a clicked polygon would carry a code the picker has never heard of. Mapped to
+   * `region_code` here because that is the property the map's click handler and
+   * `promoteId` read.
+   */
+  const reportingBoundaryCollection = useMemo(() => {
+    if (!data) return null;
+    return {
+      type: "FeatureCollection" as const,
+      reference_year: data.reportingBoundaries.reference_year,
+      count: data.reportingBoundaries.features.length,
+      features: data.reportingBoundaries.features.map((f) => ({
+        type: "Feature" as const,
+        geometry: f.geometry,
+        properties: {
+          region_code: f.properties.reporting_region_code,
+          region_name: f.properties.reporting_region_name,
+          region_level: f.properties.source_reporting_level,
+          parent_region_code: null,
+        },
+      })),
+    } as unknown as RegionBoundaryCollection;
+  }, [data]);
+
   const facilityCostWasteRegions = useMemo(
     () =>
       data
@@ -1381,7 +1588,7 @@ export default function Home() {
       >
         <div
           aria-hidden
-          className="flex w-full flex-col gap-4 border-b border-hairline bg-surface p-5 md:w-96 md:flex-none md:border-r md:border-b-0"
+          className="wep-sidebar flex w-full flex-col gap-4 border-b border-hairline bg-surface p-5 md:flex-none md:border-r md:border-b-0"
           data-testid="loading-skeleton-sidebar"
         >
           {/* Header block */}
@@ -1422,25 +1629,52 @@ export default function Home() {
   // 수도권매립지 mode: a full-width dashboard with no map and no sidebar. The
   // early return also narrows `mode` to MapMode for the map layout below, so a
   // non-map mode cannot reach MapView.
-  if (mode === "transparency") {
-    return (
-      <DashboardShell mode={mode} onModeChange={changeMode} variant="page">
-        {/* Phase 6: the heading and the orientation strip moved INTO the dashboard,
-            matching the Phase 5 landfill pattern. The strip still renders directly
-            below the single <h1> (asserted by shell.test.tsx's document-order check)
-            and the view still has exactly one <h1>. */}
-        <TransparencyDashboard data={data} orientation={<ModeOrientation mode={mode} />} />
-      </DashboardShell>
-    );
-  }
+  // 데이터·출처 is a DIALOG layered over the previous destination (spec §8), not a
+  // page of its own. So there is no transparency branch here any more: the view
+  // below renders `lastArea` while the dialog is open, and the dialog itself is
+  // appended to every branch by `withDataDialog` at the bottom of this component.
+  //
+  // `destination` still resolves to 데이터·출처, so the navigation shows it active
+  // and the URL keeps `mode=transparency` — the legacy deep link is unchanged.
+  const dataDialogOpen = mode === "transparency";
+  // Never "transparency": when the dialog is open this is the area BEHIND it, and
+  // when it is closed `mode` is already something else. Stating that in the type
+  // is what lets the flow/cost early returns narrow to `MapMode` as before.
+  const viewMode: Exclude<DashboardMode, "transparency"> = dataDialogOpen
+    ? lastArea.mode
+    : (mode as Exclude<DashboardMode, "transparency">);
+  const viewSubview: SuitabilityView = dataDialogOpen ? lastArea.view : suitabilityView;
+  const viewDeepAnalysis = viewMode === "suitability" && viewSubview === "score";
 
-  if (mode === "flow") {
-    return (
-      <DashboardShell mode={mode} onModeChange={changeMode} variant="page">
+  /** Wrap a branch with the data dialog, so exactly one definition of it exists. */
+  const withDataDialog = (branch: React.ReactNode) => (
+    <>
+      {branch}
+      <Dialog
+        open={dataDialogOpen}
+        title="데이터·출처"
+        description="이 플랫폼이 사용하는 공공자료의 출처와 기준 시점, 그리고 부족한 부분을 확인할 수 있습니다."
+        testId="data-sources-dialog"
+        onClose={closeDataDialog}
+      >
+        <TransparencyDashboard
+          data={data}
+          title="데이터·출처"
+          embedded
+          onClose={closeDataDialog}
+        />
+      </Dialog>
+    </>
+  );
+
+  if (viewMode === "flow") {
+    return withDataDialog(
+      <DashboardShell destination={destination} onNavigate={navigate} variant="page">
         <LandfillDashboard
+          title={destination.label}
           // Rendered inside the dashboard's own header, below its <h1> — the same
           // place the orientation strip sits in the other three areas.
-          orientation={<ModeOrientation mode={mode} />}
+          orientation={<ModeOrientation destination={destination} />}
           data={flowData}
           unavailable={flowUnavailable}
           year={flowYear}
@@ -1454,6 +1688,13 @@ export default function Home() {
           availableYears={flowYears}
           wasteOptions={flowWasteOptions}
           maxMonth={flowMaxMonth}
+          priorSummary={flowPriorSummary}
+          priorSettled={flowPriorSettled}
+          // The two SERVED equity indicators the 발생·처리 비교 reads. Already loaded
+          // for the 지역 지표 area, so the landfill view issues no extra request and
+          // computes no aggregate of its own.
+          reportingPerCapita={data?.reportingPerCapita ?? null}
+          facilityBurden={data?.facilityBurden ?? null}
           // The 2024 municipal contract-payment dataset. One prop object, so the
           // two datasets' state can never be crossed at this call site.
           municipalCost={{
@@ -1467,7 +1708,7 @@ export default function Home() {
             setSort: setMcSort,
           }}
         />
-      </DashboardShell>
+      </DashboardShell>,
     );
   }
 
@@ -1477,22 +1718,21 @@ export default function Home() {
   // The main mode switch and the suitability sub-view switch stay reachable above it,
   // and the selected candidate context is preserved (passed through). The map layout
   // below is thus only ever reached by the equity map and the suitability SCORE view.
-  if (mode === "suitability" && suitabilityView === "cost") {
-    return (
-      <DashboardShell
-        mode={mode}
-        onModeChange={changeMode}
-        variant="page"
-        suitabilityView={suitabilityView}
-        onSuitabilityViewChange={changeSuitabilityView}
-      >
+  if (viewMode === "suitability" && viewSubview === "cost") {
+    return withDataDialog(
+      <DashboardShell destination={destination} onNavigate={navigate} variant="page">
         <div className="pt-6">
           <FacilityCostDashboard
+            title={destination.label}
+            orientation={<ModeOrientation destination={destination} />}
             wasteRegions={facilityCostWasteRegions}
             selectedCandidate={selected}
+            // The RCIS reporting geometry — the same code space the waste
+            // statistics (and therefore the calculable region list) use.
+            regionBoundaries={reportingBoundaryCollection}
           />
         </div>
-      </DashboardShell>
+      </DashboardShell>,
     );
   }
 
@@ -1523,7 +1763,7 @@ export default function Home() {
     return { color, range };
   });
 
-  return (
+  return withDataDialog(
     // The shell owns the viewport-height chain (see components/DashboardShell.tsx):
     // it is the fixed-height flex COLUMN at md+, the global nav is its auto-height
     // first child, and <main> is `md:flex-1 md:min-h-0` — a definite-height flex
@@ -1531,19 +1771,28 @@ export default function Home() {
     // still reaches the viewport bottom with no empty strip below it.
     // Inside <main>: mobile stacks the sidebar above a full-width map; md+ is the
     // original side-by-side row.
-    <DashboardShell
-      mode={mode}
-      onModeChange={changeMode}
-      variant="map"
-      suitabilityView={suitabilityView}
-      onSuitabilityViewChange={changeSuitabilityView}
-    >
+    <DashboardShell destination={destination} onNavigate={navigate} variant="map">
       {/* The control column is a SUNKEN surface so each section inside it reads as a
           distinct `.wep-card` (the shell root is the application canvas, cards are
-          white surfaces — docs/ui-refresh/design-tokens.md §2). The layout classes
-          the responsive contract asserts — w-full, md:w-96, md:flex-none,
-          md:overflow-y-auto — are unchanged. */}
-      <aside className="flex w-full flex-col gap-3 border-b border-hairline bg-surface-sunken p-4 md:w-96 md:flex-none md:overflow-y-auto md:border-r md:border-b-0">
+          white surfaces — docs/ui-refresh/design-tokens.md §2).
+
+          TWO different left columns live here:
+            - 지역 지표 and 후보지 심층 비교 keep the RESIZABLE column (Phase 2);
+            - 후보지 심층 분석 uses the collapsible three-column workspace instead
+              (spec §6), so its controls move into `CollapsiblePanel`.
+
+          The map element stays at the SAME child index in both shapes, which is
+          what lets React reconcile it rather than remount it when the reader moves
+          between areas (asserted by app/shell.test.tsx). */}
+      {viewDeepAnalysis ? (
+        <CollapsiblePanel
+          side="left"
+          label="분석 조건"
+          collapsed={leftPanelCollapsed}
+          onToggle={setLeftPanelCollapsed}
+          panelId="deep-analysis-left"
+          testId="deep-left-panel"
+        >
         {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
             데이터·출처, and 비용 살펴보기 already title themselves. The product name
             it replaced now lives in the app bar's brand block, so the same words no
@@ -1553,69 +1802,114 @@ export default function Home() {
             SIBLING so it still follows the h1 in document order (shell.test.tsx)
             while keeping the column's gap-3 rhythm. */}
         <PageHeader
-          title={MODE_LABELS[mode]}
+          title={destination.label}
           description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
         />
 
-        <ModeOrientation mode={mode} />
+        <ModeOrientation destination={destination} />
+          <SuitabilityScreeningNotice />
+          <SuitabilitySidebar
+            part="left"
+            suit={suit}
+            suitError={suitError}
+            profile={profile}
+            setProfile={setProfile}
+            runProfiles={runProfiles}
+            stabilityAvailable={stabilityAvailable}
+            selected={selected}
+            clearSelected={() => setSelected(null)}
+            onSelect={onCandidateClick}
+            statusVisibility={statusVisibility}
+            stableOnly={stableOnly && stabilityAvailable}
+            statusColors={CANDIDATE_STATUS_COLORS}
+          />
+        </CollapsiblePanel>
+      ) : (
+        // Figma frame 74:2010 gives the 지역 지표 aside 20px of padding and a 16px
+        // gap between cards; the shared sidebar ships 16/12. The difference is a
+        // desktop-only override passed in HERE rather than changed inside
+        // ResizableSidebar, because that component is also the 후보지 심층 분석 / 비교
+        // column and those pages have not been redesigned yet. Media-query variants
+        // are emitted after the base utilities, so `md:*` wins from md up and the
+        // stacked phone layout is untouched.
+        <ResizableSidebar className={viewMode === "equity" ? "md:gap-4 md:p-5" : ""}>
+        {/* 지역 지표 HAS NO VISIBLE TITLE BLOCK (correction pass).
 
-        {mode === "equity" && (
+            The area used to open with a three-line header — the destination name, the
+            "서울 · 인천 · 경기 …" scope line, and the orientation strip — repeating
+            what the active navigation item already says and pushing the two controls
+            a reader actually acts on down the column. The post-production visual
+            review asked for that space back, so the whole block is GONE from the
+            layout rather than hidden with a class that would keep occupying it.
+
+            The `<h1>` itself stays, because the page must keep exactly one
+            (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.2 / §13, app/shell.test.tsx) and a
+            landmark-navigating reader still needs the area named. `sr-only` takes it
+            out of the visual flow completely — it contributes no height, no margin,
+            and no gap — while leaving it first in document order.
+
+            Every OTHER area that renders through this column (후보지 심층 비교) keeps
+            its full header, so this is a Page-1 change, not a shell change.
+
+            `!dataDialogOpen` IS LOAD-BEARING. 데이터·출처 is a dialog layered over the
+            previous area (spec §8), so on a cold `?v=1&mode=transparency` link this
+            same branch renders with `viewMode === "equity"` while `destination` is
+            데이터·출처 — and this `<h1>` is then THAT destination's title, not Page 1's.
+            Hiding it there stripped 데이터·출처 of its visible page title, which
+            `e2e/phase6DataSourcesDashboard.spec.ts:663` caught at 1280 and 1440. The
+            heading is hidden only when the reader is actually looking at 지역 지표. */}
+        {viewMode === "equity" && !dataDialogOpen ? (
+          <h1 className="sr-only">{destination.label}</h1>
+        ) : (
           <>
-            {/* CURRENT SELECTION — one answer-first summary card.
-                Before this milestone the same facts lived in two adjacent cards
-                ("선택한 지표" and "선택한 지역"), each printing its own copy of
-                `metricProvenance`. They are merged here: region → value → what is
-                measured → when the data is from → source, with the provenance shown
-                once. The role="status" live region, the contracted test IDs, and the
-                "a missing value shows its served reason, never a 0" rule are
-                unchanged (docs/ui-refresh/equity-dashboard.md). */}
-            <EquityRegionSummary
-              metricLabel={metric.label}
-              unit={unit}
-              referencePeriod={metricReferencePeriod}
-              metricStatus={metricDataStatus}
-              metricProvenance={metricProvenance}
-              selected={selectedRegion}
-              onClear={() => setSelectedRegionCode(null)}
+            {/* The view's single <h1> is the AREA title, matching how 매립지 현황,
+                데이터·출처, and 비용 살펴보기 already title themselves. The product name
+                it replaced now lives in the app bar's brand block, so the same words no
+                longer appear twice on one screen; the scope line below it is the exact
+                string this header carried before. See
+                docs/ui-refresh/regression-contract.md §10. ModeOrientation stays a
+                SIBLING so it still follows the h1 in document order (shell.test.tsx)
+                while keeping the column's gap-3 rhythm. */}
+            <PageHeader
+              title={destination.label}
+              description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
             />
 
-            {/* REGION SEARCH & SELECTION — the keyboard path to the same canonical
-                `selectedRegionCode`, now its own labelled section instead of a form
-                control wedged inside the summary above. `selectedRegion?.regionCode`
-                (not the raw code) is passed deliberately: when a metric change moves
-                to a geography that lacks the stored region the derived selection is
-                null, and the select must return to its empty option rather than hold
-                a value no longer in its option list. */}
-            <EquityRegionPicker
-              regionOptions={regionOptions}
-              selectedRegionCode={selectedRegion?.regionCode ?? null}
-              onSelectRegion={(code) => setSelectedRegionCode(code)}
-            />
+            <ModeOrientation destination={destination} />
+          </>
+        )}
 
-            {/* METRIC GROUPS — structure frozen: 3 fieldsets / 3 legends / 11 radios
-                in one logical group (regression-contract §5). Presentation only. */}
+        {viewMode === "equity" && (
+          <>
+            {/* THE PAGE-1 COLUMN ORDER IS THE FIGMA ORDER (frame 74:2010):
+                  지표 선택 → 지역 순위 → 지역 선택 → 선택한 지역 → 공유 및 내보내기.
+                The `page-1 기술요청` annotation states the rules behind it —
+                "좌측 패널 순서 조정: 지역 선택 > 선택한 지역" (the picker precedes the
+                summary it fills) and the removal of the 지표 출처 / 해석·주의·출처 보기 /
+                내륙습지 목록 entries from the panel. None of those three is deleted;
+                each note below says where it went. */}
+
+            {/* 지표 선택 — three SUBJECT sections (인구 · 발생량 · 시설 처리 수준) of
+                selectable rows, with a 총량/1인당 switch on the rows that have both.
+                Still three fieldsets and one logical radio group (regression-contract
+                §5, restated for the new shape). The same eleven served metrics: the
+                mapping lives in lib/metrics.ts METRIC_SECTIONS, never here. */}
             <EquityMetricSelector
-              groups={METRIC_GROUPS}
-              metrics={METRICS}
               metricKey={metricKey}
-              onSelectMetric={selectMetric}
+              mode={metricMode}
+              onSelectRow={selectMetricRow}
+              onSelectMode={selectMetricMode}
             />
 
-            {/* Comparison + ranking + share/export. All read the active metric's
-                served values, so they follow the metric automatically, and selecting
-                a region in either drives the ONE canonical selected-region state
-                (map + summary stay in sync). */}
-            <RegionComparison
-              regionOptions={regionOptions}
-              resolveValue={resolveComparisonValue}
-              metricLabel={metric.label}
-              unit={unit}
-              selected={comparison}
-              setSelected={setComparison}
-              onSelectRegionOnMap={(code) => setSelectedRegionCode(code)}
-              maxCompare={MAX_COMPARE}
-            />
+            {/* 지역 순위 — reads the active metric's served values, so it follows the
+                metric automatically, and selecting a row drives the ONE canonical
+                selected-region state (map + summary stay in sync).
 
+                `전체보기 ↗` opens the same ranking with no top-N cut. That dialog is
+                what replaced the 지역 비교 card (correction pass): picking three
+                regions by hand was a way of asking "how do these stand against each
+                other?", and the full ranking answers it for EVERY region at once,
+                from the same served values. */}
             <RegionRanking
               regions={rankableRegions}
               metricLabel={metric.label}
@@ -1625,67 +1919,73 @@ export default function Home() {
               setScope={setScope}
               topN={topN}
               setTopN={setTopN}
+              direction={rankDirection}
+              setDirection={setRankDirection}
               selectedRegionCode={selectedRegionCode}
               onSelectRegion={(code) => setSelectedRegionCode(code)}
+              onOpenFullRanking={() => setFullRankingOpen(true)}
+            />
+
+            {/* REGION SEARCH & SELECTION — the keyboard path to the same canonical
+                `selectedRegionCode`. `selectedRegion?.regionCode` (not the raw code)
+                is passed deliberately: when a metric change moves to a geography that
+                lacks the stored region the derived selection is null, and the select
+                must return to its empty option rather than hold a value no longer in
+                its option list. */}
+            <EquityRegionPicker
+              regionOptions={regionOptions}
+              selectedRegionCode={selectedRegion?.regionCode ?? null}
+              onSelectRegion={(code) => setSelectedRegionCode(code)}
+            />
+
+            {/* CURRENT SELECTION — the answer to the choices above. Region → value →
+                what is measured → when the data is from → source, with the provenance
+                printed once, the role="status" live region, the contracted test IDs,
+                and the "a missing value shows its served reason, never a 0" rule
+                (docs/ui-refresh/equity-dashboard.md).
+
+                출처와 계산 방법 IS RELOCATED HERE, not removed. The annotation drops
+                the 지표 출처 entry from the panel and the Figma aside has no card for
+                it, but deleting it would take the derivation method, the numerator /
+                denominator sources, the boundary provenance, and the metric caveat
+                with it — everything a displayed value needs to be justifiable. It is
+                now a closed disclosure at the foot of the card whose value it
+                explains: same panels, same components, one interaction away. */}
+            <EquityRegionSummary
+              metricLabel={metric.label}
+              unit={unit}
+              referencePeriod={metricReferencePeriod}
+              metricStatus={metricDataStatus}
+              metricProvenance={metricProvenance}
+              selected={selectedRegion}
+              onClear={() => setSelectedRegionCode(null)}
+              methodAndSources={
+                derivedInfo || sourceInfo ? (
+                  <>
+                    {derivedInfo && <DerivedPanel info={derivedInfo} caveat={metric.caveat} />}
+                    {sourceInfo && <SourcePanel info={sourceInfo} boundaries={activeBoundaries} />}
+                  </>
+                ) : undefined
+              }
             />
 
             <ShareExportBar
               getShareUrl={getShareUrl}
               onDownloadRankingCsv={downloadRankingCsv}
-              onDownloadComparisonCsv={comparison.length > 0 ? downloadComparisonCsv : undefined}
-              onOpenReport={() => setReportKind(comparison.length > 0 ? "comparison" : "ranking")}
+              onOpenReport={() => setReportKind("ranking")}
               urlWarnings={urlWarnings}
             />
 
-            {/* The equity map legend is no longer duplicated here — it floats over
-                the map as a single source of truth (MapLegendOverlay below), built
-                from the SAME activeScale palette/breaks the map fill uses. */}
-
-            {(derivedInfo || sourceInfo) && (
-              <CollapsibleSection label="출처와 계산 방법">
-                {derivedInfo && <DerivedPanel info={derivedInfo} caveat={metric.caveat} />}
-                {sourceInfo && <SourcePanel info={sourceInfo} boundaries={activeBoundaries} />}
-              </CollapsibleSection>
-            )}
-
-            <CollapsibleSection label="시설 위치 표시">
-              <section aria-label="시설 레이어">
-                <h2 className="mb-2 text-sm font-semibold text-slate-800">
-                  폐기물 처리시설
-                </h2>
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={showFacilities}
-                    onChange={(event) => setShowFacilities(event.target.checked)}
-                    data-testid="facilities-toggle"
-                  />
-                  지도에 시설 위치 표시
-                </label>
-                {facilitySummary && (
-                  <div
-                    className="mt-2 rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"
-                    data-testid="facility-metadata"
-                  >
-                    <p>
-                      좌표 보유 시설 {formatCount(facilitySummary.withCoordinates)} /{" "}
-                      {formatCount(facilitySummary.total)}개 표시.{" "}
-                      <strong>{formatCount(facilitySummary.withoutCoordinates)}개</strong>는 공식
-                      지오코딩이 실패하여 지도에 표시하지 않습니다.
-                    </p>
-                    <p className="mt-1">
-                      출처: waste_statistics · 기준 기간: {facilitySummary.referencePeriod} · 갱신
-                      주기: {facilitySummary.frequency}
-                    </p>
-                    <p className="mt-1">집계 기준: {accountingBasisLabel(facilitySummary.accountingBasis)}</p>
-                  </div>
-                )}
-              </section>
-            </CollapsibleSection>
+            {/* The equity map legend is not duplicated here — it floats over the map
+                as a single source of truth (MapLegendOverlay below), built from the
+                SAME activeScale palette/breaks the map fill uses. The facility layer
+                control (시설 위치 표시) has joined it there for the same reason: a
+                layer control belongs beside its layer, which is what frame 222:439
+                and the annotation's "폐기물 처리시설 버튼 위치 수정" ask for. */}
           </>
         )}
 
-        {mode === "suitability" && (
+        {viewMode === "suitability" && (
           <>
             {/* Phase 0: the standing analytical-screening disclaimer heads the
                 suitability sidebar for both map sub-views (score + scenario). */}
@@ -1698,7 +1998,7 @@ export default function Home() {
                 sidebar for two of them and above a full-width page for the third.
                 The suitability status filter + score legend float over the map
                 (MapLegendOverlay below), not in this panel. */}
-            {suitabilityView === "scenario" ? (
+            {viewSubview === "scenario" ? (
               suit ? (
                 <SuitabilityScenarioLab
                   run={suit.run}
@@ -1743,7 +2043,8 @@ export default function Home() {
           </>
         )}
 
-      </aside>
+        </ResizableSidebar>
+      )}
 
       {/* The map wrapper. Its MapLibre child is `h-full` (100% of this box), so the
           box needs a *definite* height. The dedicated `.map-pane` class (globals.css)
@@ -1768,7 +2069,7 @@ export default function Home() {
           metricReferencePeriod={metricReferencePeriod}
           facilities={data.facilities.items}
           showFacilities={showFacilities}
-          mode={mode}
+          mode={viewMode}
           showWetlands={showWetlands}
           wetlandTileUrl={wetlandTiles}
           wetlandTypeVisibility={wetlandTypeVisibility}
@@ -1789,12 +2090,12 @@ export default function Home() {
           selectedCandidate={mapSelectedCandidate}
           onCandidateClick={mapCandidateClick}
           ariaLabel={
-            mode === "equity"
+            viewMode === "equity"
               ? `지역 지표 지도 — ${metric.label} (interactive choropleth map)`
               : "적합성 후보 격자 지도 (suitability candidate grid, interactive map)"
           }
           ariaDescription={
-            mode === "equity"
+            viewMode === "equity"
               ? "지역별 지표를 색으로 표시한 인터랙티브 지도입니다. 지역을 클릭하면 좌측 '선택한 지역' 요약에 이름과 값이 표시되며, 키보드·스크린리더 사용자는 그 요약으로 같은 정보를 확인할 수 있습니다."
               : "500m 후보 격자를 표시한 인터랙티브 지도입니다. 상세 후보는 좌측 '상위 후보지' 목록과 '후보 상세' 패널에서 접근할 수 있습니다. 광역 분석 스크리닝이며 법적·공학적 적합 판정이 아닙니다."
           }
@@ -1818,7 +2119,7 @@ export default function Home() {
               onToggleDesignationOnly={toggleWetlandDesignationOnly}
             />
           </div>
-          {mode === "suitability" ? (
+          {viewMode === "suitability" ? (
             <div className="pointer-events-auto min-w-0">
               <LandCoverLayerControl
                 show={showLandCover}
@@ -1861,10 +2162,22 @@ export default function Home() {
             The legend never recomputes colors/breaks: equity mode receives the
             page's active scale rows (same palette/breaks as the fill); suitability
             mode receives the candidate palette/breaks and the CANONICAL
-            statusVisibility state (its checkboxes drive the filter the map reads). */}
-        <div className="pointer-events-none absolute bottom-8 left-2 right-2 z-10 flex flex-col items-start gap-2 md:left-3 md:right-3">
-          <div className="pointer-events-auto">
-            {mode === "equity" ? (
+            statusVisibility state (its checkboxes drive the filter the map reads).
+
+            THE COLUMN IS BOUNDED AT BOTH ENDS. It is anchored to `bottom` and now
+            also to `top`, with `justify-end` keeping every card at the bottom exactly
+            as before whenever there is room. The bound only bites when there is not:
+            the cards then shrink (each wrapper is `min-h-0`, and each card scrolls
+            internally) instead of growing off the top of the map and over the
+            environmental-layer controls. Phase 1 made that reachable by adding the
+            폐기물 처리시설 card to the stack — at a 768-tall viewport the legend, that
+            card, and an EXPANDED insight together exceed the map's height — but the
+            same overflow was always possible with a tall enough legend. The column
+            stays `pointer-events-none` with `pointer-events-auto` children, so
+            spanning the full height intercepts nothing. */}
+        <div className="pointer-events-none absolute bottom-8 left-2 right-2 top-2 z-10 flex flex-col items-start justify-end gap-2 md:left-3 md:right-3 md:top-3">
+          <div className="pointer-events-auto min-h-0">
+            {viewMode === "equity" ? (
               <MapLegendOverlay
                 mode="equity"
                 metricLabel={metric.label}
@@ -1908,7 +2221,29 @@ export default function Home() {
               />
             )}
           </div>
-          {mode === "equity" ? (
+          {/* 폐기물 처리시설 — the facility layer's own control and its type legend.
+              Figma frame 222:439 places it in this bottom-left stack directly UNDER
+              the choropleth legend, which is also where the annotation's "폐기물
+              처리시설 버튼 위치 수정 및 신규 아이콘 삽입" puts it. It joins the same flex
+              column as the legend, so non-collision with it stays structural rather
+              than a hand-tuned offset, and it is capped + internally scrollable so
+              opening its disclosure cannot push the stack off the top of the map at
+              a short viewport.
+
+              The Chrome audit's second finding is answered here: the markers were
+              colour-coded with no legend anywhere. `EquityFacilityLayerCard` reads
+              the SAME FACILITY_CATEGORY_* constants the MapLibre circle layer paints
+              from, so a swatch cannot drift from the dot it explains. */}
+          {viewMode === "equity" ? (
+            <div className="pointer-events-auto min-h-0">
+              <EquityFacilityLayerCard
+                show={showFacilities}
+                onToggleShow={setShowFacilities}
+                coverage={facilitySummary}
+              />
+            </div>
+          ) : null}
+          {viewMode === "equity" ? (
             <EquityMapInsightStrip
               metricLabel={metric.label}
               unit={unit}
@@ -1922,11 +2257,11 @@ export default function Home() {
               so it can never collide with the legend above it, and it renders only
               once the run/policy are loaded — there is no version string, run id, or
               basis to state before then, and it must not print a placeholder. */}
-          {mode === "suitability" && suit ? (
+          {viewMode === "suitability" && suit ? (
             <SuitabilityMapInsightStrip
-              variant={suitabilityView === "scenario" ? "scenario" : "score"}
+              variant={viewSubview === "scenario" ? "scenario" : "score"}
               profile={
-                suitabilityView === "scenario"
+                viewSubview === "scenario"
                   ? (appliedScenario?.compareProfile ?? "baseline")
                   : profile
               }
@@ -1953,12 +2288,71 @@ export default function Home() {
         </div>
       </div>
 
+      {viewDeepAnalysis && (
+        <CollapsiblePanel
+          side="right"
+          label="후보지 결과"
+          collapsed={rightPanelCollapsed}
+          onToggle={setRightPanelCollapsed}
+          panelId="deep-analysis-right"
+          testId="deep-right-panel"
+        >
+          <SuitabilitySidebar
+            part="right"
+            suit={suit}
+            suitError={suitError}
+            profile={profile}
+            setProfile={setProfile}
+            runProfiles={runProfiles}
+            stabilityAvailable={stabilityAvailable}
+            selected={selected}
+            clearSelected={() => setSelected(null)}
+            onSelect={onCandidateClick}
+            statusVisibility={statusVisibility}
+            stableOnly={stableOnly && stabilityAvailable}
+            statusColors={CANDIDATE_STATUS_COLORS}
+            relativeGradePanel={
+              /* Nothing at all while the population is still being read — a
+                 placeholder band would be a claim we cannot yet make. */
+              !gradeSettled ? null : gradeDistribution ? (
+                <RelativeGradePanel distribution={gradeDistribution} />
+              ) : (
+                <RelativeGradeUnavailable />
+              )
+            }
+          />
+        </CollapsiblePanel>
+      )}
+
+      {/* 지표 순위 전체보기 — the complete ranking for the ACTIVE metric, derived from
+          the region rows already loaded here (no endpoint was added for it). Mounted
+          beside the map rather than inside the sidebar so the dialog is not a child
+          of a column that scrolls or, at md+, can be resized under it. It renders
+          nothing while closed. */}
+      <FullRankingDialog
+        open={viewMode === "equity" && fullRankingOpen}
+        onClose={() => setFullRankingOpen(false)}
+        regions={rankableRegions}
+        metricLabel={metric.label}
+        // Only stated when the active metric actually has a counting mode — the
+        // facility-burden metrics are per-capita as served and have no switch.
+        modeLabel={
+          activeMetricRow?.row.perCapita ? METRIC_MODE_LABELS[metricMode] : undefined
+        }
+        unit={unit}
+        referencePeriod={metricReferencePeriod}
+        scope={scope}
+        direction={rankDirection}
+        selectedRegionCode={selectedRegionCode}
+        onSelectRegion={(code) => setSelectedRegionCode(code)}
+      />
+
       {/* Print / PNG report preview overlay (map-free). Opened from the equity
-          share/export bar; the model is the ranking or the region comparison. */}
+          share/export bar; the model is the ranking. */}
       {reportModel && (
         <ReportPreview
           model={reportModel}
-          filenameBase={reportKind === "comparison" ? `지역비교_${metric.label}` : `지역부담순위_${metric.label}`}
+          filenameBase={`지역부담순위_${metric.label}`}
           onClose={() => setReportKind(null)}
         />
       )}
@@ -1980,52 +2374,11 @@ export default function Home() {
 // components/DashboardShell.tsx, rendered once above every branch.
 // --------------------------------------------------------------------------- //
 
-function ModeOrientation({ mode }: { mode: DashboardMode }) {
+function ModeOrientation({ destination }: { destination: NavDestination }) {
   return (
     <p className="wep-orient" data-testid="mode-orientation">
-      {MODE_ORIENTATION[mode as DashboardArea]}
+      {destination.orientation}
     </p>
-  );
-}
-
-// --------------------------------------------------------------------------- //
-// Collapsible control section.
-//
-// A native <details> disclosure so no UI dependency or focus-management code is
-// introduced. On small screens the summary is a tappable header that collapses
-// the body, keeping the stacked mobile sidebar short so the map stays reachable.
-// On md+ the summary is hidden and the body is forced open by CSS (see
-// globals.css), so the desktop sidebar is visually unchanged and no analytical
-// option is ever permanently hidden. Children keep their own headings, testids,
-// and aria labels.
-// --------------------------------------------------------------------------- //
-
-function CollapsibleSection({
-  label,
-  defaultOpen = false,
-  children,
-}: {
-  label: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    // Phase 4: the sidebar is now a sunken surface, so the disclosure reads as a card
-    // (surface + hairline) instead of the old slate-100 fill, which would otherwise be
-    // invisible against the new background. The <details> element, the
-    // `.mobile-collapsible` class that the desktop force-open CSS keys on, and the
-    // labelled (never icon-only) summary are all unchanged.
-    <details className="mobile-collapsible wep-card" open={defaultOpen}>
-      <summary className="flex cursor-pointer items-center justify-between gap-2 rounded-card px-4 py-3 text-sm font-semibold text-ink">
-        <span>{label}</span>
-        <span aria-hidden className="mobile-collapsible-chevron text-xs text-ink-subtle">
-          ▾
-        </span>
-      </summary>
-      {/* At md+ the summary is hidden by CSS, so the body supplies its own top
-          padding there; on mobile the visible summary already provides it. */}
-      <div className="mobile-collapsible-body flex flex-col gap-4 px-4 pb-4 md:pt-4">{children}</div>
-    </details>
   );
 }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type RankableRegion,
   SCOPE_LABELS,
+  rankAllRegions,
   rankRegions,
   regionScope,
 } from "./ranking";
@@ -123,5 +124,61 @@ describe("rankRegions", () => {
     const result = rankRegions(bad, "all", 20);
     expect(result.rankedCount).toBe(1);
     expect(result.excludedCount).toBe(1);
+  });
+});
+
+/**
+ * `rankAllRegions` backs 지표 순위 전체보기. It must be the SAME ranking as the card
+ * above with the top-N cut removed — not a second derivation with its own ordering,
+ * tie-break, or missing-data rule.
+ */
+describe("rankAllRegions", () => {
+  const regions: RankableRegion[] = [
+    region("KR-SGIS-11110", "종로구", 300),
+    region("KR-SGIS-11140", "중구", 0), // official measured zero
+    region("KR-SGIS-11170", "용산구"), // unavailable
+    region("KR-SGIS-31011", "수원시 장안구", 500),
+    region("KR-SGIS-23320", "옹진군", 300), // ties with 종로구
+  ];
+
+  it("ranks every region with a value, highest first, with no top-N cut", () => {
+    const result = rankAllRegions(regions, "all");
+    expect(result.rows.map((r) => r.name)).toEqual([
+      "수원시 장안구",
+      "종로구",
+      "옹진군",
+      "중구",
+    ]);
+    expect(result.rows.map((r) => r.rank)).toEqual([1, 2, 3, 4]);
+    expect(result.rankedCount).toBe(4);
+  });
+
+  it("returns an unavailable region as unranked, never as a 0 at the bottom", () => {
+    const result = rankAllRegions(regions, "all");
+    expect(result.rows.some((r) => r.name === "용산구")).toBe(false);
+    expect(result.unranked).toEqual([{ code: "KR-SGIS-11170", name: "용산구" }]);
+    // The official 0 IS ranked — a measurement, not a gap.
+    expect(result.rows.at(-1)).toMatchObject({ name: "중구", numeric: 0, display: "0" });
+  });
+
+  it("breaks ties by region code ascending, exactly as the compact card does", () => {
+    const full = rankAllRegions(regions, "all");
+    const compact = rankRegions(regions, "all", 10);
+    // 종로구 (11110) before 옹진군 (23320) at the same value, in both.
+    expect(full.rows.map((r) => r.code)).toEqual(compact.high.map((r) => r.code));
+  });
+
+  it("honours the scope filter with the same classification", () => {
+    const seoul = rankAllRegions(regions, "11");
+    expect(seoul.rows.map((r) => r.name)).toEqual(["종로구", "중구"]);
+    expect(seoul.unranked.map((r) => r.name)).toEqual(["용산구"]);
+    expect(seoul.scope).toBe("11");
+  });
+
+  it("returns an explicitly empty ranking rather than inventing rows", () => {
+    const result = rankAllRegions([region("KR-SGIS-11110", "종로구")], "all");
+    expect(result.rows).toEqual([]);
+    expect(result.rankedCount).toBe(0);
+    expect(result.unranked).toHaveLength(1);
   });
 });

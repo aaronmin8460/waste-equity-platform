@@ -95,7 +95,7 @@ async function openSuitability(page: Page, view: "score" | "scenario"): Promise<
 /** The three map views that carry a disclosure, by the test IDs they use. */
 const CASES = [
   {
-    name: "지역 부담",
+    name: "지역 지표",
     open: (page: Page) => openEquity(page),
     strip: "equity-insight-strip",
     summary: "equity-insight-summary",
@@ -105,7 +105,7 @@ const CASES = [
     heading: "자료 기준·출처",
   },
   {
-    name: "후보지 점수",
+    name: "후보지 심층 분석",
     open: (page: Page) => openSuitability(page, "score"),
     strip: "suitability-insight-strip",
     summary: "suitability-insight-summary",
@@ -115,7 +115,7 @@ const CASES = [
     heading: "현재 기준·출처",
   },
   {
-    name: "가중치 바꿔보기",
+    name: "후보지 심층 비교",
     open: (page: Page) => openSuitability(page, "scenario"),
     strip: "suitability-insight-strip",
     summary: "suitability-insight-summary",
@@ -258,7 +258,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
 
         const others: { label: string; locator: Locator }[] = [
           { label: "legend", locator: page.getByTestId("map-legend") },
-          { label: "sidebar (metric/profile selector)", locator: page.locator("aside") },
+          { label: "sidebar (metric/profile selector)", locator: page.getByTestId("deep-left-panel") },
           { label: "zoom controls", locator: page.locator(".maplibregl-ctrl-top-right") },
           { label: "wetland control", locator: page.getByTestId("wetland-layer-control") },
           { label: "land-cover control", locator: page.getByTestId("land-cover-layer-control") },
@@ -362,8 +362,10 @@ for (const c of CASES) {
       await expect(action).toHaveText("출처 자세히 보기");
       await action.click();
       await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
-      // That area mounts no map, so exactly one map is ever mounted.
-      await expect(page.getByTestId("map-container")).toHaveCount(0);
+      // 데이터·출처 opens as a DIALOG over this view (spec §8), so the map behind
+      // it stays mounted — still exactly one, never a second.
+      await expect(page.getByTestId("data-sources-dialog")).toBeVisible();
+      await expect(page.getByTestId("map-container")).toHaveCount(1);
     });
 
     test("returns to the collapsed default after navigating away and back", async ({ page }) => {
@@ -372,10 +374,15 @@ for (const c of CASES) {
       await page.getByTestId(c.summary).click();
       expect(await strip.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(true);
 
-      await page.getByTestId("mode-transparency").click();
+      // Navigate genuinely AWAY. This used to hop through 데이터·출처, which is a
+      // dialog now: opening an overlay does not unmount the view beneath it, so
+      // the strip legitimately keeps its state and the round trip tested nothing.
+      // 폐기물 처리 현황 is a real destination change, which is what the contract —
+      // "returns to the collapsed default after navigating away" — is about.
+      await page.getByTestId("mode-flow").click();
       await expect(page.getByTestId(c.strip)).toHaveCount(0);
-      await page.getByTestId(c.name === "지역 부담" ? "mode-equity" : "mode-suitability").click();
-      if (c.name === "가중치 바꿔보기") {
+      await page.getByTestId(c.name === "지역 지표" ? "mode-equity" : "mode-suitability").click();
+      if (c.name === "후보지 심층 비교") {
         await page.getByTestId("suitability-view-scenario").click();
         await expect(page.getByTestId("scenario-lab")).toBeVisible();
       }
@@ -461,7 +468,7 @@ for (const c of CASES) {
     }) => {
       await c.open(page);
       const legendRow =
-        c.name === "지역 부담"
+        c.name === "지역 지표"
           ? page.getByTestId("choropleth-legend-row")
           : page.getByTestId("score-class-row");
       const swatchesBefore = await legendRow.evaluateAll((els) =>
@@ -478,7 +485,7 @@ for (const c of CASES) {
       expect(swatchesAfter).toEqual(swatchesBefore);
       // The disclosure owns no analytical state, so it writes nothing to the URL.
       expect(page.url()).toBe(urlBefore);
-      if (c.name === "지역 부담") {
+      if (c.name === "지역 지표") {
         await expect(page.locator('input[type="radio"][name="metric"]:checked')).toHaveCount(1);
       } else {
         await expect(page.getByTestId("status-toggle-ELIGIBLE")).toBeChecked();

@@ -21,7 +21,11 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  /* Noto Sans KR is the 여기다 Korean UI face (spec §1). It is loaded by
+     app/layout.tsx via next/font/google, which self-hosts it and exposes it as
+     --font-noto-sans-kr; the Latin fallbacks below cover the few ASCII strings
+     (codes, units, years) and the brief window before the font resolves. */
+  --font-sans: var(--font-noto-sans-kr), "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -43,38 +47,43 @@
    never referenced by map code, and map constants are never referenced by chrome. */
 @theme {
   /* ---- Surfaces ---------------------------------------------------------- */
-  /* The application canvas: a very light blue-gray behind every white surface. */
-  --color-canvas: #f4f6fb;
+  /* The application canvas: the near-white 여기다 page ground (spec §1). */
+  --color-canvas: #f9f9f9;
   --color-surface: #ffffff; /* cards, panels, the app bar, popovers */
-  --color-surface-muted: #f8fafc; /* a quiet block inside a white surface */
-  --color-surface-sunken: #f4f7f8; /* a recessed area inside a surface */
+  --color-surface-muted: #f4f5f8; /* a quiet block inside a white surface */
+  --color-surface-sunken: #f2f3f7; /* a recessed area inside a surface */
 
   /* ---- Borders & text ---------------------------------------------------- */
   /* Cards are separated from the canvas by a hairline BORDER, not by a shadow. */
-  --color-hairline: #e3e8f0; /* default 1px border */
-  --color-hairline-strong: #c9d3d9; /* inputs / quiet buttons — reads interactive */
-  --color-ink: #171c29; /* primary text, headings, metric values (17.01:1 on white) */
-  --color-ink-muted: #4d5466; /* secondary/body text (7.57:1) */
-  --color-ink-subtle: #687083; /* tertiary: labels, captions. 4.96:1 on white and
-                                  4.59:1 on the canvas — the worst case in the
-                                  palette and the lightest text allowed. Nothing
-                                  lighter or smaller may be introduced. */
+  --color-hairline: #e6e7ee; /* default 1px border */
+  --color-hairline-strong: #c8cad6; /* inputs / quiet buttons — reads interactive */
+  --color-ink: #1b1d26; /* primary text, headings, metric values (15.9:1 on white) */
+  --color-ink-muted: #4a4d5c; /* secondary/body text (8.5:1) */
+  --color-ink-subtle: #646676; /* tertiary: labels, captions. 6.31:1 on white and
+                                  6.03:1 on the #f9f9f9 canvas. This is the
+                                  lightest text allowed at body size. */
+  --color-ink-faint: #848a95; /* 3.24:1 on white — BELOW the 4.5:1 body-text
+                                 threshold. Permitted ONLY for large (≥24px) or
+                                 purely decorative text, never for small copy,
+                                 labels, values, or anything a reader must parse
+                                 (spec §12). When in doubt use -subtle. */
 
-  /* ---- Brand — teal ------------------------------------------------------ */
-  /* Identity only (app-bar mark, reported-value badge). Deliberately NOT an action
-     color: a teal button would compete with the action blue below. */
-  --color-brand: #17786c; /* ~5.3:1 on white */
-  --color-brand-hover: #12675d;
-  --color-brand-soft: #edf8f6;
+  /* ---- Brand — 여기다 navy ------------------------------------------------ */
+  /* Identity (app-bar mark, reported-value badge). The redesign folds brand and
+     action onto ONE navy so the product reads as a single key color; the two
+     roles stay separate tokens because they are separate jobs. */
+  --color-brand: #111a56; /* 14.4:1 on white */
+  --color-brand-hover: #0b1240;
+  --color-brand-soft: #eef0f8;
 
-  /* ---- Action — blue ----------------------------------------------------- */
+  /* ---- Action — 여기다 navy ----------------------------------------------- */
   /* Every interactive affordance: buttons, links, selection, the active nav
-     indicator, the focus ring. Harmonises with the ColorBrewer-blue data palette. */
-  --color-primary: #2663eb; /* ~5.2:1 on white */
-  --color-primary-hover: #1f4fa8;
+     indicator, the focus ring. */
+  --color-primary: #111a56; /* 14.4:1 on white */
+  --color-primary-hover: #0b1240;
   --color-primary-ink: #ffffff;
-  --color-primary-soft: #eaf0fe; /* selected/emphasis tint */
-  --color-primary-border: #c3d4f7; /* pairs with -soft so "selected" is fill +
+  --color-primary-soft: #eef0f8; /* selected/emphasis tint */
+  --color-primary-border: #c5cbe4; /* pairs with -soft so "selected" is fill +
                                       border + a mark, never color alone */
 
   /* ---- Warning / caution — amber ----------------------------------------- */
@@ -106,16 +115,75 @@
   --color-info-border: #bae6fd; /* sky-200 */
 
   /* ---- Radii, shadows, focus --------------------------------------------- */
-  /* Moderate, not playful: 10px keeps a dense grid of cards reading as a data
-     surface rather than a set of app tiles. */
-  --radius-card: 0.625rem; /* 10px — cards, panels, banners */
-  --radius-control: 0.5rem; /* 8px — buttons, inputs */
+  /* The 여기다 language is softer than the previous 10px: ~20px on major cards
+     (spec §12), with controls kept tighter so a dense form does not read as a
+     row of pills. */
+  --radius-card: 1.25rem; /* 20px — cards, panels, banners */
+  --radius-control: 0.625rem; /* 10px — buttons, inputs */
   --radius-pill: 9999px; /* chips and the segmented-control track only */
   /* Shadows mean "floating above the page", not "this is a card". `.wep-card` has
-     none; -card is for the one raised segment / popovers, -float for overlays. */
-  --shadow-card: 0 1px 2px rgba(23, 28, 41, 0.06);
-  --shadow-float: 0 8px 24px rgba(23, 28, 41, 0.1);
-  --focus-ring: #2663eb; /* same value as --color-primary, a separate role */
+     none; -card is for the one raised segment / popovers, -float for overlays.
+     Tinted with the navy so elevation reads as part of the palette. */
+  --shadow-card: 0 1px 2px rgba(17, 26, 86, 0.06);
+  --shadow-float: 0 8px 24px rgba(17, 26, 86, 0.12);
+  --focus-ring: #111a56; /* same value as --color-primary, a separate role */
+
+  /* ---- Figma six-page redesign: measured additions ------------------------ */
+  /* Measured from the Figma file hETmPv3N31IJeW8XdLwoiS (page "design",
+     frames 74:1992 / 125:5064 / 129:5709 / 136:8684 / 167:10554 / 156:470) on
+     2026-08-11. Full comparison and the deliberate non-changes are recorded in
+     docs/figma-redesign/DESIGN_TOKENS_FIGMA_AUDIT.md.
+
+     Phase 0 is ADDITIVE ONLY. The audit found the existing roles already carry
+     the Figma values exactly — brand/primary #111a56, canvas #f9f9f9, surface
+     #ffffff, ink-subtle #646676, ink-faint #848a95, radius-card 20px,
+     radius-control 10px, radius-pill — so nothing is re-pointed here. The few
+     roles where Figma differs slightly (hairline, primary-border, surface-muted,
+     and the status trio) are LEFT ALONE on purpose: re-pointing them would
+     restyle all six pages at once, which belongs to each page's own phase where
+     the change is intended and reviewable, not to an infrastructure step. */
+
+  /* The one Figma text colour with no existing equivalent: a secondary ink used
+     ~148 times across the six frames, sitting between --color-ink-muted (#4a4d5c)
+     and --color-ink-faint (#848a95). 5.16:1 on white and 4.90:1 on the #f9f9f9
+     canvas, so it clears the 4.5:1 body-text threshold on both grounds. */
+  --color-ink-secondary: #6b6c7e;
+}
+
+/* Figma shell geometry, measured from the same frames. These are raw measurements
+   rather than semantic roles, so they are plain custom properties (an unrecognised
+   namespace generates no Tailwind utility) and are namespaced --figma-* to keep
+   them visibly distinct from the semantic token set above. The header and
+   navigation still render from their current values in Phase 0; these exist so the
+   Phase 1 shell rebuild measures nothing by eye. */
+:root {
+  --figma-shell-width: 1440px; /* design canvas width */
+  --figma-header-height: 78px;
+  --figma-header-pad-x: 28px;
+  --figma-header-pad-y: 14px;
+  --figma-brand-logo-size: 42px;
+  --figma-brand-logo-radius: 11px;
+  --figma-brand-gap: 10px;
+  --figma-nav-track-height: 50px;
+  --figma-nav-track-radius: 999px;
+  --figma-nav-track-pad: 6px;
+  --figma-nav-track-gap: 2px;
+  --figma-nav-tab-height: 38px;
+  --figma-nav-tab-radius: 40px; /* the active pill */
+  --figma-nav-tab-pad-x: 15px;
+  --figma-nav-tab-pad-y: 9px;
+  --figma-nav-tab-gap: 7px; /* icon -> label */
+  --figma-nav-icon-slot: 14px;
+  /* The 1x20 rule Figma places before 데이터·출처 (page-1 기술요청: "상단 메뉴창
+     [데이터/출처] 앞에 세로선 bar 삽입"). A decorative separator, never text, so its
+     measured value is kept here rather than promoted to a semantic ink role. */
+  --figma-nav-divider: #adadad;
+  /* The 1px separator frames 74:1992 / 123:333 draw between a card's sections and
+     between the rows of a grouped list. One shade lighter than --color-hairline,
+     which the token audit records as a Figma/shipped difference each page phase
+     resolves for itself; used through `border-[var(--figma-rule)]` so Page 1 can
+     adopt it without re-pointing the shared role for the five untouched pages. */
+  --figma-rule: #eff0f6;
 }
 
 /* Reusable component classes for the consistent citizen patterns (cards, the
@@ -133,6 +201,23 @@
   border-radius: var(--radius-card);
   padding: 1rem;
 }
+/* The Figma card elevation, as a MODIFIER on `.wep-card`.
+ *
+ * Frame 74:1992 separates every aside card from the canvas with a soft drop shadow
+ * and no border — the opposite of the rule above. Adding it as a modifier rather
+ * than re-pointing `.wep-card` is deliberate: re-pointing would restyle all six
+ * surfaces at once, and only Page 1 has been redesigned. Later page phases adopt it
+ * as they are reworked; the day the last one does, this collapses back into
+ * `.wep-card` and the modifier disappears. Padding moves 16 -> 18 to match.
+ *
+ * The border is kept at 1px transparent (not removed) so the box model is identical
+ * with and without the modifier — a card cannot shift by 2px when it gains one. */
+.wep-figma-card {
+  border-color: transparent;
+  padding: 18px;
+  box-shadow: 0 6px 20px rgb(17 26 86 / 0.06);
+}
+
 .wep-orient {
   color: var(--color-ink-muted);
   font-size: 0.8125rem;
@@ -200,27 +285,52 @@
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-hairline);
 }
-/* The app-bar content row: [brand] … [primary navigation]. A constant 4rem (64px)
-   at desktop, which keeps the chrome well inside the 12%-of-viewport budget the
-   responsive spec asserts (96px at 1280×800) so the map keeps its height.
-   `align-items: stretch` makes each tab as tall as the bar, so the active tab's
-   bottom indicator sits flush with the bar's bottom border instead of floating in
-   the middle of it. `flex-wrap` is retained for phone widths, where the brand and
-   the nav take one line each (each wrapped line still stretches to its own
-   content height, so the desktop row height is unaffected). */
+/* The app-bar content row: [brand] … [primary navigation].
+ *
+ * PHASE 1 (Figma frame 74:1992 "Header"): the bar is 1440x78 with 28px/14px
+ * padding, and the navigation is a rounded TRACK holding pill tabs — not a row of
+ * full-bleed tabs with a bottom indicator. `align-items` is therefore `center`
+ * (the 50px track is centred in the 78px bar) where it used to be `stretch`.
+ *
+ * The Figma geometry applies from 1280px up, which is the width at which it fits:
+ * brand 194 + nav 907 + 2x28 padding = 1157px, so 1280 clears it with ~120px of
+ * slack while 1024 does not. Below 1280 the same SHAPE is kept (pill track, pill
+ * active tab) at compact metrics, so no width gets a different active-state idiom.
+ * 78px is still inside the 12%-of-viewport chrome budget the responsive spec holds
+ * the bar to (96px at 1280x800), so the map keeps its height.
+ *
+ * Horizontal padding lives HERE rather than on Tailwind utilities in the JSX: the
+ * `.wep-*` layer is unlayered and would win against them anyway, so two sources for
+ * one value would only be able to disagree. */
 .wep-appbar-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
-  gap: 0 1.5rem;
-  min-height: 4rem;
+  gap: 0 1rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 1rem;
 }
-.wep-subbar {
-  /* A quiet tint rather than a second white bar, so the sub-view switch reads as
-     belonging to the content below it and never as a peer of the primary nav. */
-  background: var(--color-surface-muted);
-  border-bottom: 1px solid var(--color-hairline);
+@media (min-width: 640px) {
+  .wep-appbar-row {
+    padding-inline: 1.5rem;
+  }
+}
+/* SIX destinations have to share one row with the brand from 1024px up, so the
+   gap between the two blocks tightens as the width does. */
+@media (min-width: 1024px) {
+  .wep-appbar-row {
+    flex-wrap: nowrap;
+    gap: 0 1rem;
+    padding-inline: 2rem;
+  }
+}
+@media (min-width: 1280px) {
+  .wep-appbar-row {
+    gap: 0 2rem;
+    min-height: var(--figma-header-height);
+    padding: var(--figma-header-pad-y) var(--figma-header-pad-x);
+  }
 }
 
 /* Brand block (left of the primary navigation, OUTSIDE the mode-switch group).
@@ -229,95 +339,187 @@
    navigation's accessible group. */
 .wep-brand {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.5rem;
   min-width: 0;
-  padding: 0.5rem 0;
 }
+@media (min-width: 1280px) {
+  .wep-brand {
+    gap: var(--figma-brand-gap);
+  }
+}
+/* The mark is the exact Figma `target-01` vector (components/ui/FigmaIcon.tsx),
+   drawn in the brand navy on the bar's own surface. Figma's Logo frame is a 42x42
+   box whose fill is #1B59F8 at opacity 0 — i.e. TRANSPARENT — holding a 38x38
+   glyph, so the filled navy tile the hand-drawn mark used to sit on is gone. The
+   two sizes are custom properties because the wrapper box and the glyph inside it
+   scale together. */
 .wep-brand-mark {
+  --wep-brand-mark-size: 2.125rem;
+  --wep-brand-glyph-size: 1.9375rem;
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--radius-control);
-  background: var(--color-brand);
-  color: var(--color-primary-ink);
+  width: var(--wep-brand-mark-size);
+  height: var(--wep-brand-mark-size);
+  border-radius: var(--figma-brand-logo-radius);
+  background: transparent;
+  color: var(--color-brand);
+}
+.wep-brand-mark > svg {
+  width: var(--wep-brand-glyph-size);
+  height: var(--wep-brand-glyph-size);
+}
+@media (min-width: 1280px) {
+  .wep-brand-mark {
+    --wep-brand-mark-size: var(--figma-brand-logo-size);
+    --wep-brand-glyph-size: 38px;
+  }
 }
 .wep-brand-text {
   display: flex;
   min-width: 0;
   flex-direction: column;
   justify-content: center;
+  gap: 2px;
 }
 .wep-brand-name {
-  color: var(--color-ink);
-  font-size: 0.9375rem;
+  color: var(--color-brand);
+  font-size: 1.125rem;
   font-weight: 700;
-  line-height: 1.25;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   white-space: nowrap;
 }
+@media (min-width: 1280px) {
+  .wep-brand-name {
+    font-size: 25px;
+    line-height: 30px;
+  }
+}
+/* Figma sets this line in #848A95 (--color-ink-faint). At 11px that is 3.47:1 on
+   white, under the 4.5:1 the palette is held to, so the shipped --color-ink-subtle
+   (#646676, 5.83:1) is DELIBERATELY retained — see docs/figma-redesign/
+   DESIGN_TOKENS_FIGMA_AUDIT.md §3 on not adopting low-contrast Figma inks for text. */
 .wep-brand-sub {
   color: var(--color-ink-subtle);
   font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  line-height: 1.3;
+  font-weight: 400;
+  line-height: 13px;
   white-space: nowrap;
 }
-/* Phone widths have no room for the English subtitle beside four Korean tabs. */
+/* Phone widths have no room for the subtitle; the product name always stays
+   (spec §1). The nav track below scrolls rather than the page. */
 @media (max-width: 639px) {
   .wep-brand-sub {
     display: none;
   }
 }
 
-/* A top-level navigation tab. The SELECTED tab is marked by three independent,
-   non-color signals — strong ink, a heavier weight, and a 2px bottom indicator
-   (a shape, present vs absent) — plus `aria-pressed`, so state is never conveyed
-   by color alone. Deliberately NOT a large filled dark rectangle.
-   `white-space: nowrap` keeps a Korean label from breaking mid-label; the track
-   itself still wraps between tabs at phone widths. The min-height is constant at
-   every breakpoint (no `md:min-h-0` reset), so the desktop target does not shrink
-   below the mobile one. */
-/* The tab track. `align-items: stretch` is what makes each tab as tall as the bar,
-   so the active indicator is flush with the bar's bottom border.
-   NOTE: wrapping stays a `flex-wrap` UTILITY in the markup, not a declaration here.
-   These .wep-* rules are unlayered and therefore beat Tailwind's layered utilities,
-   so declaring it in both places would silently make the class the winner; keeping
-   it in the markup leaves one source of truth (and app/responsive.test.tsx asserts
-   the mode switcher carries it, since jsdom never loads this stylesheet). */
+/* The tab track — Figma frame 74:2000: a 907x50 pill (radius 999) filled with the
+   canvas grey, 6px of padding and a 2px gap, holding the six tabs.
+
+   It NEVER wraps. Six Korean labels cannot wrap gracefully, and the spec requires
+   one row from 1024px up, so the track instead SCROLLS horizontally at narrow
+   widths. `min-width: 0` is load-bearing: without it the flex item refuses to
+   shrink below its content and the PAGE gains a horizontal scrollbar — exactly
+   what the mobile contract forbids. Scrolling the track keeps the overflow inside
+   the nav, and is why the track (not the row) owns the pill background. */
 .wep-nav-track {
   display: flex;
-  align-items: stretch;
-  gap: 0 0.25rem;
+  align-items: center;
+  gap: 0 var(--figma-nav-track-gap);
+  min-width: 0;
+  padding: 0.25rem;
+  border-radius: var(--figma-nav-track-radius);
+  background: var(--color-canvas);
+  overflow-x: auto;
+  scrollbar-width: none; /* the tabs are the affordance; a bar here reads as chrome */
 }
+.wep-nav-track::-webkit-scrollbar {
+  display: none;
+}
+@media (min-width: 1280px) {
+  .wep-nav-track {
+    height: var(--figma-nav-track-height);
+    padding: var(--figma-nav-track-pad);
+  }
+}
+/* A top-level navigation tab. Figma marks the SELECTED one with a white pill on the
+   grey track plus a 700 weight (the other five are 500), and gives every label the
+   same brand navy — so the OLD 2px bottom indicator is gone, replaced by the state
+   the design actually specifies.
+ *
+ * State is still never colour alone: the pill is a SHAPE (present vs absent), the
+ * weight changes, and `aria-pressed` carries it to assistive technology. The 1px
+ * shadow is the one deliberate addition — white-on-#F9F9F9 is a ~1.02:1 edge, which
+ * is not a dependable visual boundary, and the shadow restores it without altering
+ * any Figma colour, radius, or metric.
+ *
+ * `min-height` stays 2.75rem (44px) below 1280 so the touch target does not shrink;
+ * only at desktop does it take Figma's 38px, where the pointer is the input. */
 .wep-nav-tab {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
+  gap: 0.3125rem;
   min-height: 2.75rem;
-  padding: 0 0.875rem;
-  /* The transparent TOP border mirrors the indicator so the label stays optically
-     centred whether or not the tab is active. */
-  border-top: 2px solid transparent;
-  border-bottom: 2px solid transparent;
+  padding: 0.25rem 0.625rem;
+  border: 0;
+  border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-ink-muted);
-  font-size: 0.9375rem;
+  color: var(--color-brand);
+  font-size: 0.8125rem;
   font-weight: 500;
+  /* Figma sets the label's line box to 1.2x its size (16 -> 19). Left at `normal`
+     the 1.5x box makes the tab 42px tall where the design says 38. */
+  line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
 }
+/* The icon inherits the tab's colour. Below the Figma breakpoint the glyphs are
+   capped by HEIGHT with an auto width, so each keeps the aspect ratio it was drawn
+   at (they are 18x20, 20x17, 14x14 — never square) instead of being squashed. */
+.wep-nav-icon {
+  flex: none;
+  width: auto;
+  height: 1rem;
+}
 .wep-nav-tab:hover {
-  color: var(--color-ink);
   background: var(--color-surface-muted);
 }
 .wep-nav-tab[aria-pressed="true"] {
-  color: var(--color-ink);
+  background: var(--color-surface);
+  border-radius: var(--figma-nav-tab-radius);
   font-weight: 700;
-  border-bottom-color: var(--color-primary);
+  box-shadow: 0 1px 2px rgb(17 26 86 / 0.1);
+}
+.wep-nav-tab[aria-pressed="true"]:hover {
+  background: var(--color-surface);
+}
+/* A decorative 1x20 rule before 데이터·출처, as the page-1 annotation asks. */
+.wep-nav-divider {
+  flex: none;
+  align-self: center;
+  width: 1px;
+  height: 20px;
+  background: var(--figma-nav-divider);
+}
+/* Exact Figma metrics, at the width they were measured for. */
+@media (min-width: 1280px) {
+  .wep-nav-tab {
+    gap: var(--figma-nav-tab-gap);
+    min-height: var(--figma-nav-tab-height);
+    padding: var(--figma-nav-tab-pad-y) var(--figma-nav-tab-pad-x);
+    font-size: 1rem;
+  }
+  .wep-nav-icon {
+    width: auto;
+    height: auto;
+  }
 }
 
 /* Segmented control — a restrained pill track with one raised active segment.
@@ -591,7 +793,225 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Noto Sans KR (spec §1). This previously pinned `Arial, Helvetica, sans-serif`,
+     which — being a concrete declaration on <body> — beat the font variable the
+     <html> class exposes, so the loaded webfont never actually applied to Korean
+     text. Referencing the token instead is what makes the global font change real. */
+  font-family: var(--font-sans);
+}
+
+/* Resizable 지역 지표 control column (components/ui/ResizableSidebar.tsx).
+
+   The width arrives as the `--wep-sidebar-width` custom property, set inline by
+   the component, and is READ ONLY inside the md+ block below. That is what makes
+   the phone layout structurally immune to the desktop width: below 768px the
+   property is never consumed, so the column is plainly `width: 100%` and no JS
+   branch has to remember to skip it.
+
+   The divider is a real 10px flex item — a comfortable pointer target — that
+   paints only a 1px hairline down its centre, so the visible seam stays as quiet
+   as the border it replaced. (The column's old `md:border-r` is gone; this line
+   IS that border now, which is why the map still starts immediately after it.)
+   It is hidden below md, so a phone has no handle and receives no pointer
+   handlers at all. */
+.wep-sidebar {
+  width: 100%;
+}
+.wep-sidebar-resizer {
+  display: none;
+}
+@media (min-width: 768px) {
+  .wep-sidebar {
+    width: var(--wep-sidebar-width, 360px);
+  }
+  .wep-sidebar-resizer {
+    display: block;
+    position: relative;
+    flex: none;
+    width: 10px;
+    align-self: stretch;
+    background: transparent;
+    /* The cursor is the affordance: the 10px band reads as a hairline until the
+       pointer is over it. */
+    cursor: col-resize;
+    /* Never let a drag select the sidebar text it starts next to. */
+    user-select: none;
+    /* Claim horizontal gestures so a trackpad drag resizes instead of scrolling. */
+    touch-action: none;
+  }
+  .wep-sidebar-resizer::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-50%);
+    background: var(--color-hairline);
+    transition: background-color 0.12s ease, width 0.12s ease;
+  }
+  /* Hover and keyboard focus both thicken and tint the line, so the handle is
+     discoverable by pointer AND visibly targeted when tabbed to. */
+  .wep-sidebar-resizer:hover::before,
+  .wep-sidebar-resizer:focus-visible::before {
+    width: 3px;
+    background: var(--color-primary);
+  }
+}
+
+/* Three-column 후보지 심층 분석 workspace (components/ui/CollapsiblePanel.tsx).
+
+   Mobile: every column is just a section in the stack — full width, body always
+   shown, no rail and no toggle. A phone must never be able to reach a state where
+   an analytical panel is closed with no way to open it.
+
+   md+: each column is a fixed-width flex item beside the map. Collapsing swaps
+   that width for a narrow rail, and the freed width goes to `.map-pane`
+   (`flex: 1 1 0%`), whose existing ResizeObserver in MapView then resizes the
+   canvas. Nothing here touches the map. */
+.wep-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-bottom: 1px solid var(--color-hairline);
+  background: var(--color-surface-sunken);
+}
+.wep-panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+.wep-panel-title {
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wep-panel-toggle {
+  display: none; /* desktop-only affordance; see the md+ block */
+}
+.wep-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0 0.75rem 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .wep-panel {
+    flex: none;
+    /* 248px between 768 and 1279. TWO columns flank the map here, so the pair
+       costs double: at 21rem each they left only ~336px of map at the 1024px
+       minimum, and the floating overlays (legend, layer stack, insight card)
+       then collided with each other and with the columns. 15.5rem keeps the map
+       above 500px at 1024 while still fitting the controls. */
+    width: 15.5rem;
+    border-bottom: 0;
+    overflow-y: auto;
+    /* Only the width animates; the body is display-toggled, so there is nothing
+       to interpolate inside it. */
+    transition: width 0.16s ease;
+  }
+  .wep-panel[data-side="left"] {
+    border-right: 1px solid var(--color-hairline);
+  }
+  .wep-panel[data-side="right"] {
+    border-left: 1px solid var(--color-hairline);
+  }
+  .wep-panel-toggle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    /* 32px: comfortably clickable while keeping the collapsed rail narrow. */
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--color-hairline-strong);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-ink-muted);
+    cursor: pointer;
+  }
+  .wep-panel-toggle:hover {
+    border-color: var(--color-primary-border);
+    background: var(--color-primary-soft);
+    color: var(--color-primary);
+  }
+  /* Collapsed: a rail just wide enough for the toggle plus its padding.
+
+     THE DOUBLE CLASS IS LOAD-BEARING — do not simplify it to `.wep-panel-collapsed`.
+     The ≥1280px block below re-declares `.wep-panel { width: 21rem }`. At the single
+     class both rules have specificity (0,1,0), and the 1280 block is LATER in source
+     order, so above 1280px the open width beat the collapsed rail: the body hid, the
+     column kept its full 336px, and the map never received the freed width. That is
+     the defect the post-production visual review found, and `.wep-panel` +
+     `.wep-panel-collapsed` (0,2,0) is what makes the collapsed state win at every
+     width regardless of block order. Measured by e2e/deepAnalysisPanels.spec.ts. */
+  .wep-panel.wep-panel-collapsed {
+    width: 3rem;
+    overflow: hidden;
+  }
+  .wep-panel-collapsed .wep-panel-bar {
+    justify-content: center;
+    padding-inline: 0.5rem;
+  }
+  .wep-panel-collapsed .wep-panel-body {
+    /* Removes it from layout, the a11y tree, and the tab order — the correct
+       state for a column the reader has closed. React keeps it mounted. */
+    display: none;
+  }
+}
+
+/* Above 1280px there is room for the roomier column the controls prefer.
+   This rule governs the OPEN column only — the collapsed rail above deliberately
+   carries a higher-specificity selector so this later block cannot out-cascade it. */
+@media (min-width: 1280px) {
+  .wep-panel {
+    width: 21rem; /* 336px */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wep-panel {
+    transition: none;
+  }
+}
+
+/* 상대 점수 구간 (A/B/C) chips (lib/relativeGrade.ts).
+   Each band is distinguished by its LETTER first — the fill is a supporting
+   signal only, so the bands survive a grayscale render or a colour deficiency.
+   These are deliberately NOT the official status colours: a reader must never
+   confuse a relative band with a screening outcome. */
+.wep-grade {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0 0.375rem;
+  border: 1px solid;
+  border-radius: var(--radius-control);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.wep-grade-A {
+  border-color: #b6c0e0;
+  background: #e8ecf8;
+  color: #16205f;
+}
+.wep-grade-B {
+  border-color: #cdd2dd;
+  background: #f0f2f6;
+  color: #3f4459;
+}
+.wep-grade-C {
+  border-color: #dcdfe6;
+  background: #f7f8fa;
+  color: #5b6070;
 }
 
 /* Map pane sizing.
@@ -671,7 +1091,13 @@ body {
    stays short and the map is reachable; the <summary> is the tappable label.
    On md+ (desktop/tablet-landscape) the summary is hidden and the body is forced
    visible, so the desktop sidebar renders exactly as before — no toggles are
-   added to the desktop UI and no analytical option is ever permanently hidden. */
+   added to the desktop UI and no analytical option is ever permanently hidden.
+
+   NOTE (Phase 1): 지역 지표 was the only consumer, and its two disclosures moved —
+   the facility control onto the map, 출처와 계산 방법 into the 선택한 지역 card — so
+   this block currently has none. It is kept because Pages 2-6 have not been
+   redesigned yet and the same mobile behaviour is likely to be wanted there; if the
+   last page phase also finds no use for it, delete it then. */
 .mobile-collapsible > summary {
   list-style: none;
   cursor: pointer;
@@ -773,6 +1199,26 @@ body {
   }
 }
 
+/* The 폐기물 처리시설 card (components/equity/EquityFacilityLayerCard.tsx) joined that
+   same bottom stack in Phase 1, so it is bounded on exactly the same terms and by the
+   same height query. Without it the stack — legend + facility card + the expanded
+   insight — overflowed the TOP of the map at 768/800-tall viewports, which is the
+   defect this file's note above already describes for the legend alone.
+
+   Capping it costs nothing analytical: the card scrolls internally, so the toggle,
+   every type-legend row, and the served coverage note all stay reachable. The page
+   ALSO bounds the stack structurally (see the overlay column in app/page.tsx), so a
+   future card that outgrows this cap still cannot escape the map. */
+.wep-map-overlay-card {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+@media (min-width: 768px) and (max-height: 820px) {
+  .wep-map-overlay-card {
+    max-height: 26vh;
+  }
+}
+
 /* Collapsed-by-default 지역 부담 map insight
    (components/equity/EquityMapInsightStrip.tsx).
 
@@ -832,7 +1278,18 @@ body {
    surrounding overlay column shrink it to the available map width at 1024px, where
    the map is only ~624px wide, instead of pushing anything past the map edge. */
 .map-insight[open] {
-  width: 100%;
+  /* A LEFT GUTTER, not the full width.
+
+     This was `width: 100%` with a 832px cap, which left the map clickable beside
+     the card only while the map was wider than 832px. 후보지 심층 분석 now has
+     two side columns, so at 1440 the map is ~768px — narrower than the cap — and
+     the open card began spanning the entire map, swallowing clicks aimed at the
+     canvas next to it (e2e/mapInsightDisclosure.spec.ts:393).
+
+     Reserving 4rem keeps a strip of canvas reachable at every width, and the
+     832px cap still governs the wide single-column views, where the card's size
+     is unchanged. */
+  width: calc(100% - 4rem);
   max-width: 52rem; /* 832px */
 }
 .map-insight[open] > summary {
@@ -886,6 +1343,57 @@ body {
   color: var(--color-ink-subtle);
 }
 
+/* The map popup, from Figma frame 223:449 — ONE card carrying the region's active
+   indicator value and, when a marker was the target, that facility's details. The
+   frame's smallest provenance type is 9px; it is raised to 11px here because 9px is
+   below any usable reading size and the popup has room for the difference. */
+.maplibregl-popup-content .wep-popup-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 19px;
+  color: var(--color-brand);
+  padding-right: 1rem; /* clear of the close button */
+}
+.maplibregl-popup-content .wep-popup-value {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 20px;
+  color: var(--color-brand);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.maplibregl-popup-content .wep-popup-subtitle {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
+  color: var(--color-brand);
+}
+.maplibregl-popup-content .wep-popup-line {
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--color-ink-muted);
+}
+.maplibregl-popup-content .wep-popup-note {
+  color: var(--color-ink-subtle);
+}
+.maplibregl-popup-content .wep-popup-rule {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--figma-rule);
+}
+.maplibregl-popup-content .wep-popup-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--color-ink-secondary);
+}
+.maplibregl-popup-content .wep-popup-meta-label {
+  flex: none;
+  min-width: 4.5rem;
+  color: var(--color-ink-subtle);
+}
+
 .maplibregl-popup-close-button {
   color: var(--color-ink-muted);
 }
@@ -927,5 +1435,168 @@ body {
   }
   .wep-print section {
     page-break-inside: avoid;
+  }
+}
+
+/* 데이터·출처 modal (components/ui/Dialog.tsx).
+   A LARGE dialog — the source catalogue is a working surface, not a confirm
+   box — that still leaves the destination behind it visible at the edges, so a
+   reader can see they are on top of the page rather than navigated away. */
+.wep-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(17, 26, 86, 0.42);
+}
+.wep-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 68rem;
+  /* Static fallback first, then the dynamic-viewport value — the same ordering
+     rule the map pane and the report panel follow (frontend/RESPONSIVE_LAYOUT.md). */
+  max-height: calc(100vh - 2rem);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+@supports (height: 100dvh) {
+  .wep-dialog {
+    max-height: calc(100dvh - 2rem);
+  }
+}
+.wep-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex: none;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-hairline);
+}
+.wep-dialog-title {
+  color: var(--color-ink);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.wep-dialog-desc {
+  margin-top: 0.25rem;
+  color: var(--color-ink-subtle);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.wep-dialog-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  /* 44px: a comfortable target, the same minimum the rest of the app uses. */
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  cursor: pointer;
+}
+.wep-dialog-close:hover {
+  border-color: var(--color-primary-border);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+/* Only the BODY scrolls, so the title and the close control stay reachable
+   however long the catalogue is. */
+.wep-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Phones get the full screen: a centred card with margins wastes the little
+   room a long catalogue has. */
+@media (max-width: 639px) {
+  .wep-dialog-backdrop {
+    padding: 0;
+  }
+  .wep-dialog {
+    max-width: none;
+    max-height: 100vh;
+    height: 100%;
+    border-radius: 0;
+  }
+  @supports (height: 100dvh) {
+    .wep-dialog {
+      max-height: 100dvh;
+    }
+  }
+}
+
+/* Source-catalogue grid (components/transparency/SourceCatalog.tsx).
+
+   CONTAINER-relative, not viewport-relative. It used
+   `md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4`, which reads the VIEWPORT — fine
+   while the catalogue was a full-width page, but wrong now that it also renders
+   inside the width-capped 데이터·출처 dialog: at a 1920px viewport the grid asked
+   for four columns inside a 1088px dialog and produced 242px cards, clipping the
+   metadata (caught by e2e/transparencyDashboard.spec.ts "cards stay readable").
+
+   `auto-fill` + a 20rem floor derives the column count from the space actually
+   available, so the same rule serves the page and the dialog and a card can never
+   be squeezed below a readable width. */
+.wep-source-grid {
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+}
+
+/* Page 2 (폐기물 처리 현황): the short-desktop fold budget.
+   ────────────────────────────────────────────────────────────────────────────
+   The dashboard's vertical rhythm is width-independent, so the KPI row lands at
+   the same y at every desktop width: it ends ~866px below the viewport top. That
+   fits a 900px viewport with room to spare and overflows an 800px one, which is
+   the 1280×800 target — the reader had to scroll before seeing the headline
+   figures, the exact complaint phase5LandfillDashboard.spec.ts was written for.
+
+   The fix is scoped by HEIGHT, not width, because height is what actually
+   differs: at >=850px tall nothing here applies and 1440×900 renders exactly as
+   approved in Figma. Below that, the rhythm ABOVE the fold tightens — padding,
+   gaps and one margin. No text, control, badge, or provenance line is removed or
+   resized, and no interactive target shrinks: `.wep-select` keeps its own
+   min-height, which this block never touches.
+
+   Scoped under `.landfill-compact` (set on the Page-2 root only), so nothing can
+   reach Page 1/3/4/5/6 — the shared InfoBanner, SectionCard and KpiCard render
+   unchanged everywhere else. Selectors use the same data-testids the e2e specs
+   already contract, so a renamed hook fails a test rather than silently
+   un-styling the page. */
+@media (min-width: 64rem) and (max-height: 53.125rem) {
+  .landfill-compact {
+    padding-top: 0.625rem; /* pt-6 (1.5rem) → 0.625rem */
+  }
+  .landfill-compact-stack {
+    gap: 0.625rem; /* gap-4 (1rem) → 0.625rem */
+  }
+  .landfill-compact [data-testid="landfill-limitation"] {
+    padding-block: 0.375rem; /* wep-banner 0.75rem */
+  }
+  .landfill-compact [data-testid="landfill-filters"],
+  .landfill-compact [data-testid="landfill-kpis"] > * {
+    padding-block: 0.5rem; /* wep-card 1rem */
+  }
+  .landfill-compact [data-testid="landfill-selection"] {
+    margin-top: 0.375rem;
+    padding-top: 0.375rem;
+  }
+  /* SectionCard's own header block (title + description). Targeted structurally
+     because SectionCard owns that margin internally and is shared with Pages
+     1/3/6 — reaching it through the Page-2 scope leaves those untouched. */
+  .landfill-compact [data-testid="landfill-filters"] > div:first-child {
+    margin-bottom: 0.5rem; /* mb-3 → mb-2 */
+  }
+  .landfill-compact-headline-title {
+    margin-bottom: 0.25rem; /* mb-2 → mb-1 */
   }
 }

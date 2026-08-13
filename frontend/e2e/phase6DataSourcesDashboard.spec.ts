@@ -74,25 +74,40 @@ for (const vp of VIEWPORTS) {
       // Exactly one of each piece of global chrome.
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
+      // The dialog's title is an h2; the single h1 belongs to the destination
+      // behind it (spec §8).
+      const dialog = page.getByTestId("data-sources-dialog");
+      await expect(dialog).toHaveAttribute("aria-modal", "true");
+      await expect(dialog.getByRole("heading", { name: "데이터·출처" })).toBeVisible();
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText("데이터와 출처");
+      await expect(dialog.locator("h1")).toHaveCount(0);
       await expect(page.locator("#main-content")).toHaveCount(1);
       await expect(page.locator("main")).toHaveCount(1);
 
       // This view supports no map, so none is mounted — not merely hidden.
-      await expect(page.getByTestId("map-container")).toHaveCount(0);
-      await expect(page.locator(".maplibregl-canvas")).toHaveCount(0);
-      await expect(page.locator("canvas")).toHaveCount(0);
-      // Nor an equity-style sidebar, nor the 후보지 분석 segmented control.
-      await expect(page.locator("aside")).toHaveCount(0);
+      // Scoped to the dialog: a map may legitimately be mounted BEHIND it.
+      await expect(dialog.getByTestId("map-container")).toHaveCount(0);
+      await expect(dialog.locator("canvas")).toHaveCount(0);
+      // Nor an equity-style sidebar, nor the retired sub-view segmented control.
+      await expect(dialog.locator("aside")).toHaveCount(0);
       await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
-      for (const view of ["score", "scenario", "cost"]) {
-        await expect(page.getByTestId(`suitability-view-${view}`)).toHaveCount(0);
+      // NOTE: `suitability-view-cost` / `-scenario` are no longer sub-view segments
+      // that would leak into this view — they are two of the six GLOBAL destination
+      // buttons, so they are expected here, inside the nav group, exactly once.
+      for (const testId of ["suitability-view-cost", "suitability-view-scenario"]) {
+        await expect(page.getByTestId("mode-switch").getByTestId(testId)).toHaveCount(1);
       }
+      await expect(page.getByTestId("suitability-view-score")).toHaveCount(0);
 
       // Full-width: the dashboard spans essentially the whole viewport.
       const box = (await page.getByTestId("transparency-dashboard").boundingBox())!;
-      expect(box.width).toBeGreaterThan(vp.width * 0.9);
+      // DIALOG-relative, not viewport-relative. The catalogue renders inside the
+      // width-capped 데이터·출처 modal now, so "90% of the viewport" is unreachable
+      // by construction at 1280+ and could only be met by making the modal
+      // full-bleed — which would stop it reading as a modal. The contract that
+      // matters is unchanged: the dashboard fills the box it is given.
+      const dialogBody = (await page.getByTestId("data-sources-dialog-body").boundingBox())!;
+      expect(box.width).toBeGreaterThan(dialogBody.width * 0.9);
 
       await expectNoHorizontalOverflow(page);
     });
@@ -100,13 +115,20 @@ for (const vp of VIEWPORTS) {
     test("keeps the global navigation labels and position unchanged", async ({ page }) => {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
-      for (const label of ["지역 부담", "후보지 분석", "매립지 현황", "데이터·출처"]) {
+      for (const label of ["지역 지표", "폐기물 처리 현황", "후보지 분석", "후보지 심층 분석", "후보지 심층 비교", "데이터·출처"]) {
         await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(1);
       }
-      // The nav sits above the dashboard content, as in every other area.
+      // The nav is still THERE and still the same six labels — but the vertical
+      // "nav above the content" stacking was a PAGE contract, and 데이터·출처 is a
+      // modal now: its overlay spans the viewport and deliberately covers the nav,
+      // which is what makes the background inert. So the contract asserted here is
+      // the modal one: the dialog overlays the chrome rather than flowing under it.
       const nav = (await page.getByTestId("top-navigation").boundingBox())!;
-      const dashboard = (await page.getByTestId("transparency-dashboard").boundingBox())!;
-      expect(nav.y + nav.height).toBeLessThanOrEqual(dashboard.y + 1);
+      const backdrop = (await page.getByTestId("data-sources-dialog-backdrop").boundingBox())!;
+      expect(backdrop.y, "the overlay starts at the viewport top").toBeLessThanOrEqual(nav.y + 1);
+      expect(backdrop.height, "and covers the chrome").toBeGreaterThanOrEqual(
+        nav.y + nav.height,
+      );
       await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
     });
 
@@ -341,7 +363,11 @@ for (const vp of VIEWPORTS) {
         "https://www.data.go.kr/data/15064381/fileData.do",
       );
       await expect(link).toHaveAttribute("rel", /noreferrer/);
-      await expect(link).toContainText("새 창");
+      // The redesign keeps Figma's visible label (공식 안내 페이지) and moves the
+      // "leaves this tab" warning into the ACCESSIBLE name, alongside the dataset
+      // name — so it is still announced, just not duplicated in visible text.
+      await expect(link).toHaveAttribute("aria-label", /새 창/);
+      await expect(link).toHaveAttribute("aria-label", /반입량/);
 
       // A record whose served URL is not an absolute http(s) URL must not be
       // repaired into a link. (Synthetic id, so no real agency is depicted as having
@@ -520,7 +546,19 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("transparency-source-card")).toHaveCount(0);
       // The section still spans the page (the full-width contract is unchanged).
       const box = (await page.getByTestId("transparency-sources").boundingBox())!;
-      expect(box.width).toBeGreaterThan(vp.width * 0.9);
+      // DIALOG-relative, not viewport-relative. The catalogue renders inside the
+      // width-capped 데이터·출처 modal now, so "90% of the viewport" is unreachable
+      // by construction at 1280+ and could only be met by making the modal
+      // full-bleed — which would stop it reading as a modal. The contract that
+      // matters is unchanged: the dashboard fills the box it is given.
+      const dialogBody = (await page.getByTestId("data-sources-dialog-body").boundingBox())!;
+      // Measured as an ABSOLUTE gutter rather than a ratio. The catalogue carries its
+      // own ~20px content gutter on each side, which is a fixed cost: at 390px that
+      // is 10.3% of the width, so a `> 90%` rule failed at the narrowest viewport
+      // while passing everywhere else — it was measuring the gutter, not a squeeze.
+      // The cap is also STRICTER than the old ratio at 1280+ (48px of slack rather
+      // than 128px+), so nothing is given up by stating it this way.
+      expect(dialogBody.width - box.width, "catalogue fills the box it is given").toBeLessThanOrEqual(48);
       await expectNoHorizontalOverflow(page);
     });
 
@@ -581,6 +619,9 @@ for (const vp of VIEWPORTS) {
       expect(reached).toContain("transparency-search-clear");
       expect(reached).toContain("transparency-filter-category");
       expect(reached).toContain("transparency-filter-frequency");
+      // The permanent clear-all sits last in the row, so the documented order is
+      // extended rather than interrupted.
+      expect(reached).toContain("transparency-clear-filters");
 
       // The clear control works from the keyboard.
       await page.getByTestId("transparency-search-clear").focus();

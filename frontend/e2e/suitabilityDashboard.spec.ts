@@ -65,13 +65,23 @@ for (const vp of VIEWPORTS) {
       );
       expect(documentScrolls, "no page-level vertical scroll").toBe(false);
 
-      const sidebar = page.locator("aside");
+      // 후보지 심층 분석 now has TWO complementary columns (분석 조건 / 후보지 결과),
+      // so a bare `aside` locator is ambiguous. The "control column" this test is
+      // about is the left one; the right column is asserted the same way below.
+      const sidebar = page.getByTestId("deep-left-panel");
       await expect(sidebar).toBeVisible();
       expect(await sidebar.evaluate((el) => getComputedStyle(el).overflowY)).toBe("auto");
 
       // The control column ends at the viewport bottom rather than pushing the page.
       const sidebarBox = (await sidebar.boundingBox())!;
       expect(sidebarBox.y + sidebarBox.height).toBeLessThanOrEqual(vp.height + 2);
+
+      // The results column is its own scroll container with the same contract.
+      const results = page.getByTestId("deep-right-panel");
+      await expect(results).toBeVisible();
+      expect(await results.evaluate((el) => getComputedStyle(el).overflowY)).toBe("auto");
+      const resultsBox = (await results.boundingBox())!;
+      expect(resultsBox.y + resultsBox.height).toBeLessThanOrEqual(vp.height + 2);
 
       // It is long enough at every supported height that it must scroll LOCALLY —
       // and doing so moves only the sidebar, leaving the page still.
@@ -165,14 +175,17 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test("keeps one map, one h1, one navigation, and one sub-view switch", async ({ page }) => {
+    test("keeps one map, one h1, one navigation, and no sub-view switch", async ({ page }) => {
       await openScore(page);
       await expect(page.getByTestId("map-container")).toHaveCount(1);
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText("후보지 분석");
+      // The SCORE destination is 후보지 심층 분석; plain 후보지 분석 is the separate
+      // cost destination (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2).
+      await expect(page.locator("h1")).toHaveText("후보지 심층 분석");
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
-      await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+      // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
       await expect(page.locator("main")).toHaveCount(1);
     });
 
@@ -313,7 +326,9 @@ test.describe("suitability dashboard behaviour at 1440×900", () => {
     await page.getByTestId("suitability-insight-summary").click();
     await page.getByTestId("suitability-insight-open-sources").click();
     await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("map-container")).toHaveCount(0);
+    // A dialog over the previous destination (spec §8) — the map behind stays.
+    await expect(page.getByTestId("data-sources-dialog")).toBeVisible();
+    await expect(page.getByTestId("map-container")).toHaveCount(1);
   });
 });
 
@@ -338,7 +353,8 @@ test.describe("scenario workspace at 1440×900", () => {
     );
     await expect(page.getByTestId("map-container")).toHaveCount(1);
     await expect(page.locator("h1")).toHaveCount(1);
-    await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+    // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
     await expectNoHorizontalOverflow(page, "scenario 1440×900");
   });
 
@@ -411,14 +427,15 @@ test.describe("cost sub-view regression at 1440×900", () => {
     await expect(page.getByTestId("facility-cost-dashboard")).toBeVisible();
     await expect(page.getByTestId("map-container")).toHaveCount(0);
     await expect(page.locator("h1")).toHaveCount(1);
-    await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+    // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
     await expect(page.getByTestId("mode-switch")).toHaveCount(1);
     // The screening disclaimer follows into the cost view's own notice.
     await expect(page.getByTestId("suitability-screening-disclaimer")).toBeVisible();
     await expectNoHorizontalOverflow(page, "cost 1440×900");
 
     // Returning restores the score workspace and its single map.
-    await page.getByTestId("suitability-view-score").click();
+    await page.getByTestId("mode-suitability").click();
     await expect(page.getByTestId("suitability-summary")).toBeVisible();
     await expect(page.getByTestId("map-container")).toHaveCount(1);
   });

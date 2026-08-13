@@ -18,7 +18,11 @@ expectation (see `landfill-dashboard.md`); §20–§21 do the same for the
 **데이터·출처 dashboard** milestone (see `transparency-dashboard.md`); §22–§24 record
 what the **final UI integration** milestone established across all six areas at once
 (see `final-integration-regression.md`); §25 records the **collapsible map insight**
-follow-up (see `equity-dashboard.md` §12 and `suitability-dashboard.md` §14).
+follow-up (see `equity-dashboard.md` §12 and `suitability-dashboard.md` §14); §26
+records the **UI correction pass** after the post-production visual review, which
+deliberately restates §5, §10, and §16 (see
+`docs/YEOGIDA_AUTONOMOUS_RUN.md`). **§5 and §10 are superseded by §26.1 and §26.2** —
+read those first.
 
 ## 1. Primary navigation labels (frozen strings)
 
@@ -91,6 +95,11 @@ Enforced by: `app/shell.test.tsx`, `app/page.selection.test.tsx`, `components/Ma
 
 ## 5. Metric radios
 
+> **SUPERSEDED by §26.1** (UI correction pass). The three groups below were re-cut
+> into three SUBJECT sections and the eleven radios into seven category rows plus a
+> 총량/1인당 switch. The structural guarantees — three fieldsets, one logical radio
+> group, nothing behind a disclosure, four selection signals — carried over verbatim.
+
 The equity metric controls stay **three labelled `<fieldset>` groups** — total,
 per-capita, burden (`metric-group-total`, `metric-group-per_capita`,
 `metric-group-burden`) — with the same number of radios, the same grouping, and the
@@ -120,9 +129,11 @@ milestone, and the rules travelled with them:
 * The new `DataStatusBadge` carries a **text** label for every state, so status is
   never conveyed by color alone; its missing state uses the neutral `--color-no-data`
   gray, which is not part of any analytical ramp.
-* A region whose value is unavailable is **never silently dropped** from the region
-  comparison: it keeps its chip and its row, and shows the served reason under
-  자료 없음 when the source attached one.
+* A region whose value is unavailable is **never silently dropped**. The 지역 비교
+  card that carried this rule was removed by the correction pass; 지표 순위 전체보기
+  (§26.3) carries it now — such a region is not ranked, not ranked last, and not
+  omitted, but named in its own 값이 없어 순위에서 제외한 지역 list with the count and
+  an explicit 0으로 채우지 않았습니다.
 * A card never fabricates a second value to fill a grid. When
   `metricReferencePeriod` is empty the 자료 기준 item is omitted, leaving fewer
   items — not padded with a placeholder.
@@ -176,6 +187,10 @@ with no real function. Utility actions may be added later only when wired to an
 existing export.
 
 ## 10. The one deliberate change in this milestone
+
+> **PARTLY SUPERSEDED by §26.2** (UI correction pass). The `<h1>`-is-the-area-title
+> decision below still holds everywhere. On 지역 지표 the heading is now `sr-only`
+> and the scope tagline + orientation strip were removed from that area entirely.
 
 **The equity/suitability map view's `<h1>` is now the area title, not the product
 name.**
@@ -834,3 +849,139 @@ Four pre-existing assertions were updated, none weakened:
    same mechanism, and the same correction, already recorded for `civicShell.spec.ts`
    in `final-integration-regression.md`. Every assertion is unchanged — only the
    patience is.
+
+---
+
+## 26. UI correction pass — what the post-production visual review changed
+
+A visual review of the deployed 여기다 redesign found four defects. The corrections
+are deliberate product decisions, so the contracts they touched are **restated here
+rather than silently broken**. Nothing outside these four items moved.
+
+### 26.1 §5 restated — 지표 선택 is now three SUBJECT sections
+
+§5 above froze the metric controls as three STATISTICAL-FAMILY fieldsets
+(총량 지표 / 1인당 형평성 지표 / 시설 부담 지표) holding eleven radios. The reader has
+to know the taxonomy before they can find anything, which is what the review objected
+to. The new shape (`lib/metrics.ts` `METRIC_SECTIONS`,
+`components/equity/EquityMetricSelector.tsx`):
+
+```text
+지역별 인구            → 지역별 인구
+폐기물 발생량           → 생활계 / 사업장(비배출시설계) / 사업장(배출시설계) / 건설
+                        each with a 총량 · 1인당 switch
+1인당 시설 처리 수준     → 소재 시설 처리량 / 인근 5km 시설 처리량
+```
+
+What is still frozen, and still enforced:
+
+* **exactly three `<fieldset>`/`<legend>` groups** — `e2e/accessibility.spec.ts` counts
+  the whole page's fieldsets, so the mode switch stays a `role="group"` of
+  `aria-pressed` buttons (`SegmentedControl`) and must never become a fourth fieldset;
+* **ONE logical radio group** — all seven category radios keep `name="metric"`, so
+  native arrow keys still traverse every row across section boundaries;
+* **no disclosure, no `<select>`, no tabs** on desktop: every row and every switch is
+  directly selectable;
+* **four independent selection signals** — the native checked radio, a heavier label,
+  the card border, and the tint;
+* **the same eleven served metrics.** Seven rows × the switch = eleven `MetricKey`s.
+  No metric was added, removed, renamed, merged, or derived.
+
+One point where the shipped IA differs from the reference sketch, **explicitly
+sanctioned by the correction request** ("preserve the real data semantics… rather than
+collapsing distinct official datasets incorrectly"):
+
+**생활계 is four waste rows, not three, and is not annotated "생활 + 비배출계".**
+Korean statistics do define 생활계폐기물 as 생활(가정) + 사업장비배출시설계, but this
+platform ingests those as two separate official series (RCIS `NTN007` → `HOUSEHOLD`,
+`NTN008` → `BUSINESS_NON_FACILITY`) and the backend serves no combined figure. Adding
+them in the browser would publish a statistic no source published; dropping either row
+would hide a real official series. Both are offered, each labelled with the stream it
+actually is, and 생활계's supporting line says where the other component lives.
+
+The switch labels are **총량 · 1인당**, as specified. Left segment selects the
+category's absolute served metric, right selects its per-capita one.
+
+Enforced by: `app/page.equityDashboard.test.tsx`, `app/page.phase4.test.tsx`,
+`app/accessibility.test.tsx`, `e2e/equityDashboard.spec.ts`,
+`e2e/phase4EquityMap.spec.ts`, `e2e/accessibility.spec.ts`.
+
+### 26.2 §10 restated — 지역 지표 shows no visible title block
+
+Every other area still renders `PageHeader` + the orientation strip. 지역 지표 does
+not: the destination name, the scope tagline, and the orientation repeated what the
+active navigation item already said, and cost the column its first band of height.
+
+* The `<h1>` **still exists and still reads 지역 지표** — one per view, unchanged
+  (spec §2.2/§13). It is `sr-only`, so it occupies no layout at all; it is not hidden
+  with `visibility` or an opacity that would keep its box.
+* The scope tagline and `mode-orientation` are **absent from the DOM** in this area,
+  not merely invisible.
+* The navigation item 지역 지표 is untouched.
+* **The condition is `viewMode === "equity" && !dataDialogOpen`, and the second half
+  is load-bearing.** 데이터·출처 is a dialog layered over the previous area (§8), so a
+  cold `?v=1&mode=transparency` link renders this same branch with `viewMode` equity
+  while `destination` is 데이터·출처 — the `<h1>` is then that destination's title.
+  Dropping `!dataDialogOpen` strips 데이터·출처 of its visible page title, which is
+  exactly the defect `e2e/phase6DataSourcesDashboard.spec.ts:663` caught at 1280 and
+  1440 during this pass.
+
+Enforced by: `app/page.equityDashboard.test.tsx`, `app/shell.test.tsx`,
+`app/terminology.audit.test.tsx`, `e2e/equityDashboard.spec.ts`.
+
+### 26.3 지역 비교 removed; 지표 순위 전체보기 added
+
+The 지역 비교 card, its 0/3 counter, its search field, and its chips are gone, along
+with the page state, the CSV builder, and the report model that only it reached
+(`buildComparisonCsv`, `buildComparisonReport`). `lib/urlState.ts` still decodes and
+bounds-checks `cmp` so an already-shared legacy link keeps restoring everything else
+it carries; the page simply no longer applies it.
+
+Its replacement, `components/FullRankingDialog.tsx`, opens from inside the ranking
+card and is bound by the same analytical rules as the card:
+
+* the ranking is `rankAllRegions` — the SAME scope filter, exclusion rule, comparator
+  and tie-break as `rankRegions`, with the top-N cut removed. Not a second ranking;
+* it follows the active metric and its counting mode;
+* **a region with no served value is never ranked and never shown as 0** — it is named
+  in a separate 값이 없어 순위에서 제외한 지역 list that says so explicitly;
+* an official measured 0 IS ranked;
+* it uses the existing `ui/Dialog` primitive, so focus entry, Tab containment,
+  Escape, the close control, the body scroll lock, and focus restoration to the opener
+  are the behaviours already contracted for 데이터·출처. That primitive was not
+  modified to take a second consumer;
+* no endpoint was added: it derives from the rows Page 1 already loaded.
+
+Enforced by: `lib/ranking.test.ts`, `app/page.equity.test.tsx`,
+`app/page.equityDashboard.test.tsx`, `e2e/equityDashboard.spec.ts`,
+`e2e/citizenFlows.spec.ts`, `e2e/finalUiIntegration.spec.ts`.
+
+### 26.4 §16 extended — 후보지 분석 opens with the workflow, not the caveats
+
+The scope notice (`facility-cost-notice`) and its eight-item disclosure
+(`facility-cost-completeness`) moved from the top of the setup screen to the END of
+it. **No wording, grouping, count, prominence-within-itself, or test id changed** —
+only the position. Both are still fully present on the page, and the results view
+keeps its own separate notice.
+
+This also strengthens §16: the setup grid, and with it the sticky action rail, now
+starts at the very top of the workspace at every viewport height.
+
+Enforced by: `components/FacilityCostDashboard.test.tsx` (DOM-order assertions),
+`e2e/facilityCost.spec.ts`, `e2e/facilityCostDashboard.spec.ts`.
+
+### 26.5 The collapsed panel really gives its width to the map
+
+`docs/YEOGIDA_UI_REDESIGN_SPEC.md` §6 promised it; nothing measured it, and above
+1280px it was false. `.wep-panel { width: 21rem }` in the ≥1280px block came AFTER
+`.wep-panel-collapsed { width: 3rem }` in the ≥768px block at equal specificity, so
+the collapsed column kept its full 336px while its body disappeared — the map never
+grew. The collapsed rule is now `.wep-panel.wep-panel-collapsed` (0,2,0), which wins
+regardless of block order. **Do not simplify that selector back to one class.**
+
+`e2e/deepAnalysisPanels.spec.ts` measures BOUNDING BOXES, never class names — a class
+assertion could not have caught this, because the element carried the right class the
+whole time. It also asserts the map DOM node's IDENTITY across collapse/reopen via an
+expando property that only survives if the same node stays mounted, so a `key`-based
+remount workaround fails the suite. `MapView`'s `ResizeObserver` → `rAF` →
+`map.resize()` contract is untouched and is what repaints the canvas.

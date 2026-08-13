@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * 지역 부담 (equity) feature tests: regional ranking, region comparison, and the
+ * 지역 지표 (equity) feature tests: regional ranking, 지표 순위 전체보기, and the
  * share/export bar, plus shared-URL restore. MapView is stubbed; the API is mocked
  * with a small set of real-format SGIS regions so the ranking has values to rank.
  */
@@ -87,6 +87,7 @@ vi.mock("../lib/api", async (importOriginal) => {
   };
 });
 
+import { RANKING_FULL_VIEW_LABEL } from "../lib/ranking";
 import Home from "./page";
 
 beforeEach(() => {
@@ -110,13 +111,24 @@ async function renderEquity() {
 describe("regional ranking", () => {
   it("ranks by the served value, highest and lowest, with an official 0 ranked", async () => {
     await renderEquity();
+    // Since Phase 1 the card shows ONE list at a time with a ↑/↓ direction toggle
+    // (Figma frame 74:2025) instead of the two side-by-side columns. Both orderings
+    // are still `rankRegions`' own `high`/`low`; the toggle only chooses which is
+    // rendered, and the list keeps the `rank-high`/`rank-low` test id of the end it
+    // is showing.
     const high = screen.getByTestId("rank-high");
-    const low = screen.getByTestId("rank-low");
-    // Highest value first (수원시 장안구 500,000); lowest first is the official 0 (옹진군).
+    // Highest value first (수원시 장안구 500,000).
     expect(within(high).getAllByTestId("rank-row")[0].textContent).toContain("수원시 장안구");
     expect(within(high).getAllByTestId("rank-row")[0].textContent).toContain("500,000");
+
+    fireEvent.click(screen.getByTestId("rank-direction-low"));
+    const low = screen.getByTestId("rank-low");
+    // Lowest first is the official 0 (옹진군) — a measured 0 is ranked, not excluded.
     expect(within(low).getAllByTestId("rank-row")[0].textContent).toContain("옹진군");
     expect(within(low).getAllByTestId("rank-row")[0].textContent).toContain("0");
+    // The two ends are the same ranking seen from opposite directions, so only one
+    // list is on screen at a time.
+    expect(screen.queryByTestId("rank-high")).toBeNull();
   });
 
   it("reports how many regions were excluded because the value was unavailable", async () => {
@@ -150,44 +162,110 @@ describe("regional ranking", () => {
   });
 });
 
-describe("region comparison", () => {
-  it("searches, adds up to three regions, and shows exact values with official 0 distinct", async () => {
+/**
+ * 지표 순위 전체보기 — what replaced the 지역 비교 card (correction pass).
+ *
+ * The old card let a reader hand-pick up to three regions and put their values side
+ * by side. This shows EVERY region for the active metric in one ordered list, from
+ * the rows the page already loaded, so the coverage the comparison suite used to give
+ * lives on here: an official 0 is ranked, and a region with no served value is stated
+ * as missing rather than shown as a 0.
+ */
+describe("지역 순위 전체보기", () => {
+  /** Focus, then click — so the dialog records a real opener to restore focus to. */
+  function openFullRanking(): HTMLElement {
+    const trigger = screen.getByTestId("open-full-ranking");
+    trigger.focus();
+    fireEvent.click(trigger);
+    return trigger;
+  }
+
+  it("opens the complete ranking for the CURRENT metric, with no top-N cut", async () => {
     await renderEquity();
-    const search = screen.getByTestId("comparison-search");
-    fireEvent.focus(search);
-    fireEvent.change(search, { target: { value: "종로" } });
-    const options = await screen.findByTestId("comparison-options");
-    fireEvent.mouseDown(within(options).getByText(/종로구/));
+    openFullRanking();
 
-    fireEvent.change(search, { target: { value: "옹진" } });
-    fireEvent.mouseDown(within(await screen.findByTestId("comparison-options")).getByText(/옹진군/));
+    const dialog = screen.getByTestId("full-ranking-dialog");
+    expect(dialog.getAttribute("role")).toBe("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    // The accessible name is the visible title.
+    expect(within(dialog).getByText(RANKING_FULL_VIEW_LABEL)).toBeDefined();
+    // …and the basis names the ACTIVE metric, not a fixed string.
+    expect(dialog.textContent).toContain("인구");
 
-    const table = screen.getByTestId("comparison-table");
-    expect(table.textContent).toContain("종로구");
-    expect(table.textContent).toContain("300,000");
-    expect(table.textContent).toContain("옹진군");
-    expect(table.textContent).toContain("0"); // official zero, not 자료 없음
-    expect(table.textContent).not.toContain("자료 없음");
+    // All four regions WITH a value, highest first, ranks 1..4 — nothing truncated.
+    const rows = within(dialog).getAllByTestId("full-ranking-row");
+    expect(rows).toHaveLength(4);
+    expect(rows[0].textContent).toContain("수원시 장안구");
+    expect(rows[0].textContent).toContain("500,000");
+    expect(rows[3].textContent).toContain("옹진군");
+    // The official measured 0 IS ranked, last — it is a value, not a gap.
+    expect(rows[3].textContent).toContain("0");
   });
 
-  it("shows 자료 없음 for a region with no served value (never a fabricated 0)", async () => {
+  it("states a region with no served value as missing, never as a 0", async () => {
     await renderEquity();
-    const search = screen.getByTestId("comparison-search");
-    fireEvent.focus(search);
-    fireEvent.change(search, { target: { value: "용산" } });
-    fireEvent.mouseDown(within(await screen.findByTestId("comparison-options")).getByText(/용산구/));
-    expect(screen.getByTestId("comparison-table").textContent).toContain("자료 없음");
+    openFullRanking();
+    const dialog = screen.getByTestId("full-ranking-dialog");
+
+    // 용산구 has no population in the fixture.
+    const table = within(dialog).getByTestId("full-ranking-table");
+    expect(table.textContent).not.toContain("용산구");
+
+    const unranked = within(dialog).getByTestId("full-ranking-unranked");
+    expect(unranked.textContent).toContain("용산구");
+    expect(unranked.textContent).toContain("1개");
+    expect(unranked.textContent).toContain("0으로 채우지 않았습니다");
   });
 
-  it("removes a compared region via its chip", async () => {
+  it("selecting a region there drives the one canonical selected-region state", async () => {
     await renderEquity();
-    const search = screen.getByTestId("comparison-search");
-    fireEvent.focus(search);
-    fireEvent.change(search, { target: { value: "종로" } });
-    fireEvent.mouseDown(within(await screen.findByTestId("comparison-options")).getByText(/종로구/));
-    expect(screen.getByTestId("comparison-chips").textContent).toContain("종로구");
-    fireEvent.click(screen.getByTestId("comparison-chip-remove"));
-    expect(screen.queryByTestId("comparison-table")).toBeNull();
+    openFullRanking();
+    const dialog = screen.getByTestId("full-ranking-dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /종로구/ }));
+    expect(screen.getByTestId("selected-region-name").textContent).toBe("종로구");
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("300,000");
+  });
+
+  it("closes on Escape and gives focus back to the control that opened it", async () => {
+    await renderEquity();
+    const trigger = openFullRanking();
+    expect(screen.getByTestId("full-ranking-dialog")).toBeDefined();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("full-ranking-dialog")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("closes on its close button", async () => {
+    await renderEquity();
+    openFullRanking();
+    fireEvent.click(screen.getByTestId("full-ranking-dialog-close"));
+    await waitFor(() => expect(screen.queryByTestId("full-ranking-dialog")).toBeNull());
+  });
+
+  it("follows a metric change rather than showing the previous metric's ranking", async () => {
+    await renderEquity();
+    openFullRanking();
+    expect(screen.getByTestId("full-ranking-dialog").textContent).toContain("500,000");
+    fireEvent.click(screen.getByTestId("full-ranking-dialog-close"));
+    await waitFor(() => expect(screen.queryByTestId("full-ranking-dialog")).toBeNull());
+
+    // Switch to a waste-generation metric. The fixture serves no waste statistics,
+    // so the honest result is an EMPTY ranking with every region listed as missing —
+    // never the previous metric's numbers, and never a column of zeros.
+    fireEvent.click(screen.getByRole("radio", { name: /생활계 폐기물 발생량/ }));
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-metric-summary").textContent).toContain(
+        "생활계 폐기물 발생량",
+      ),
+    );
+
+    openFullRanking();
+    const dialog = screen.getByTestId("full-ranking-dialog");
+    expect(dialog.textContent).toContain("생활계 폐기물 발생량");
+    expect(dialog.textContent).not.toContain("500,000");
+    expect(within(dialog).queryAllByTestId("full-ranking-row")).toHaveLength(0);
+    expect(within(dialog).getByTestId("full-ranking-empty")).toBeDefined();
   });
 });
 

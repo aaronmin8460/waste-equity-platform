@@ -95,6 +95,28 @@ export function wasteStreamLabel(value: string): string {
 }
 
 // --------------------------------------------------------------------------- //
+// Processing share
+// --------------------------------------------------------------------------- //
+
+/**
+ * The segmented quick selections the Figma frame offers (129:5709, card ②).
+ *
+ * They are SHORTCUTS ONLY. The direct numeric entry beside them is unchanged and
+ * still accepts any value, and `validateScenario` above is still the single place
+ * the 0–100 bound lives — so 150 is rejected exactly as it was before the pills
+ * existed. Nothing about the cost formula changed because the control did: the
+ * payload still carries `processing_share_percent` as the same decimal string.
+ */
+export const PROCESSING_SHARE_PRESETS = ["50", "80", "100"] as const;
+
+/** Whether the current value is exactly one of the presets (numeric comparison). */
+export function matchedSharePreset(value: string): string | null {
+  const n = Number(value);
+  if (value.trim() === "" || Number.isNaN(n)) return null;
+  return PROCESSING_SHARE_PRESETS.find((p) => Number(p) === n) ?? null;
+}
+
+// --------------------------------------------------------------------------- //
 // The fixed non-claims list
 // --------------------------------------------------------------------------- //
 
@@ -219,6 +241,20 @@ export const RESULTS_NON_CLAIMS =
   "승인되었다는 뜻도 아니고, 1인당 금액은 주민 개인에게 청구되는 금액이 아닙니다.";
 
 export const PER_CAPITA_NON_CLAIM = "개인에게 실제로 청구되는 세금이나 부담금이 아닙니다.";
+
+// The single line that sits under the five result KPIs on the Figma frame
+// (129:5709, "*표준공사비 기준 참고용 추정치이며, 실제 총사업비·청구 금액은 아님."). It is
+// the compact restatement of the three non-claims that must be readable WITHOUT
+// opening anything; the full eight-item list keeps its own home in the
+// 계산 방법과 한계 disclosure.
+export const RESULT_FOOTNOTE =
+  "표준공사비 기준 참고용 추정치이며, 실제 총사업비나 개인에게 청구되는 금액이 아닙니다.";
+
+/** The one label the progressive-disclosure surface is opened by, used verbatim. */
+export const DETAILS_TITLE = "계산 방법과 한계";
+
+export const DETAILS_DESCRIPTION =
+  "이 계산이 무엇을 포함하고 무엇을 포함하지 않는지, 어떤 공식 자료와 가정을 썼는지입니다.";
 
 // Source + reference period for the subsidy rates, kept as two parts so the setup
 // summary can state the provenance compactly while the control keeps the full

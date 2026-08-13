@@ -38,6 +38,10 @@ class LandfillPeriod(BaseModel):
     year: int
     month: str | None  # YYYY-MM when a single month is selected
     is_complete_year: bool
+    # The FIRST and LAST ingested month inside ``year``. Both are served so a
+    # partial year can be stated as the range it actually covers; a lone upper
+    # bound reads as January-through-that-month, which a late-starting year is not.
+    available_from_month: str | None = None
     available_through_month: str | None
     latest_available_month: str | None
     available_years: list[int]

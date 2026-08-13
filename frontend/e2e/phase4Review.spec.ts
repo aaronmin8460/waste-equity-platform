@@ -41,10 +41,12 @@ test.describe("1440×900", () => {
 
     await page.screenshot({ path: join(OUT_DIR, "equity-default-1440x900.png") });
 
-    await page.getByRole("radio", { name: "1인당 생활계 발생량" }).check();
+    // The 총량/1인당 switch replaced the separate per-capita radio (correction pass).
+    await page.getByRole("radio", { name: "생활계 폐기물 발생량" }).check();
+    await page.getByTestId("metric-mode-household").getByRole("button", { name: "1인당" }).click();
     await page.screenshot({ path: join(OUT_DIR, "equity-metric-selected-1440x900.png") });
 
-    await page.getByRole("radio", { name: "인구" }).check();
+    await page.getByRole("radio", { name: "지역별 인구" }).check();
     await page.getByTestId("region-select").selectOption("KR-SGIS-11680");
     await expect(page.getByTestId("selected-region-name")).toBeVisible();
     await page.screenshot({ path: join(OUT_DIR, "equity-region-selected-1440x900.png") });
@@ -52,10 +54,11 @@ test.describe("1440×900", () => {
     await page.getByTestId("region-ranking").scrollIntoViewIfNeeded();
     await page.screenshot({ path: join(OUT_DIR, "equity-ranking-1440x900.png") });
 
-    await page.getByTestId("comparison-search").fill("종로");
-    await page.getByTestId("comparison-options").getByRole("option").first().click();
-    await page.getByTestId("region-comparison").scrollIntoViewIfNeeded();
-    await page.screenshot({ path: join(OUT_DIR, "equity-comparison-1440x900.png") });
+    // 지표 순위 전체보기 replaced the 지역 비교 card.
+    await page.getByTestId("open-full-ranking").click();
+    await expect(page.getByTestId("full-ranking-dialog")).toBeVisible();
+    await page.screenshot({ path: join(OUT_DIR, "equity-full-ranking-1440x900.png") });
+    await page.getByTestId("full-ranking-dialog-close").click();
   });
 });
 

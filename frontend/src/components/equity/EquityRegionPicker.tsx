@@ -1,14 +1,10 @@
 "use client";
 
 /**
- * 지역 조회 — the keyboard/screen-reader path to selecting a region.
+ * 지역 선택 — the keyboard/screen-reader path to selecting a region.
  *
  * The MapLibre canvas cannot be reached by keyboard or a screen reader, so this
- * native `<select>` populates exactly the same selection a map click does. It was
- * previously wedged inside the selected-region summary card, between the card's
- * heading and its value, which made the summary read as a form rather than as an
- * answer; this milestone gives it its own labelled section directly beneath the
- * summary, and changes nothing else about it.
+ * native `<select>` populates exactly the same selection a map click does.
  *
  * DELIBERATELY STILL A NATIVE `<select>` — it is NOT replaced by the searchable
  * combobox in `components/ui/SearchableRegionPicker.tsx`. That component is the
@@ -21,6 +17,19 @@
  *
  * It owns no state: `value` is the canonical `selectedRegionCode` and every change
  * is reported straight back to the page.
+ *
+ * ── PHASE 1 (Figma frame 74:2011) ────────────────────────────────────────────────
+ * The card is now titled 지역 선택 rather than 지역 조회, and the design carries no
+ * supporting paragraph, so the two explanatory lines are gone. The `<label>` still
+ * says 지역 선택 — that string is the select's contracted accessible name — but is
+ * visually hidden, because printing it directly under an identical heading would say
+ * the same words twice. Nothing about the control, its options, or its callback
+ * changed.
+ *
+ * The one Figma value NOT adopted is the field's 1.5px #F9F9F9 border: on a white
+ * surface that is a 1.02:1 edge, i.e. no visible boundary at all, which fails the
+ * 3:1 WCAG 1.4.11 minimum for a control's own outline. `--color-hairline-strong`
+ * is kept instead.
  */
 
 export interface EquityRegionPickerProps {
@@ -39,17 +48,14 @@ export default function EquityRegionPicker({
   return (
     <section
       aria-label="지역 조회"
-      className="wep-card p-4"
+      className="wep-card wep-figma-card"
       data-testid="equity-region-picker"
     >
-      <h2 className="text-sm font-semibold text-ink">지역 조회</h2>
-      <p className="mt-0.5 text-xs text-ink-subtle">
-        지도를 누르지 않고도 지역을 고를 수 있습니다. 선택한 지역은 지도·순위와 함께 움직입니다.
-      </p>
-      <label className="mt-2 block text-xs font-medium text-ink-muted">
-        지역 선택
+      <h2 className="text-xl font-bold leading-6 text-brand">지역 선택</h2>
+      <label className="mt-3 block">
+        <span className="sr-only">지역 선택</span>
         <select
-          className="mt-1 min-h-[2.25rem] w-full rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm text-ink"
+          className="min-h-9 w-full rounded-control border border-hairline-strong bg-surface px-3 py-2 text-[13px] text-ink"
           data-testid="region-select"
           value={selectedRegionCode ?? ""}
           onChange={(event) => onSelectRegion(event.target.value === "" ? null : event.target.value)}

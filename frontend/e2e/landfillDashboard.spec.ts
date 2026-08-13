@@ -145,21 +145,26 @@ for (const vp of VIEWPORTS) {
 
       const hero = page.getByTestId("landfill-kpi-quantity");
       await expect(hero).toBeVisible();
-      await expect(hero.locator("dd")).toContainText(" t");
-      // The headline is bigger than every other value on the screen.
+      await expect(hero.locator("dd").first()).toContainText(" t");
+      // The headline is bigger than every other value on the screen. Measured on
+      // each card's PRIMARY value — the 수수료 card carries two further <dd>s for the
+      // conversions derived from it (Figma 234:441), which are deliberately smaller
+      // still and are not what the hero is being compared against.
       const sizeOf = async (testId: string) =>
         page
           .getByTestId(testId)
           .locator("dd")
+          .first()
           .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       const heroSize = await sizeOf("landfill-kpi-quantity");
       expect(heroSize).toBeGreaterThan(await sizeOf("landfill-kpi-fee"));
-      expect(heroSize).toBeGreaterThan(await sizeOf("landfill-kpi-effective-fee"));
 
-      // Reported values and derived values are labelled apart, in text.
+      // Reported values and derived values are labelled apart, in text. The 수수료
+      // card holds BOTH kinds (Figma 234:441): its own reported amount, and the two
+      // conversions derived from it.
       await expect(hero.locator("dt [data-status='reported']")).toHaveText("공식 값");
       await expect(
-        page.getByTestId("landfill-kpi-effective-fee").locator("dt [data-status='derived']"),
+        page.getByTestId("landfill-kpi-fee").locator("[data-status='derived']").first(),
       ).toHaveText("계산값");
       // The served period travels with the result.
       await expect(page.getByTestId("landfill-headline")).toContainText("기준 기간");
@@ -182,7 +187,7 @@ for (const vp of VIEWPORTS) {
         [0, 1, 2].map(async (index) =>
           parseTons(
             await page
-              .getByTestId("landfill-origin-comparison")
+              .getByTestId("landfill-flow-structure")
               .locator("li")
               .nth(index)
               .innerText(),
@@ -195,10 +200,10 @@ for (const vp of VIEWPORTS) {
 
       // And the monthly chart agrees with its own accessible table: one bar per
       // served month, one row per served month, never a zero-filled twelve.
-      await page.getByTestId("landfill-trend-quantity-exact-summary").click();
-      const bars = await page.getByTestId("landfill-trend-quantity").locator("rect").count();
+      await page.getByTestId("landfill-trend-exact-summary").click();
+      const bars = await page.getByTestId("landfill-trend-chart").locator("rect").count();
       const trendRows = await page
-        .getByTestId("landfill-trend-quantity-table")
+        .getByTestId("landfill-trend-table")
         .locator("tbody tr")
         .count();
       expect(trendRows).toBe(bars);
@@ -354,7 +359,7 @@ test.describe("1440×900 — the refreshed workflow", () => {
     await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
     await expect(page.getByTestId("top-navigation")).toHaveCount(1);
     await expect(page.locator("h1")).toHaveCount(1);
-    await expect(page.getByTestId("mode-flow")).toHaveText("매립지 현황");
+    await expect(page.getByTestId("mode-flow")).toHaveText("폐기물 처리 현황");
     await expect(page.getByTestId("mode-flow")).toHaveAttribute("aria-pressed", "true");
     await expectNoHorizontalOverflow(page, "returned to landfill");
   });

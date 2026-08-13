@@ -54,7 +54,7 @@ test.describe("1440×900", () => {
     await expect(page.getByTestId("landfill-partial-year")).toBeVisible();
     await page.screenshot({ path: join(OUT_DIR, "landfill-filtered-1440x900.png") });
 
-    await page.getByTestId("landfill-origin-comparison").scrollIntoViewIfNeeded();
+    await page.getByTestId("landfill-flow-structure").scrollIntoViewIfNeeded();
     await page.screenshot({ path: join(OUT_DIR, "landfill-comparison-1440x900.png") });
 
     await page.getByTestId("landfill-region-table").scrollIntoViewIfNeeded();

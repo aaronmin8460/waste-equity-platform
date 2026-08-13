@@ -14,37 +14,40 @@
  * filters. Official reported values and derived values are labelled separately,
  * and an unavailable derived value shows its served reason — never 0.
  *
- * ── Civic-dashboard refresh (docs/ui-refresh/landfill-dashboard.md) ─────────────
- * Presentation and information architecture only. No request scoping, denominator
+ * ── Figma page-2 redesign (frame 125:5064) ──────────────────────────────────────
+ * Presentation and information architecture. No request scoping, denominator
  * selection, served value, unit, period rule, comparability rule, filter option, or
- * URL key changed — see the milestone doc §6. What changed:
- *   - the view is a sequence of TITLED sections that answer one question each —
- *     조건 선택 → 핵심 지표 → 월별 추이 → 반입 구성 → 지역별 정확한 값 → 근거와 한계 —
- *     instead of a flat run of cards whose headings all carried the same weight;
- *   - 총 반입량 is now the one `size="hero"` KPI, because it is the number every
- *     other surface on the screen decomposes;
- *   - provenance is stated per card with `DataStatusBadge`, because this screen
- *     genuinely mixes 공식 값 (반입량, 반입수수료) with 계산값 (실효 수수료, 1인당 환산);
- *   - a 현재 선택 summary restates the four asked-for conditions and says in words
- *     what the platform currently holds for them (공식 값 / 자료 없음 / 불러오는 중);
- *   - the JSX moved into `components/landfill/`. This file kept the composition,
- *     the prop contract, and the state ownership — which is to say, none: the page
- *     owns every filter, the request lifecycle, and the URL mirroring, and it still
- *     does.
+ * URL key changed. What the redesign added or moved:
+ *   - the body follows the Figma reading order — 조회 조건 → 핵심 지표 →
+ *     (발생·처리 비교 | 반입 구조) → (폐기물 구성 | 월별 추이) → 지역별 상세 현황 →
+ *     공유 및 내보내기 → 근거와 한계;
+ *   - 지역별 폐기물 발생과 처리 비교 is NEW and reads two indicators this platform
+ *     already serves (`LandfillGenerationScatter`); it fetches nothing of its own;
+ *   - the monthly trend became ONE chart with a metric switch instead of two;
+ *   - the composition gained a donut and a full-view modal with a CSV of exactly
+ *     what is on screen;
+ *   - all four filters are KEPT. The design shows three, but the 출발 지역 filter
+ *     scopes every value on the screen and deleting it would remove the only way to
+ *     ask a per-origin question.
  *
  * The standing scope banner is still exactly ONE `tone="info"` InfoBanner carrying
  * the metropolitan-only sentence verbatim, and it is still the only banner on a
  * successful screen: a permanent caveat repeated in a second coloured panel stops
  * being read.
+ *
+ * The 시·군·구 수집·운반 계약 지급액 module is NOT in the Figma design and is NOT
+ * removed. It is a real analytical surface over a separate published dataset; the
+ * redesign lowers its visual priority (it sits last, after 근거와 한계) and changes
+ * nothing about its filters, table, methodology, or limitations.
  */
 
-import { useMemo } from "react";
-
 import type {
+  FacilityBurdenEnvelope,
   LandfillComposition,
   LandfillOrigin,
   LandfillSummary,
   LandfillTrends,
+  ReportingPerCapitaEnvelope,
 } from "../lib/api";
 import type { LandfillUnavailableState } from "../lib/landfill";
 import { formatTons } from "../lib/landfill";
@@ -52,9 +55,12 @@ import LandfillCompositionSection from "./landfill/LandfillCompositionSection";
 import LandfillFilterPanel, {
   type LandfillSelectionOutcome,
 } from "./landfill/LandfillFilterPanel";
+import LandfillFlowStructure from "./landfill/LandfillFlowStructure";
+import LandfillGenerationScatter from "./landfill/LandfillGenerationScatter";
 import LandfillHeadlineResults from "./landfill/LandfillHeadlineResults";
 import LandfillMethodology from "./landfill/LandfillMethodology";
 import LandfillRegionTable from "./landfill/LandfillRegionTable";
+import LandfillShareExport from "./landfill/LandfillShareExport";
 import { LandfillError, LandfillLoading, LandfillNoData } from "./landfill/LandfillStates";
 import LandfillTrendSection from "./landfill/LandfillTrendSection";
 import type { MunicipalCostSectionProps } from "./landfill/MunicipalCostSection";
@@ -122,6 +128,21 @@ export interface LandfillDashboardProps {
    */
   maxMonth: number;
   /**
+   * The immediately preceding comparable period's summary, for the 전년 대비 deltas.
+   * `null` with `priorSettled` false means "being fetched"; `null` with it true means
+   * "the backend holds no record for that period" — which renders as 비교 자료 없음,
+   * never as 0%.
+   */
+  priorSummary: LandfillSummary | null;
+  priorSettled: boolean;
+  /**
+   * The two SERVED equity indicators the 발생·처리 비교 plots. Passed in because the
+   * page already loads both for the 지역 지표 area — this view issues no request of
+   * its own and adds no aggregate.
+   */
+  reportingPerCapita: ReportingPerCapitaEnvelope | null;
+  facilityBurden: FacilityBurdenEnvelope | null;
+  /**
    * The area's one-line orientation strip, supplied by the page. It renders inside
    * this view's header, directly BELOW the <h1> it supports — the same position it
    * occupies in the other three areas. (Rendering it above the dashboard instead
@@ -129,6 +150,14 @@ export interface LandfillDashboardProps {
    * reading as a second navigation row.)
    */
   orientation?: React.ReactNode;
+  /**
+   * The view's single `<h1>`, supplied by the page so it always equals the visible
+   * navigation destination name (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.2). It was the
+   * literal "수도권매립지 반입 현황", which no longer matches the destination this
+   * dashboard renders for. That narrower scope statement is not lost — it stays in
+   * `HEADER_SUMMARY`, directly below the title.
+   */
+  title: string;
   /**
    * The 2024 municipal collection/transport contract-payment section — a SEPARATE
    * analytical dataset from the official inbound fee above (see
@@ -155,7 +184,12 @@ export default function LandfillDashboard({
   availableYears,
   wasteOptions,
   maxMonth,
+  priorSummary,
+  priorSettled,
+  reportingPerCapita,
+  facilityBurden,
   orientation,
+  title,
   municipalCost,
 }: LandfillDashboardProps) {
   // What the filter summary states. Derived from the props the page already hands
@@ -174,10 +208,17 @@ export default function LandfillDashboard({
     // fallbacks for every view, so this dashboard is a plain content block. Two
     // <main> elements — or two id="main-content" targets — would be invalid and would
     // make the skip link ambiguous.
-    <div className="w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8" data-testid="landfill-dashboard">
-      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-4">
+    // `landfill-compact` scopes the short-desktop fold budget (globals.css). It is
+    // inert at >=850px tall, so 1440×900 is unchanged; below that it tightens the
+    // rhythm above the fold so the KPI row is visible without scrolling at
+    // 1280×800. Nothing is hidden or removed at any height.
+    <div
+      className="landfill-compact w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8"
+      data-testid="landfill-dashboard"
+    >
+      <div className="landfill-compact-stack mx-auto flex w-full max-w-screen-2xl flex-col gap-4">
         {/* The mode selector is rendered by the page above this component. */}
-        <PageHeader title="수도권매립지 반입 현황" description={HEADER_SUMMARY}>
+        <PageHeader title={title} description={HEADER_SUMMARY}>
           {orientation}
         </PageHeader>
 
@@ -215,7 +256,15 @@ export default function LandfillDashboard({
 
         {data === null && unavailable === null && <LandfillLoading />}
 
-        {data && <LandfillBody data={data} />}
+        {data && (
+          <LandfillBody
+            data={data}
+            priorSummary={priorSummary}
+            priorSettled={priorSettled}
+            reportingPerCapita={reportingPerCapita}
+            facilityBurden={facilityBurden}
+          />
+        )}
 
         {/* The 2024 municipal contract-payment comparison — a DIFFERENT dataset,
             rendered OUTSIDE the official-data branch above on purpose. The two are
@@ -231,22 +280,32 @@ export default function LandfillDashboard({
 }
 
 /**
- * The values, in the order the questions arrive: what is the total → how did it
- * move → what is it made of → what are the exact figures → where did they come
- * from and what do they not mean.
+ * The values, in the Figma reading order: what the totals are → how the generation
+ * and processing of each region compare and what the inbound is made of → how it
+ * moved through the year → the exact figures → how to take them away → where they
+ * came from and what they do not mean.
  */
-function LandfillBody({ data }: { data: LandfillDashboardData }) {
+function LandfillBody({
+  data,
+  priorSummary,
+  priorSettled,
+  reportingPerCapita,
+  facilityBurden,
+}: {
+  data: LandfillDashboardData;
+  priorSummary: LandfillSummary | null;
+  priorSettled: boolean;
+  reportingPerCapita: ReportingPerCapitaEnvelope | null;
+  facilityBurden: FacilityBurdenEnvelope | null;
+}) {
   const { summary, trends } = data;
   const periodLabel = periodLabelOf(summary.period);
+  const priorPeriodLabel = priorPeriodLabelOf(summary);
 
   // Bar proportions only. `Number()` is permitted here because the result scales a
   // CSS width and NEVER reconstructs a displayed value (redesign plan §5 rule 10) —
   // every figure on screen is still the backend's exact string, formatted.
   const originMax = Math.max(0, ...summary.origin_shares.map((o) => Number(o.quantity_tons)));
-  // The waste composition reads the SUMMARY's waste shares, which respond to all
-  // four filters. (The /composition endpoint is scoped to year+origin and is used
-  // only to populate the waste dropdown.)
-  const wasteRows = useMemo(() => summary.top_waste_types.slice(0, 8), [summary.top_waste_types]);
 
   return (
     <>
@@ -259,20 +318,58 @@ function LandfillBody({ data }: { data: LandfillDashboardData }) {
         {periodLabel} 반입 자료를 표시합니다. 총 반입량 {formatTons(summary.total_quantity_kg)}.
       </p>
 
-      <LandfillHeadlineResults summary={summary} periodLabel={periodLabel} />
-
-      <LandfillTrendSection trends={trends} />
-
-      <LandfillCompositionSection
+      <LandfillHeadlineResults
         summary={summary}
         periodLabel={periodLabel}
-        originMax={originMax}
-        wasteRows={wasteRows}
+        priorSummary={priorSummary}
+        priorSettled={priorSettled}
+        priorPeriodLabel={priorPeriodLabel}
       />
 
+      {/* Figma Row2 — the comparison and the inbound structure side by side. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div className="xl:col-span-7">
+          <LandfillGenerationScatter perCapita={reportingPerCapita} burden={facilityBurden} />
+        </div>
+        <div className="xl:col-span-5">
+          <LandfillFlowStructure
+            summary={summary}
+            periodLabel={periodLabel}
+            originMax={originMax}
+          />
+        </div>
+      </div>
+
+      {/* Figma Row3 — composition and the monthly trend side by side. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div className="xl:col-span-5">
+          <LandfillCompositionSection summary={summary} periodLabel={periodLabel} />
+        </div>
+        <div className="xl:col-span-7">
+          <LandfillTrendSection trends={trends} />
+        </div>
+      </div>
+
       <LandfillRegionTable summary={summary} originMax={originMax} periodLabel={periodLabel} />
+
+      {/* The export sits INSIDE the official-fee block, above the methodology and
+          well above the municipal section, so the files it produces are unmistakably
+          the landfill-fee dataset (spec §4). */}
+      <LandfillShareExport summary={summary} trends={trends} />
 
       <LandfillMethodology summary={summary} />
     </>
   );
+}
+
+/**
+ * How the comparison period is named in the deltas.
+ *
+ * A monthly view compares against the SAME month of the prior year (the nearest
+ * like-for-like period — the previous calendar month would compare a February against
+ * a January); an annual view compares against the prior year.
+ */
+function priorPeriodLabelOf(summary: LandfillSummary): string {
+  const { year, month } = summary.period;
+  return month ? `${year - 1}년 ${Number(month.slice(5, 7))}월` : `${year - 1}년`;
 }

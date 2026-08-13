@@ -357,14 +357,23 @@ afterEach(() => {
 // --------------------------------------------------------------------------- //
 
 describe("후보지 점수 — shell contracts", () => {
-  it("keeps one h1, one map, one sub-view control, one main and one aside", async () => {
+  it("keeps one h1, one map, no sub-view bar, one main and one aside", async () => {
     const { container } = await enterScore();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("h1")!.textContent).toBe("후보지 분석");
+    // The view titles itself with its destination name (spec §2.2); "후보지 분석"
+    // is now the SEPARATE cost destination, so a stale literal here would name two
+    // different screens the same thing.
+    expect(container.querySelector("h1")!.textContent).toBe("후보지 심층 분석");
     expect(screen.getAllByTestId("map-container")).toHaveLength(1);
-    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(1);
+    // The segmented sub-view bar is retired — the six destinations select `view`.
+    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(0);
     expect(container.querySelectorAll("main")).toHaveLength(1);
-    expect(container.querySelectorAll("aside")).toHaveLength(1);
+    // TWO complementary columns now flank the map — the collapsible 분석 조건 and
+    // 후보지 결과 panels of the three-column workspace (spec §6). Before the
+    // redesign this view had a single resizable column, hence the old count of 1.
+    expect(container.querySelectorAll("aside")).toHaveLength(2);
+    expect(screen.getByTestId("deep-left-panel")).toBeDefined();
+    expect(screen.getByTestId("deep-right-panel")).toBeDefined();
     // One global navigation (the app bar's `mode-switch` group), not one per branch.
     expect(container.querySelectorAll('[data-testid="top-navigation"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-testid="mode-switch"]')).toHaveLength(1);
@@ -665,14 +674,22 @@ describe("후보지 점수 — selected-candidate summary", () => {
 // --------------------------------------------------------------------------- //
 
 describe("후보지 점수 — no raw enum on the primary surface", () => {
-  it("keeps forbidden technical tokens out of the sidebar once diagnostics are stripped", async () => {
+  it("keeps forbidden technical tokens out of BOTH panels once diagnostics are stripped", async () => {
     const { container } = await enterScore();
-    const aside = container.querySelector("aside")!;
-    const clone = aside.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll("[data-diagnostic]").forEach((node) => node.remove());
-    // Detail disclosures are the sanctioned home for a version string.
-    clone.querySelectorAll("details").forEach((node) => node.remove());
-    const text = clone.textContent ?? "";
+    // The controls and the results are two columns now, so the audit has to scan
+    // both — checking only the first would leave the whole results panel
+    // (ranking, relative bands, selected candidate) unaudited.
+    const asides = Array.from(container.querySelectorAll("aside"));
+    expect(asides.length).toBe(2);
+    const text = asides
+      .map((aside) => {
+        const clone = aside.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll("[data-diagnostic]").forEach((node) => node.remove());
+        // Detail disclosures are the sanctioned home for a version string.
+        clone.querySelectorAll("details").forEach((node) => node.remove());
+        return clone.textContent ?? "";
+      })
+      .join(" ");
     for (const token of FORBIDDEN_PRIMARY_TOKENS) {
       // The served reason strings are the backend's own text, shown verbatim in the
       // reason breakdowns; they are not this milestone's labels.
@@ -745,14 +762,32 @@ describe("후보지 점수 — map workspace", () => {
     );
   });
 
-  it("routes to the existing 데이터·출처 area, which mounts no map", async () => {
+  it("opens 데이터·출처 as a DIALOG over this view, and closing returns here", async () => {
+    // 데이터·출처 is a dialog now, not a page (spec §8). The old contract was
+    // "mounts no map", which held only while it navigated away to a map-free
+    // page. Layering is the point: the reader must be able to check a source
+    // without losing the analysis they were reading, so the map behind STAYS —
+    // and stays the same node, not a remount.
     await enterScore();
+    const mapNode = screen.getByTestId("map-container");
+
     fireEvent.click(screen.getByTestId("suitability-insight-summary"));
     fireEvent.click(screen.getByTestId("suitability-insight-open-sources"));
     await waitFor(() =>
       expect(screen.getByTestId("mode-transparency").getAttribute("aria-pressed")).toBe("true"),
     );
-    expect(screen.queryByTestId("map-container")).toBeNull();
+
+    const dialog = screen.getByTestId("data-sources-dialog");
+    expect(dialog.getAttribute("role")).toBe("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    // The analysis is still mounted underneath, untouched.
+    expect(screen.getByTestId("map-container")).toBe(mapNode);
+
+    // Closing returns to the destination it was layered over.
+    fireEvent.click(screen.getByTestId("data-sources-dialog-close"));
+    await waitFor(() => expect(screen.queryByTestId("data-sources-dialog")).toBeNull());
+    expect(screen.getByTestId("mode-suitability").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("map-container")).toBe(mapNode);
   });
 });
 
@@ -761,11 +796,12 @@ describe("후보지 점수 — map workspace", () => {
 // --------------------------------------------------------------------------- //
 
 describe("가중치 바꿔보기 — shell and controls", () => {
-  it("keeps one h1, one map, and one sub-view control", async () => {
+  it("keeps one h1, one map, and no sub-view bar", async () => {
     const { container } = await enterScenario();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(container.querySelector("h1")!.textContent).toBe("후보지 심층 비교");
     expect(screen.getAllByTestId("map-container")).toHaveLength(1);
-    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(0);
     // The screening disclaimer follows into this sub-view.
     expect(screen.getByTestId("suitability-screening-disclaimer")).toBeDefined();
   });
@@ -938,11 +974,12 @@ describe("비용 살펴보기 — untouched by this milestone", () => {
     await waitFor(() => expect(screen.getByTestId("facility-cost-dashboard")).toBeDefined());
     expect(screen.queryByTestId("map-container")).toBeNull();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(1);
+    expect(container.querySelector("h1")!.textContent).toBe("후보지 분석");
+    expect(container.querySelectorAll('[data-testid="suitability-subviews"]')).toHaveLength(0);
     expect(screen.getByTestId("mode-switch")).toBeDefined();
     // The score sidebar is gone, and returning to it brings the workspace back.
     expect(screen.queryByTestId("suitability-summary")).toBeNull();
-    fireEvent.click(screen.getByTestId("suitability-view-score"));
+    fireEvent.click(screen.getByTestId("mode-suitability"));
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
     expect(screen.getByTestId("map-container")).toBeDefined();
   });

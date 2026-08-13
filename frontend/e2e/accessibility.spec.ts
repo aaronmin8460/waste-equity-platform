@@ -90,9 +90,11 @@ for (const vp of VIEWPORTS) {
       // Three semantic groups, each with a <legend>, both on mobile and desktop.
       // Plain-Korean legends (Phase 7 — no English parenthetical in primary UI).
       await expect(page.locator("fieldset")).toHaveCount(3);
-      await expect(page.getByText("총량 지표", { exact: true })).toBeVisible();
-      await expect(page.getByText("1인당 형평성 지표", { exact: true })).toBeVisible();
-      await expect(page.getByText("시설 부담 지표", { exact: true })).toBeVisible();
+      // The correction pass re-cut the metrics into three SUBJECT sections; the
+      // three-fieldset structure and the plain-Korean legends are unchanged.
+      await expect(page.getByText("지역별 인구", { exact: true }).first()).toBeVisible();
+      await expect(page.getByText("폐기물 발생량", { exact: true })).toBeVisible();
+      await expect(page.getByText("1인당 시설 처리 수준", { exact: true })).toBeVisible();
       // The selected-metric status region reflects the active metric.
       const summary = page.getByTestId("selected-metric-summary");
       await expect(summary).toHaveAttribute("role", "status");

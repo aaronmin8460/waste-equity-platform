@@ -14,7 +14,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { FORBIDDEN_PRIMARY_TOKENS, MODE_LABELS, STATUS_META, SUBVIEW_LABELS } from "../lib/glossary";
+import {
+  FORBIDDEN_PRIMARY_TOKENS,
+  NAV_DESTINATIONS,
+  STATUS_META,
+  SUBVIEW_LABELS,
+} from "../lib/glossary";
 
 vi.mock("next/dynamic", () => ({
   default: () =>
@@ -124,17 +129,31 @@ async function renderLoaded() {
 }
 
 describe("primary navigation uses plain Korean", () => {
-  it("labels the four areas 지역 부담 / 후보지 분석 / 매립지 현황 / 데이터·출처", async () => {
+  it("labels the six destinations in plain Korean, exactly", async () => {
     await renderLoaded();
-    expect(screen.getByTestId("mode-equity").textContent).toBe(MODE_LABELS.equity);
-    expect(screen.getByTestId("mode-suitability").textContent).toBe(MODE_LABELS.suitability);
-    expect(screen.getByTestId("mode-flow").textContent).toBe(MODE_LABELS.flow);
-    expect(screen.getByTestId("mode-transparency").textContent).toBe(MODE_LABELS.transparency);
+    // `.toBe`, not `.toContain`: the label must be the button's ENTIRE content, so
+    // an icon/badge can never dilute the citizen-facing wording. The icons added by
+    // the 여기다 redesign are text-free aria-hidden SVGs for exactly this reason.
+    for (const destination of NAV_DESTINATIONS) {
+      expect(screen.getByTestId(destination.testId).textContent, destination.key).toBe(
+        destination.label,
+      );
+    }
   });
 
-  it("shows a plain-language orientation for the active area", async () => {
+  it("shows a plain-language orientation for an area that has one", async () => {
     await renderLoaded();
-    expect(screen.getByTestId("mode-orientation").textContent).toContain("지역별 폐기물 발생량");
+    // 지역 지표 shows no intro block at all after the correction pass, so the
+    // orientation wording is audited on the next area that does show one.
+    expect(screen.queryByTestId("mode-orientation")).toBeNull();
+    fireEvent.click(screen.getByTestId("mode-flow"));
+    await waitFor(() => expect(screen.getByTestId("landfill-dashboard")).toBeDefined());
+    const orientation = screen.getByTestId("mode-orientation").textContent ?? "";
+    expect(orientation).toMatch(/\S/);
+    // Plain Korean: no raw enum and no English technical token.
+    for (const token of FORBIDDEN_PRIMARY_TOKENS) {
+      expect(orientation.includes(token), `orientation leaks "${token}"`).toBe(false);
+    }
   });
 });
 
@@ -210,12 +229,15 @@ describe("데이터와 출처 keeps its primary surface in plain Korean", () => 
   it("keeps one plain-Korean heading and the frozen navigation labels", async () => {
     await openTransparency();
     expect(document.querySelectorAll("h1")).toHaveLength(1);
-    expect(document.querySelector("h1")!.textContent).toBe("데이터와 출처");
+    // The heading now equals the destination name a reader clicked (spec §2.2);
+    // it used to be "데이터와 출처", a second name for the same place.
+    expect(document.querySelector("h1")!.textContent).toBe("데이터·출처");
     // The nav labels are frozen strings and must survive the area's own rename.
-    expect(screen.getByTestId("mode-transparency").textContent).toBe(MODE_LABELS.transparency);
-    expect(screen.getByTestId("mode-equity").textContent).toBe(MODE_LABELS.equity);
-    expect(screen.getByTestId("mode-flow").textContent).toBe(MODE_LABELS.flow);
-    expect(screen.getByTestId("mode-suitability").textContent).toBe(MODE_LABELS.suitability);
+    for (const destination of NAV_DESTINATIONS) {
+      expect(screen.getByTestId(destination.testId).textContent, destination.key).toBe(
+        destination.label,
+      );
+    }
   });
 
   it("shows no Korean/English label duplication in its own controls", async () => {
@@ -228,11 +250,11 @@ describe("데이터와 출처 keeps its primary surface in plain Korean", () => 
 });
 
 describe("후보지 분석 uses plain status and sub-view labels", () => {
-  it("names the three sub-views in plain Korean", async () => {
+  it("names the three suitability destinations in plain Korean", async () => {
     await renderLoaded();
     fireEvent.click(screen.getByTestId("mode-suitability"));
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
-    expect(screen.getByTestId("suitability-view-score").textContent).toBe(SUBVIEW_LABELS.score);
+    expect(screen.getByTestId("mode-suitability").textContent).toBe(SUBVIEW_LABELS.score);
     expect(screen.getByTestId("suitability-view-scenario").textContent).toBe(SUBVIEW_LABELS.scenario);
     expect(screen.getByTestId("suitability-view-cost").textContent).toBe(SUBVIEW_LABELS.cost);
   });

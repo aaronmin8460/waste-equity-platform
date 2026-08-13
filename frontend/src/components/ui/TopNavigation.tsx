@@ -1,98 +1,125 @@
 "use client";
 
 /**
- * TopNavigation — the single global navigation for the four citizen-facing areas.
+ * TopNavigation — the single global navigation for the six citizen-facing
+ * destinations of 여기다.
  *
- * Phase 1 of the desktop redesign replaces the old `ModeSwitch`, which was rendered
- * FOUR separate times (inside the equity sidebar for the two map modes, and as a
- * full-width row above each of the three map-free dashboards). That made the nav's
- * structural position — and its wrapping behaviour inside the 384px sidebar — differ
- * per area. This component is rendered exactly once, by `DashboardShell`, above every
- * render branch, so the nav occupies the same place in all four areas.
+ * It is rendered exactly once, by `DashboardShell`, above every render branch, so
+ * the nav occupies the same place in every area.
  *
- * Contracts deliberately preserved from the old ModeSwitch (asserted by
- * `app/accessibility.test.tsx`, `app/terminology.audit.test.tsx`,
- * `e2e/accessibility.spec.ts` and `e2e/citizenFlows.spec.ts`):
+ * ── Six visible destinations over four analytical modes ──────────────────────────
+ * The application still has four modes and a three-valued suitability sub-view.
+ * `lib/glossary.NAV_DESTINATIONS` is the projection between the two, so this
+ * component never owns routing knowledge and the redesign needs no new backend
+ * mode and no new URL-state version. Selecting a destination hands the caller the
+ * whole `NavDestination`, which carries the `(mode, view)` pair to apply.
+ *
+ * The old suitability `SegmentedControl` sub-bar is gone: three of the six
+ * destinations ARE the three sub-views, and two controls writing one piece of
+ * state is the duplication docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.1 forbids.
+ *
+ * ── Contracts deliberately preserved ─────────────────────────────────────────────
  *   - native `<button>`s carrying `aria-pressed` (NOT `role="tab"`/`radiogroup`,
  *     which would promise roving arrow-key focus these buttons do not implement);
  *   - `data-testid="mode-switch"` on a `role="group"` named by
  *     `aria-labelledby="mode-switch-label"`;
- *   - `mode-equity` / `mode-suitability` / `mode-flow` / `mode-transparency` testids;
- *   - each button's `textContent` is EXACTLY `MODE_LABELS[key]` — the terminology
- *     audit compares with `.toBe`, so an icon, badge, counter, or any extra
- *     character inside a button breaks it.
+ *   - the pre-existing per-destination testids (see the note in glossary.ts);
+ *   - each button's `textContent` is EXACTLY the destination label — the
+ *     terminology audit compares with `.toBe`. The icon is an `aria-hidden` SVG
+ *     with NO text nodes, so it contributes nothing to `textContent` and nothing
+ *     to the accessible name, which stays the visible Korean label.
+ *   - this component renders NO heading. The area `<h1>` belongs to each view, and
+ *     `app/accessibility.test.tsx` asserts exactly one `<h1>` per view.
  *
- * What changed: the visible "무엇을 볼까요?" label is gone. Its accessibility job was
- * real (it is the group's accessible name), so the label element survives as an
- * `sr-only` span with the same id — still in the a11y tree, no longer visual noise.
- *
- * This component intentionally renders NO heading. The area `<h1>` belongs to each
- * view (the map sidebar, `LandfillDashboard`, `FacilityCostDashboard`, and the
- * transparency branch), and `app/accessibility.test.tsx` asserts exactly one `<h1>`
- * per view.
- *
- * ── The brand block (civic dashboard refresh) ────────────────────────────────────
- * The bar is now [brand] … [primary navigation]. Three constraints shape it:
+ * ── The brand block ──────────────────────────────────────────────────────────────
+ * The bar is [brand] … [primary navigation]. Three constraints shape it:
  *   - The product name is a `<span>`, NOT a heading. It renders above every view,
  *     so a heading here would become a second (and, in document order, the first)
  *     `h1` on every screen.
  *   - It sits OUTSIDE `role="group"`/`data-testid="mode-switch"`, so it never joins
- *     the navigation's accessible group or its four-control count.
- *   - The mark is a decorative `aria-hidden` SVG. It is deliberately beside the
- *     buttons and never inside one: the terminology audit compares each button's
- *     `textContent` with `.toBe`, so any icon or extra character inside a button
- *     would break it.
- * The name is the product's established wording (it was the map sidebar's `<h1>`
- * before this refresh); moving it here is what let that `<h1>` become the area
- * title, matching how the three map-free areas already title themselves. See
- * docs/ui-refresh/regression-contract.md §10.
+ *     the navigation's accessible group or its destination count.
+ *   - The mark is a decorative `aria-hidden` SVG, beside the buttons and never
+ *     inside one.
  *
- * No utility action is rendered. Every real export the product has (CSV, the
- * shareable URL, the print report) is a page-level control with its own context;
- * lifting one into the bar would either duplicate it or, worse, add a decorative
- * button that looks like an export and does nothing.
+ * No utility action is rendered. Every real export the product has is a
+ * page-level control with its own context; lifting one into the bar would either
+ * duplicate it or add a decorative button that looks like an export and does
+ * nothing.
+ *
+ * ── PHASE 1: the icons are now the EXACT Figma vectors ───────────────────────────
+ * Every glyph in this bar used to be inline `<path>` data drawn by hand, because
+ * the Figma file was unreachable when the 여기다 redesign shipped. All seven are now
+ * the real exports — `logo-target-01` for the brand and one per destination —
+ * rendered through `ui/FigmaIcon`, whose registry is closed so a name that was never
+ * exported from Figma is a type error rather than a silent lookalike. The mapping
+ * below is not inferred from the labels: Phase 0 read it from layer visibility
+ * inside each `Nav Button` instance, and it is identical across all five full-page
+ * frames (docs/figma-redesign/FIGMA_ASSET_INVENTORY.md).
+ *
+ * The other Figma change here is the ACTIVE STATE. It was a 2px bottom indicator on
+ * a full-bleed tab; frame 74:2000 instead puts the six tabs inside a rounded track
+ * and marks the active one with a white pill. The obsolete indicator is gone rather
+ * than kept alongside — see `.wep-nav-tab` in globals.css for how the state stays
+ * more than colour. The 1x20 rule before 데이터·출처 is likewise from the design (the
+ * `page-1 기술요청` annotation asks for it by name); it is a decorative `<span>`
+ * OUTSIDE every button, so the group still holds exactly six controls and no
+ * button's `textContent` gains a character.
  */
 
-import type { DashboardArea } from "../../lib/glossary";
-import { MODE_LABELS } from "../../lib/glossary";
+import { Fragment } from "react";
 
-const NAV_ITEMS: readonly { key: DashboardArea; testId: string }[] = [
-  { key: "equity", testId: "mode-equity" },
-  { key: "suitability", testId: "mode-suitability" },
-  { key: "flow", testId: "mode-flow" },
-  { key: "transparency", testId: "mode-transparency" },
-] as const;
+import type { NavDestination, NavDestinationKey } from "../../lib/glossary";
+import { NAV_DESTINATIONS } from "../../lib/glossary";
+import FigmaIcon, { type FigmaIconName } from "./FigmaIcon";
 
-/** The established product name and its English form (layout.tsx page title). */
-export const BRAND_NAME = "우리 동네 폐기물 지도";
-export const BRAND_SUBTITLE = "Waste Equity Platform";
+/** The citizen-facing product identity (spec §1). */
+export const BRAND_NAME = "여기다";
+export const BRAND_SUBTITLE = "쓰레기 매립지 입지 추천 플랫폼";
+
+/**
+ * Destination → its exact Figma vector.
+ *
+ * Read from layer visibility inside the `Nav Button` instances, NOT guessed from
+ * the labels, and identical across all five full-page frames. `Record<…>` over the
+ * closed `NavDestinationKey`/`FigmaIconName` unions means a new destination cannot
+ * be added without choosing a real exported asset for it.
+ */
+const DESTINATION_ICONS: Record<NavDestinationKey, FigmaIconName> = {
+  "regional-indicators": "nav-region-marker-02",
+  "waste-treatment": "nav-waste-barchart",
+  "candidate-analysis": "nav-candidate-file-02",
+  "candidate-deep-analysis": "nav-analysis-audio-settings-01",
+  "candidate-deep-comparison": "nav-compare-column-vertical-01",
+  "data-sources": "nav-data-server-02",
+};
+
+/**
+ * The destination the Figma header separates from the other five with a vertical
+ * rule. 데이터·출처 is the reference surface rather than a fifth analysis, which is
+ * what the rule says visually.
+ */
+const DIVIDED_DESTINATION: NavDestinationKey = "data-sources";
 
 export interface TopNavigationProps {
-  /** The active dashboard area. */
-  mode: DashboardArea;
-  /** Called with the newly selected area. */
-  onChange: (mode: DashboardArea) => void;
+  /** The destination currently rendered. */
+  active: NavDestination;
+  /** Called with the newly selected destination (carries its `mode` and `view`). */
+  onNavigate: (destination: NavDestination) => void;
 }
 
-export default function TopNavigation({ mode, onChange }: TopNavigationProps) {
+export default function TopNavigation({ active, onNavigate }: TopNavigationProps) {
   return (
     <header className="wep-appbar" data-testid="top-navigation">
-      <div className="wep-appbar-row mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-8">
+      {/* Horizontal padding comes from `.wep-appbar-row` (globals.css), which owns
+          the Figma 28px at desktop; the utilities here only centre the row. */}
+      <div className="wep-appbar-row mx-auto w-full max-w-screen-2xl">
         <div className="wep-brand" data-testid="app-brand">
-          {/* Decorative stacked-layers mark. aria-hidden: the product name beside it
-              is the accessible text, so the mark adds no duplicate announcement. */}
+          {/* aria-hidden: the product name beside it is the accessible text, so
+              the mark adds no duplicate announcement. FigmaIcon is decorative by
+              default, so this wrapper's aria-hidden is belt-and-braces rather than
+              the only thing keeping the glyph out of the accessible name. */}
           <span className="wep-brand-mark" aria-hidden>
-            <svg width="18" height="18" viewBox="0 0 24 24" focusable="false" aria-hidden>
-              <path d="M12 3 3 7.5 12 12l9-4.5L12 3Z" fill="currentColor" />
-              <path
-                d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <FigmaIcon name="logo-target-01" />
           </span>
           <span className="wep-brand-text">
             {/* A span, never a heading — every view owns its own single <h1>. */}
@@ -101,36 +128,42 @@ export default function TopNavigation({ mode, onChange }: TopNavigationProps) {
           </span>
         </div>
 
-        {/* The group's accessible name. Visually hidden (the old visible
-            "무엇을 볼까요?" was noise that interrupted each page title), but kept in
-            the a11y tree and still referenced by aria-labelledby. Deliberately a
-            <span>, not a heading: this nav renders above every branch, including
-            those whose own <h1> follows it. */}
+        {/* The group's accessible name. Visually hidden but kept in the a11y tree
+            and still referenced by aria-labelledby. Deliberately a <span>, not a
+            heading: this nav renders above every branch's own <h1>. */}
         <span id="mode-switch-label" className="sr-only">
           분석 영역 선택
         </span>
-        {/* `.wep-nav-track` stretches each tab to the full bar height so the active
-            tab's indicator is flush with the bar's bottom border, and keeps
-            flex-wrap for phone widths (four Korean labels do not fit on one line at
-            390px). At the desktop targets the full-width bar leaves ample room, so
-            the nav never wraps there. */}
+        {/* `.wep-nav-track` is the Figma pill track (74:2000) the six tabs sit
+            inside. It NEVER wraps: at desktop the six labels fit one row down to
+            1024px on compressed spacing, and at phone widths the track itself
+            scrolls horizontally so the PAGE never gains a horizontal scrollbar. */}
         <div
-          className="wep-nav-track flex-wrap"
+          className="wep-nav-track"
           role="group"
           aria-labelledby="mode-switch-label"
           data-testid="mode-switch"
         >
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              aria-pressed={mode === item.key}
-              onClick={() => onChange(item.key)}
-              className="wep-nav-tab"
-              data-testid={item.testId}
-            >
-              {MODE_LABELS[item.key]}
-            </button>
+          {NAV_DESTINATIONS.map((destination) => (
+            <Fragment key={destination.key}>
+              {/* Decorative and OUTSIDE the button: a rule inside one would join
+                  that button's textContent, which the terminology audit compares
+                  with `.toBe`. */}
+              {destination.key === DIVIDED_DESTINATION && (
+                <span className="wep-nav-divider" aria-hidden data-testid="nav-divider" />
+              )}
+              <button
+                type="button"
+                aria-pressed={destination.key === active.key}
+                onClick={() => onNavigate(destination)}
+                className="wep-nav-tab"
+                data-testid={destination.testId}
+                data-destination={destination.key}
+              >
+                <FigmaIcon name={DESTINATION_ICONS[destination.key]} className="wep-nav-icon" />
+                <span className="wep-nav-tab-label">{destination.label}</span>
+              </button>
+            </Fragment>
           ))}
         </div>
       </div>

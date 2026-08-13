@@ -81,13 +81,30 @@ export function landfillUnavailableFrom(cause: unknown): LandfillUnavailableStat
  * Among no-data answers the one that actually carries `available_years` is
  * preferred, so the reader is offered the periods the backend does hold.
  *
- * A PARTIAL failure — some endpoints served data, others did not — is reported as an
- * error too, never as absence: the backend clearly holds records for these filters,
- * so the honest statement is that the request did not complete.
+ * A PARTIAL failure is an error ONLY when one of the failures is a genuine error.
+ *
+ * ── Why a partial NO-DATA set is still an answer of absence (Page-2 defect F1) ───
+ * The three landfill requests are deliberately scoped DIFFERENTLY: `/summary` honours
+ * all four filters, `/trends` ignores the month, and `/composition` ignores both the
+ * month and the waste type. So "some endpoints answered, the narrowest one 404'd" is
+ * the NORMAL shape of a period the dataset does not cover — asking for 1999년 3월 in a
+ * year whose records begin in August makes `/summary` answer NO_DATA_FOR_PERIOD while
+ * the two year-scoped requests legitimately succeed.
+ *
+ * This used to be classified as a request failure, so a perfectly deterministic
+ * "no record for that month" rendered as a red `role="alert"` with a retry button —
+ * inviting the reader to retry their way into data that does not exist. The success
+ * of a BROADER request cannot contradict the absence a NARROWER one reported, so an
+ * all-no-data rejection set is now reported as no-data regardless of how many
+ * requests succeeded. A genuine error anywhere still outranks every no-data answer.
  */
 export function landfillUnavailableFromAll(
   causes: unknown[],
-  /** How many requests were made. Defaults to "every one of them failed". */
+  /**
+   * How many requests were made. Retained so callers keep describing the whole set
+   * (and so an empty rejection list is still distinguishable from a total failure);
+   * it no longer promotes a no-data answer to an error.
+   */
   requestCount: number = causes.length,
 ): LandfillUnavailableState {
   const states = causes.map(landfillUnavailableFrom);
@@ -103,19 +120,120 @@ export function landfillUnavailableFromAll(
       availableYears: [],
     };
   }
-  // A PARTIAL failure is not an answer of absence. If some endpoints served data and
-  // others 404'd, the backend demonstrably HAS records for these filters — saying
-  // "선택한 조건의 공식 반입 자료가 없습니다" would be a false claim about the data
-  // rather than about the request. Only an all-no-data set is an answer of absence.
-  if (states.length < requestCount) {
-    return {
-      kind: "error",
-      message: "수도권매립지 자료의 일부를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
-      detail: states.map((state) => state.detail).filter(Boolean).join(" · ") || null,
-      availableYears: [],
-    };
-  }
+  // Every rejection is a no-data answer. Whether the OTHER requests succeeded is not
+  // evidence against it: they are scoped more broadly (see the doc comment), so their
+  // success says nothing about the narrower period that was actually asked for.
+  void requestCount;
   return states.find((state) => state.availableYears.length > 0) ?? states[0];
+}
+
+/**
+ * The period a served answer actually covers, as a citizen reads it.
+ *
+ * A complete year is just the year. A PARTIAL year is stated as the range between the
+ * first and last month the dataset holds — `1999-08 ~ 1999-12`, never "1999-12까지",
+ * which reads as January-through-December and is false for a year whose records begin
+ * in August (Page-2 defect F2).
+ *
+ * Returns `null` when the served period is complete or when the backend did not serve
+ * both bounds (an older build serves only the upper one). A half-known range is not
+ * printed as if it were known: the caller falls back to the single bound it does have.
+ */
+export function partialYearRange(period: {
+  year: number;
+  is_complete_year: boolean;
+  available_from_month?: string | null;
+  available_through_month: string | null;
+}): string | null {
+  if (period.is_complete_year) return null;
+  const from = period.available_from_month ?? null;
+  const through = period.available_through_month ?? null;
+  if (!from || !through) return null;
+  return from === through ? from : `${from} ~ ${through}`;
+}
+
+/**
+ * Percentage change from a previous period to the current one, or `null`.
+ *
+ * `null` — meaning "no comparison exists" — whenever the previous period was not
+ * served, either value is unparseable, or the previous value is zero. NONE of those
+ * is a 0% change, and this platform never renders a missing comparison as one
+ * (repo AGENTS.md). The caller must show an explicit "비교 자료 없음" instead.
+ */
+export function percentChange(current: string | null, previous: string | null): number | null {
+  if (current == null || previous == null) return null;
+  const now = Number(current);
+  const before = Number(previous);
+  if (!Number.isFinite(now) || !Number.isFinite(before) || before === 0) return null;
+  return ((now - before) / before) * 100;
+}
+
+/**
+ * One row of the waste-composition breakdown.
+ *
+ * `derived` marks the 그 외 항목 합계 roll-up, which is the only row here that is not
+ * a served category — see {@link compositionRows}.
+ */
+export interface CompositionRow {
+  name: string;
+  /** Exact served tonnage, or the exact residual for the roll-up. */
+  quantityTons: string;
+  /** Exact served share (0–1), or the residual's computed share. */
+  share: string | null;
+  derived: boolean;
+}
+
+/**
+ * The composition list, descending, with a 그 외 항목 합계 roll-up when — and only
+ * when — the roll-up is mathematically valid.
+ *
+ * The backend serves the ten largest categories plus the period's total. The residual
+ * is `total − Σ(served rows)`, which is a subtraction of two official quantities at
+ * the same scope, not a re-aggregation of anything: it is exactly "everything the top
+ * list does not name". It is emitted ONLY when it comes out strictly positive — a
+ * zero residual means the list is already complete and a row saying so would invent a
+ * category, and a negative one would mean the two served figures disagree, in which
+ * case nothing is asserted at all.
+ *
+ * The served `waste_name` values are printed VERBATIM. This platform does not remap
+ * official categories onto friendlier words: a citizen-facing rename with no approved
+ * crosswalk would make the screen disagree with the source it cites.
+ */
+export function compositionRows(
+  served: { waste_name: string; quantity_tons: string; quantity_share: string | null }[],
+  totalTons: string,
+): CompositionRow[] {
+  const rows: CompositionRow[] = served
+    .map((item) => ({
+      name: item.waste_name,
+      quantityTons: item.quantity_tons,
+      share: item.quantity_share,
+      derived: false,
+    }))
+    .sort((a, b) => Number(b.quantityTons) - Number(a.quantityTons));
+
+  const total = Number(totalTons);
+  const named = rows.reduce((sum, row) => sum + Number(row.quantityTons), 0);
+  if (!Number.isFinite(total) || !Number.isFinite(named)) return rows;
+  const residual = total - named;
+  // A residual under half a tonne is rounding noise between the served total and the
+  // served parts, not a category. Asserting it as one would put a phantom row on a
+  // list whose whole purpose is to account for the total exactly.
+  if (residual <= 0.5) return rows;
+  rows.push({
+    name: "그 외 항목 합계",
+    quantityTons: String(residual),
+    share: total > 0 ? String(residual / total) : null,
+    derived: true,
+  });
+  return rows;
+}
+
+/** A signed percentage change, one decimal: `+2.8%` / `-1.7%` / `0%`. */
+export function formatPercentChange(change: number): string {
+  const rounded = Math.round(change * 10) / 10;
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "−" : "";
+  return `${sign}${Math.abs(rounded).toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
 }
 
 export function kgToTons(kg: string | number): number {
@@ -125,6 +243,17 @@ export function kgToTons(kg: string | number): number {
 
 export function formatTons(kg: string | number): string {
   return `${Math.round(kgToTons(kg)).toLocaleString("en-US")} t`;
+}
+
+/**
+ * Format a value that is ALREADY in tonnes — the served `quantity_tons`, or the
+ * composition roll-up's residual. Separate from {@link formatTons} so a tonne figure
+ * never has to be multiplied back into kilograms just to be printed.
+ */
+export function formatTonQuantity(tons: string | number): string {
+  const value = typeof tons === "string" ? Number(tons) : tons;
+  if (!Number.isFinite(value)) return "—";
+  return `${Math.round(value).toLocaleString("en-US")} t`;
 }
 
 /**

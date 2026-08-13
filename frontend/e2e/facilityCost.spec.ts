@@ -142,12 +142,18 @@ for (const vp of VIEWPORTS) {
       // the shared chrome rather than duplicating it.
       await expect(page.getByTestId("map-container")).toHaveCount(0);
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
-      await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+      // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
       await expect(page.locator("h1")).toHaveCount(1);
       await expect(page.locator("#main-content")).toHaveCount(1);
+      // The screening disclaimer stands on the screen itself; the longer
+      // "this page does not advocate" notice moved into 계산 방법과 한계.
+      await expect(page.getByTestId("suitability-screening-disclaimer")).toBeVisible();
+      await page.getByTestId("facility-cost-open-details").click();
       await expect(page.getByTestId("facility-cost-disclaimer")).toContainText(
         "권고하거나 반대를 설득하기 위한 페이지가 아닙니다",
       );
+      await page.getByTestId("facility-cost-details-close").click();
 
       // Calculate is disabled until a service region is chosen, and says why.
       await expect(page.getByTestId("facility-cost-calculate")).toBeDisabled();
@@ -201,13 +207,17 @@ for (const vp of VIEWPORTS) {
       await expect(optionByName(page, "서울 종로구")).toBeVisible();
       await page.getByTestId("facility-cost-waste-stream").selectOption("HOUSEHOLD");
 
-      // ── Facility type through the card UI ─────────────────────────────────
-      const cards = page.getByTestId("facility-cost-facility-type-card");
-      await expect(cards).toHaveCount(2);
-      await cards.nth(1).click();
-      await expect(cards.nth(1)).toHaveAttribute("data-selected", "true");
-      await expect(page.getByTestId("facility-cost-setup-summary")).toContainText("신규 소각시설");
-      await cards.nth(0).click();
+      // ── Facility type through the Figma select ────────────────────────────
+      // The radio-card grid is retired: the redesign puts the facility type in card
+      // ② as an ordinary native <select>, beside the other two conditions.
+      const facilityType = page.getByTestId("facility-cost-facility-type");
+      await expect(facilityType.locator("option")).toHaveCount(2);
+      const secondValue = await facilityType.locator("option").nth(1).getAttribute("value");
+      await facilityType.selectOption(secondValue!);
+      await expect(page.getByTestId("facility-cost-step-result")).toContainText("신규 소각시설");
+      await facilityType.selectOption(
+        (await facilityType.locator("option").nth(0).getAttribute("value"))!,
+      );
 
       // ── Advanced settings expand on demand ────────────────────────────────
       const advanced = page.getByTestId("facility-cost-advanced-settings");
@@ -219,7 +229,7 @@ for (const vp of VIEWPORTS) {
       );
 
       // ── No raw region code is visible anywhere in the setup ───────────────
-      const setupText = await page.getByTestId("facility-cost-form").innerText();
+      const setupText = await page.getByTestId("facility-cost-workflow").innerText();
       expect(setupText).not.toContain("KR-SGIS");
 
       // ── No deliberation section survives ──────────────────────────────────
@@ -236,36 +246,37 @@ for (const vp of VIEWPORTS) {
       await expect(calculate).toBeEnabled();
       await calculate.click();
 
-      // Phase 3: a successful calculation REPLACES the setup with the results view.
-      await expect(page.getByTestId("facility-cost-results-view")).toBeVisible();
-      await expect(page.getByTestId("facility-cost-setup-view")).toHaveCount(0);
+      // The Figma single screen: the result appears in card ③ and the setup it came
+      // from stays put, so there is no view to switch to and none to come back from.
       await expect(page.getByTestId("facility-cost-results")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-step-regions")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-step-conditions")).toBeVisible();
 
       // Primary surfaces show the APPROXIMATION; the exact fixture strings live in
       // the "정밀값과 계산 기준" section (asserted in phase3CostResults.spec.ts).
       await expect(page.getByTestId("fc-standard-cost")).toHaveText("약 121억원");
       await expect(page.getByTestId("fc-per-capita")).toHaveText("약 4만원");
 
-      // Exclusions are still shown as explicitly unavailable, never a total.
-      await expect(page.getByTestId("facility-cost-exclusions-summary")).toContainText(
+      // Exclusions are still shown as explicitly unavailable, never a total. They
+      // now live behind 계산 방법과 한계 rather than on the primary surface.
+      await page.getByTestId("facility-cost-open-details").click();
+      await expect(page.getByTestId("facility-cost-exclusions")).toContainText(
         "포함되지 않은 비용 5개",
       );
+      await page.getByTestId("facility-cost-details-close").click();
       await expect(page.getByText("총비용")).toHaveCount(0);
 
-      // Still exactly one h1 and one skip target on the results screen.
+      // Still exactly one h1 and one skip target once a result is on screen.
       await expect(page.locator("h1")).toHaveCount(1);
       await expect(page.locator("#main-content")).toHaveCount(1);
 
-      // Returning to setup keeps the selection and issues no new calculation.
-      await page.getByTestId("facility-cost-edit-settings").click();
-      await expect(page.getByTestId("facility-cost-setup-view")).toBeVisible();
+      // The selection is still there, because it was never left behind.
       await expect(page.getByTestId("facility-cost-region-chip")).toHaveCount(1);
-      await expect(page.getByTestId("facility-cost-results-view")).toHaveCount(0);
 
       await expectNoHorizontalOverflow(page);
 
       // Back to the score view restores the screening panel and the map.
-      await page.getByTestId("suitability-view-score").click();
+      await page.getByTestId("mode-suitability").click();
       await expect(page.getByTestId("suitability-summary")).toBeVisible();
       await expect(page.getByTestId("map-container")).toBeVisible();
       await expect(page.getByTestId("facility-cost-dashboard")).toHaveCount(0);
@@ -275,26 +286,26 @@ for (const vp of VIEWPORTS) {
       page,
     }) => {
       await gotoCost(page);
-      const summary = page.getByTestId("facility-cost-setup-summary");
+      // The sticky right rail is retired. The redesign reaches the same guarantee
+      // structurally: card ③ carries the condition summary AND the action, and sits
+      // in its own column beside the inputs rather than after them.
+      const summary = page.getByTestId("facility-cost-step-result");
       const calculate = page.getByTestId("facility-cost-calculate");
       await expect(summary).toBeVisible();
+      await expect(page.getByTestId("facility-cost-summary-regions")).toBeVisible();
 
       if (vp.desktop) {
-        // Desktop: the summary is the sticky right rail, so the calculate button is
-        // already inside the viewport before any scrolling.
+        // Desktop: the three columns put the action inside the first viewport with
+        // the document at offset 0, before anything has scrolled.
+        // (facilityCostDashboard.spec.ts owns the full first-screen geometry.)
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
         const box = (await calculate.boundingBox())!;
         expect(box.y).toBeGreaterThanOrEqual(0);
         expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
-
-        // It stays inside the viewport after scrolling down the long left column.
-        await page.mouse.wheel(0, 1200);
-        await page.waitForTimeout(150);
-        const after = (await calculate.boundingBox())!;
-        expect(after.y).toBeGreaterThanOrEqual(0);
-        expect(after.y + after.height).toBeLessThanOrEqual(vp.height);
       } else {
-        // Stacked widths: the summary returns to normal document flow (not stuck to
-        // the viewport), and stays reachable by scrolling.
+        // Stacked widths: the columns fall into normal document flow and the action
+        // stays reachable by scrolling.
         await calculate.scrollIntoViewIfNeeded();
         await expect(calculate).toBeVisible();
       }

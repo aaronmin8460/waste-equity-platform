@@ -94,16 +94,22 @@ async function openAndCapture(
   await body.scrollIntoViewIfNeeded();
   await capture(page, name);
   await page.getByTestId(`${sectionTestId}-summary`).click();
-  await page.getByTestId("facility-cost-results-view").scrollIntoViewIfNeeded();
+  await page.getByTestId("facility-cost-details").scrollIntoViewIfNeeded();
 }
 
 async function calculate(page: Page): Promise<void> {
   await page.goto("/?v=1&mode=suitability&view=cost");
-  await expect(page.getByTestId("facility-cost-form")).toBeVisible();
+  await expect(page.getByTestId("facility-cost-workflow")).toBeVisible();
   await page.getByTestId("facility-cost-region-search").click();
   await page.getByTestId("facility-cost-region-option").filter({ hasText: "서울 종로구" }).click();
   await page.getByTestId("facility-cost-calculate").click();
-  await expect(page.getByTestId("facility-cost-results-view")).toBeVisible();
+  await expect(page.getByTestId("facility-cost-results")).toBeVisible();
+}
+
+/** Open 계산 방법과 한계, which holds every detail section after the redesign. */
+async function openDetails(page: Page): Promise<void> {
+  await page.getByTestId("facility-cost-open-details").click();
+  await expect(page.getByTestId("facility-cost-details")).toBeVisible();
 }
 
 const VIEWPORTS = [
@@ -119,15 +125,14 @@ for (const vp of VIEWPORTS) {
       await calculate(page);
       await capture(page, `cost-results-hero-${vp.label}`);
 
-      // 비용 구성 is visible section content since the civic-dashboard refresh
-      // (docs/ui-refresh/facility-cost-dashboard.md §4), so it is captured in
-      // place rather than opened.
-      const funding = page.getByTestId("facility-cost-funding");
-      await expect(funding).toBeVisible();
-      await funding.scrollIntoViewIfNeeded();
-      await capture(page, `cost-results-funding-${vp.label}`);
-      await page.getByTestId("facility-cost-results-view").scrollIntoViewIfNeeded();
+      // The Figma redesign moved every detail section — 비용 구성 included — behind
+      // the one 계산 방법과 한계 door, so they are captured inside it.
+      await openDetails(page);
+      await capture(page, `cost-details-open-${vp.label}`);
 
+      await openAndCapture(page, "facility-cost-breakdown-section", "facility-cost-funding", {
+        name: `cost-results-funding-${vp.label}`,
+      });
       await openAndCapture(page, "facility-cost-exclusions", "facility-cost-missing", {
         name: `cost-results-exclusions-open-${vp.label}`,
       });
@@ -135,9 +140,12 @@ for (const vp of VIEWPORTS) {
         name: `cost-results-exact-values-open-${vp.label}`,
       });
 
-      // Returning to setup, with the selection intact.
-      await page.getByTestId("facility-cost-edit-settings").click();
-      await expect(page.getByTestId("facility-cost-setup-view")).toBeVisible();
+      // Closing the door returns to the workflow — the setup was never left, so the
+      // selection and the figures are both still standing.
+      await page.getByTestId("facility-cost-details-close").click();
+      await expect(page.getByTestId("facility-cost-details")).toHaveCount(0);
+      await expect(page.getByTestId("facility-cost-region-chip")).toHaveCount(1);
+      await expect(page.getByTestId("facility-cost-results")).toBeVisible();
       await capture(page, `cost-returned-setup-${vp.label}`);
     });
   });

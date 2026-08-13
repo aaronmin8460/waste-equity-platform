@@ -180,17 +180,24 @@ describe("loading announcement", () => {
 });
 
 describe("metric fieldset groups + live summary", () => {
-  it("groups the 11 metrics into three labelled fieldsets, all one radio group", async () => {
+  // The correction pass re-cut the eleven metrics from three STATISTICAL FAMILIES
+  // into three SUBJECT sections, so the legends and the radio count changed. What is
+  // asserted here did not: still exactly three fieldsets, each with a labelled
+  // legend, and every category radio in ONE logical group so native arrow keys still
+  // cross all of them.
+  it("groups the metrics into three labelled fieldsets, all one radio group", async () => {
     const { container } = await renderLoaded();
     const fieldsets = container.querySelectorAll("fieldset");
     expect(fieldsets.length).toBe(3);
     const legends = Array.from(container.querySelectorAll("legend")).map((l) => l.textContent);
-    expect(legends.some((t) => t?.includes("총량 지표"))).toBe(true);
-    expect(legends.some((t) => t?.includes("1인당 형평성 지표"))).toBe(true);
-    expect(legends.some((t) => t?.includes("시설 부담 지표"))).toBe(true);
-    // All 11 metric radios remain a single logical group (shared name="metric").
+    expect(legends.some((t) => t?.includes("지역별 인구"))).toBe(true);
+    expect(legends.some((t) => t?.includes("폐기물 발생량"))).toBe(true);
+    expect(legends.some((t) => t?.includes("1인당 시설 처리 수준"))).toBe(true);
+    // Seven category rows: 인구 · four waste streams · two facility measures. The
+    // remaining four metrics are the per-capita counterparts, reached by the switch
+    // on the waste rows — so all eleven stay reachable.
     const radios = Array.from(container.querySelectorAll('input[type="radio"][name="metric"]'));
-    expect(radios).toHaveLength(11);
+    expect(radios).toHaveLength(7);
   });
 
   it("announces the selected metric via role=status and updates on change", async () => {
@@ -287,18 +294,20 @@ describe("map/dashboard readability (Phase 3)", () => {
     // is identifiable without relying on color.
     for (const row of rows) {
       expect(row.textContent).toContain("급");
-      expect(row.textContent).toContain("persons");
+      // The served population unit is the English `persons`; the legend prints 명.
+      expect(row.textContent).toContain("명");
+      expect(row.textContent).not.toContain("persons");
     }
     // An explicit no-data category, never rendered as a 0 class.
     const nodata = screen.getByTestId("choropleth-legend-nodata");
     expect(nodata.textContent).toContain("데이터 없음");
   });
 
-  it("presents the metric families as three scannable group cards", async () => {
+  it("presents the metric subjects as three scannable sections", async () => {
     await renderLoaded();
-    expect(screen.getByTestId("metric-group-total")).toBeDefined();
-    expect(screen.getByTestId("metric-group-per_capita")).toBeDefined();
-    expect(screen.getByTestId("metric-group-burden")).toBeDefined();
+    expect(screen.getByTestId("metric-section-population")).toBeDefined();
+    expect(screen.getByTestId("metric-section-generation")).toBeDefined();
+    expect(screen.getByTestId("metric-section-facility")).toBeDefined();
   });
 });
 
@@ -313,6 +322,7 @@ describe("single logical heading", () => {
     // twice on one screen). See docs/ui-refresh/regression-contract.md §10 — the
     // count assertion above is the contract and is unchanged.
     expect(h1s[0].textContent).toBe(MODE_LABELS.equity);
+    expect(h1s[0].textContent).toBe("지역 지표");
   });
 
   it("keeps the product name on screen, in the app bar, without a second heading", async () => {
@@ -336,11 +346,11 @@ describe("suitability accessible alternatives", () => {
     expect(live.textContent).toContain("점수 반영 기준 기본 기준");
   });
 
-  it("switches between the score screening and the cost lens sub-views", async () => {
+  it("switches between 후보지 심층 분석 and 후보지 분석 from the global navigation", async () => {
     await renderLoaded();
     await enterSuitability();
-    // Default sub-view is the score screening.
-    expect(screen.getByTestId("suitability-view-score").getAttribute("aria-pressed")).toBe("true");
+    // Default suitability destination is the score screening (후보지 심층 분석).
+    expect(screen.getByTestId("mode-suitability").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("suitability-summary")).toBeDefined();
     // Switch to the cost lens — it mounts as a full-width dashboard and the score
     // panel (and the map) are gone.
@@ -350,10 +360,13 @@ describe("suitability accessible alternatives", () => {
     expect(screen.queryByTestId("suitability-summary")).toBeNull();
     // The full-width cost dashboard mounts no map.
     expect(screen.queryByTestId("map-container")).toBeNull();
-    // The neutral citizen framing + disclaimer are present.
-    expect(screen.getByText("시설 비용 살펴보기")).toBeDefined();
-    // Back to the score view restores the screening panel (and the map).
-    fireEvent.click(screen.getByTestId("suitability-view-score"));
+    // The view titles itself with the destination the reader clicked (spec §2.2),
+    // and it is that view's SINGLE h1 — not a second heading beside the brand.
+    const costHeadings = document.querySelectorAll("h1");
+    expect(costHeadings).toHaveLength(1);
+    expect(costHeadings[0].textContent).toBe("후보지 분석");
+    // Back to 후보지 심층 분석 restores the screening panel (and the map).
+    fireEvent.click(screen.getByTestId("mode-suitability"));
     await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
     expect(screen.queryByTestId("facility-cost-dashboard")).toBeNull();
     expect(screen.getByTestId("map-container")).toBeDefined();

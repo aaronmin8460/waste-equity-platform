@@ -89,13 +89,44 @@ describe("equity legend", () => {
     expect(rows).toHaveLength(EQUITY_ROWS.length);
     for (const row of rows) {
       expect(row.textContent).toContain("급");
-      expect(row.textContent).toContain("persons");
+      // The served unit is the English `persons`; the legend prints it in Korean.
+      expect(row.textContent).toContain("명");
+      expect(row.textContent).not.toContain("persons");
     }
     // The exact range labels are shown verbatim (no reclassification inside the
     // component — it renders what the page computed from the active scale).
     expect(rows[0].textContent).toContain("< 100");
     expect(rows[1].textContent).toContain("100 – 200");
     expect(rows[2].textContent).toContain("≥ 200");
+  });
+
+  it("prints the population unit as 명 attached to the numeral, and never `persons`", () => {
+    renderEquity();
+    const rows = screen.getAllByTestId("choropleth-legend-row");
+    // Korean counter words attach directly to the numeral — no separating space.
+    expect(rows[0].textContent).toContain("< 100명");
+    expect(rows[1].textContent).toContain("100 – 200명");
+    expect(rows[2].textContent).toContain("≥ 200명");
+    // The whole legend, including the quiet unit line under the heading.
+    expect(screen.getByTestId("legend").textContent).not.toContain("persons");
+  });
+
+  it("leaves an already-Korean compound unit spaced and unchanged", () => {
+    render(
+      <MapLegendOverlay
+        mode="equity"
+        metricLabel="1인당 폐기물 발생량"
+        unit="kg/인/년"
+        methodNote="분위수 7단계 (7-class quantiles)"
+        rows={EQUITY_ROWS}
+        noDataColor="#d9d9d9"
+      />,
+    );
+    // Only the population unit is remapped; every other served unit still renders
+    // verbatim with the pre-existing separating space.
+    expect(screen.getAllByTestId("choropleth-legend-row")[0].textContent).toContain(
+      "< 100 kg/인/년",
+    );
   });
 
   it("always shows an explicit no-data row, never a 0 class", () => {
@@ -203,7 +234,7 @@ describe("floating control", () => {
   it("keeps long content in a bounded, internally-scrollable container", () => {
     renderEquity();
     const details = screen.getByTestId("map-legend");
-    const body = within(details).getByText("범례 — persons").closest(".map-legend-body");
+    const body = within(details).getByTestId("choropleth-legend").closest(".map-legend-body");
     expect(body).not.toBeNull();
     const cls = body?.getAttribute("class") ?? "";
     expect(cls).toContain("overflow-y-auto");

@@ -134,58 +134,13 @@ export function buildRankingCsv(input: RankingExportInput): CsvValue[][] {
 }
 
 // --------------------------------------------------------------------------- //
-// 2. Region comparison
-// --------------------------------------------------------------------------- //
-
-export interface ComparisonRegionRow {
-  code: string;
-  name: string;
-  /** Exact display string ("142,000", "83,721.3", or the availability text). */
-  display: string;
-  /** True when an official value was served (distinguishes official 0 from 자료 없음). */
-  hasValue: boolean;
-}
-
-export interface ComparisonExportInput {
-  metricLabel: string;
-  unit: string;
-  source: string;
-  referencePeriod: string;
-  accountingBasis: string | null;
-  regions: ComparisonRegionRow[];
-  when: Date;
-}
-
-export function buildComparisonCsv(input: ComparisonExportInput): CsvValue[][] {
-  const rows = metaRows(
-    "지역 비교",
-    [
-      { label: "지표", value: input.metricLabel },
-      { label: "단위", value: input.unit },
-      { label: "출처", value: input.source },
-      { label: "자료 기준 시점", value: input.referencePeriod },
-      { label: "집계 기준", value: input.accountingBasis },
-      { label: "비교 지역 수", value: input.regions.length },
-    ],
-    EQUITY_DISCLAIMER,
-    input.when,
-  );
-  rows.push(["지역코드", "지역명", "값", "단위", "자료 상태"]);
-  for (const r of input.regions) {
-    rows.push([
-      r.code,
-      r.name,
-      // Missing value → empty cell (never 0); official value → the exact string.
-      r.hasValue ? r.display : null,
-      input.unit,
-      r.hasValue ? "공식 값" : "자료 없음",
-    ]);
-  }
-  return rows;
-}
-
-// --------------------------------------------------------------------------- //
-// 3. User-weight scenario top candidates
+// 2. User-weight scenario top candidates
+//
+// A 지역 비교 CSV builder sat between these two until the correction pass. Its only
+// consumer — the Page 1 지역 비교 card — was removed, and an exported builder no
+// screen can reach is a maintenance liability rather than an API. The equity CSV's
+// formula-injection guard is unaffected: it lives in `csv.ts` and is exercised
+// through `buildRankingCsv` in exports.test.ts.
 // --------------------------------------------------------------------------- //
 
 export interface ScenarioExportCandidate {

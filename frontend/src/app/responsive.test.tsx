@@ -15,7 +15,7 @@
  * mode-routing test does — this is about layout, not rendering or data.
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/dynamic", () => ({
@@ -115,14 +115,32 @@ describe("responsive application shell", () => {
     expect(container.querySelectorAll("main")).toHaveLength(1);
   });
 
-  it("makes the sidebar full-width on mobile and a fixed column on desktop", async () => {
+  it("makes the sidebar full-width on mobile and a RESIZABLE column on desktop", async () => {
     const { container } = await renderLoaded();
-    const tokens = classes(container.querySelector("aside"));
+    const aside = container.querySelector("aside");
+    const tokens = classes(aside);
     expect(tokens).toContain("w-full");
-    expect(tokens).toContain("md:w-96");
     expect(tokens).toContain("md:flex-none");
-    // No fixed 384px width forced on mobile.
+    // The fixed 384px desktop column is gone: the width is now reader-controlled
+    // (300–520, default 360) and carried by `.wep-sidebar` reading the custom
+    // property below — see components/ui/ResizableSidebar.tsx and spec §3.
+    expect(tokens).toContain("wep-sidebar");
+    expect(tokens).not.toContain("md:w-96");
     expect(tokens).not.toContain("w-96");
+    // The width must be a custom property, never an inline `width`, or it would
+    // beat the media query and pin the PHONE column to the desktop size too.
+    expect((aside as HTMLElement).style.width).toBe("");
+    expect((aside as HTMLElement).style.getPropertyValue("--wep-sidebar-width")).toBe("360px");
+  });
+
+  it("hides the desktop resize handle behind a class the phone layout never shows", async () => {
+    await renderLoaded();
+    // `.wep-sidebar-resizer` is `display: none` until 768px (globals.css), so a
+    // phone gets no handle and no drag behaviour. jsdom loads no stylesheet, so
+    // the contract asserted here is the class that owns that rule.
+    const resizer = screen.getByTestId("sidebar-resizer");
+    expect(resizer.className).toContain("wep-sidebar-resizer");
+    expect(resizer.getAttribute("role")).toBe("separator");
   });
 
   it("sizes the map wrapper via the dedicated .map-pane class (definite mobile height, flex fill at md+)", async () => {
@@ -161,17 +179,22 @@ describe("responsive application shell", () => {
 });
 
 describe("mobile control collapsing", () => {
-  it("wraps the verbose equity panels in native <details> with clear Korean labels", async () => {
+  it("keeps the verbose equity panels as native <details> beside what they explain", async () => {
     const { container } = await renderLoaded();
-    const details = container.querySelectorAll("details.mobile-collapsible");
-    // The legend has moved out of the sidebar to a floating map overlay, so the
-    // remaining sidebar disclosures are sources & method and facility layer.
-    expect(details.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("출처와 계산 방법")).toBeDefined();
-    expect(screen.getByText("시설 위치 표시")).toBeDefined();
-    // The facility toggle still lives inside the DOM (never permanently hidden),
-    // so desktop CSS can force it open and screen readers can reach it.
+    // Phase 1 moved both of the sidebar's disclosures to where their subject is:
+    // 출처와 계산 방법 into the 선택한 지역 card whose value it justifies, and the
+    // facility layer control onto the map beside its own markers (Figma frames
+    // 220:439 and 222:439). They are still native <details>, so the browser supplies
+    // the toggling, the focus ring, and the expanded state — but they are no longer
+    // the sidebar-wide `.mobile-collapsible` wrapper, which now has no consumer.
+    expect(container.querySelectorAll("details.mobile-collapsible")).toHaveLength(0);
+    const sources = screen.getByTestId("equity-method-sources");
+    expect(sources.tagName).toBe("DETAILS");
+    expect(within(sources).getByText("출처와 계산 방법")).toBeDefined();
+    // The facility toggle still lives inside the DOM (never permanently hidden) and
+    // is now directly visible rather than behind a disclosure.
     expect(screen.getByTestId("facilities-toggle")).toBeDefined();
+    expect(screen.getByTestId("facility-type-legend")).toBeDefined();
   });
 
   it("renders the equity legend as a single floating overlay, not in the sidebar", async () => {
@@ -192,9 +215,18 @@ describe("mobile control collapsing", () => {
     expect(sidebarLegend).toBeNull();
   });
 
-  it("uses flex-wrap on the mode switcher so it never overflows narrow widths", async () => {
+  it("scrolls the six-destination nav track rather than wrapping or overflowing the page", async () => {
     const { container } = await renderLoaded();
     const group = container.querySelector('[data-testid="mode-switch"]');
-    expect(classes(group)).toContain("flex-wrap");
+    // Six Korean destination labels cannot wrap gracefully, and the spec requires
+    // one row from 1024px up, so `.wep-nav-track` scrolls horizontally instead
+    // (`overflow-x: auto` + `min-width: 0` in globals.css). jsdom never loads that
+    // stylesheet, so the contract asserted here is that the track still carries the
+    // class that owns the behaviour — and that nothing re-introduced `flex-wrap`,
+    // which would put the nav on two rows at 1024px.
+    expect(classes(group)).toContain("wep-nav-track");
+    expect(classes(group)).not.toContain("flex-wrap");
+    // All six destinations are present and reachable at this width.
+    expect(group?.querySelectorAll("button")).toHaveLength(6);
   });
 });

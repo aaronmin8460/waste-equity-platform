@@ -127,16 +127,26 @@ for (const vp of VIEWPORTS) {
       const mapBox = (await map.boundingBox())!;
 
       if (isDesktop) {
-        // Sidebar stays ~its fixed desktop width (md:w-96 = 384px) and the map
-        // sits to its right on the same row.
-        expect(asideBox.width).toBeGreaterThan(340);
-        expect(asideBox.width).toBeLessThan(420);
+        // The sidebar opens at its 360px default — it replaced the fixed
+        // md:w-96 (384px) in spec §3 — and the map sits to its right on the same
+        // row, after the 10px drag handle.
+        expect(asideBox.width).toBeGreaterThan(350);
+        expect(asideBox.width).toBeLessThan(372);
         expect(mapBox.x).toBeGreaterThanOrEqual(asideBox.x + asideBox.width - 2);
         expect(Math.abs(mapBox.y - asideBox.y)).toBeLessThan(4);
+        // The handle exists and sits BETWEEN the column and the map.
+        const handle = page.getByTestId("sidebar-resizer");
+        await expect(handle).toBeVisible();
+        const handleBox = (await handle.boundingBox())!;
+        expect(handleBox.x).toBeGreaterThanOrEqual(asideBox.x + asideBox.width - 2);
+        expect(handleBox.x + handleBox.width).toBeLessThanOrEqual(mapBox.x + 2);
       } else {
         // Sidebar spans (nearly) the full width and the map is stacked below it.
         expect(asideBox.width).toBeGreaterThan(vp.width - 4);
         expect(mapBox.y).toBeGreaterThanOrEqual(asideBox.y + asideBox.height - 2);
+        // No desktop separator on a phone: `.wep-sidebar-resizer` is display:none
+        // below md, so the stacked layout offers no drag affordance at all.
+        await expect(page.getByTestId("sidebar-resizer")).toBeHidden();
       }
     });
 

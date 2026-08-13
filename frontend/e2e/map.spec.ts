@@ -59,9 +59,10 @@ test("map loads with official data, metadata, and no government API calls", asyn
 
   // Switching to the derived per-capita metric (Phase 5.1) shows the
   // derived-indicator panel with dual-source provenance and unit.
-  await page
-    .getByRole("radio", { name: /1인당 생활계|Household per capita/ })
-    .check();
+  // The correction pass turned per-capita into a mode on the CATEGORY row rather
+  // than a radio of its own; the served metric it selects is unchanged.
+  await page.getByRole("radio", { name: /생활계 폐기물 발생량/ }).check();
+  await page.getByTestId("metric-mode-household").getByRole("button", { name: "1인당" }).click();
   const derived = page.getByTestId("derived-metric-metadata");
   await expect(derived).toBeVisible({ timeout: 15_000 });
   await expect(derived).toContainText("kg/인/년");
@@ -74,7 +75,7 @@ test("map loads with official data, metadata, and no government API calls", asyn
 
   // Switching to the facility-burden metric (Phase 5.2) shows the
   // facility-location accounting basis and the coverage note.
-  await page.getByRole("radio", { name: /1인당 소재 시설 처리량/ }).check();
+  await page.getByRole("radio", { name: /소재 시설 처리량/ }).check();
   await expect(derived).toBeVisible({ timeout: 15_000 });
   await expect(derived).toContainText("FACILITY_LOCATION_BASED_THROUGHPUT");
   await expect(page.getByTestId("coverage-note")).toContainText("좌표 없는 시설");
@@ -94,7 +95,7 @@ test("facility-burden choropleth uses a 9-class logarithmic scale (high-range se
 
   // Select the located facility-burden metric (강남/인천 서구 collapse under the
   // old global 5-class quantile scale; the log scale must separate them).
-  await page.getByRole("radio", { name: /1인당 소재 시설 처리량/ }).check();
+  await page.getByRole("radio", { name: /소재 시설 처리량/ }).check();
   await expect(page.getByTestId("derived-metric-metadata")).toContainText(
     "FACILITY_LOCATION_BASED_THROUGHPUT",
     { timeout: 15_000 },

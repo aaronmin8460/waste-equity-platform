@@ -22,8 +22,17 @@ const DESKTOP_VIEWPORTS = [
   { name: "1920×1080", width: 1920, height: 1080 },
 ];
 
-const MODE_LABELS = ["지역 부담", "후보지 분석", "매립지 현황", "데이터·출처"];
-const BRAND_NAME = "우리 동네 폐기물 지도";
+/** The SIX visible destinations of 여기다, in nav order (spec §2). */
+const MODE_LABELS = [
+  "지역 지표",
+  "폐기물 처리 현황",
+  "후보지 분석",
+  "후보지 심층 분석",
+  "후보지 심층 비교",
+  "데이터·출처",
+];
+const BRAND_NAME = "여기다";
+const BRAND_SUBTITLE = "쓰레기 매립지 입지 추천 플랫폼";
 
 async function expectNoHorizontalOverflow(page: Page, where: string): Promise<void> {
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
@@ -76,7 +85,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
       const brand = page.getByTestId("app-brand");
       await expect(brand).toBeVisible();
       await expect(brand).toContainText(BRAND_NAME);
-      await expect(brand).toContainText("Waste Equity Platform");
+      await expect(brand).toContainText(BRAND_SUBTITLE);
 
       // Brand and navigation share the bar's single row…
       const brandBox = (await brand.boundingBox())!;
@@ -91,7 +100,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
           .getByTestId("mode-switch")
           .evaluate((group, name) => group.textContent?.includes(name) ?? false, BRAND_NAME),
       ).toBe(false);
-      await expect(page.getByTestId("mode-switch").locator("button")).toHaveCount(4);
+      await expect(page.getByTestId("mode-switch").locator("button")).toHaveCount(6);
 
       await expectNoHorizontalOverflow(page, `brand at ${vp.name}`);
     });
@@ -100,30 +109,43 @@ for (const vp of DESKTOP_VIEWPORTS) {
       await gotoView(page, "/");
       const nav = (await page.getByTestId("top-navigation").boundingBox())!;
 
-      // ~60–64px plus the 1px bottom border. A taller bar eats the map's height;
-      // a shorter one cannot hold a 44px control with breathing room.
+      // Figma frame 74:1992 specifies a 78px header, plus the 1px bottom border.
+      // The range, not the exact number, is the contract: a taller bar eats the
+      // map's height, a shorter one cannot hold the 38px nav pill with the design's
+      // 14px of breathing room. 79px is still inside the 12%-of-viewport chrome
+      // budget this suite holds the bar to (96px at 1280x800).
       expect(nav.height, "app bar height").toBeGreaterThanOrEqual(56);
-      expect(nav.height, "app bar height").toBeLessThanOrEqual(72);
+      expect(nav.height, "app bar height").toBeLessThanOrEqual(80);
       expect(nav.y, "flush with the viewport top").toBeLessThanOrEqual(1);
 
-      // The active tab is as tall as the bar, so its 2px indicator lands directly
-      // on top of the bar's own bottom border rather than floating mid-bar.
+      // The active tab is a PILL centred in the nav track, not a full-bleed tab with
+      // a bottom indicator — the Figma design replaced the indicator, so the old
+      // "tab is flush with the bar's bottom border" assertion no longer describes it.
+      // What still matters is that the tab is vertically centred inside the bar and
+      // never overflows it.
       const activeTab = (await page.getByTestId("mode-equity").boundingBox())!;
       const barBorder = await page
         .getByTestId("top-navigation")
         .evaluate((el) => parseFloat(getComputedStyle(el).borderBottomWidth));
-      expect(activeTab.y + activeTab.height).toBeCloseTo(nav.y + nav.height - barBorder, 0);
-      expect(activeTab.height, "tab fills the bar height").toBeGreaterThanOrEqual(
-        nav.height - barBorder - 1,
+      expect(activeTab.y, "tab starts inside the bar").toBeGreaterThanOrEqual(nav.y - 0.5);
+      expect(activeTab.y + activeTab.height, "tab ends inside the bar").toBeLessThanOrEqual(
+        nav.y + nav.height - barBorder + 0.5,
       );
+      const topGap = activeTab.y - nav.y;
+      const bottomGap = nav.y + nav.height - barBorder - (activeTab.y + activeTab.height);
+      expect(Math.abs(topGap - bottomGap), "tab vertically centred").toBeLessThanOrEqual(2);
     });
 
     test("preserves the exact navigation labels and one page-level h1", async ({ page }) => {
+      // Every `v=1` link resolves exactly where it did before; the destination it
+      // lands on simply has a new name, and the <h1> now equals that name (spec §2.2).
       for (const [query, expectedH1] of [
-        ["/?v=1&mode=equity", "지역 부담"],
-        ["/?v=1&mode=suitability&view=score", "후보지 분석"],
-        ["/?v=1&mode=flow", "수도권매립지 반입 현황"],
-        ["/?v=1&mode=transparency", "데이터와 출처"],
+        ["/?v=1&mode=equity", "지역 지표"],
+        ["/?v=1&mode=suitability&view=score", "후보지 심층 분석"],
+        ["/?v=1&mode=suitability&view=scenario", "후보지 심층 비교"],
+        ["/?v=1&mode=suitability&view=cost", "후보지 분석"],
+        ["/?v=1&mode=flow", "폐기물 처리 현황"],
+        ["/?v=1&mode=transparency", "데이터·출처"],
       ] as const) {
         await gotoView(page, query);
 

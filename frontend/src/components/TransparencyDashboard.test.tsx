@@ -209,11 +209,14 @@ beforeEach(() => {
   });
   api.fetchFacilityMappingTransparency.mockResolvedValue(mapping);
 });
+/** The <h1>, supplied by the page as the visible destination name (spec §2.2). */
+const TITLE = "데이터·출처";
+
 afterEach(cleanup);
 
 /** Render and wait until the freshness join has resolved (either way). */
 async function renderDashboard(overrides?: Partial<LoadedData>) {
-  const result = render(<TransparencyDashboard data={{ ...data, ...overrides }} />);
+  const result = render(<TransparencyDashboard title={TITLE} data={{ ...data, ...overrides }} />);
   await screen.findByTestId("transparency-sources");
   await waitFor(() =>
     expect(screen.getByTestId("transparency-freshness-status").textContent).not.toContain(
@@ -241,7 +244,7 @@ describe("structure", () => {
   it("renders exactly one h1 and mounts no map", async () => {
     const { container } = await renderDashboard();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(container.querySelector("h1")!.textContent).toBe("데이터와 출처");
+    expect(container.querySelector("h1")!.textContent).toBe(TITLE);
     // Map-free: not merely hidden — nothing map-shaped exists in the subtree.
     expect(container.querySelector("canvas")).toBeNull();
     expect(screen.queryByTestId("map-container")).toBeNull();
@@ -261,6 +264,7 @@ describe("structure", () => {
   it("renders the orientation strip after the heading when the page supplies one", async () => {
     const { container } = render(
       <TransparencyDashboard
+        title={TITLE}
         data={data}
         orientation={<p data-testid="mode-orientation">안내</p>}
       />,
@@ -303,10 +307,34 @@ describe("source overview", () => {
     );
     // sgis + waste_statistics + 15064381 served a usable URL; kma and the unknown did not.
     expect(within(overview).getByTestId("transparency-overview-link").textContent).toContain("3건");
-    // Nothing resembling a grade or a percentage.
+    // Nothing resembling a grade or a percentage. The section's own supporting
+    // line (Figma frame 156:470) NAMES 완성도 점수 and 품질 등급 in order to
+    // disclaim them, so the two words are excluded from the values rather than
+    // from the whole section — the disclaimer is the opposite of the defect.
     expect(overview.textContent).not.toMatch(/%/);
-    expect(overview.textContent).not.toContain("점수");
-    expect(overview.textContent).not.toContain("등급");
+    const values = [...overview.querySelectorAll("dd")].map((node) => node.textContent).join(" ");
+    expect(values).not.toContain("점수");
+    expect(values).not.toContain("등급");
+    expect(
+      within(overview).getByText(
+        "모두 등록된 기록의 개수입니다. 완성도 점수나 품질 등급이 아닙니다.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("computes every counter from the served records rather than a fixed design value", async () => {
+    // Figma frame 156:470 draws 9 / 6 / 5 / 2 in these four tiles. This registry is
+    // a different size on every axis, so a tile that reproduced the design would
+    // fail here — which is the point of asserting it explicitly.
+    await renderDashboard();
+    const overview = screen.getByTestId("transparency-overview");
+    const figures = ["9건", "6개", "5건", "2건"];
+    for (const figure of figures) {
+      expect(within(overview).queryByText(figure), figure).toBeNull();
+    }
+    // …and the counters that ARE shown are this registry's.
+    const shown = [...overview.querySelectorAll("dd")].map((node) => node.textContent);
+    expect(shown).toEqual(["5건", "4개", "1건", "3건"]);
   });
 });
 
@@ -380,19 +408,19 @@ describe("source search", () => {
     expect(empty.textContent).toContain("자료가 없는 것은 아닙니다");
   });
 
-  it("restores the catalog from the no-match state's clear action", async () => {
+  it("restores the catalog from the permanent clear-all control", async () => {
     await renderDashboard();
     fireEvent.change(searchInput(), {
       target: { value: "존재하지않는자료명" },
     });
-    fireEvent.click(screen.getByText("검색 조건 지우기"));
+    fireEvent.click(screen.getByTestId("transparency-clear-filters"));
     expect(screen.getAllByTestId("transparency-source-card")).toHaveLength(5);
   });
 
   it("returns focus to the search field after either clear control", async () => {
-    // Both clear controls unmount themselves on activation, so without an explicit
-    // move, focus falls to <body> and a keyboard user is dropped to the top of the
-    // document mid-task.
+    // 검색어 지우기 unmounts itself on activation, and 검색 조건 지우기 disables
+    // itself, so without an explicit move focus falls to <body> and a keyboard user
+    // is dropped to the top of the document mid-task.
     await renderDashboard();
 
     fireEvent.change(searchInput(), { target: { value: "기상청" } });
@@ -404,10 +432,84 @@ describe("source search", () => {
     fireEvent.change(searchInput(), {
       target: { value: "존재하지않는자료명" },
     });
-    const emptyAction = screen.getByText("검색 조건 지우기");
-    emptyAction.focus();
-    fireEvent.click(emptyAction);
+    const clearAll = screen.getByTestId("transparency-clear-filters");
+    clearAll.focus();
+    fireEvent.click(clearAll);
     expect(document.activeElement).toBe(searchInput());
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// Catalog: the permanent clear-all control (Figma frame 156:470)
+// --------------------------------------------------------------------------- //
+
+describe("검색 조건 지우기", () => {
+  it("is present but disabled before anything is filtered", async () => {
+    await renderDashboard();
+    const clear = screen.getByTestId("transparency-clear-filters") as HTMLButtonElement;
+    // Disabled rather than absent: a control that appears and vanishes shifts the
+    // row under the pointer, and its unavailability would otherwise be inferable
+    // only by sighted readers.
+    expect(clear.disabled).toBe(true);
+    expect(clear.textContent).toBe("검색 조건 지우기");
+  });
+
+  it("enables as soon as ANY one of the three controls leaves its default", async () => {
+    await renderDashboard();
+    const clear = () => screen.getByTestId("transparency-clear-filters") as HTMLButtonElement;
+
+    fireEvent.change(searchInput(), { target: { value: "기상청" } });
+    expect(clear().disabled).toBe(false);
+    fireEvent.click(clear());
+    expect(clear().disabled).toBe(true);
+
+    fireEvent.change(screen.getByTestId("transparency-filter-category"), {
+      target: { value: "landfill" },
+    });
+    expect(clear().disabled).toBe(false);
+    fireEvent.click(clear());
+    expect(clear().disabled).toBe(true);
+
+    fireEvent.change(screen.getByTestId("transparency-filter-frequency"), {
+      target: { value: "MONTHLY" },
+    });
+    expect(clear().disabled).toBe(false);
+  });
+
+  it("clears the search term and BOTH filters in one activation", async () => {
+    await renderDashboard();
+    fireEvent.change(searchInput(), { target: { value: "반입" } });
+    fireEvent.change(screen.getByTestId("transparency-filter-category"), {
+      target: { value: "landfill" },
+    });
+    fireEvent.change(screen.getByTestId("transparency-filter-frequency"), {
+      target: { value: "MONTHLY" },
+    });
+    expect(screen.getByTestId("transparency-filter-summary").textContent).toContain("검색어 · 반입");
+
+    fireEvent.click(screen.getByTestId("transparency-clear-filters"));
+
+    expect((searchInput() as HTMLInputElement).value).toBe("");
+    expect((screen.getByTestId("transparency-filter-category") as HTMLSelectElement).value).toBe(
+      "all",
+    );
+    expect((screen.getByTestId("transparency-filter-frequency") as HTMLSelectElement).value).toBe(
+      "all",
+    );
+    expect(screen.getAllByTestId("transparency-source-card")).toHaveLength(5);
+    expect(screen.getByTestId("transparency-filter-summary").textContent).toContain(
+      "검색어와 필터를 적용하지 않았습니다",
+    );
+  });
+
+  it("is the ONLY control carrying that name, so the accessible name stays unambiguous", async () => {
+    await renderDashboard();
+    // The no-match empty state used to render a second button with the same label,
+    // which made getByRole("button", { name }) ambiguous for the suites and gave a
+    // screen-reader user two identically-named controls.
+    fireEvent.change(searchInput(), { target: { value: "존재하지않는자료명" } });
+    expect(screen.getByTestId("transparency-empty-results")).toBeDefined();
+    expect(screen.getAllByRole("button", { name: "검색 조건 지우기" })).toHaveLength(1);
   });
 });
 
@@ -421,7 +523,9 @@ describe("filters", () => {
     const select = screen.getByTestId("transparency-filter-category") as HTMLSelectElement;
     const labels = [...select.options].map((option) => option.textContent);
     expect(labels).toEqual([
-      "전체",
+      // Figma's wording for the default option: a collapsed select still says what
+      // it is showing everything OF.
+      "모든 분야",
       "인구",
       "폐기물 발생·처리",
       "수도권매립지",
@@ -576,16 +680,22 @@ describe("source cards", () => {
     expect(linked.getAttribute("rel")).toContain("noreferrer");
     expect(linked.getAttribute("rel")).toContain("noopener");
     expect(linked.getAttribute("target")).toBe("_blank");
-    // The accessible name names the dataset and states the new-window behaviour.
-    expect(linked.textContent).toBe("수도권 폐기물 반입량 기관 안내 페이지 (새 창)");
+    // Figma prints the same three words on every card. The VISIBLE text is that,
+    // but the ACCESSIBLE name still names the dataset and states the new-window
+    // behaviour, so a screen-reader link list is not a dozen identical entries.
+    expect(linked.textContent).toBe("공식 안내 페이지");
+    expect(linked.getAttribute("aria-label")).toBe("수도권 폐기물 반입량 기관 안내 페이지 (새 창)");
 
-    // No served URL → an explicit unavailable label, not a constructed link.
+    // No served URL → an explicit unavailable label, not a constructed link. A
+    // served `documentation_url` of null is valid registry data (production's
+    // `municipal_waste_cost_disclosure` is exactly that), never an error state.
     fireEvent.change(searchInput(), { target: { value: "기상청" } });
     const noLink = screen.getAllByTestId("transparency-source-card")[0];
     expect(within(noLink).queryByTestId("transparency-source-link")).toBeNull();
-    expect(within(noLink).getByTestId("transparency-source-nolink").textContent).toBe(
-      "기관 안내 주소 없음",
-    );
+    expect(within(noLink).getByTestId("transparency-source-nolink").textContent).toBe("링크 없음");
+    // Not announced as a failure, and no href anywhere on the card.
+    expect(noLink.querySelector('[role="alert"]')).toBeNull();
+    expect(noLink.querySelectorAll("a")).toHaveLength(0);
 
     // An invalid served value is treated the same way — never repaired into a link.
     fireEvent.change(searchInput(), { target: { value: "Future" } });
@@ -788,7 +898,7 @@ describe("loading, empty, and error states", () => {
   it("announces loading in a status region while the skeleton stays decorative", async () => {
     // Never resolves, so the loading state is observable.
     api.fetchFacilityMappingTransparency.mockReturnValue(new Promise(() => {}));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
 
     const loading = await screen.findByTestId("transparency-mapping-loading");
     expect(loading.getAttribute("role")).toBe("status");
@@ -803,7 +913,9 @@ describe("loading, empty, and error states", () => {
   });
 
   it("treats a successful empty registry as an answer, not an error", async () => {
-    render(<TransparencyDashboard data={{ ...data, sources: [] } as unknown as LoadedData} />);
+    render(
+      <TransparencyDashboard title={TITLE} data={{ ...data, sources: [] } as unknown as LoadedData} />,
+    );
     const empty = await screen.findByTestId("transparency-sources-empty");
     expect(empty.getAttribute("role")).toBeNull();
     expect(empty.textContent).toContain("등록된 출처 기록이 없습니다");
@@ -843,7 +955,7 @@ describe("loading, empty, and error states", () => {
 
   it("keeps a failed freshness request distinct from 'no reference period exists'", async () => {
     api.fetchDataFreshness.mockRejectedValue(new Error("network"));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     const note = await screen.findByTestId("transparency-freshness-error");
     // Not an alert — the catalog still renders and nothing is wrong with the data.
     expect(note.getAttribute("role")).toBeNull();
@@ -856,7 +968,7 @@ describe("loading, empty, and error states", () => {
 
   it("never reports an unfetched reference-period count as a measured zero", async () => {
     api.fetchDataFreshness.mockRejectedValue(new Error("network"));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     await screen.findByTestId("transparency-freshness-error");
     const card = screen.getByTestId("transparency-overview-period");
     // The VALUE slot is what a reader reads as the figure. `0건` there would state
@@ -871,7 +983,7 @@ describe("loading, empty, and error states", () => {
 
   it("shows the reference-period count as pending, not zero, while loading", async () => {
     api.fetchDataFreshness.mockReturnValue(new Promise(() => {}));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     const card = await screen.findByTestId("transparency-overview-period");
     const value = card.querySelector("dd")!;
     expect(value.textContent).not.toContain("0");
@@ -883,11 +995,11 @@ describe("loading, empty, and error states", () => {
     // holds its content when inserted is generally not announced, and removing one
     // announces nothing — so a conditional "loading" message would leave the
     // resolution silent while every reference period on screen changed.
-    const { rerender } = render(<TransparencyDashboard data={data} />);
+    const { rerender } = render(<TransparencyDashboard title={TITLE} data={data} />);
     const live = screen.getByTestId("transparency-freshness-status");
     expect(live.getAttribute("role")).toBe("status");
     expect(live.textContent).toContain("불러오는 중");
-    rerender(<TransparencyDashboard data={data} />);
+    rerender(<TransparencyDashboard title={TITLE} data={data} />);
     await waitFor(() =>
       expect(screen.getByTestId("transparency-freshness-status").textContent).toContain(
         "확인을 마쳤습니다",
@@ -1038,7 +1150,7 @@ describe("refresh: sections, headings, and shared primitives", () => {
     const overview = screen.getByTestId("transparency-overview");
     expect(overview.tagName).toBe("SECTION");
     const heading = document.getElementById(overview.getAttribute("aria-labelledby")!)!;
-    expect(heading.textContent).toBe("자료 현황 요약");
+    expect(heading.textContent).toBe("한눈에 보기");
     // Before the refresh this was the one block on the page a sighted reader could
     // not name — its only heading was sr-only.
     expect(heading.className).not.toContain("sr-only");
@@ -1126,7 +1238,9 @@ describe("refresh: the current-condition summary", () => {
   });
 
   it("is not rendered at all for an empty registry, so no condition is implied", async () => {
-    render(<TransparencyDashboard data={{ ...data, sources: [] } as unknown as LoadedData} />);
+    render(
+      <TransparencyDashboard title={TITLE} data={{ ...data, sources: [] } as unknown as LoadedData} />,
+    );
     await screen.findByTestId("transparency-sources-empty");
     expect(screen.queryByTestId("transparency-filter-summary")).toBeNull();
     expect(screen.queryByTestId("transparency-result-count")).toBeNull();
@@ -1171,7 +1285,7 @@ describe("refresh: provenance badges", () => {
 
   it("keeps a failed freshness lookup out of the missing badge entirely", async () => {
     api.fetchDataFreshness.mockRejectedValue(new Error("network"));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     await screen.findByTestId("transparency-freshness-error");
     fireEvent.change(searchInput(), { target: { value: "sgis" } });
     // A request that failed says nothing about whether a period exists, so it must
@@ -1234,7 +1348,7 @@ describe("refresh: known gaps", () => {
 
   it("shows no count at all while the freshness join is unresolved", async () => {
     api.fetchDataFreshness.mockReturnValue(new Promise(() => {}));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     const gap = await screen.findByTestId("transparency-gap-period");
     expect(gap.textContent).toContain("확인하는 중");
     expect(gap.textContent).not.toMatch(/\d건/);
@@ -1242,7 +1356,7 @@ describe("refresh: known gaps", () => {
 
   it("never reports an unfetched gap count as a measured zero", async () => {
     api.fetchDataFreshness.mockRejectedValue(new Error("network"));
-    render(<TransparencyDashboard data={data} />);
+    render(<TransparencyDashboard title={TITLE} data={data} />);
     await screen.findByTestId("transparency-freshness-error");
     const gap = screen.getByTestId("transparency-gap-period");
     expect(gap.textContent).toContain("0건이라는 뜻이 아닙니다");

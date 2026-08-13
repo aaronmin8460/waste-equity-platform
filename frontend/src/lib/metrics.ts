@@ -22,33 +22,9 @@ export type MetricKey =
   | "FACILITY_BURDEN_LOCATED"
   | "FACILITY_BURDEN_5KM";
 
-/**
- * Semantic grouping of the metrics for accessible `<fieldset>`/`<legend>`
- * presentation. Purely metadata for the radio-group markup — it never affects
- * which value is served or how any metric is computed.
- */
-export type MetricGroupKey = "total" | "per_capita" | "burden";
-
-export interface MetricGroup {
-  key: MetricGroupKey;
-  legend: string;
-}
-
-/**
- * Legend text for each metric group, in selection order. Primary citizen labels
- * (plain Korean); the technical family name is available in methodology docs.
- */
-export const METRIC_GROUPS: readonly MetricGroup[] = [
-  { key: "total", legend: "총량 지표" },
-  { key: "per_capita", legend: "1인당 형평성 지표" },
-  { key: "burden", legend: "시설 부담 지표" },
-] as const;
-
 export interface MetricDefinition {
   key: MetricKey;
   label: string;
-  /** Which accessible `<fieldset>` group this metric is rendered under. */
-  group: MetricGroupKey;
   // "waste-per-capita" and "facility-burden" metrics are BACKEND-derived
   // (Phase 5.1/5.2); the client still renders served values only.
   dataset: "population" | "waste-statistics" | "waste-per-capita" | "facility-burden";
@@ -77,14 +53,12 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "population",
     label: "인구",
-    group: "total",
     dataset: "population",
     geography: "native",
   },
   {
     key: "HOUSEHOLD",
     label: "생활계 폐기물 발생량",
-    group: "total",
     dataset: "waste-statistics",
     geography: "reporting",
     wasteStream: "HOUSEHOLD",
@@ -92,7 +66,6 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "BUSINESS_NON_FACILITY",
     label: "사업장(비배출시설계) 발생량",
-    group: "total",
     dataset: "waste-statistics",
     geography: "reporting",
     wasteStream: "BUSINESS_NON_FACILITY",
@@ -100,7 +73,6 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "INDUSTRIAL_FACILITY",
     label: "사업장(배출시설계) 발생량",
-    group: "total",
     dataset: "waste-statistics",
     geography: "reporting",
     wasteStream: "INDUSTRIAL_FACILITY",
@@ -108,7 +80,6 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "CONSTRUCTION",
     label: "건설 폐기물 발생량",
-    group: "total",
     dataset: "waste-statistics",
     geography: "reporting",
     wasteStream: "CONSTRUCTION",
@@ -116,7 +87,6 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "PER_CAPITA_HOUSEHOLD",
     label: "1인당 생활계 발생량",
-    group: "per_capita",
     dataset: "waste-per-capita",
     geography: "reporting",
     wasteStream: "HOUSEHOLD",
@@ -124,7 +94,6 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "PER_CAPITA_BUSINESS_NON_FACILITY",
     label: "1인당 사업장(비배출시설계)",
-    group: "per_capita",
     dataset: "waste-per-capita",
     geography: "reporting",
     wasteStream: "BUSINESS_NON_FACILITY",
@@ -133,7 +102,6 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "PER_CAPITA_INDUSTRIAL_FACILITY",
     label: "1인당 사업장(배출시설계)",
-    group: "per_capita",
     dataset: "waste-per-capita",
     geography: "reporting",
     wasteStream: "INDUSTRIAL_FACILITY",
@@ -142,7 +110,6 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "PER_CAPITA_CONSTRUCTION",
     label: "1인당 건설 폐기물",
-    group: "per_capita",
     dataset: "waste-per-capita",
     geography: "reporting",
     wasteStream: "CONSTRUCTION",
@@ -151,7 +118,6 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "FACILITY_BURDEN_LOCATED",
     label: "1인당 소재 시설 처리량",
-    group: "burden",
     dataset: "facility-burden",
     geography: "native",
     burdenMeasure: "located",
@@ -160,13 +126,173 @@ export const METRICS: MetricDefinition[] = [
   {
     key: "FACILITY_BURDEN_5KM",
     label: "1인당 인근 5km 시설 처리량",
-    group: "burden",
     dataset: "facility-burden",
     geography: "native",
     burdenMeasure: "buffer",
     caveat: FACILITY_BURDEN_CAVEAT,
   },
 ];
+
+// --------------------------------------------------------------------------- //
+// 지표 선택 — the citizen-facing presentation of the eleven metrics above
+// --------------------------------------------------------------------------- //
+
+/**
+ * PRESENTATION ONLY. Nothing below adds, merges, renames, or derives a metric: every
+ * `MetricKey` here is one of the eleven served metrics declared above, and each is
+ * reachable through exactly one (row, mode) pair. Removing this block would change
+ * how the selector looks and nothing about what any map, ranking, or export shows.
+ *
+ * The correction pass replaced a flat eleven-radio list grouped by STATISTICAL FAMILY
+ * (총량 / 1인당 / 시설 부담) with the citizen question the redesign asked for: pick a
+ * SUBJECT first (population · waste generated · facility throughput), then — where
+ * both exist — pick how it is counted (총량 or 1인당). That is the same eleven
+ * metrics re-cut, which is why a category row carries its two keys explicitly rather
+ * than deriving one from the other by string surgery.
+ *
+ * ── WHY 생활계 AND 사업장 ARE FOUR ROWS, NOT TWO ─────────────────────────────────
+ * The reference design showed three waste rows, with 생활계 annotated "생활 +
+ * 비배출계". Korean waste statistics do define 생활계폐기물 that way — but this
+ * platform ingests the two components as SEPARATE official series (RCIS `NTN007`
+ * 생활(가정)폐기물 → `HOUSEHOLD`, `NTN008` 사업장비배출시설계폐기물 →
+ * `BUSINESS_NON_FACILITY`; docs/API_CONTRACTS/waste_statistics.md), and the backend
+ * serves no combined figure. Adding the two in the browser would manufacture a
+ * statistic no source published — the one thing `AGENTS.md` and the redesign spec
+ * §11 forbid outright — and dropping either row would hide a real official series.
+ * So both are offered, each labelled with the stream it actually is.
+ */
+export type MetricSectionKey = "population" | "generation" | "facility";
+
+/** How a category is counted. Both keys must be real served metrics. */
+export type MetricMode = "total" | "perCapita";
+
+/**
+ * The 총량/1인당 switch labels.
+ *
+ * "총량", not "총 인구": the reference design's segment read 총 인구 (= total
+ * POPULATION), which is the subject of the first section, not the measure of a waste
+ * tonnage. Printing it over 생활계 폐기물 발생량 would name the metric something it is
+ * not, so the honest word for "the absolute served quantity" is used instead. The
+ * behaviour is exactly what the design asked for: the left segment selects the
+ * category's absolute metric, the right one its per-capita metric.
+ */
+export const METRIC_MODE_LABELS: Record<MetricMode, string> = {
+  total: "총량",
+  perCapita: "1인당",
+};
+
+export interface MetricRow {
+  /** Stable row identity — the radio's value. NOT a metric key. */
+  key: string;
+  /** Citizen-facing row label. */
+  label: string;
+  /** One supporting line, or nothing. Never a claim the data does not support. */
+  description?: string;
+  /** The served metric this row shows in 총량 mode (and its only metric when
+   *  `perCapita` is absent). */
+  total: MetricKey;
+  /** The served per-capita counterpart, when one exists. Absent ⇒ no mode switch. */
+  perCapita?: MetricKey;
+}
+
+export interface MetricSection {
+  key: MetricSectionKey;
+  /** The `<legend>` of this section's `<fieldset>`. */
+  title: string;
+  description?: string;
+  rows: readonly MetricRow[];
+}
+
+export const METRIC_SECTIONS: readonly MetricSection[] = [
+  {
+    key: "population",
+    title: "지역별 인구",
+    rows: [
+      {
+        key: "population",
+        label: "지역별 인구",
+        description: "선택 지역의 총 인구를 확인합니다.",
+        total: "population",
+      },
+    ],
+  },
+  {
+    key: "generation",
+    title: "폐기물 발생량",
+    description: "선택 지역에서 발생하는 폐기물의 양을 확인합니다.",
+    rows: [
+      {
+        key: "household",
+        label: "생활계 폐기물 발생량",
+        // NOT "생활 + 비배출계": this row is the 생활(가정) series alone. The
+        // 비배출시설계 component is the next row, as its own official series.
+        description: "생활(가정) 폐기물. 사업장 비배출시설계는 아래에서 따로 봅니다.",
+        total: "HOUSEHOLD",
+        perCapita: "PER_CAPITA_HOUSEHOLD",
+      },
+      {
+        key: "business_non_facility",
+        label: "사업장 폐기물 발생량 (비배출시설계)",
+        total: "BUSINESS_NON_FACILITY",
+        perCapita: "PER_CAPITA_BUSINESS_NON_FACILITY",
+      },
+      {
+        key: "industrial_facility",
+        label: "사업장 폐기물 발생량 (배출시설계)",
+        total: "INDUSTRIAL_FACILITY",
+        perCapita: "PER_CAPITA_INDUSTRIAL_FACILITY",
+      },
+      {
+        key: "construction",
+        label: "건설 폐기물 발생량",
+        total: "CONSTRUCTION",
+        perCapita: "PER_CAPITA_CONSTRUCTION",
+      },
+    ],
+  },
+  {
+    key: "facility",
+    title: "1인당 시설 처리 수준",
+    description: "선택 지역의 폐기물 처리시설 처리량을 확인합니다.",
+    rows: [
+      {
+        key: "facility_located",
+        label: "소재 시설 처리량",
+        description: "선택 지역 내 시설의 처리량",
+        // Both facility-burden metrics are ALREADY per-capita as served (their
+        // labels say 1인당), which is why this section carries no mode switch —
+        // there is no absolute counterpart to switch to.
+        total: "FACILITY_BURDEN_LOCATED",
+      },
+      {
+        key: "facility_5km",
+        label: "인근 5km 시설 처리량",
+        description: "선택 지역 5km 이내 시설의 처리량",
+        total: "FACILITY_BURDEN_5KM",
+      },
+    ],
+  },
+] as const;
+
+/** Every row, flattened — used for lookups, never for display order decisions. */
+const ALL_ROWS: readonly MetricRow[] = METRIC_SECTIONS.flatMap((section) => section.rows);
+
+/** The row a metric belongs to, and the mode it is shown in. */
+export function findMetricRow(key: MetricKey): { row: MetricRow; mode: MetricMode } | null {
+  for (const row of ALL_ROWS) {
+    if (row.total === key) return { row, mode: "total" };
+    if (row.perCapita === key) return { row, mode: "perCapita" };
+  }
+  return null;
+}
+
+/**
+ * The served metric for a row in a mode, falling back to the row's absolute metric
+ * when it has no per-capita counterpart. Never returns a key that is not served.
+ */
+export function metricKeyFor(row: MetricRow, mode: MetricMode): MetricKey {
+  return mode === "perCapita" && row.perCapita ? row.perCapita : row.total;
+}
 
 // --------------------------------------------------------------------------- //
 // Choropleth scale configuration (metric-aware classification + palette)

@@ -50,6 +50,13 @@ interface FakeMapLike {
   flyToCalls: unknown[][];
   fitBoundsCalls: unknown[][];
   sourceFeatures: Record<string, { properties?: Record<string, unknown> | null }[]>;
+  /**
+   * What `queryRenderedFeatures` reports per layer id. Since Phase 1 the region and
+   * facility click handling is ONE map-level handler that queries the layers in
+   * priority order (see MapView), so a test stages the hit here and fires a plain
+   * map click rather than emitting a layer-scoped event.
+   */
+  renderedFeatures: Record<string, { properties: Record<string, unknown> }[]>;
 }
 
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
@@ -67,6 +74,7 @@ vi.mock("maplibre-gl", () => {
     handlers: Record<string, Array<(payload?: unknown) => void>> = {};
     layerHandlers: Record<string, Array<(payload?: unknown) => void>> = {};
     canvas = { style: { cursor: "" } };
+    renderedFeatures: Record<string, { properties: Record<string, unknown> }[]> = {};
 
     constructor() {
       h.instances.push(this as unknown as FakeMapLike);
@@ -118,6 +126,12 @@ vi.mock("maplibre-gl", () => {
     }
     getLayer(id: string) {
       return this.layerById[id];
+    }
+    // Only reports features for layers that EXIST, mirroring MapLibre, so the
+    // priority handler's `getLayer` guard is exercised rather than bypassed.
+    queryRenderedFeatures(_point: unknown, options?: { layers?: string[] }) {
+      const ids = options?.layers ?? Object.keys(this.renderedFeatures);
+      return ids.flatMap((id) => (this.getLayer(id) ? (this.renderedFeatures[id] ?? []) : []));
     }
     setFilter(id: string, filter: unknown) {
       this.filters[id] = filter;
@@ -463,6 +477,22 @@ describe("MapView suitability vector source", () => {
   });
 });
 
+/**
+ * Stage what is under the pointer and fire ONE map click, which is how the app now
+ * routes region/facility clicks: a single map-level handler queries the layers in
+ * priority order (facility > wetland > region) so a marker drawn over the region
+ * fill can no longer trigger both. Emitting a layer-scoped event, as these tests
+ * used to, would bypass exactly the code the priority rule lives in.
+ */
+function clickMap(
+  map: FakeMapLike,
+  hits: Record<string, { properties: Record<string, unknown> }[]>,
+  lngLat: { lng: number; lat: number } = { lng: 126.98, lat: 37.57 },
+) {
+  map.renderedFeatures = hits;
+  map.fire("click", { point: { x: 12, y: 34 }, lngLat });
+}
+
 describe("MapView accessibility", () => {
   it("labels the map container as a region with a linked textual description", () => {
     renderAndLoad(
@@ -486,8 +516,8 @@ describe("MapView accessibility", () => {
   it("reports the clicked region's CODE (page state derives the summary, no value snapshot)", () => {
     const onRegionClick = vi.fn();
     const { map } = renderAndLoad(baseProps({ mode: "equity", onRegionClick }));
-    map.emitLayer("click", "regions-fill", {
-      features: [
+    clickMap(map, {
+      "regions-fill": [
         {
           properties: {
             region_code: "KR-SGIS-11110",
@@ -502,7 +532,6 @@ describe("MapView accessibility", () => {
           },
         },
       ],
-      lngLat: { lng: 126.98, lat: 37.57 },
     });
     // Only the stable region identity crosses the boundary — the metric label and
     // value are NOT passed, so a later metric change re-derives them in page state
@@ -513,8 +542,8 @@ describe("MapView accessibility", () => {
 
   it("pins a popup carrying the served value on a region click (mobile tap path)", () => {
     const { map } = renderAndLoad(baseProps({ mode: "equity", onRegionClick: vi.fn() }));
-    map.emitLayer("click", "regions-fill", {
-      features: [
+    clickMap(map, {
+      "regions-fill": [
         {
           properties: {
             region_code: "KR-RCIS-CITY-GOYANG",
@@ -531,8 +560,7 @@ describe("MapView accessibility", () => {
           },
         },
       ],
-      lngLat: { lng: 126.8, lat: 37.65 },
-    });
+    }, { lng: 126.8, lat: 37.65 });
     const popup = h.popups[h.popups.length - 1];
     expect(popup.added).toBe(true);
     expect(popup.html).toContain("고양시");
@@ -559,8 +587,11 @@ describe("region tooltip content (Phase 3)", () => {
     expect(html).toContain("종로구");
     expect(html).toContain("인구 (Population)");
     expect(html).toContain("142,000 persons");
-    expect(html).toContain("지표 기준 기간: 2024");
-    expect(html).toContain("경계 출처: sgis (2024)");
+    // Since Phase 1 provenance renders as a labelled ROW (two spans), so the old
+    // "label: value" text run no longer exists. Both halves must still be present.
+    expect(html).toContain("지표 기준 기간");
+    expect(html).toContain("경계 기준");
+    expect(html).toContain("sgis (2024)");
     // A served value carries no "no served value" availability line.
     expect(html).not.toContain("데이터 없음");
   });
@@ -579,7 +610,8 @@ describe("region tooltip content (Phase 3)", () => {
     });
     // metric_display already conveys the no-data availability (never a 0).
     expect(html).toContain("데이터 없음 — 출처에서 해당 지역·항목을 보고하지 않음");
-    expect(html).toContain("통계 보고 단위: 시");
+    expect(html).toContain("통계 보고 단위");
+    expect(html).toContain("시 (city)");
     expect(html).toContain("덕양구·일산동구");
   });
 });
@@ -596,7 +628,8 @@ describe("region hover tooltip interaction (Phase 3)", () => {
     const popup = h.popups[h.popups.length - 1];
     expect(popup.added).toBe(true);
     expect(popup.html).toContain("종로구");
-    expect(popup.html).toContain("지표 기준 기간: 2024");
+    expect(popup.html).toContain("지표 기준 기간");
+    expect(popup.html).toContain("2024");
     // Leaving the region resets the cursor and removes the tooltip.
     map.emitLayer("mouseleave", "regions-fill", {});
     expect(map.getCanvas().style.cursor).toBe("");
@@ -605,13 +638,11 @@ describe("region hover tooltip interaction (Phase 3)", () => {
 
   it("includes the reference period in the tap/click popup too (mobile path)", () => {
     const { map } = renderAndLoad(baseProps({ mode: "equity", onRegionClick: vi.fn() }));
-    map.emitLayer("click", "regions-fill", {
-      features: [{ properties: SERVED_REGION_PROPS }],
-      lngLat: { lng: 126.98, lat: 37.57 },
-    });
+    clickMap(map, { "regions-fill": [{ properties: SERVED_REGION_PROPS }] });
     const popup = h.popups[h.popups.length - 1];
     expect(popup.html).toContain("종로구");
-    expect(popup.html).toContain("지표 기준 기간: 2024");
+    expect(popup.html).toContain("지표 기준 기간");
+    expect(popup.html).toContain("2024");
   });
 
   it("rebuilds the hover tooltip when the metric changes while hovering one region", () => {
@@ -621,7 +652,7 @@ describe("region hover tooltip interaction (Phase 3)", () => {
       features: [{ properties: { ...SERVED_REGION_PROPS, metric_reference_period: "2022" } }],
       lngLat: { lng: 126.98, lat: 37.57 },
     });
-    expect(h.popups[h.popups.length - 1].html).toContain("지표 기준 기간: 2022");
+    expect(h.popups[h.popups.length - 1].html).toContain("2022");
 
     // The metric changes (a new reference period) → a refresh re-stamps the source
     // AND resets the hover cache, so the next mousemove over the SAME region shows
@@ -631,8 +662,9 @@ describe("region hover tooltip interaction (Phase 3)", () => {
       features: [{ properties: { ...SERVED_REGION_PROPS, metric_reference_period: "2024" } }],
       lngLat: { lng: 126.98, lat: 37.57 },
     });
-    expect(h.popups[h.popups.length - 1].html).toContain("지표 기준 기간: 2024");
-    expect(h.popups[h.popups.length - 1].html).not.toContain("지표 기준 기간: 2022");
+    expect(h.popups[h.popups.length - 1].html).toContain("지표 기준 기간");
+    expect(h.popups[h.popups.length - 1].html).toContain("2024");
+    expect(h.popups[h.popups.length - 1].html).not.toContain("2022");
   });
 });
 
@@ -676,10 +708,7 @@ describe("map loading + candidate refresh feedback", () => {
 
 describe("region popup lifecycle (no stale metric values)", () => {
   const clickRegion = (map: FakeMapLike) =>
-    map.emitLayer("click", "regions-fill", {
-      features: [{ properties: SERVED_REGION_PROPS }],
-      lngLat: { lng: 126.98, lat: 37.57 },
-    });
+    clickMap(map, { "regions-fill": [{ properties: SERVED_REGION_PROPS }] });
 
   it("removes the pinned popup when the metric changes (sidebar selection is unaffected)", () => {
     const props = baseProps({ mode: "equity", candidateTileUrl: null, metricLabel: "인구 (Population)" });
@@ -724,7 +753,7 @@ describe("region popup lifecycle (no stale metric values)", () => {
       features: [{ properties: SERVED_REGION_PROPS }],
       lngLat: { lng: 126.98, lat: 37.57 },
     });
-    const pinned = h.popups.find((p) => p.html.includes("경계 출처") && p.added);
+    const pinned = h.popups.find((p) => p.html.includes("경계 기준") && p.added);
     expect(pinned).toBeDefined();
     unmount();
     expect(h.popups.every((p) => p.added === false)).toBe(true);
@@ -744,29 +773,93 @@ describe("candidate + facility interactions still work", () => {
     reference_period: "2022",
   } as unknown as import("../lib/api").FacilityItem;
 
+  const FACILITY_HIT = {
+    properties: {
+      facility_name: "종로 소각장",
+      category_label: "공공 소각시설",
+      throughput: "1,234.5 톤/년",
+      address: "서울 종로구 1-1",
+      source_id: "waste_statistics",
+      reference_period: "2022",
+    },
+  };
+
+  const facilityProps = () =>
+    baseProps({ mode: "equity", candidateTileUrl: null, showFacilities: true, facilities: [FACILITY] });
+
   it("opens a facility popup when a facility point is clicked", () => {
-    const { map } = renderAndLoad(
-      baseProps({ mode: "equity", candidateTileUrl: null, showFacilities: true, facilities: [FACILITY] }),
-    );
-    map.emitLayer("click", "facilities-points", {
-      features: [
-        {
-          properties: {
-            facility_name: "종로 소각장",
-            category_label: "소각",
-            throughput: "1,234.5 톤/년",
-            address: "서울 종로구 1-1",
-            source_id: "waste_statistics",
-            reference_period: "2022",
-          },
-        },
-      ],
-      lngLat: { lng: 126.98, lat: 37.57 },
-    });
+    const { map } = renderAndLoad(facilityProps());
+    clickMap(map, { "facilities-points": [FACILITY_HIT] });
     const popup = h.popups[h.popups.length - 1];
     expect(popup.added).toBe(true);
     expect(popup.html).toContain("종로 소각장");
     expect(popup.html).toContain("연간 처리량: 1,234.5 톤/년");
+  });
+
+  /**
+   * REGRESSION — the facility marker click-through defect.
+   *
+   * A marker is drawn ON TOP of the region fill, so a click used to reach both
+   * layer handlers: the facility opened its popup, the region opened a SECOND one
+   * over it, and the region selection changed even though the reader had aimed at
+   * a 4.5px dot. The three tests below pin each half of the fix.
+   */
+  describe("a facility marker does not fall through to the region beneath it", () => {
+    it("does not select the underlying region", () => {
+      const onRegionClick = vi.fn();
+      const { map } = renderAndLoad({ ...facilityProps(), onRegionClick });
+      clickMap(map, {
+        "facilities-points": [FACILITY_HIT],
+        "regions-fill": [{ properties: SERVED_REGION_PROPS }],
+      });
+      expect(onRegionClick).not.toHaveBeenCalled();
+    });
+
+    it("opens ONE popup carrying both the region's value and the facility", () => {
+      const before = h.popups.length;
+      const { map } = renderAndLoad({ ...facilityProps(), onRegionClick: vi.fn() });
+      clickMap(map, {
+        "facilities-points": [FACILITY_HIT],
+        "regions-fill": [{ properties: SERVED_REGION_PROPS }],
+      });
+      // Exactly one popup was constructed for the click, not one per layer.
+      const opened = h.popups.slice(before).filter((p) => p.added);
+      expect(opened).toHaveLength(1);
+      // …and it is the COMBINED popup the design specifies: the region's active
+      // indicator value AND the facility's own details, in one card.
+      expect(opened[0].html).toContain("종로구");
+      expect(opened[0].html).toContain("142,000 persons");
+      expect(opened[0].html).toContain("종로 소각장");
+      expect(opened[0].html).toContain("공공 소각시설");
+    });
+
+    it("still selects the region when the region itself is clicked", () => {
+      const onRegionClick = vi.fn();
+      const { map } = renderAndLoad({ ...facilityProps(), onRegionClick });
+      clickMap(map, { "regions-fill": [{ properties: SERVED_REGION_PROPS }] });
+      expect(onRegionClick).toHaveBeenCalledWith("KR-SGIS-11110");
+      const popup = h.popups[h.popups.length - 1];
+      expect(popup.html).toContain("종로구");
+      // No facility was the target, so the popup carries no facility block.
+      expect(popup.html).not.toContain("종로 소각장");
+    });
+
+    it("leaves a wetland click to the wetland handler alone", () => {
+      const onRegionClick = vi.fn();
+      const { map } = renderAndLoad({
+        ...facilityProps(),
+        onRegionClick,
+        showWetlands: true,
+        wetlandTileUrl: "http://localhost:8000/api/v1/environment/wetlands/tiles/{z}/{x}/{y}.mvt",
+      });
+      clickMap(map, {
+        "wetlands-fill": [{ properties: { wetland_name: "밤섬" } }],
+        "regions-fill": [{ properties: SERVED_REGION_PROPS }],
+      });
+      // The wetland layer owns its own popup; the region path must not add a second
+      // one, nor change the canonical selection.
+      expect(onRegionClick).not.toHaveBeenCalled();
+    });
   });
 
   it("highlights and moves the map to a selected candidate (list/map selection)", () => {

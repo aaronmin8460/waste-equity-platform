@@ -118,12 +118,19 @@ export default function MapLegendOverlay(props: MapLegendOverlayProps) {
     // hand-tuned offsets would make them collide the moment either grew a line;
     // one flex column makes non-collision structural. Only these small cards
     // overlay the map, so the rest of it stays interactive.
+    //
+    // The surface below (265px, transparent border, bg-white/95) is the shipped
+    // Figma appearance. `isolate overflow-hidden` is carried alongside it: that is a
+    // compositing/clipping fix, not a design choice — `overflow-hidden` clips the
+    // scrolling body to the existing `rounded-card` radius, and `isolate` gives the
+    // card its own stacking context so it cannot interleave with the other map
+    // overlays. Neither alters color, size, spacing or typography.
     <details
-      className="map-legend w-[min(86vw,288px)] isolate overflow-hidden rounded-card border border-hairline-strong bg-white/90 text-ink-muted shadow-float backdrop-blur-sm"
+      className="map-legend w-[min(86vw,265px)] isolate overflow-hidden rounded-card border border-transparent bg-white/95 text-ink-muted shadow-float backdrop-blur-sm"
       data-testid="map-legend"
     >
       <summary
-        className="flex cursor-pointer items-center justify-between gap-2 rounded-card px-3 py-2 text-sm font-semibold text-ink"
+        className="flex cursor-pointer items-center justify-between gap-2 rounded-card px-4 py-2.5 text-sm font-semibold text-ink"
         data-testid="map-legend-summary"
       >
         {/* Korean-only primary label (Phase 4). The English gloss is not lost — the
@@ -133,7 +140,7 @@ export default function MapLegendOverlay(props: MapLegendOverlayProps) {
           ▾
         </span>
       </summary>
-      <div className="map-legend-body max-h-[40vh] overflow-y-auto px-3 pb-3 md:max-h-[46vh]">
+      <div className="map-legend-body max-h-[40vh] overflow-y-auto px-4 pb-4 md:max-h-[46vh]">
         {props.mode === "equity" ? (
           <EquityLegend {...props} />
         ) : (
@@ -144,7 +151,29 @@ export default function MapLegendOverlay(props: MapLegendOverlayProps) {
   );
 }
 
+/**
+ * A served unit → how the legend prints it.
+ *
+ * `/api/v1/population` serves the English unit `persons`; this legend is
+ * Korean-only (G3), so it prints `명`. This is a DISPLAY label only — the served
+ * unit, the numeric values, the quantile breaks, the map fill and every export
+ * still carry the API's own unit string untouched.
+ *
+ * `separator` is per-unit because Korean typography attaches a counter word
+ * directly to the numeral (`151,306명`) but keeps a space before a compound
+ * symbol unit (`12.3 kg/인/년`, the unit the per-capita metrics serve). Units
+ * with no entry keep the pre-existing spaced rendering.
+ */
+const UNIT_DISPLAY: Record<string, { label: string; separator: string }> = {
+  persons: { label: "명", separator: "" },
+};
+
+function unitDisplay(unit: string): { label: string; separator: string } {
+  return UNIT_DISPLAY[unit] ?? { label: unit, separator: " " };
+}
+
 function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: EquityLegendProps) {
+  const { label: unitLabel, separator: unitSeparator } = unitDisplay(unit);
   return (
     <section aria-label="범례" data-testid="legend">
       {/* Korean-only primary heading (Phase 4). Every analytical element below is
@@ -152,33 +181,36 @@ function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: Equi
           the same numeric ranges from the active scale breaks, the same unit, the
           same method note, and the same explicit no-data row and wording. The
           palette and the break values still come solely from lib/metrics.ts. */}
-      <h2 className="mb-1 text-sm font-semibold text-ink">
-        범례{unit ? ` — ${unit}` : ""}
+      {/* Figma frame 74:2054 titles the card `{metric} 범례` and puts the unit on
+          its own quiet line beneath. `legend-metric-label` therefore moves ONTO the
+          heading, so the metric name is still addressable by that id and is no
+          longer printed twice in a 265px card. */}
+      <h2
+        className="text-base font-bold leading-[19px] text-brand"
+        data-testid="legend-metric-label"
+      >
+        {metricLabel} 범례
       </h2>
-      <p className="mb-1 text-[11px] text-ink-subtle" data-testid="legend-metric-label">
-        {metricLabel}
-      </p>
-      <p className="mb-2 text-[11px] text-ink-subtle" data-testid="choropleth-scale-method">
+      {unit ? <p className="mt-1 text-[11px] text-ink-subtle">{unitLabel}</p> : null}
+      <p className="mt-1 text-[11px] text-ink-subtle" data-testid="choropleth-scale-method">
         {methodNote}
       </p>
-      <ul className="flex flex-col gap-1" data-testid="choropleth-legend">
+      <ul className="mt-2 flex flex-col gap-1.5" data-testid="choropleth-legend">
         {rows.map((row) => (
           <li
             key={row.color}
-            className="flex items-center gap-2 text-xs text-ink-muted"
+            className="flex items-center gap-2.5 text-[13px] text-ink-secondary"
             data-testid="choropleth-legend-row"
           >
             <span
-              className="inline-block h-4 w-6 shrink-0 rounded-sm border border-hairline-strong"
+              className="inline-block h-3.5 w-6 shrink-0 rounded-[5px]"
               style={{ backgroundColor: row.color }}
             />
             {/* Class number so the class is identifiable without color. */}
-            <span className="w-8 shrink-0 font-medium tabular-nums text-ink-subtle">
-              {row.classNumber}급
-            </span>
+            <span className="w-6 shrink-0 tabular-nums text-brand">{row.classNumber}급</span>
             <span className="tabular-nums">
               {row.range}
-              {unit ? ` ${unit}` : ""}
+              {unit ? `${unitSeparator}${unitLabel}` : ""}
             </span>
           </li>
         ))}
@@ -186,14 +218,14 @@ function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: Equi
             here is the analytical no-data WORDING, not an English duplicate of the
             heading, and is deliberately preserved. */}
         <li
-          className="flex items-center gap-2 text-xs text-ink-muted"
+          className="flex items-center gap-2.5 text-[13px] text-ink-secondary"
           data-testid="choropleth-legend-nodata"
         >
           <span
-            className="inline-block h-4 w-6 shrink-0 rounded-sm border border-hairline-strong"
+            className="inline-block h-3.5 w-6 shrink-0 rounded-[5px]"
             style={{ backgroundColor: noDataColor }}
           />
-          <span className="w-8 shrink-0 font-medium text-ink-subtle">—</span>
+          <span className="w-6 shrink-0 text-brand">—</span>
           <span>데이터 없음 (no served value)</span>
         </li>
       </ul>

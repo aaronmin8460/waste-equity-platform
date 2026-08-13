@@ -30,19 +30,27 @@ import { mockTransparencyBackend } from "./phase6Fixtures";
  * wrapping (repository convention).
  */
 
-/** The frozen top-level labels. Byte-for-byte — an icon or badge inside breaks this. */
+/**
+ * The frozen top-level labels, keyed by the AREA whose `mode-<key>` testid carries
+ * them. Byte-for-byte — a badge or a text-bearing icon inside a button breaks this.
+ * (The 여기다 icons are text-free `aria-hidden` SVGs precisely so they do not.)
+ */
 const MODE_LABELS = {
-  equity: "지역 부담",
-  suitability: "후보지 분석",
-  flow: "매립지 현황",
+  equity: "지역 지표",
+  suitability: "후보지 심층 분석",
+  flow: "폐기물 처리 현황",
   transparency: "데이터·출처",
 } as const;
 
-/** The frozen candidate-analysis sub-view labels. */
-const SUBVIEW_LABELS = {
-  score: "후보지 점수",
-  scenario: "가중치 바꿔보기",
-  cost: "비용 살펴보기",
+/**
+ * The three suitability destinations, keyed by the `view` they set. All three are
+ * top-level destinations now, so each has its own nav testid rather than a segment
+ * in a second bar (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.1).
+ */
+const SUITABILITY_DESTINATIONS = {
+  score: { label: "후보지 심층 분석", testId: "mode-suitability" },
+  scenario: { label: "후보지 심층 비교", testId: "suitability-view-scenario" },
+  cost: { label: "후보지 분석", testId: "suitability-view-cost" },
 } as const;
 
 const DESKTOP = [
@@ -101,32 +109,33 @@ test.describe("global shell holds across every area", () => {
     }
   });
 
-  test("keeps the four navigation labels byte-for-byte unchanged", async ({ page }) => {
+  test("keeps the navigation labels byte-for-byte unchanged", async ({ page }) => {
     await page.goto("/");
     for (const [mode, label] of Object.entries(MODE_LABELS)) {
       await expect(page.getByTestId(`mode-${mode}`)).toHaveText(label);
     }
   });
 
-  test("navigates all three candidate sub-views with one segmented control", async ({ page }) => {
+  test("navigates all three candidate destinations from the global navigation", async ({
+    page,
+  }) => {
     await page.goto("/?v=1&mode=suitability");
-    await expect(page.getByTestId("suitability-view-score")).toBeVisible();
+    await expect(page.getByTestId("mode-suitability")).toBeVisible();
 
-    for (const [view, label] of Object.entries(SUBVIEW_LABELS)) {
-      await page.getByTestId(`suitability-view-${view}`).click();
-      await expect(page.getByTestId(`suitability-view-${view}`)).toHaveText(label);
-      await expect(
-        page.getByTestId("suitability-subviews"),
-        `${label}: one segmented control`,
-      ).toHaveCount(1);
+    for (const { label, testId } of Object.values(SUITABILITY_DESTINATIONS)) {
+      await page.getByTestId(testId).click();
+      await expect(page.getByTestId(testId)).toHaveText(label);
+      await expect(page.getByTestId(testId)).toHaveAttribute("aria-pressed", "true");
       await expectShellInvariants(page, label);
       await expectNoHorizontalOverflow(page, label);
     }
   });
 
-  test("shows the segmented control ONLY inside 후보지 분석", async ({ page }) => {
+  test("renders no retired sub-view bar in any area", async ({ page }) => {
     await page.goto("/?v=1&mode=suitability");
-    await expect(page.getByTestId("suitability-subviews")).toHaveCount(1);
+    // The six destinations select `view` directly (spec §2.1); a second control
+    // writing the same state is exactly what was removed.
+    await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
     for (const mode of ["equity", "flow", "transparency"] as const) {
       await page.getByTestId(`mode-${mode}`).click();
       await expect(
@@ -164,16 +173,24 @@ test.describe("a map exists only where the analysis needs one", () => {
   });
 
   test("map-free views mount zero maps", async ({ page }) => {
-    for (const url of [
-      "/?v=1&mode=suitability&view=cost",
-      "/?v=1&mode=flow",
-      "/?v=1&mode=transparency",
-    ]) {
+    // 데이터·출처 is deliberately not in this list: it is a DIALOG over the
+    // previous destination (spec §8), so whether a map is mounted depends on what
+    // it was opened over, not on the catalogue. Its own map-free contract is
+    // asserted dialog-scoped in the transparency suites. These two are genuine
+    // map-free pages.
+    for (const url of ["/?v=1&mode=suitability&view=cost", "/?v=1&mode=flow"]) {
       await page.goto(url);
       await expect(page.locator("#main-content")).toBeVisible();
       await expect(page.getByTestId("map-container"), url).toHaveCount(0);
       await expect(page.locator(".map-pane"), url).toHaveCount(0);
     }
+
+    // And the catalogue itself carries no map, wherever it is opened from.
+    await page.goto("/?v=1&mode=transparency");
+    const dialog = page.getByTestId("data-sources-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("map-container")).toHaveCount(0);
+    await expect(dialog.locator(".map-pane")).toHaveCount(0);
   });
 
   test("the desktop map fills to the viewport bottom with no empty strip", async ({ page }) => {
@@ -388,7 +405,7 @@ test.describe("area behaviour survives integration", () => {
   test("cost: setup → results → back to setup", async ({ page }) => {
     await mockBackend(page);
     await page.goto("/?v=1&mode=suitability&view=cost");
-    await expect(page.getByTestId("facility-cost-form")).toBeVisible();
+    await expect(page.getByTestId("facility-cost-workflow")).toBeVisible();
     // No map on this branch, at any point in the flow.
     await expect(page.getByTestId("map-container")).toHaveCount(0);
     await expectNoHorizontalOverflow(page, "cost setup");
@@ -482,10 +499,10 @@ test.describe("primary surfaces stay in plain Korean", () => {
     await mockTransparencyBackend(page);
 
     for (const [url, where] of [
-      ["/?v=1&mode=equity", "지역 부담"],
-      ["/?v=1&mode=suitability&view=score", "후보지 점수"],
-      ["/?v=1&mode=suitability&view=cost", "비용 살펴보기"],
-      ["/?v=1&mode=flow", "매립지 현황"],
+      ["/?v=1&mode=equity", "지역 지표"],
+      ["/?v=1&mode=suitability&view=score", "후보지 심층 분석"],
+      ["/?v=1&mode=suitability&view=cost", "후보지 분석"],
+      ["/?v=1&mode=flow", "폐기물 처리 현황"],
       ["/?v=1&mode=transparency", "데이터·출처"],
     ] as const) {
       await page.goto(url);
@@ -536,10 +553,10 @@ test.describe("responsive smoke", () => {
       await mockTransparencyBackend(page);
 
       for (const [url, where] of [
-        ["/?v=1&mode=equity", "지역 부담"],
-        ["/?v=1&mode=suitability&view=score", "후보지 점수"],
-        ["/?v=1&mode=suitability&view=cost", "비용 살펴보기"],
-        ["/?v=1&mode=flow", "매립지 현황"],
+        ["/?v=1&mode=equity", "지역 지표"],
+        ["/?v=1&mode=suitability&view=score", "후보지 심층 분석"],
+        ["/?v=1&mode=suitability&view=cost", "후보지 분석"],
+        ["/?v=1&mode=flow", "폐기물 처리 현황"],
         ["/?v=1&mode=transparency", "데이터·출처"],
       ] as const) {
         await page.goto(url);

@@ -5,7 +5,7 @@ import { mockEquityBackend } from "./phase4Fixtures";
  * Phase 4 — regional burden map desktop improvements.
  *
  * Self-mocked (see phase4Fixtures): the app is driven at real viewport sizes with a
- * synthetic region set, so the selection flow, the ranking, and the comparison have
+ * synthetic region set, so the selection flow and the ranking have
  * something to render. It touches no network, no tile server, and no government
  * API, and asserts only on structure, geometry, and behaviour — never on the
  * fixture's values.
@@ -63,29 +63,31 @@ test.describe("equity map structure at 1440×900", () => {
     await expect(page.getByTestId("map-legend")).toHaveCount(1);
   });
 
-  test("keeps three metric groups and eleven radios in one logical group", async ({ page }) => {
+  test("keeps three metric sections and seven radios in one logical group", async ({ page }) => {
     await openEquity(page);
     await expect(page.locator("fieldset")).toHaveCount(3);
     await expect(page.locator("legend")).toHaveCount(3);
-    await expect(page.locator('input[type="radio"][name="metric"]')).toHaveCount(11);
-    await expect(page.getByTestId("metric-group-total")).toBeVisible();
-    await expect(page.getByTestId("metric-group-per_capita")).toBeVisible();
-    await expect(page.getByTestId("metric-group-burden")).toBeVisible();
-    // Every one of the eleven options is reachable on desktop without opening a
-    // disclosure — no metric family is hidden behind a closed accordion.
+    // Seven CATEGORY rows after the correction pass; the four per-capita metrics are
+    // reached by each waste row's 총량/1인당 switch, so all eleven stay reachable.
+    await expect(page.locator('input[type="radio"][name="metric"]')).toHaveCount(7);
+    await expect(page.getByTestId("metric-section-population")).toBeVisible();
+    await expect(page.getByTestId("metric-section-generation")).toBeVisible();
+    await expect(page.getByTestId("metric-section-facility")).toBeVisible();
+    // Every option is reachable on desktop without opening a disclosure — no metric
+    // is hidden behind a closed accordion.
     const radios = page.locator('input[type="radio"][name="metric"]');
-    for (let i = 0; i < 11; i += 1) {
+    for (let i = 0; i < 7; i += 1) {
       await expect(radios.nth(i)).toBeVisible();
     }
   });
 
-  test("uses Korean-only primary headings for the metric groups and the legend", async ({
+  test("uses Korean-only primary headings for the metric sections and the legend", async ({
     page,
   }) => {
     await openEquity(page);
-    await expect(page.getByText("총량 지표", { exact: true })).toBeVisible();
-    await expect(page.getByText("1인당 형평성 지표", { exact: true })).toBeVisible();
-    await expect(page.getByText("시설 부담 지표", { exact: true })).toBeVisible();
+    await expect(page.getByText("지역별 인구", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("폐기물 발생량", { exact: true })).toBeVisible();
+    await expect(page.getByText("1인당 시설 처리 수준", { exact: true })).toBeVisible();
     // The legend heading lost its English duplication but kept the unit.
     const legendHeading = page.getByTestId("legend").getByRole("heading", { level: 2 });
     await expect(legendHeading).toContainText("범례");
@@ -111,7 +113,8 @@ test.describe("equity map structure at 1440×900", () => {
     expect(nameSize).toBeGreaterThan(unitSize);
 
     // Selecting another metric updates the summary immediately.
-    await page.getByRole("radio", { name: "1인당 생활계 발생량" }).check();
+    await page.getByRole("radio", { name: "생활계 폐기물 발생량" }).check();
+    await page.getByTestId("metric-mode-household").getByRole("button", { name: "1인당" }).click();
     await expect(summary).toContainText("1인당 생활계 발생량");
   });
 
@@ -178,15 +181,17 @@ test.describe("selected-region flow at 1440×900", () => {
     await expect(page.getByTestId("region-select")).toHaveValue("");
   });
 
-  test("keeps comparison and share working and the URL state versioned", async ({ page }) => {
+  test("keeps the full ranking and share working, and the URL state versioned", async ({ page }) => {
     await openEquity(page);
-    await page.getByTestId("comparison-search").fill("종로");
-    await page.getByTestId("comparison-options").getByRole("option").first().click();
-    await expect(page.getByTestId("comparison-table")).toBeVisible();
+    // 지표 순위 전체보기 replaced the 지역 비교 card (correction pass).
+    await page.getByTestId("open-full-ranking").click();
+    await expect(page.getByTestId("full-ranking-dialog")).toBeVisible();
+    await page.getByTestId("full-ranking-dialog-close").click();
 
     // Selecting a metric writes the canonical, versioned URL state (replaceState —
     // no history spam), which is what the share link encodes.
-    await page.getByRole("radio", { name: "1인당 생활계 발생량" }).check();
+    await page.getByRole("radio", { name: "생활계 폐기물 발생량" }).check();
+    await page.getByTestId("metric-mode-household").getByRole("button", { name: "1인당" }).click();
     await expect(page).toHaveURL(/[?&]v=1(&|$)/);
     await expect(page).toHaveURL(/mode=equity/);
     await expect(page.getByTestId("share-copy")).toBeVisible();
@@ -241,7 +246,8 @@ for (const vp of [...REGRESSION, ...DESKTOP]) {
       test("keeps every metric radio reachable without a disclosure", async ({ page }) => {
         await openEquity(page);
         await expect(page.getByTestId("map-legend-summary")).toBeHidden();
-        await expect(page.locator('input[type="radio"][name="metric"]')).toHaveCount(11);
+        // Seven category rows; the four per-capita metrics are on the row switch.
+        await expect(page.locator('input[type="radio"][name="metric"]')).toHaveCount(7);
         await expect(page.getByTestId("choropleth-legend-row").first()).toBeVisible();
       });
     }
