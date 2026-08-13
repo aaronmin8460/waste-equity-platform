@@ -16,6 +16,7 @@ import datetime
 from collections.abc import Iterator
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 from municipal_cost_fixtures import (
@@ -36,7 +37,9 @@ from waste_equity_backend.analysis.municipal_cost import (
     METROPOLITAN_INCHEON,
     METROPOLITAN_SEOUL,
     POST_2024_INCHEON_UNITS,
+    REVIEWED_MUNICIPALITY_LIMITATIONS,
     evaluate_indicator,
+    find_reviewed_limitations,
     payment_per_capita,
 )
 from waste_equity_backend.models import (
@@ -60,6 +63,7 @@ from waste_equity_backend.models.municipal_cost import (
     ATTRIBUTION_MUNICIPAL_TOTAL_REPEATED,
     INGESTION_DECISION_ACCEPTED,
     INGESTION_DECISION_REJECTED,
+    PARTIAL_REASONS,
     POPULATION_DEFINITION_SGIS,
     POPULATION_DERIVED_WARD_SUM,
     POPULATION_DIRECT,
@@ -70,8 +74,11 @@ from waste_equity_backend.models.municipal_cost import (
     REASON_MISSING_POPULATION,
     REASON_MISSING_QUANTITY,
     REASON_NO_SOURCE_FILE,
+    REASON_NON_COLLECTION_TRANSPORT_BASIS,
+    REASON_PARTIAL_GEOGRAPHIC_SCOPE,
     REASON_PARTIAL_PERIOD_COVERAGE,
     REASON_PARTIAL_WASTE_SCOPE,
+    REASON_PAYMENT_PERIOD_COVERAGE_INCOMPLETE,
     REASON_POST_2024_FILENAME_RESOLVED,
     SOURCE_ID,
     STATUS_AVAILABLE,
@@ -81,6 +88,7 @@ from waste_equity_backend.models.municipal_cost import (
 )
 
 from waste_equity_ingestion.municipal_cost_ingestion import (
+    MunicipalCostReport,
     build_registry,
     discover_files,
     normalize_organisation_name,
@@ -238,6 +246,10 @@ def build_source_tree(root: Path) -> Path:
     write_workbook(root / "DATA_A" / GYEONGGI_A_FOLDER / "광명시.xlsx", HEADERS_FAMILY_2, rows)
 
     # Gyeonggi DATA_A with an explicit part-year range (가평군 shape).
+    # The contract is a collection-and-transport one so this file isolates the
+    # part-year rule: the real 가평군 wording is 외부 위탁처리, which is a
+    # treatment contract, and its accounting-basis exclusion is proved separately
+    # by test_treatment_only_workbook_yields_no_value_not_zero.
     write_workbook(
         root / "DATA_A" / GYEONGGI_A_FOLDER / "가평군.xlsx",
         HEADERS_FAMILY_2,
@@ -245,7 +257,7 @@ def build_source_tree(root: Path) -> Path:
             contract_row(
                 year="2024.2.26.~4.5",
                 organisation="가평군청",
-                name="가평군 생활폐기물 외부 위탁처리",
+                name="가평군 생활폐기물 수집·운반 대행용역 1차",
                 payment=152_884_450,
                 pairs=["A업체:", 950],
             )
@@ -948,6 +960,391 @@ def test_ingestion_run_is_recorded_for_a_write(
         freshness = session.get(DatasetFreshness, SOURCE_ID)
         assert freshness is not None
         assert freshness.latest_reference_period == "2024"
+
+
+# ---------------------------------------------------------------------------
+# Accounting basis at municipality level
+# ---------------------------------------------------------------------------
+
+
+def _accounting_basis_tree(root: Path) -> Path:
+    """DATA_A for four municipalities, using the real 2024-refresh wording.
+
+    - 연천군: two 위탁처리용역 rows — the whole numerator is on another basis
+    - 하남시: three 수집·운반 구역 plus one 처리용역 — a partial exclusion
+    - 광명시: seven 수집·운반 구역 plus one 민간소각 처리 용역
+    - 군포시: 수집·운반 only — a control that must be untouched
+    """
+
+    write_workbook(
+        root / "DATA_A" / GYEONGGI_A_FOLDER / "연천군.xlsx",
+        HEADERS_FAMILY_2,
+        [
+            contract_row(
+                organisation="연천군청",
+                name="2024년 연천군 음식물폐기물 위탁처리용역(㈜그린환경)",
+                payment=381_571_740,
+                pairs=["A업체:", 10.0],
+            ),
+            contract_row(
+                organisation="연천군청",
+                name="연천군 대형폐기물 위탁처리용역(㈜화엔텍)",
+                payment=423_990_000,
+                pairs=["B업체:", 20.0],
+            ),
+        ],
+    )
+    hanam = [
+        contract_row(
+            organisation="하남시청",
+            name=f"2024년 하남시 생활폐기물 수집·운반 대행용역 {index}구역",
+            payment=1_000_000 * index,
+            pairs=["반출량:", float(index)],
+        )
+        for index in range(1, 4)
+    ]
+    hanam.append(
+        contract_row(
+            organisation="하남시청",
+            name="2024년 하남시 생활폐기물 처리용역",
+            payment=1_275_847_930,
+            pairs=["반출량:", 99.0],
+        )
+    )
+    write_workbook(root / "DATA_A" / GYEONGGI_A_FOLDER / "하남시.xlsx", HEADERS_FAMILY_2, hanam)
+
+    gwangmyeong = [
+        contract_row(
+            organisation="광명시청",
+            name=f"2024년 광명시 생활폐기물 수집·운반 용역 {index}구역",
+            payment=2_000_000 * index,
+            pairs=["반출량:", float(index)],
+        )
+        for index in range(1, 8)
+    ]
+    gwangmyeong.append(
+        contract_row(
+            organisation="광명시청",
+            name="2024년 광명시 생활폐기물 민간소각 처리 용역",
+            payment=526_602_550,
+            pairs=["반출량:", 99.0],
+        )
+    )
+    write_workbook(
+        root / "DATA_A" / GYEONGGI_A_FOLDER / "광명시.xlsx", HEADERS_FAMILY_2, gwangmyeong
+    )
+
+    write_workbook(
+        root / "DATA_A" / GYEONGGI_A_FOLDER / "군포시.xlsx",
+        HEADERS_FAMILY_2,
+        [
+            contract_row(
+                organisation="군포시청",
+                name="2024년 군포시 생활폐기물 수집·운반 대행용역 1구역",
+                payment=3_782_344_860,
+                pairs=["반출량:", 5.0],
+            )
+        ],
+    )
+    return root
+
+
+@pytest.fixture
+def accounting_basis_tree(tmp_path: Path) -> Path:
+    return _accounting_basis_tree(tmp_path / "basis")
+
+
+def _row(report: MunicipalCostReport, name: str) -> dict[str, Any]:
+    return next(row for row in report.municipalities if row["display_name"] == name)
+
+
+def test_treatment_only_workbook_yields_no_value_not_zero(
+    accounting_basis_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """Missing is never zero — the critical null semantic of this release.
+
+    연천군 delivered a payment workbook, and every won in it is a 위탁처리
+    payment. There is therefore no defensible collection-and-transport value, and
+    the honest answer is UNAVAILABLE with a NULL — not 0 KRW and not 0 KRW/인,
+    which would read as "this municipality spends nothing on collection".
+    """
+
+    report = run(accounting_basis_tree, session_factory, write=False)
+    yeoncheon = _row(report, "연천군")
+
+    assert yeoncheon["status"] == STATUS_UNAVAILABLE
+    assert yeoncheon["value"] is None
+    assert yeoncheon["numerator_krw"] is None
+    assert yeoncheon["eligible_contract_count"] == 0
+    # It says *why* there is no value, not merely that a payment is absent.
+    assert REASON_NON_COLLECTION_TRANSPORT_BASIS in yeoncheon["reason_codes"]
+    assert REASON_MISSING_PAYMENT in yeoncheon["reason_codes"]
+    # The workbook was still accepted and its rows still exist.
+    assert yeoncheon["source_file_count"] == 1
+
+
+def test_unavailable_basis_row_is_written_as_null_never_zero(
+    accounting_basis_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    run(accounting_basis_tree, session_factory, write=True)
+    with session_factory() as session:
+        geography = session.scalars(
+            select(MunicipalCostGeography).where(
+                MunicipalCostGeography.municipality_key == f"{METROPOLITAN_GYEONGGI}-연천군"
+            )
+        ).one()
+        indicator = session.scalars(
+            select(MunicipalCostIndicatorValue).where(
+                MunicipalCostIndicatorValue.geography_id == geography.id
+            )
+        ).one()
+    assert indicator.status == STATUS_UNAVAILABLE
+    assert indicator.value is None
+    assert indicator.numerator_amount_krw is None
+    assert indicator.numerator_contract_count == 0
+
+
+def test_mixed_municipality_sums_only_collection_transport_payment(
+    accounting_basis_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    report = run(accounting_basis_tree, session_factory, write=False)
+    hanam = _row(report, "하남시")
+
+    assert hanam["status"] == STATUS_AVAILABLE
+    # 1M + 2M + 3M, with the 1,275,847,930 처리용역 row left out.
+    assert hanam["numerator_krw"] == "6000000"
+    assert hanam["eligible_contract_count"] == 3
+    assert REASON_NON_COLLECTION_TRANSPORT_BASIS in hanam["reason_codes"]
+
+
+def test_excluded_contract_row_is_still_stored_with_its_amount(
+    accounting_basis_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """Provenance survives exclusion, and none of it reaches the landfill table."""
+
+    with session_factory() as session:
+        landfill_before = session.scalar(select(func.count()).select_from(LandfillInboundMonthly))
+    run(accounting_basis_tree, session_factory, write=True)
+    with session_factory() as session:
+        excluded = session.scalars(
+            select(MunicipalWasteContract).where(
+                MunicipalWasteContract.contract_name == "2024년 하남시 생활폐기물 처리용역"
+            )
+        ).one()
+        stored = session.scalar(select(func.count()).select_from(MunicipalWasteContract))
+        landfill_after = session.scalar(select(func.count()).select_from(LandfillInboundMonthly))
+
+    assert excluded.payment_amount_krw == Decimal(1_275_847_930)
+    assert excluded.is_primary_numerator_eligible is False
+    assert REASON_NON_COLLECTION_TRANSPORT_BASIS in excluded.limitation_reasons
+    # All 15 delivered contract rows are stored, the four excluded ones included
+    # (연천군 2 + 하남시 4 + 광명시 8 + 군포시 1).
+    assert stored == 15
+    assert landfill_before == landfill_after == 0
+
+
+def test_unaffected_municipality_keeps_its_full_numerator(
+    accounting_basis_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    report = run(accounting_basis_tree, session_factory, write=False)
+    gunpo = _row(report, "군포시")
+    assert gunpo["status"] == STATUS_AVAILABLE
+    assert gunpo["numerator_krw"] == "3782344860"
+    assert REASON_NON_COLLECTION_TRANSPORT_BASIS not in gunpo["reason_codes"]
+
+
+# ---------------------------------------------------------------------------
+# Reviewed municipality limitations (the five the refresh stopped evidencing)
+# ---------------------------------------------------------------------------
+
+
+def _reviewed_limitation_tree(root: Path) -> Path:
+    """DATA_A for the five reviewed municipalities, in 2024-refresh wording.
+
+    Each file is written exactly as the refresh delivers it — no 지급월 ledger,
+    no part-year 년도, no read-through scope annotation, no 읍·면 parenthetical —
+    so nothing here can derive the limitation from the source. Whatever the five
+    end up carrying therefore came from the reviewed table and nowhere else.
+
+    군포시 is included as a control: an ordinary municipality with the same shape
+    of workbook and no reviewed entry.
+    """
+
+    for filename, organisation, names in (
+        (
+            "남동구.xlsx",
+            "남동구청",
+            [f"2024년 남동구 생활폐기물 수집·운반 대행용역 {i}권역" for i in range(1, 4)],
+        ),
+        (
+            "부평구.xlsx",
+            "부평구청",
+            [f"2024년 부평구 생활폐기물 수집·운반 대행계약 {i}권역" for i in range(1, 3)],
+        ),
+        (
+            "옹진군.xlsx",
+            "옹진군청",
+            [
+                "2024년 옹진군 생활쓰레기 수집·운반 용역",
+                "2024년 옹진군 음식물쓰레기 수집·운반 용역",
+            ],
+        ),
+        (
+            "계양구.xlsx",
+            "계양구청",
+            [
+                "2024년 계양구 생활폐기물 수집·운반 대행 용역 1권역",
+                "2024년 계양구 음식물류폐기물 수집·운반 대행 용역 1권역",
+                "2024년 계양구 재활용폐기물 수집·운반 대행 용역 1권역",
+            ],
+        ),
+    ):
+        write_workbook(
+            root / "DATA_A" / "인천" / filename,
+            HEADERS_FAMILY_2,
+            [
+                contract_row(year=2024, organisation=organisation, name=name, payment=1_000_000)
+                for name in names
+            ],
+        )
+
+    # 가평군 as delivered: bare 2024, and both contracts are 위탁처리.
+    write_workbook(
+        root / "DATA_A" / GYEONGGI_A_FOLDER / "가평군.xlsx",
+        HEADERS_FAMILY_2,
+        [
+            contract_row(
+                year=2024,
+                organisation="가평군청",
+                name=f"2024년 가평군 생활폐기물 외부 위탁처리 {index}차",
+                payment=152_884_450,
+            )
+            for index in (1, 2)
+        ],
+    )
+    write_workbook(
+        root / "DATA_A" / GYEONGGI_A_FOLDER / "군포시.xlsx",
+        HEADERS_FAMILY_2,
+        [
+            contract_row(
+                year=2024,
+                organisation="군포시청",
+                name="2024년 군포시 생활폐기물 수집·운반 대행용역 1구역",
+                payment=3_782_344_860,
+            )
+        ],
+    )
+    return root
+
+
+@pytest.fixture
+def reviewed_limitation_tree(tmp_path: Path) -> Path:
+    return _reviewed_limitation_tree(tmp_path / "reviewed")
+
+
+@pytest.mark.parametrize(
+    ("name", "reason"),
+    [
+        ("남동구", REASON_PARTIAL_WASTE_SCOPE),
+        ("부평구", REASON_PARTIAL_WASTE_SCOPE),
+        ("옹진군", REASON_PARTIAL_GEOGRAPHIC_SCOPE),
+        ("계양구", REASON_PAYMENT_PERIOD_COVERAGE_INCOMPLETE),
+    ],
+)
+def test_reviewed_limitation_degrades_the_five_to_partial(
+    name: str,
+    reason: str,
+    reviewed_limitation_tree: Path,
+    session_factory: sessionmaker[Session],
+) -> None:
+    """A workbook that stopped printing the evidence does not become complete."""
+
+    report = run(reviewed_limitation_tree, session_factory, write=False)
+    row = _row(report, name)
+    assert row["status"] == STATUS_PARTIAL
+    assert reason in row["reason_codes"]
+    # PARTIAL, not blocked: the value is still served, with its caveat.
+    assert row["value"] is not None
+
+
+def test_reviewed_limitation_is_recorded_even_when_the_value_is_blocked(
+    reviewed_limitation_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """가평군 is the fifth: its limitation stands, and a stronger one outranks it.
+
+    Both of its 2024 contracts are 위탁처리, so there is no eligible payment to
+    qualify — the period limitation is still reported, and the status is the
+    stricter UNAVAILABLE rather than PARTIAL.
+    """
+
+    report = run(reviewed_limitation_tree, session_factory, write=False)
+    gapyeong = _row(report, "가평군")
+    assert REASON_PARTIAL_PERIOD_COVERAGE in gapyeong["reason_codes"]
+    assert REASON_NON_COLLECTION_TRANSPORT_BASIS in gapyeong["reason_codes"]
+    assert gapyeong["status"] == STATUS_UNAVAILABLE
+    assert gapyeong["value"] is None
+
+
+def test_reviewed_limitations_do_not_reach_other_municipalities(
+    reviewed_limitation_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """Only the five named entries may carry a reviewed limitation."""
+
+    report = run(reviewed_limitation_tree, session_factory, write=False)
+    reviewed_keys = {
+        limitation.municipality_key for limitation in REVIEWED_MUNICIPALITY_LIMITATIONS
+    }
+    reviewed_reasons = {limitation.reason for limitation in REVIEWED_MUNICIPALITY_LIMITATIONS}
+
+    gunpo = _row(report, "군포시")
+    assert gunpo["status"] == STATUS_AVAILABLE
+    assert not reviewed_reasons.intersection(gunpo["reason_codes"])
+
+    for row in report.municipalities:
+        if row["municipality_key"] in reviewed_keys:
+            continue
+        # Every other municipality here has either no file or a clean one, so a
+        # reviewed reason code appearing on one could only have leaked.
+        assert not reviewed_reasons.intersection(row["reason_codes"]), row["municipality_key"]
+
+
+def test_reviewed_limitation_needs_payment_evidence_to_qualify(
+    source_tree: Path, session_factory: sessionmaker[Session]
+) -> None:
+    """남동구 in the main tree has DATA_B tonnage only and no DATA_A payment.
+
+    A limitation that qualifies *payment* evidence must not be attached where no
+    payment workbook was delivered: the municipality is UNAVAILABLE for want of a
+    payment, and claiming a partial waste scope on top would describe data that
+    does not exist.
+    """
+
+    report = run(source_tree, session_factory, write=False)
+    namdong = _row(report, "남동구")
+    assert namdong["has_data_a"] is False
+    assert namdong["status"] == STATUS_UNAVAILABLE
+    assert REASON_PARTIAL_WASTE_SCOPE not in namdong["reason_codes"]
+
+
+def test_every_reviewed_limitation_names_a_registry_municipality() -> None:
+    """A typo in the reviewed table must not silently apply to nobody."""
+
+    keys = {definition.municipality_key for definition in EXPECTED_MUNICIPALITIES}
+    for limitation in REVIEWED_MUNICIPALITY_LIMITATIONS:
+        assert limitation.municipality_key in keys
+        assert limitation.reason in PARTIAL_REASONS
+        assert limitation.evidence and limitation.omission_basis
+        assert limitation.reference_year == YEAR
+
+
+def test_reviewed_limitation_lookup_is_exact_not_a_prefix_match() -> None:
+    assert find_reviewed_limitations(METROPOLITAN_INCHEON, "남동구", YEAR)
+    # 남동구 must not be found from a longer or shorter name, from the wrong
+    # metropolitan, or from another year.
+    assert not find_reviewed_limitations(METROPOLITAN_INCHEON, "남동", YEAR)
+    assert not find_reviewed_limitations(METROPOLITAN_INCHEON, "남동구청", YEAR)
+    assert not find_reviewed_limitations(METROPOLITAN_SEOUL, "남동구", YEAR)
+    assert not find_reviewed_limitations(METROPOLITAN_INCHEON, "남동구", 2023)
 
 
 def test_unsupported_reference_year_is_refused(

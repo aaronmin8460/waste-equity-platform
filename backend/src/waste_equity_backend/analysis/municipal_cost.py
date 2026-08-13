@@ -42,6 +42,7 @@ from ..models.municipal_cost import (
     REASON_MIXED_REFERENCE_YEARS,
     REASON_NO_SOURCE_FILE,
     REASON_NO_VERIFIED_LANDFILL_QUANTITY,
+    REASON_NON_COLLECTION_TRANSPORT_BASIS,
     REASON_PARTIAL_GEOGRAPHIC_SCOPE,
     REASON_PARTIAL_PERIOD_COVERAGE,
     REASON_PARTIAL_WASTE_SCOPE,
@@ -308,6 +309,118 @@ REVIEWED_FILE_MAPPINGS: tuple[ReviewedFileMapping, ...] = (
 
 
 @dataclass(frozen=True)
+class ReviewedMunicipalityLimitation:
+    """A limitation that a *previous* delivery evidenced and this one omits.
+
+    The 2024-refresh delivery replaced the earlier workbooks with a narrower
+    seven-column spine: no per-contract 지급월 ledger, no part-year ``년도``
+    range, no filename scope annotation, and contract names stripped of their
+    narrowing tokens. Those fields were the *evidence* for four reason codes the
+    parser derives from the source's own wording — so with the wording gone, the
+    parser derives nothing and the municipality silently reports as complete.
+
+    A payment period that covered six months does not become twelve because the
+    next workbook stopped printing the ledger, and a contract that served two
+    읍·면 does not become municipality-wide because the parenthetical was
+    dropped. Absence of evidence in a simplified re-delivery is not evidence that
+    the limitation was resolved, so each limitation is reinstated here, once,
+    with the evidence that established it and the reason the omission does not
+    retire it.
+
+    Entries are keyed by ``(metropolitan_code, display_name, reference_year)``.
+    The metropolitan code is part of the key because 중구 exists in both Seoul
+    and Incheon; the year is part of it because this is a statement about one
+    delivery, not a permanent property of the municipality. Nothing here can
+    reach a municipality that is not named.
+    """
+
+    metropolitan_code: str
+    display_name: str
+    reference_year: int
+    reason: str
+    # What the earlier delivery actually showed.
+    evidence: str
+    # Why the 2024-refresh workbook's silence does not retire the limitation.
+    omission_basis: str
+
+    @property
+    def municipality_key(self) -> str:
+        return f"{self.metropolitan_code}-{self.display_name}"
+
+
+# The five limitations the 2024-refresh delivery dropped (2024_REFRESH_SOURCE_AUDIT
+# §5a). Each restates a finding of the earlier verified snapshot; none is a new
+# judgement about the data, and none invents a defect the source never showed.
+REVIEWED_MUNICIPALITY_LIMITATIONS: tuple[ReviewedMunicipalityLimitation, ...] = (
+    ReviewedMunicipalityLimitation(
+        METROPOLITAN_INCHEON,
+        "남동구",
+        REFERENCE_YEAR,
+        REASON_PARTIAL_WASTE_SCOPE,
+        "이전 전달본의 계약명은 '생활폐기물(일반) 수집·운반'으로 품목을 명시했고 "
+        "음식물류·재활용 계약은 포함되지 않았습니다.",
+        "2024년 갱신본은 계약명에서 '(일반)' 표기만 삭제했을 뿐 지급액은 원 단위까지 "
+        "동일합니다. 음식물류·재활용 수집·운반 계약이 새로 포함된 것이 아닙니다.",
+    ),
+    ReviewedMunicipalityLimitation(
+        METROPOLITAN_INCHEON,
+        "부평구",
+        REFERENCE_YEAR,
+        REASON_PARTIAL_WASTE_SCOPE,
+        "이전 전달본의 파일명 주석이 '생활(일반)수집운반만 있고 음식물류·재활용 "
+        "데이터 없음'으로 품목 범위를 직접 서술했습니다.",
+        "2024년 갱신본은 파일명 주석이 제거된 단순 파일명(부평구.xlsx)일 뿐 지급액은 "
+        "동일하며, 누락되었던 음식물류·재활용 계약이 추가된 것이 아닙니다.",
+    ),
+    ReviewedMunicipalityLimitation(
+        METROPOLITAN_INCHEON,
+        "옹진군",
+        REFERENCE_YEAR,
+        REASON_PARTIAL_GEOGRAPHIC_SCOPE,
+        "이전 전달본의 두 계약명은 대상 구역을 '(영흥면)' 및 '(북도·영흥면)'으로 "
+        "명시했고 옹진군 전체를 포괄하지 않았습니다.",
+        "2024년 갱신본은 계약명에서 읍·면 괄호 표기만 삭제했을 뿐 지급액은 동일합니다. "
+        "나머지 도서 지역을 포함하는 계약이 새로 확인된 것이 아닙니다.",
+    ),
+    ReviewedMunicipalityLimitation(
+        METROPOLITAN_GYEONGGI,
+        "가평군",
+        REFERENCE_YEAR,
+        REASON_PARTIAL_PERIOD_COVERAGE,
+        "이전 전달본의 년도 칸은 '2024.2.26.~4.5' 및 '2024.5.22.~7.30'의 부분 기간을 "
+        "명시했으며 2024년 전체를 포괄하지 않았습니다.",
+        "2024년 갱신본은 년도 칸을 '2024'로 단순화했을 뿐이며, 1차·2차라는 계약명 표기와 "
+        "지급액은 그대로입니다. 나머지 기간의 계약이 추가된 것이 아닙니다.",
+    ),
+    ReviewedMunicipalityLimitation(
+        METROPOLITAN_INCHEON,
+        "계양구",
+        REFERENCE_YEAR,
+        REASON_PAYMENT_PERIOD_COVERAGE_INCOMPLETE,
+        "이전 전달본의 계약별 지급 원장은 2·3·9·10·11·12월만 기록했고 나머지 여섯 달은 "
+        "지급 기록이 없었습니다.",
+        "2024년 갱신본은 지급월 원장 열 자체를 제공하지 않을 뿐 계약별 총 지급액은 "
+        "동일합니다. 기록이 없던 여섯 달의 지급이 확인된 것이 아닙니다.",
+    ),
+)
+
+
+def find_reviewed_limitations(
+    metropolitan_code: str, display_name: str, reference_year: int
+) -> tuple[ReviewedMunicipalityLimitation, ...]:
+    """Reviewed limitations for exactly one municipality-year; never a prefix match."""
+
+    normalized = nfc(display_name)
+    return tuple(
+        limitation
+        for limitation in REVIEWED_MUNICIPALITY_LIMITATIONS
+        if limitation.metropolitan_code == metropolitan_code
+        and nfc(limitation.display_name) == normalized
+        and limitation.reference_year == reference_year
+    )
+
+
+@dataclass(frozen=True)
 class RejectedFileRule:
     """A workbook that must be recorded but must produce no observation."""
 
@@ -432,6 +545,11 @@ REASON_LABELS_KO: dict[str, str] = {
         "파일명 형식이 손상되어 있으나 워크북이 2024년 행정구역을 명시하여 "
         "문서화된 근거로 확인했습니다. 행정구역 변경과는 무관합니다."
     ),
+    REASON_NON_COLLECTION_TRANSPORT_BASIS: (
+        "수집·운반이 아닌 회계 기준의 계약(반입수수료 또는 처리 전용 계약)이 원자료에 "
+        "포함되어 있어 분자에서 제외했습니다. 해당 계약 행과 금액은 출처 근거로 "
+        "그대로 보존됩니다."
+    ),
 }
 
 # Deterministic display order for reason codes on an API row.
@@ -454,6 +572,7 @@ REASON_ORDER: tuple[str, ...] = (
     REASON_ZERO_TOTAL_QUANTITY,
     REASON_UNSUPPORTED_UNIT,
     REASON_MISSING_QUANTITY,
+    REASON_NON_COLLECTION_TRANSPORT_BASIS,
     REASON_POST_2024_FILENAME_RESOLVED,
     REASON_MALFORMED_FILENAME_RESOLVED,
 )
@@ -596,13 +715,16 @@ __all__ = [
     "REASON_LABELS_KO",
     "REJECTED_FILE_RULES",
     "REVIEWED_FILE_MAPPINGS",
+    "REVIEWED_MUNICIPALITY_LIMITATIONS",
     "IndicatorOutcome",
     "MunicipalityDefinition",
     "RejectedFileRule",
     "ReviewedFileMapping",
+    "ReviewedMunicipalityLimitation",
     "describe_reasons",
     "evaluate_indicator",
     "find_rejection_rule",
+    "find_reviewed_limitations",
     "find_reviewed_mapping",
     "match_municipality_name",
     "nfc",

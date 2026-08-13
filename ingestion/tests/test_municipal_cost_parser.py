@@ -9,6 +9,8 @@ The suite is organised around the guarantees the release makes:
 - a missing value is never stored as zero, and a measured zero is never lost
 - a quantity block copied under several contracts is one logical series
 - only an actual paid amount reaches the primary numerator
+- and only one on this indicator's accounting basis: a 반입수수료 or a
+  treatment-only contract is kept as a source row and left out of the numerator
 """
 
 from __future__ import annotations
@@ -50,6 +52,11 @@ from waste_equity_backend.models.municipal_cost import (
     CLASS_DATA_B_QUANTITY_VALIDATION,
     CLASS_EMPTY_OR_NO_DATA,
     CLASS_UNSUPPORTED_LAYOUT,
+    COMPLETENESS_COMPLETE,
+    CONTRACT_BASIS_COLLECTION_TRANSPORT,
+    CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT,
+    CONTRACT_BASIS_FACILITY_INBOUND_FEE,
+    CONTRACT_BASIS_TREATMENT_SERVICE,
     DATASET_ROLE_A,
     DATASET_ROLE_B,
     GEOGRAPHIC_SCOPE_SUB,
@@ -70,6 +77,7 @@ from waste_equity_backend.models.municipal_cost import (
     QUANTITY_PERIOD_MONTHLY_AVERAGE,
     REASON_INCONSISTENT_TOTAL,
     REASON_MIXED_REFERENCE_YEARS,
+    REASON_NON_COLLECTION_TRANSPORT_BASIS,
     REASON_PARTIAL_GEOGRAPHIC_SCOPE,
     REASON_PARTIAL_PERIOD_COVERAGE,
     REASON_PARTIAL_WASTE_SCOPE,
@@ -92,6 +100,7 @@ from waste_equity_backend.models.municipal_cost import (
 
 from waste_equity_ingestion.municipal_cost_parser import (
     ParsedWorkbook,
+    classify_contract_accounting_basis,
     classify_contract_waste_scope,
     classify_value,
     covers_all_streams,
@@ -423,6 +432,366 @@ def test_award_mentioned_in_prose_does_not_reclassify_a_paid_amount(tmp_path: Pa
     contract = parse_a(path).contracts[0]
     assert contract.payment_type == PAYMENT_ACTUAL_PAID
     assert contract.is_primary_numerator_eligible is True
+
+
+# ---------------------------------------------------------------------------
+# Accounting basis — which *kind* of payment may enter the numerator
+# ---------------------------------------------------------------------------
+#
+# Every contract name below is the verbatim wording of a real 2024 disclosure
+# row, reused as a synthetic fixture. The workbooks themselves are never read.
+
+
+@pytest.mark.parametrize(
+    ("name", "basis"),
+    [
+        # --- definite exclusions: a facility gate fee ---------------------
+        ("2024년 강서구 수도권매립지 반입수수료(월정산 총액)", CONTRACT_BASIS_FACILITY_INBOUND_FEE),
+        (
+            "2024년 강북구 종량제 생활폐기물 반입수수료(노원자원회수시설)",
+            CONTRACT_BASIS_FACILITY_INBOUND_FEE,
+        ),
+        (
+            "2024년 강북구 종량제 생활폐기물 반입수수료(수도권매립지)",
+            CONTRACT_BASIS_FACILITY_INBOUND_FEE,
+        ),
+        # --- definite exclusions: treatment bought as a service -----------
+        ("2024년 가평군 생활폐기물 외부 위탁처리 1차", CONTRACT_BASIS_TREATMENT_SERVICE),
+        ("2024년 의왕시 생활폐기물 위탁처리용역", CONTRACT_BASIS_TREATMENT_SERVICE),
+        ("2024년 하남시 생활폐기물 처리용역", CONTRACT_BASIS_TREATMENT_SERVICE),
+        ("2024년 양평군 음식물류폐기물 대행처리 용역", CONTRACT_BASIS_TREATMENT_SERVICE),
+        # incineration only
+        ("2024년 광명시 생활폐기물 민간소각 처리 용역", CONTRACT_BASIS_TREATMENT_SERVICE),
+        ("2024년 송파구 생활폐기물 민간위탁 소각처리 용역", CONTRACT_BASIS_TREATMENT_SERVICE),
+        ("2024년 생활폐기물 민간위탁(소각) 처리 용역", CONTRACT_BASIS_TREATMENT_SERVICE),
+        ("2024년 남양주시 폐합성수지 소각 처리대행", CONTRACT_BASIS_TREATMENT_SERVICE),
+        # recycling selection only
+        ("2024년 성북구 재활용품 선별처리", CONTRACT_BASIS_TREATMENT_SERVICE),
+        ("2024년 남양주시 폐합성수지 재활용 처리대행", CONTRACT_BASIS_TREATMENT_SERVICE),
+        # --- legitimate collection/transport, kept -----------------------
+        ("2024년 하남시 생활폐기물 수집·운반 대행용역 1구역", CONTRACT_BASIS_COLLECTION_TRANSPORT),
+        ("2024년 부평구 생활폐기물 수집·운반 대행계약 1권역", CONTRACT_BASIS_COLLECTION_TRANSPORT),
+        ("2024년 화성시 청소업무 민간대행 용역 1구역", CONTRACT_BASIS_COLLECTION_TRANSPORT),
+        ("2024년 의왕시 생활폐기물 수송 용역", CONTRACT_BASIS_COLLECTION_TRANSPORT),
+        ("2024년 용인시 생활폐기물 1권역 대행용역", CONTRACT_BASIS_COLLECTION_TRANSPORT),
+        # a name with no basis wording at all (용산구/도봉구/은평구 file 구역 only)
+        ("2024년 도봉구 1구역", CONTRACT_BASIS_COLLECTION_TRANSPORT),
+        ("제1구역", CONTRACT_BASIS_COLLECTION_TRANSPORT),
+        # --- near-matches: names a destination or a method, not a basis ---
+        # 소각장 / 자원회수시설 is *where the load goes*; the contract is haulage.
+        (
+            "2024년 양평군 동부권광역자원회수시설 생활폐기물(가연성) 운반용역",
+            CONTRACT_BASIS_COLLECTION_TRANSPORT,
+        ),
+        (
+            "2024년 양평군 동부권광역자원회수시설 생활폐기물(가연성) 운반·상차 용역",
+            CONTRACT_BASIS_COLLECTION_TRANSPORT,
+        ),
+        # 처리 with no action token in front of it never excludes on its own.
+        (
+            "2024년 테스트시 생활폐기물 수집·운반 대행용역 (최종 처리: 소각)",
+            CONTRACT_BASIS_COLLECTION_TRANSPORT,
+        ),
+        # --- compound / mixed wording: haulage bundled with disposal ------
+        (
+            "2024년 동구 재활용가능자원 수집·운반 처리 대행용역 1구역",
+            CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT,
+        ),
+        (
+            "2024년 양평군 대형폐기물(쇼파류) 운반·처리 용역",
+            CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT,
+        ),
+        (
+            "2024년 양평군 이천소각장 반출초과분 운반처리용역",
+            CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT,
+        ),
+        (
+            "2024년 양평군 음식물류폐기물 운반·처리 용역",
+            CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT,
+        ),
+    ],
+)
+def test_classify_contract_accounting_basis(name: str, basis: str) -> None:
+    assert classify_contract_accounting_basis(name) == basis
+
+
+def test_accounting_basis_is_decided_on_nfd_text_too() -> None:
+    """macOS hands Korean cell text back in NFD; the rule must still fire."""
+
+    name = "2024년 강서구 수도권매립지 반입수수료(월정산 총액)"
+    assert classify_contract_accounting_basis(unicodedata.normalize("NFD", name)) == (
+        CONTRACT_BASIS_FACILITY_INBOUND_FEE
+    )
+
+
+def test_landfill_inbound_fee_never_enters_the_numerator(tmp_path: Path) -> None:
+    """강서구's whole disclosure is the official Sudokwon Landfill gate fee."""
+
+    path = write_workbook(
+        tmp_path / "fee.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            contract_row(
+                organisation="강서구청",
+                name="2024년 강서구 수도권매립지 반입수수료(월정산 총액)",
+                payment=18_300_939_000,
+                pairs=[],
+            )
+        ],
+    )
+    parsed = parse_a(path)
+    contract = parsed.contracts[0]
+    assert contract.accounting_basis == CONTRACT_BASIS_FACILITY_INBOUND_FEE
+    assert contract.is_primary_numerator_eligible is False
+    # Missing, not zero: there is no eligible payment at all.
+    assert parsed.eligible_payment_total is None
+    assert parsed.eligible_contract_count == 0
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "2024년 가평군 생활폐기물 외부 위탁처리 1차",
+        "2024년 송파구 생활폐기물 민간위탁 소각처리 용역",
+        "2024년 성북구 재활용품 선별처리",
+        "2024년 하남시 생활폐기물 처리용역",
+    ],
+)
+def test_treatment_only_contract_never_enters_the_numerator(name: str, tmp_path: Path) -> None:
+    path = write_workbook(
+        tmp_path / "treatment.xlsx",
+        HEADERS_FAMILY_8,
+        [contract_row(name=name, payment=1_000_000, pairs=[])],
+    )
+    parsed = parse_a(path)
+    assert parsed.contracts[0].accounting_basis == CONTRACT_BASIS_TREATMENT_SERVICE
+    assert parsed.contracts[0].is_primary_numerator_eligible is False
+    assert parsed.eligible_payment_total is None
+
+
+def test_collection_transport_contract_still_enters_the_numerator(tmp_path: Path) -> None:
+    """The rule must not cost the release its 253 ordinary 수집·운반 contracts."""
+
+    path = write_workbook(
+        tmp_path / "collect.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            contract_row(
+                name="2024년 하남시 생활폐기물 수집·운반 대행용역 1구역",
+                payment=3_751_602_000,
+                pairs=[],
+                facility="수도권매립지;하남소각장",
+                method="소각·매립",
+            )
+        ],
+    )
+    parsed = parse_a(path)
+    contract = parsed.contracts[0]
+    assert contract.accounting_basis == CONTRACT_BASIS_COLLECTION_TRANSPORT
+    assert contract.payment_type == PAYMENT_ACTUAL_PAID
+    assert contract.is_primary_numerator_eligible is True
+    assert parsed.eligible_payment_total == Decimal(3_751_602_000)
+    assert contract.limitation_reasons == ()
+
+
+def test_downstream_destination_columns_never_exclude_a_contract(tmp_path: Path) -> None:
+    """처리방식/최종 처리시설 say where the load goes, not what was bought.
+
+    45 of the 49 audited rows whose 처리방식 is ``소각`` are ordinary 수집·운반
+    대행 contracts, so reading either column as basis evidence would delete real
+    collection payment on a large scale.
+    """
+
+    path = write_workbook(
+        tmp_path / "destination.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            contract_row(
+                name="2024년 남동구 생활폐기물 수집·운반 대행용역 1권역",
+                payment=815_349_990,
+                pairs=[],
+                facility="수도권매립지; 송도자원환경센터; 청라자원환경센터",
+                method="수집·운반(최종 처리: 소각·매립)",
+            )
+        ],
+    )
+    contract = parse_a(path).contracts[0]
+    assert contract.accounting_basis == CONTRACT_BASIS_COLLECTION_TRANSPORT
+    assert contract.is_primary_numerator_eligible is True
+
+
+def test_mixed_workbook_sums_only_the_eligible_contracts(tmp_path: Path) -> None:
+    """송파구's shape: nine 수집·운반 구역 plus one 민간위탁 소각처리 용역."""
+
+    rows = [
+        contract_row(
+            organisation="송파구청",
+            name=f"2024년 송파구 생활폐기물 수집·운반 대행용역 {index}구역",
+            payment=1_000_000 * index,
+            pairs=[],
+        )
+        for index in range(1, 4)
+    ]
+    rows.append(
+        contract_row(
+            organisation="송파구청",
+            name="2024년 송파구 생활폐기물 민간위탁 소각처리 용역",
+            payment=1_461_763_370,
+            pairs=[],
+        )
+    )
+    rows.append([None, None, "합계", 1_467_763_370, None, None, None])
+    parsed = parse_a(write_workbook(tmp_path / "mixed.xlsx", HEADERS_FAMILY_8, rows))
+
+    assert len(parsed.contracts) == 4
+    assert parsed.eligible_contract_count == 3
+    assert parsed.eligible_payment_total == Decimal(6_000_000)
+    # The workbook's own 합계 still reconciles against every parsed row, so the
+    # exclusion is an indicator decision and not a parsing loss.
+    assert parsed.recomputed_total_krw == Decimal(1_467_763_370)
+    assert parsed.source_total_krw == Decimal(1_467_763_370)
+    assert REASON_INCONSISTENT_TOTAL not in parsed.quantity_limitation_reasons
+    assert REASON_NON_COLLECTION_TRANSPORT_BASIS in parsed.payment_limitation_reasons
+
+
+def test_excluded_contract_keeps_its_full_source_provenance(tmp_path: Path) -> None:
+    """An excluded row is still a stored source row, with its real amount."""
+
+    path = write_workbook(
+        tmp_path / "provenance.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            contract_row(
+                year=2024,
+                organisation="강북구청",
+                name="2024년 강북구 종량제 생활폐기물 반입수수료(수도권매립지)",
+                payment="261,926,510원",
+                pairs=[],
+                facility="수도권매립지",
+                method="매립",
+                note="월정산 반입수수료",
+            )
+        ],
+    )
+    contract = parse_a(path).contracts[0]
+    assert contract.source_row == 2
+    assert contract.contract_name == "2024년 강북구 종량제 생활폐기물 반입수수료(수도권매립지)"
+    # The amount, its verbatim text, its true payment type and its destinations
+    # are all retained — only its eligibility is False.
+    assert contract.payment_amount_krw == Decimal(261_926_510)
+    assert contract.payment_source_text == "261,926,510원"
+    assert contract.payment_type == PAYMENT_ACTUAL_PAID
+    assert contract.destination_names == ("수도권매립지",)
+    assert contract.source_note == "월정산 반입수수료"
+    assert contract.is_primary_numerator_eligible is False
+    assert contract.accounting_basis == CONTRACT_BASIS_FACILITY_INBOUND_FEE
+    assert REASON_NON_COLLECTION_TRANSPORT_BASIS in contract.limitation_reasons
+
+
+def test_excluded_only_workbook_is_not_classified_as_empty(tmp_path: Path) -> None:
+    """The file carries real contracts; only the numerator rejects them.
+
+    Filing it as EMPTY_OR_NO_DATA would contradict the contract rows the same run
+    stores against it.
+    """
+
+    path = write_workbook(
+        tmp_path / "classify.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            contract_row(
+                name="2024년 강북구 종량제 생활폐기물 반입수수료(수도권매립지)",
+                payment=261_926_510,
+                pairs=[],
+            )
+        ],
+    )
+    parsed = parse_a(path)
+    assert parsed.primary_classification == CLASS_DATA_A_PAYMENT_ONLY
+    assert parsed.eligible_contract_count == 0
+    assert len(parsed.contracts) == 1
+
+
+def test_excluded_contract_is_not_reported_as_an_incomplete_record(tmp_path: Path) -> None:
+    """A 반입수수료 row is a *complete* record of a payment on another basis."""
+
+    path = write_workbook(
+        tmp_path / "complete.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            contract_row(
+                name="2024년 강서구 수도권매립지 반입수수료(월정산 총액)",
+                payment=18_300_939_000,
+                pairs=[],
+            )
+        ],
+    )
+    assert parse_a(path).contracts[0].completeness_status == COMPLETENESS_COMPLETE
+
+
+def test_all_contracts_excluded_yields_no_waste_scope_claim(tmp_path: Path) -> None:
+    """With nothing eligible there is no scope to be partial about.
+
+    Reporting PARTIAL_WASTE_SCOPE here would assert that *some* streams were
+    covered by collection payment, when none were.
+    """
+
+    path = write_workbook(
+        tmp_path / "none.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            contract_row(
+                name="2024년 연천군 음식물폐기물 위탁처리용역", payment=381_571_740, pairs=[]
+            ),
+            contract_row(name="연천군 대형폐기물 위탁처리용역", payment=423_990_000, pairs=[]),
+        ],
+    )
+    parsed = parse_a(path)
+    assert parsed.eligible_payment_total is None
+    assert REASON_NON_COLLECTION_TRANSPORT_BASIS in parsed.payment_limitation_reasons
+    assert REASON_PARTIAL_WASTE_SCOPE not in parsed.payment_limitation_reasons
+
+
+def test_excluded_contract_does_not_supply_a_waste_stream(tmp_path: Path) -> None:
+    """양평군's food stream came from a treatment contract, not a collection one."""
+
+    rows = [
+        contract_row(name="2024년 테스트시 생활폐기물(일반) 수집·운반 용역", payment=100, pairs=[]),
+        contract_row(name="2024년 테스트시 재활용품 수집·운반 용역", payment=200, pairs=[]),
+        contract_row(name="2024년 테스트시 음식물류폐기물 대행처리 용역", payment=300, pairs=[]),
+    ]
+    parsed = parse_a(write_workbook(tmp_path / "scope.xlsx", HEADERS_FAMILY_8, rows))
+    assert parsed.eligible_payment_total == Decimal(300)
+    assert REASON_PARTIAL_WASTE_SCOPE in parsed.payment_limitation_reasons
+
+
+def test_award_and_basis_are_independent_axes(tmp_path: Path) -> None:
+    """A contract can fail either gate; each keeps its own answer."""
+
+    path = write_workbook(
+        tmp_path / "axes.xlsx",
+        HEADERS_FAMILY_8,
+        [
+            contract_row(
+                name="2024년 테스트시 생활폐기물 수집·운반 대행용역 1구역",
+                payment=500,
+                pairs=[],
+                note="총 금액은 계약금액입니다",
+            ),
+            contract_row(
+                name="2024년 테스트시 재활용품 선별처리",
+                payment=700,
+                pairs=[],
+            ),
+        ],
+    )
+    award, treatment = parse_a(path).contracts
+    assert award.payment_type == PAYMENT_CONTRACT_AWARD
+    assert award.accounting_basis == CONTRACT_BASIS_COLLECTION_TRANSPORT
+    assert treatment.payment_type == PAYMENT_ACTUAL_PAID
+    assert treatment.accounting_basis == CONTRACT_BASIS_TREATMENT_SERVICE
+    assert award.is_primary_numerator_eligible is False
+    assert treatment.is_primary_numerator_eligible is False
 
 
 def test_data_b_never_produces_a_payment(tmp_path: Path) -> None:

@@ -51,6 +51,7 @@ from waste_equity_backend.analysis.municipal_cost import (
     describe_reasons,
     evaluate_indicator,
     find_rejection_rule,
+    find_reviewed_limitations,
     find_reviewed_mapping,
     match_municipality_name,
     nfc,
@@ -86,6 +87,7 @@ from waste_equity_backend.models.municipal_cost import (
     METHODOLOGY_VERSION,
     MUNICIPAL_COLLECTION_TRANSPORT_PAYMENT_PER_CAPITA,
     MUNICIPALITY_LEVEL_SIGUNGU,
+    NUMERATOR_ELIGIBLE_BASES,
     POPULATION_DEFINITION_SGIS,
     POPULATION_DERIVED_WARD_SUM,
     QUANTITY_UNIT_TONNE,
@@ -555,6 +557,10 @@ class MunicipalCostReport:
     derived_cities: list[dict[str, Any]] = field(default_factory=list)
     contract_count: int = 0
     eligible_contract_count: int = 0
+    # Contracts kept as source rows but excluded from the numerator because they
+    # are payments on another accounting basis.
+    non_collection_transport_contracts: list[dict[str, Any]] = field(default_factory=list)
+    reviewed_limitations: list[dict[str, Any]] = field(default_factory=list)
     quantity_count: int = 0
     repeated_block_files: int = 0
     repeated_block_quantities: int = 0
@@ -600,10 +606,13 @@ class MunicipalCostReport:
             "observations": {
                 "contracts": self.contract_count,
                 "eligible_contracts": self.eligible_contract_count,
+                "non_collection_transport_contracts": len(self.non_collection_transport_contracts),
                 "quantities": self.quantity_count,
                 "files_with_repeated_quantity_blocks": self.repeated_block_files,
                 "logical_quantities_from_repeated_blocks": self.repeated_block_quantities,
             },
+            "excluded_contract_basis": self.non_collection_transport_contracts,
+            "reviewed_municipality_limitations": self.reviewed_limitations,
             "indicator": {
                 "unit": INDICATOR_UNIT,
                 "numerator_total_krw": self.numerator_total_krw,
@@ -812,6 +821,23 @@ def _compute_indicators(
         if files and not any(outcome.parsed.has_numeric_quantity for outcome in files):
             reasons.append(REASON_MISSING_QUANTITY)
 
+        # Limitations a previous delivery evidenced and this one merely stopped
+        # printing (see REVIEWED_MUNICIPALITY_LIMITATIONS). Applied only where a
+        # DATA_A payment workbook was actually accepted, because every one of
+        # them qualifies *payment* evidence: attaching them to a municipality
+        # that delivered no payment workbook would explain a limitation of data
+        # that does not exist. order_reasons() dedupes, so a future delivery that
+        # restores the wording derives the identical code without doubling it.
+        if any(item.discovered.dataset_role == DATASET_ROLE_A for item in files):
+            reasons.extend(
+                limitation.reason
+                for limitation in find_reviewed_limitations(
+                    entry.definition.metropolitan_code,
+                    entry.definition.display_name,
+                    REFERENCE_YEAR,
+                )
+            )
+
         results[entry.key] = evaluate_indicator(
             population=entry.population,
             numerator_krw=numerator,
@@ -861,6 +887,41 @@ def _fill_indicator_report(
     accepted = [outcome for outcomes in outcomes_by_key.values() for outcome in outcomes]
     report.contract_count = sum(len(item.parsed.contracts) for item in accepted)
     report.eligible_contract_count = sum(item.parsed.eligible_contract_count for item in accepted)
+    for key in sorted(outcomes_by_key):
+        for item in outcomes_by_key[key]:
+            for contract in item.parsed.contracts:
+                if contract.accounting_basis in NUMERATOR_ELIGIBLE_BASES:
+                    continue
+                report.non_collection_transport_contracts.append(
+                    {
+                        "municipality_key": key,
+                        "relative_path": item.discovered.relative_path,
+                        "source_row": contract.source_row,
+                        "contract_name": contract.contract_name,
+                        "accounting_basis": contract.accounting_basis,
+                        "payment_amount_krw": (
+                            None
+                            if contract.payment_amount_krw is None
+                            else str(contract.payment_amount_krw)
+                        ),
+                        "payment_type": contract.payment_type,
+                        "is_primary_numerator_eligible": contract.is_primary_numerator_eligible,
+                    }
+                )
+    for entry in registry:
+        for limitation in find_reviewed_limitations(
+            entry.definition.metropolitan_code, entry.definition.display_name, REFERENCE_YEAR
+        ):
+            report.reviewed_limitations.append(
+                {
+                    "municipality_key": entry.key,
+                    "reason_code": limitation.reason,
+                    "evidence": limitation.evidence,
+                    "omission_basis": limitation.omission_basis,
+                    "applied": limitation.reason in indicators[entry.key].reason_codes,
+                    "status": indicators[entry.key].status,
+                }
+            )
     report.quantity_count = sum(len(item.parsed.quantities) for item in accepted)
     repeated_files = 0
     repeated_quantities = 0

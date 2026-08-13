@@ -16,6 +16,15 @@ payment column never decides what the amount means: the actual-paid / contract-a
 / budget-estimate distinction stays with :func:`classify_payment_type`, which only
 ever reclassifies on wording the source itself wrote.
 
+An amount can be a genuine actual payment and still not belong in this
+indicator's numerator. :func:`classify_contract_accounting_basis` answers the
+separate question of *what kind of money* a contract is — a 수도권매립지
+반입수수료 and a 위탁처리 용역 are both really paid, and neither is a
+collection-and-transport payment. The two axes stay orthogonal, so an excluded
+contract keeps its true ``payment_type``, its amount, and its source row; only
+``is_primary_numerator_eligible`` turns False, under
+``NON_COLLECTION_TRANSPORT_BASIS``.
+
 An amount delivered as formatted text ("6,556,861,120원") is read as that exact
 number by :func:`parse_money_text` under an anchored pattern; anything that is not
 a well-formed currency literal stays missing rather than becoming a number.
@@ -65,6 +74,10 @@ from waste_equity_backend.models.municipal_cost import (
     COMPLETENESS_COMPLETE,
     COMPLETENESS_PARTIAL,
     COMPLETENESS_UNUSABLE,
+    CONTRACT_BASIS_COLLECTION_TRANSPORT,
+    CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT,
+    CONTRACT_BASIS_FACILITY_INBOUND_FEE,
+    CONTRACT_BASIS_TREATMENT_SERVICE,
     DATASET_ROLE_A,
     DATASET_ROLE_B,
     GEOGRAPHIC_SCOPE_SUB,
@@ -77,6 +90,7 @@ from waste_equity_backend.models.municipal_cost import (
     LAYOUT_DATA_A_CONTRACT_WITH_PAYMENT_LEDGER,
     LAYOUT_DATA_B_MONTHLY_CATEGORY_GRID,
     LAYOUT_UNSUPPORTED,
+    NUMERATOR_ELIGIBLE_BASES,
     PAYMENT_ACTUAL_PAID,
     PAYMENT_BUDGET_ESTIMATE,
     PAYMENT_CONTRACT_AWARD,
@@ -89,6 +103,7 @@ from waste_equity_backend.models.municipal_cost import (
     REASON_INCONSISTENT_TOTAL,
     REASON_MISSING_QUANTITY,
     REASON_MIXED_REFERENCE_YEARS,
+    REASON_NON_COLLECTION_TRANSPORT_BASIS,
     REASON_PARTIAL_GEOGRAPHIC_SCOPE,
     REASON_PARTIAL_PERIOD_COVERAGE,
     REASON_PARTIAL_WASTE_SCOPE,
@@ -217,6 +232,42 @@ CONTRACT_AWARD_MARKERS = (
     "지급액이 아닌 계약금액",
 )
 
+# --- accounting-basis vocabulary (see classify_contract_accounting_basis) ---
+#
+# Every token below is a word the source writes in ``계약명``; nothing is inferred
+# from an amount, a destination, or a municipality. All matching happens on
+# NFC-normalized, whitespace-collapsed text, which is why the spaced and unspaced
+# spellings of the same compound are both enumerated rather than pattern-matched:
+# "민간위탁 소각처리 용역" and "민간소각 처리 용역" are the same rule, written two
+# ways by two suppliers.
+
+# The indicator's own vocabulary. Any one of these is enough to establish that
+# the municipality bought haulage.
+COLLECTION_TRANSPORT_TOKENS = ("수집", "운반", "수송", "청소")
+
+# A facility gate fee — a different accounting basis under any wording.
+FACILITY_INBOUND_FEE_TOKENS = ("반입수수료", "반입 수수료")
+
+# Treatment bought as a service. Each token pairs an action with 처리, so a bare
+# 처리 (which 27 ordinary collection contracts mention) never matches, and neither
+# does a destination such as 자원회수시설 or 소각장.
+TREATMENT_ONLY_TOKENS = (
+    "위탁처리",
+    "위탁 처리",
+    "처리위탁",
+    "처리 위탁",
+    "소각처리",
+    "소각 처리",
+    "선별처리",
+    "선별 처리",
+    "처리용역",
+    "처리 용역",
+    "처리대행",
+    "처리 대행",
+    "대행처리",
+    "대행 처리",
+)
+
 # Filename annotation markers. The delivered filenames carry the supplier's own
 # scope notes ("부평구 - 생활(일반)수집운반만 있고 음식물류·재활용 데이터 없음.xlsx"),
 # which are part of the delivered dataset and are the only place some
@@ -318,6 +369,8 @@ class ParsedContract:
     payment_amount_krw: Decimal | None
     payment_source_text: str | None
     payment_type: str
+    # What kind of money this is, independent of whether it was actually paid.
+    accounting_basis: str
     is_primary_numerator_eligible: bool
     payment_period_start: datetime.date | None
     payment_period_end: datetime.date | None
@@ -519,6 +572,50 @@ def covers_all_streams(scopes: Sequence[str]) -> bool:
         WASTE_SCOPE_FOOD_ONLY,
         WASTE_SCOPE_RECYCLING_ONLY,
     }.issubset(set(scopes))
+
+
+def classify_contract_accounting_basis(contract_name: str) -> str:
+    """Accounting basis of one contract, from the tokens the source itself wrote.
+
+    Two signals, both read from ``계약명`` and nothing else:
+
+    ``COLLECTION_TRANSPORT_TOKENS``
+        the indicator's own vocabulary — 수집, 운반, 수송, 청소.
+    ``FACILITY_INBOUND_FEE_TOKENS`` / ``TREATMENT_ONLY_TOKENS``
+        wording that names a different accounting basis.
+
+    A contract is non-eligible only when it carries basis wording **and** no
+    collection/transport wording at all. That asymmetry is the whole point: it
+    removes 위탁처리 / 소각처리 / 선별처리 / 처리용역 / 처리대행 contracts while
+    keeping 운반·처리 and 수집·운반 처리 대행용역, which really do pay for
+    haulage. A bare ``처리`` never decides anything on its own — 253 of the 315
+    audited 2024 contracts are ordinary 수집·운반 대행 contracts and 27 of them
+    mention 처리 somewhere.
+
+    A 반입수수료 is the one unconditional exclusion. It is a facility gate fee —
+    the accounting basis of ``landfill_inbound_monthly``, which
+    :mod:`waste_equity_backend.models.municipal_cost` states is never summed with
+    this indicator — so no amount of surrounding collection wording can make it a
+    collection-and-transport payment.
+
+    Only ``계약명`` is read. ``처리방식`` and ``최종 처리시설`` describe where the
+    waste *ends up*, not what was bought: in the audited delivery 45 of the 49
+    rows whose 처리방식 is ``소각`` are ordinary 수집·운반 대행 contracts hauling
+    to an incinerator, so treating either column as basis evidence would exclude
+    real collection payment on a massive scale.
+    """
+
+    name = _text(contract_name)
+    if any(token in name for token in FACILITY_INBOUND_FEE_TOKENS):
+        return CONTRACT_BASIS_FACILITY_INBOUND_FEE
+    if not any(token in name for token in TREATMENT_ONLY_TOKENS):
+        return CONTRACT_BASIS_COLLECTION_TRANSPORT
+    if any(token in name for token in COLLECTION_TRANSPORT_TOKENS):
+        # Haulage bundled with the disposal of the same load. The transport
+        # component is real collection-and-transport payment and is kept; the
+        # bundling stays visible in the stored basis.
+        return CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT
+    return CONTRACT_BASIS_TREATMENT_SERVICE
 
 
 def classify_payment_type(note: str) -> str:
@@ -825,12 +922,20 @@ def _parse_data_a(
         # never lost.
         payment_text = _text(raw_payment) or None if isinstance(raw_payment, str) else None
         payment_type = classify_payment_type(note)
-        eligible = amount is not None and payment_type == PAYMENT_ACTUAL_PAID
+        # Three independent gates, in order: is there a number, is it a payment,
+        # and is it a payment on *this* indicator's accounting basis.
+        basis = classify_contract_accounting_basis(contract_name)
+        basis_eligible = basis in NUMERATOR_ELIGIBLE_BASES
+        eligible = amount is not None and payment_type == PAYMENT_ACTUAL_PAID and basis_eligible
 
         waste_scope = classify_contract_waste_scope(
             contract_name, filename_forces_general=filename_forces_general
         )
-        contract_scopes.append(waste_scope)
+        # Waste-scope coverage describes what the *numerator* covers, so a
+        # contract removed for its accounting basis does not get to supply a
+        # stream it never paid to collect.
+        if basis_eligible:
+            contract_scopes.append(waste_scope)
 
         geographic_scope = (
             GEOGRAPHIC_SCOPE_SUB
@@ -854,11 +959,17 @@ def _parse_data_a(
                 f"r{row}: 지급 원장에 기록이 없는 월 — " + ", ".join(missing_months)
             )
 
+        # Completeness describes the contract *record*, so it is decided before
+        # the basis reason is attached: a 반입수수료 row is a complete record of a
+        # real payment that simply belongs to another accounting basis.
         completeness = COMPLETENESS_COMPLETE
         if amount is None:
             completeness = COMPLETENESS_UNUSABLE
         elif limitations:
             completeness = COMPLETENESS_PARTIAL
+
+        if not basis_eligible:
+            limitations.append(REASON_NON_COLLECTION_TRANSPORT_BASIS)
 
         parsed.contracts.append(
             ParsedContract(
@@ -870,6 +981,7 @@ def _parse_data_a(
                 payment_amount_krw=amount,
                 payment_source_text=payment_text[:200] if payment_text else None,
                 payment_type=payment_type,
+                accounting_basis=basis,
                 is_primary_numerator_eligible=eligible,
                 payment_period_start=start,
                 payment_period_end=end,
@@ -913,10 +1025,22 @@ def _parse_data_a(
 
     parsed.quantities = _parse_data_a_quantities(sheet, columns, blocks, parsed, reference_year)
 
+    # A contract kept for provenance but excluded from the numerator is reported
+    # at file level so the municipality's own reason codes say why its numerator
+    # is smaller than the workbook's 합계 — and, when *every* contract is on
+    # another basis, why there is no value at all.
+    if any(
+        contract.accounting_basis not in NUMERATOR_ELIGIBLE_BASES for contract in parsed.contracts
+    ):
+        parsed.payment_limitation_reasons.append(REASON_NON_COLLECTION_TRANSPORT_BASIS)
+
     # Waste scope is judged for the municipality as a whole: 미추홀구's separate
     # 일반 / 재활용 / 음식물 contracts together cover every stream, so the file is
-    # not partial even though no single contract is.
-    if parsed.contracts and not covers_all_streams(contract_scopes):
+    # not partial even though no single contract is. Judged over the accepted
+    # contracts only — with none of them left there is no scope to be partial
+    # about, and MISSING_PAYMENT is the honest finding rather than a claim that
+    # some streams were covered.
+    if contract_scopes and not covers_all_streams(contract_scopes):
         parsed.payment_limitation_reasons.append(REASON_PARTIAL_WASTE_SCOPE)
 
     parsed.primary_classification = _classify_data_a_content(parsed)
@@ -1119,7 +1243,12 @@ def _decimal_from_repr(value_repr: str) -> Decimal | None:
 
 
 def _classify_data_a_content(parsed: ParsedWorkbook) -> str:
-    has_payment = parsed.eligible_contract_count > 0
+    # What the workbook *delivered*, not what survived numerator eligibility: a
+    # file of 반입수수료 rows carries 18.3 billion KRW of real contracts and must
+    # never be filed as EMPTY_OR_NO_DATA next to the contract rows it produced.
+    # Eligibility is answered per contract by is_primary_numerator_eligible and
+    # per municipality by the indicator's reason codes.
+    has_payment = any(contract.payment_amount_krw is not None for contract in parsed.contracts)
     has_quantity = parsed.has_numeric_quantity
     if not parsed.contracts and not has_quantity:
         return CLASS_EMPTY_OR_NO_DATA

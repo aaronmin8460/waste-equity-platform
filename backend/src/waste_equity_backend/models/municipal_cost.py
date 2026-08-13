@@ -90,8 +90,10 @@ INDICATOR_DESCRIPTION_KO = (
 INDICATOR_UNIT = "KRW/인"
 INDICATOR_NUMERATOR_DEFINITION_KO = (
     "DATA_A 계약 헤더 행의 '총 금액(총 지급액)'(서구 원본은 '총 금액(원)') 중 실제 "
-    "지급액으로 확인된 값의 합계입니다. 합계(소계) 행, DATA_B 값, 계약금액(낙찰금액), "
-    "예산·예상금액, 별도 지급 원장, 텍스트('확인 불가')는 제외합니다."
+    "지급액으로 확인되고 회계 기준이 수집·운반인 값의 합계입니다. 합계(소계) 행, "
+    "DATA_B 값, 계약금액(낙찰금액), 예산·예상금액, 별도 지급 원장, 텍스트('확인 불가'), "
+    "그리고 수집·운반이 아닌 회계 기준의 계약(반입수수료, 위탁·소각·선별 등 처리 전용 "
+    "계약)은 제외합니다."
 )
 INDICATOR_DIFFERENCE_FROM_OFFICIAL_LANDFILL_FEE_KO = (
     "이 지표는 수도권매립지 공식 반입수수료(LANDFILL_INBOUND_FEE_PER_CAPITA)와 다른 "
@@ -147,6 +149,46 @@ PAYMENT_ACTUAL_PAID = "ACTUAL_PAID_AMOUNT"
 PAYMENT_CONTRACT_AWARD = "CONTRACT_AWARD_AMOUNT"
 PAYMENT_BUDGET_ESTIMATE = "BUDGET_ESTIMATE"
 PAYMENT_TYPES = (PAYMENT_ACTUAL_PAID, PAYMENT_CONTRACT_AWARD, PAYMENT_BUDGET_ESTIMATE)
+
+# --------------------------------------------------------------------------
+# Contract accounting basis
+# --------------------------------------------------------------------------
+#
+# *What kind of money the contract is*, which is a different question from
+# ``PAYMENT_TYPES`` (*whether the figure was actually paid*). A 반입수수료 row is
+# a perfectly real ACTUAL_PAID_AMOUNT; it is simply not a payment on this
+# indicator's accounting basis, so the two axes stay orthogonal and a contract
+# excluded here keeps its true ``payment_type``.
+#
+# Only COLLECTION_TRANSPORT and COLLECTION_TRANSPORT_WITH_TREATMENT may enter the
+# numerator. The second exists because several suppliers write one contract that
+# bundles haulage with the downstream disposal of the same load
+# (양평군's 운반·처리 용역, 동구's 수집·운반 처리 대행용역): the transport
+# component is genuinely municipal collection-and-transport payment, and dropping
+# the whole row because the name also says 처리 would delete real transport
+# payment. It is kept as its own value so the bundling stays visible.
+CONTRACT_BASIS_COLLECTION_TRANSPORT = "COLLECTION_TRANSPORT"
+CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT = "COLLECTION_TRANSPORT_WITH_TREATMENT"
+# A gate fee paid to a treatment/landfill facility for accepting waste. This is
+# the accounting basis of ``landfill_inbound_monthly`` — never this indicator's.
+CONTRACT_BASIS_FACILITY_INBOUND_FEE = "FACILITY_INBOUND_FEE"
+# Treatment performed on the municipality's behalf with no haulage component
+# named: 위탁처리 / 소각처리 / 선별처리 / 처리용역 / 처리대행.
+CONTRACT_BASIS_TREATMENT_SERVICE = "TREATMENT_SERVICE"
+CONTRACT_ACCOUNTING_BASES = (
+    CONTRACT_BASIS_COLLECTION_TRANSPORT,
+    CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT,
+    CONTRACT_BASIS_FACILITY_INBOUND_FEE,
+    CONTRACT_BASIS_TREATMENT_SERVICE,
+)
+NUMERATOR_ELIGIBLE_BASES = (
+    CONTRACT_BASIS_COLLECTION_TRANSPORT,
+    CONTRACT_BASIS_COLLECTION_TRANSPORT_WITH_TREATMENT,
+)
+NON_COLLECTION_TRANSPORT_BASES = (
+    CONTRACT_BASIS_FACILITY_INBOUND_FEE,
+    CONTRACT_BASIS_TREATMENT_SERVICE,
+)
 
 WASTE_SCOPE_ALL_MUNICIPAL = "ALL_MUNICIPAL"
 WASTE_SCOPE_GENERAL_ONLY = "GENERAL_ONLY"
@@ -320,6 +362,14 @@ REASON_PARTIAL_GEOGRAPHIC_SCOPE = "PARTIAL_GEOGRAPHIC_SCOPE"
 REASON_PARTIAL_PERIOD_COVERAGE = "PARTIAL_PERIOD_COVERAGE"
 REASON_PAYMENT_PERIOD_COVERAGE_INCOMPLETE = "PAYMENT_PERIOD_COVERAGE_INCOMPLETE"
 REASON_POST_2024_FILENAME_RESOLVED = "POST_2024_FILENAME_RESOLVED_TO_2024_UNIT"
+# At least one delivered contract is a real payment on a **different** accounting
+# basis (반입수수료 / 처리 전용 계약) and was therefore kept as a source row but
+# left out of the numerator. Informational at the municipality level: it neither
+# degrades a municipality that still has eligible collection-and-transport
+# payment, nor by itself blocks one. A municipality whose *every* contract is on
+# another basis has no eligible payment at all and is blocked by
+# MISSING_PAYMENT — with a NULL value, never 0.
+REASON_NON_COLLECTION_TRANSPORT_BASIS = "NON_COLLECTION_TRANSPORT_BASIS"
 # A filename that is malformed rather than renamed — the 2024 unit is already
 # correct and only the file naming is defective. Kept distinct from
 # POST_2024_FILENAME_RESOLVED_TO_2024_UNIT so a reader is never told a
@@ -347,6 +397,7 @@ REASON_CODES = (
     REASON_PAYMENT_PERIOD_COVERAGE_INCOMPLETE,
     REASON_POST_2024_FILENAME_RESOLVED,
     REASON_MALFORMED_FILENAME_RESOLVED,
+    REASON_NON_COLLECTION_TRANSPORT_BASIS,
 )
 
 # Reason codes recording a reviewed, evidence-backed filename resolution. Both are
@@ -359,8 +410,11 @@ REVIEWED_RESOLUTION_REASONS = (
 # Reason codes that degrade an otherwise-computable value to PARTIAL. Every other
 # code either blocks the value entirely (see UNAVAILABLE_REASONS) or is purely
 # informational — notably MISSING_QUANTITY, which cannot degrade a *payment*
-# indicator, and the two REVIEWED_RESOLUTION_REASONS, which record a documented,
-# reproducible mapping rather than a defect.
+# indicator, the two REVIEWED_RESOLUTION_REASONS, which record a documented,
+# reproducible mapping rather than a defect, and
+# NON_COLLECTION_TRANSPORT_BASIS, which records that a differently-based contract
+# was correctly kept out of the numerator — the remaining numerator is exactly
+# what the indicator claims to measure, so it is not degraded.
 PARTIAL_REASONS = (
     REASON_PARTIAL_WASTE_SCOPE,
     REASON_PARTIAL_GEOGRAPHIC_SCOPE,

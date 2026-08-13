@@ -57,7 +57,7 @@ observations are stored.
 
 Summed: the `총 금액(총 지급액)` contract-header value (`총 금액(원)` in the 서구
 workbook) of each DATA_A contract, where that value is confirmed to be an
-**actual paid amount**.
+**actual paid amount** *and* a payment on this indicator's **accounting basis**.
 
 **Excluded** — by parser rule, and structurally by the
 `ck_municipal_waste_contracts_eligibility_consistent` CHECK constraint, which
@@ -71,9 +71,58 @@ makes anything other than a non-null `ACTUAL_PAID_AMOUNT` ineligible:
 - any amount whose meaning is ambiguous
 - **every DATA_B value** — DATA_B is quantity validation only and can never
   contribute payment
+- contracts on a different accounting basis — see §2a
 
 Measured result: **205 contracts stored, 196 eligible, numerator total
 659,366,684,767 KRW.**
+
+### 2a. Accounting basis — which *kind* of payment may be summed
+
+"Was it actually paid" and "is it a collection-and-transport payment" are two
+different questions, and the loader answers them separately. A 수도권매립지
+반입수수료 is a perfectly real `ACTUAL_PAID_AMOUNT`; it is simply a facility gate
+fee, which is the accounting basis of `landfill_inbound_monthly` — the very thing
+§1 says must never be conflated with this indicator. Each contract therefore
+carries an accounting basis derived from the source's own `계약명`:
+
+| Basis | Meaning | In the numerator |
+| --- | --- | --- |
+| `COLLECTION_TRANSPORT` | 수집·운반 / 수송 / 청소 대행 | yes |
+| `COLLECTION_TRANSPORT_WITH_TREATMENT` | haulage bundled with disposal of the same load (`운반·처리`, `수집·운반 처리 대행용역`) | yes |
+| `FACILITY_INBOUND_FEE` | `반입수수료` — a gate fee paid to a facility | **no** |
+| `TREATMENT_SERVICE` | treatment bought as a service: `위탁처리` / `소각처리` / `선별처리` / `처리용역` / `처리대행` | **no** |
+
+The rule is two-signal and deterministic. A contract is excluded only when its
+name carries basis wording **and** carries no collection/transport wording at
+all. `반입수수료` is the single unconditional exclusion, because no surrounding
+wording can turn a facility gate fee into a collection payment.
+
+Three properties this rule deliberately has:
+
+- **A bare `처리` decides nothing.** 27 of the 315 audited 2024 contracts mention
+  처리 somewhere while being ordinary 수집·운반 대행 contracts; only an
+  action-plus-처리 compound (`위탁처리`, `소각처리`, `선별처리`, `처리용역`,
+  `처리대행`) is basis wording.
+- **Compound contracts are kept.** `운반·처리 용역` and `수집·운반 처리 대행용역`
+  really do pay for haulage; deleting the whole row because the name also says
+  처리 would delete real transport payment. They are kept under their own basis
+  value so the bundling stays visible.
+- **Only `계약명` is read.** `처리방식` and `최종 처리시설` say where the waste
+  *ends up*, not what was bought — 45 of the 49 rows whose `처리방식` is `소각`
+  are ordinary 수집·운반 대행 contracts hauling to an incinerator, so treating
+  either column as basis evidence would exclude real collection payment at scale.
+
+An excluded contract is **kept in full**: its row, amount, verbatim payment text,
+true `payment_type`, destinations and note are all stored, with
+`is_primary_numerator_eligible = false` and `NON_COLLECTION_TRANSPORT_BASIS` in
+its `limitation_reasons`. The municipality's indicator row carries the same code,
+so a reader can see why its numerator is smaller than the workbook's own 합계.
+
+`NON_COLLECTION_TRANSPORT_BASIS` never degrades a status by itself: what remains
+after the exclusion is exactly what the indicator claims to measure. But a
+municipality whose **every** contract is on another basis has no eligible payment
+at all, and is `UNAVAILABLE` with a NULL value — never `0`, never `0 KRW/인`,
+which would read as "this municipality spends nothing on collection".
 
 ---
 
@@ -176,6 +225,50 @@ geography; additionally its 음식물 series is identical to 미추홀구's, and
 general/recycling annual totals of 0 are a `SUM` over twelve `-` cells — not a
 measured zero.
 
+### Reviewed municipality limitations
+
+A separate mechanism from the two above, and the only one that is *about* a
+municipality rather than a file. It exists because a re-delivery can remove the
+evidence for a limitation without removing the limitation.
+
+The 2024-refresh delivery replaced the earlier workbooks with a narrower
+seven-column spine: no per-contract 지급월 ledger, no part-year `년도` range, no
+filename scope annotation, and contract names stripped of their narrowing tokens.
+Those fields were the evidence the parser reads. With the wording gone the parser
+derives nothing, and five municipalities that were correctly `PARTIAL` would
+silently report as complete — with numerators identical to the won.
+
+A payment period that covered six months does not become twelve because the next
+workbook stopped printing the ledger, and a contract that served two 읍·면 does
+not become municipality-wide because the parenthetical was dropped. Absence of
+evidence in a simplified re-delivery is not evidence that a limitation was
+resolved, so the five are reinstated in one reviewed table
+(`REVIEWED_MUNICIPALITY_LIMITATIONS`), each with the evidence that established it
+and the reason the omission does not retire it:
+
+| Municipality | Reason code | Evidence in the earlier delivery | Why the 2024-refresh omission does not retire it |
+| --- | --- | --- | --- |
+| 인천 남동구 | `PARTIAL_WASTE_SCOPE` | contract names read `생활폐기물(일반) 수집·운반`; no 음식물류/재활용 contract | only the `(일반)` token was dropped; payments are identical to the won and no new stream was added |
+| 인천 부평구 | `PARTIAL_WASTE_SCOPE` | filename annotation read `생활(일반)수집운반만 있고 음식물류·재활용 데이터 없음` | the annotation was dropped from the filename; the missing contracts were not supplied |
+| 인천 옹진군 | `PARTIAL_GEOGRAPHIC_SCOPE` | the two contracts named `(영흥면)` / `(북도·영흥면)` only | only the 읍·면 parenthetical was dropped; no contract covering the remaining islands appeared |
+| 경기 가평군 | `PARTIAL_PERIOD_COVERAGE` | `년도` read `2024.2.26.~4.5` and `2024.5.22.~7.30` | `년도` was simplified to a bare `2024`; the 1차/2차 naming and the amounts are unchanged |
+| 인천 계양구 | `PAYMENT_PERIOD_COVERAGE_INCOMPLETE` | the per-contract payment ledger recorded 2·3·9·10·11·12월 only | the ledger columns are simply absent; the six unrecorded months were not evidenced as paid |
+
+Properties of the mechanism:
+
+- Entries are keyed on `(metropolitan_code, display_name, reference_year)` and
+  matched exactly — never by prefix. The metropolitan code is part of the key
+  because 중구 exists in both Seoul and Incheon; the year is part of it because
+  this describes one delivery, not a permanent property of a municipality.
+- A limitation is applied only where an accepted **DATA_A** workbook exists. All
+  five qualify *payment* evidence, so attaching one where no payment workbook was
+  delivered would describe data that does not exist.
+- Reason codes are deduplicated, so a future delivery that restores the wording
+  derives the identical code without doubling it, and the reviewed entry can then
+  be retired without changing any result.
+- No municipality outside the table can be reached, and the table is
+  test-asserted to name only registry municipalities and only `PARTIAL_REASONS`.
+
 ---
 
 ## 5. Status rules
@@ -203,6 +296,13 @@ missing, a repeated quantity block exists, or landfill-specific tonnage is
 missing. Those affect quantity completeness, not the payment numerator.
 `MISSING_QUANTITY` is recorded as informational and 군포시 is a live example: it
 is `AVAILABLE` while carrying `MISSING_QUANTITY`.
+
+`NON_COLLECTION_TRANSPORT_BASIS` (§2a) is informational in the same way: what
+survives the exclusion is exactly what the indicator measures, so 하남시 is
+`AVAILABLE` while carrying it. It becomes decisive only indirectly — when every
+contract in a workbook is on another basis there is no eligible payment left, and
+the municipality is `UNAVAILABLE` under `MISSING_PAYMENT` with the basis code
+alongside it saying why.
 
 ### Measured distribution (66 rows)
 
