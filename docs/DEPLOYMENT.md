@@ -169,7 +169,12 @@ dump and copy it to the server over SSH:
 scp backups/waste_equity_local_*.dump ubuntu@SERVER_IP:~/waste-equity-platform/backups/
 ```
 
-The dump is Git-ignored and its contents are never printed or committed.
+The dump is Git-ignored and its contents are never printed or committed. The
+script addresses the pinned Compose project `waste-equity-platform` (override
+with `--project` / `COMPOSE_PROJECT`) rather than deriving one from the working
+directory, and refuses to start a stack or to dump a container that does not
+carry the application schema — so running it from a Git worktree cannot quietly
+produce a dump of a new, empty database.
 
 ## Step 12 — Restore the database
 

@@ -46,6 +46,14 @@ file:
 scripts/deployment/backup-local-database.sh
 ```
 
+It targets the pinned Compose project `waste-equity-platform`, not whatever the
+current directory basename implies, so it backs up the same database from the
+primary checkout and from any Git worktree. It never starts a stack: if that
+project has no running database container, or the container it finds does not
+carry the application schema, it fails and dumps nothing. Pass `--project` (or
+`COMPOSE_PROJECT`) if the local stack really runs under another name —
+`docker compose ls` lists them.
+
 **Backup used for this release** (taken before `0021` was applied):
 
 | Field | Value |
