@@ -60,7 +60,6 @@ import {
 import InfoBanner from "../ui/InfoBanner";
 import PageHeader from "../ui/PageHeader";
 import SectionCard from "../ui/SectionCard";
-import SuitabilityScenarioRankingAnalytics from "./page5/SuitabilityScenarioRankingAnalytics";
 import { useScenarioComparison } from "./useScenarioComparison";
 
 export interface SuitabilityScenarioComparisonProps {
@@ -76,6 +75,21 @@ export interface SuitabilityScenarioComparisonProps {
   orientation?: ReactNode;
   /** Back to 후보지 심층 분석, where scenarios are saved and the pair is chosen. */
   onBackToSelection: () => void;
+  /**
+   * The later Page-5 analytical sections, composed BELOW this shell.
+   *
+   * This is the seam §9.2 of the contract describes: the foundation performs the one
+   * resolve-verify-preview pass and hands the finished {@link ScenarioComparison}
+   * down, so a section never re-resolves the pair or re-issues the preview. It is a
+   * render prop rather than `children` because the comparison does not exist until
+   * this component has run the hook.
+   *
+   * Called ONLY when `status === "READY"` — both sides revalidated against the run on
+   * screen. Every blocked status is already stated above by `StatusNotice`, and a
+   * section drawn beneath one would be analysis of numbers the shell just said it
+   * could not stand behind.
+   */
+  analysisSections?: (comparison: ScenarioComparison) => ReactNode;
 }
 
 const SLOT_LABEL = { A: "A안", B: "B안" } as const;
@@ -94,6 +108,7 @@ export default function SuitabilityScenarioComparison({
   title,
   orientation,
   onBackToSelection,
+  analysisSections,
 }: SuitabilityScenarioComparisonProps) {
   // Memoised on the two primitives so the hook's dependency is stable across
   // renders in which the run did not actually change.
@@ -230,12 +245,13 @@ export default function SuitabilityScenarioComparison({
         </SectionCard>
       ) : null}
 
-      {/* ── Rank analytics ──────────────────────────────────────────────────────
-          Page 5B. It receives the SAME `comparison` object this shell already
-          holds — one resolution, one pair of preview requests — and renders
-          nothing at all unless both sides are READY, so the states handled above
-          are never accompanied by stale numbers below. */}
-      <SuitabilityScenarioRankingAnalytics comparison={comparison} />
+      {/* The later Page-5 sections — ranking analytics, then candidate/contribution/
+          map/export — composed under the shell with the ONE comparison this component
+          loaded. They arrive through this single seam rather than being imported here,
+          so the shell stays independent of which analytical lanes exist. Gated on
+          READY: nothing analytical is drawn beneath a status the shell has just
+          refused to stand behind. */}
+      {status === "READY" ? analysisSections?.(comparison) : null}
 
       {/* The standing limit on what a scenario changes. Stated on the page that
           shows the reweighting, not only on the page that produced it. */}

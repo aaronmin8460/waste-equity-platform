@@ -158,7 +158,9 @@ import SuitabilitySidebar, {
 import { STATUS_LABELS } from "../components/suitability/shared";
 import SuitabilityScenarioSaveCard from "../components/suitability/SuitabilityScenarioSaveCard";
 import SuitabilityScenarioComparePicker from "../components/suitability/SuitabilityScenarioComparePicker";
+import SuitabilityScenarioCandidateComparison from "../components/suitability/SuitabilityScenarioCandidateComparison";
 import SuitabilityScenarioComparison from "../components/suitability/SuitabilityScenarioComparison";
+import SuitabilityScenarioRankingAnalytics from "../components/suitability/page5/SuitabilityScenarioRankingAnalytics";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import TransparencyDashboard from "../components/TransparencyDashboard";
 import WetlandLayerControl from "../components/WetlandLayerControl";
@@ -2126,6 +2128,24 @@ export default function Home() {
           // reader arrives at ⑤ with their current selection shown, and nothing in
           // localStorage is written on their behalf.
           onBackToSelection={() => changeSuitabilityView("score")}
+          // Every analytical section below the shell, drawn from the ONE comparison
+          // it loaded — the foundation resolved the pair, validated the run and ran
+          // the two previews exactly once, and both lanes read that same object.
+          //
+          // Order follows the frame: ranking analytics (KPI → 순위 이동 → 비교표)
+          // first, because it establishes which candidates moved; the selected
+          // candidate then explains one of them in depth. `restoredCandidate` is the
+          // decoded legacy `cand`, passed as a SEED only: the section never writes it
+          // back, so no derived state reaches the URL.
+          analysisSections={(comparison) => (
+            <>
+              <SuitabilityScenarioRankingAnalytics comparison={comparison} />
+              <SuitabilityScenarioCandidateComparison
+                comparison={comparison}
+                initialCandidateId={restoredCandidate}
+              />
+            </>
+          )}
         />
       </DashboardShell>,
     );
