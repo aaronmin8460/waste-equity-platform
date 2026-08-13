@@ -60,6 +60,7 @@ import {
 import InfoBanner from "../ui/InfoBanner";
 import PageHeader from "../ui/PageHeader";
 import SectionCard from "../ui/SectionCard";
+import SuitabilityScenarioRankingAnalytics from "./page5/SuitabilityScenarioRankingAnalytics";
 import { useScenarioComparison } from "./useScenarioComparison";
 
 export interface SuitabilityScenarioComparisonProps {
@@ -228,6 +229,13 @@ export default function SuitabilityScenarioComparison({
           </details>
         </SectionCard>
       ) : null}
+
+      {/* ── Rank analytics ──────────────────────────────────────────────────────
+          Page 5B. It receives the SAME `comparison` object this shell already
+          holds — one resolution, one pair of preview requests — and renders
+          nothing at all unless both sides are READY, so the states handled above
+          are never accompanied by stale numbers below. */}
+      <SuitabilityScenarioRankingAnalytics comparison={comparison} />
 
       {/* The standing limit on what a scenario changes. Stated on the page that
           shows the reweighting, not only on the page that produced it. */}
