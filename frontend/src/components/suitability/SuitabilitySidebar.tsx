@@ -11,11 +11,15 @@
  *   RIGHT  ③ 종합 점수와 후보 순위 (상대 점수 구간 + 순위 보기) →
  *          안정 후보 목록 → 선택한 후보 구역 → 제외 / 검토 사유
  *
- * ④ 시나리오 저장 and ⑤ 비교할 시나리오 선택 are NOT rendered. Their real storage
- * and A/B comparison behaviour belongs to Page 4D; an empty container with a dead
- * name field and a dead save button would read as broken functionality, and any
- * populated one would be fabricated. Honest absence over fake completeness — the
- * numbering therefore runs ① ② ③ on this screen and picks up ④ ⑤ when they work.
+ * ④ 시나리오 저장 and ⑤ 비교할 시나리오 선택 now WORK (Page 4D) and close the
+ * numbering: they are injected as ready-made nodes (`scenarioSavePanel` /
+ * `scenarioComparePanel`) the way `relativeGradePanel` already is, because the page
+ * owns the localStorage list, the preview re-validation and the A/B state — this
+ * column stays pure presentation with no storage access of its own.
+ *
+ * They sit at the FOOT of the right column, which is where the page-4 기술요청
+ * annotation (Figma 225:443) puts the call to action: "우측 맨 하단
+ * [두 시나리오 비교하기] 누르면 다음 페이지로 자동 이동".
  *
  * (The screening disclaimer is rendered ABOVE this by the page, so it heads both
  * map sub-views; the page's `<h1>` and orientation line precede that.)
@@ -90,6 +94,16 @@ export interface SuitabilitySidebarProps {
   /** The A/B/C panel, injected by the page (it owns the distribution fetch). */
   relativeGradePanel?: React.ReactNode;
   /**
+   * ④ 시나리오 저장 and ⑤ 비교할 시나리오 선택, injected by the page for the same
+   * reason the A/B/C panel is: their state (the browser's saved-scenario list, the
+   * preview re-validation, the A/B pair mirrored into `cmpA`/`cmpB`) belongs to the
+   * one page, and a second copy of it in this column could disagree with the URL.
+   * Rendered only in the three-column workspace (`part="right"`), which is the only
+   * shape Figma 136:8684 places them in.
+   */
+  scenarioSavePanel?: React.ReactNode;
+  scenarioComparePanel?: React.ReactNode;
+  /**
    * ① 분석 범위 and ③ 순위 방향. Owned by the page — this column reports them, and
    * the ONE scope drives the ranking read, the A/B/C population, the map filter and
    * the selected-candidate check together, so no two surfaces can disagree.
@@ -125,6 +139,8 @@ export default function SuitabilitySidebar({
   statusColors,
   part = "all",
   relativeGradePanel,
+  scenarioSavePanel,
+  scenarioComparePanel,
   scope,
   onScopeChange,
   regionOptions,
@@ -308,6 +324,13 @@ export default function SuitabilitySidebar({
         testId="review-reason-summary"
       />
       )}
+
+      {/* ④ → ⑤, in that order, at the foot of the right column (Figma 225:443:
+          "우측 맨 하단 [두 시나리오 비교하기]"). ⑤ follows ④ because you cannot
+          select a scenario you have not saved, and the CTA that leaves this screen
+          is the last thing on it. */}
+      {showRight && part === "right" && scenarioSavePanel}
+      {showRight && part === "right" && scenarioComparePanel}
 
       {showLeft && summary.coverage_notes.length > 0 && (
         <SectionCard title="자료 공백 안내" testId="coverage-warnings">

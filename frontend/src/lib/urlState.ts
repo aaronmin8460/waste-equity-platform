@@ -33,6 +33,7 @@ import type {
   SuitabilityStatus,
 } from "./api";
 import { SUITABILITY_DEFAULT_SORT } from "./api";
+import { SAVED_SCENARIO_ID_RE } from "./savedScenarios";
 import { isSuitabilitySidoCode, sigunguScope, type SuitabilityScope } from "./suitabilityScope";
 
 export const URL_STATE_VERSION = "1";
@@ -174,6 +175,29 @@ export interface AppUrlState {
    */
   suitScope: SuitabilityScope;
   suitSort: SuitabilitySort;
+  /**
+   * ⑤ 비교할 시나리오 선택 — the A/B pair Page 5 compares, as SAVED-SCENARIO IDS.
+   *
+   * An id, not a weight vector. The four `wz`/`wr`/`we`/`wd` keys still carry ONE
+   * ad-hoc scenario's weights and are untouched by this pair; these two name two
+   * *stored* scenarios, each of which carries its own weights, its own run and its
+   * own name in `lib/savedScenarios.ts`. Both spellings therefore coexist in one
+   * link without either changing the other's meaning, and every Page-5 URL shared
+   * before this phase keeps working exactly as it did.
+   *
+   * Only the id shape is checked here — `SAVED_SCENARIO_ID_RE`, the same pattern
+   * the storage layer mints against. Whether the id EXISTS is deliberately not
+   * this module's call: saved scenarios live in the reader's own browser, so a
+   * perfectly well-formed link from another device resolves to nothing here and
+   * must render an explicit "이 브라우저에 없습니다" state rather than being
+   * dropped as malformed. `resolveComparisonPair` draws that distinction.
+   *
+   * The two ids must DIFFER: comparing a scenario against itself is not a
+   * comparison, so a link carrying `cmpA === cmpB` keeps A and drops B with a
+   * warning rather than opening a degenerate comparison.
+   */
+  cmpA: string | null;
+  cmpB: string | null;
 }
 
 export interface DecodedUrlState {
@@ -390,6 +414,28 @@ export function decodeUrlState(search: string): DecodedUrlState {
     else warnings.push("알 수 없는 후보 순위 정렬은 무시했습니다.");
   }
 
+  // ⑤ 비교할 시나리오 선택. Shape-screened only — see the `cmpA`/`cmpB` note on
+  // `AppUrlState`. A malformed id is dropped with a warning; a well-formed id that
+  // this browser has never stored is KEPT, so the page can say so explicitly.
+  const cmpA = params.get("cmpA");
+  if (cmpA !== null) {
+    if (SAVED_SCENARIO_ID_RE.test(cmpA)) state.cmpA = cmpA;
+    else warnings.push("잘못된 비교 시나리오 설정은 무시했습니다.");
+  }
+
+  const cmpB = params.get("cmpB");
+  if (cmpB !== null) {
+    if (!SAVED_SCENARIO_ID_RE.test(cmpB)) {
+      warnings.push("잘못된 비교 시나리오 설정은 무시했습니다.");
+    } else if (state.cmpA !== undefined && state.cmpA === cmpB) {
+      // A안 wins the tie: the pair is ordered, and keeping A preserves the reader's
+      // first choice rather than silently collapsing both slots onto one scenario.
+      warnings.push("A안과 B안이 같아 B안 선택을 해제했습니다.");
+    } else {
+      state.cmpB = cmpB;
+    }
+  }
+
   return { state, warnings };
 }
 
@@ -456,6 +502,19 @@ export function encodeUrlState(state: AppUrlState): string {
       params.set("suitScope", state.suitScope.codes.join(","));
     // ③ 순위 방향 — 높은 순 is the served default and adds no parameter.
     if (state.suitSort !== SUITABILITY_DEFAULT_SORT) params.set("suitSort", state.suitSort);
+    // ⑤ 비교할 시나리오 선택. Written in BOTH suitability sub-views, not just
+    // `view=scenario`: the pair is chosen on 후보지 심층 분석 (`view=score`) and
+    // consumed on 후보지 심층 비교, so restricting it to the destination view would
+    // make a half-made selection unshareable and would drop it the moment the
+    // reader shared the screen they made it on.
+    //
+    // The two slots are written INDEPENDENTLY. A lone `cmpB` is a state the reader
+    // can genuinely be in — pick both, then clear A — and suppressing it would make
+    // the link disagree with the screen: B would still show as selected while a
+    // reload silently dropped it. The only pair this refuses to write is A === B,
+    // which is not a comparison.
+    if (state.cmpA) params.set("cmpA", state.cmpA);
+    if (state.cmpB && state.cmpB !== state.cmpA) params.set("cmpB", state.cmpB);
   }
 
   // Landfill-only fields, written only in that area — the same rule the suitability

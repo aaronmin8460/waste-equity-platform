@@ -42,6 +42,7 @@ import {
   fetchWasteStatistics,
   hasCriticStability,
   landCoverCellTileUrl,
+  previewUserWeightScenario,
   suitabilityTileUrl,
   userScenarioTileUrl,
   wetlandTileUrl,
@@ -71,6 +72,7 @@ import {
   type SuitabilitySort,
   type SuitabilityStatus,
   type UserScenarioCandidateDetail,
+  type UserScenarioWeights,
   type WasteStatisticsItem,
 } from "../lib/api";
 import {
@@ -154,6 +156,8 @@ import SuitabilitySidebar, {
   type SuitabilityMeta,
 } from "../components/suitability/SuitabilitySidebar";
 import { STATUS_LABELS } from "../components/suitability/shared";
+import SuitabilityScenarioSaveCard from "../components/suitability/SuitabilityScenarioSaveCard";
+import SuitabilityScenarioComparePicker from "../components/suitability/SuitabilityScenarioComparePicker";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import TransparencyDashboard from "../components/TransparencyDashboard";
 import WetlandLayerControl from "../components/WetlandLayerControl";
@@ -183,12 +187,23 @@ import { downloadCsv, safeFilename } from "../lib/csv";
 import { buildRankingCsv } from "../lib/exports";
 import { buildEquityReport, type ReportModel } from "../lib/report";
 import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario";
+import {
+  deleteSavedScenario,
+  isCanonicalWeights,
+  readSavedScenarios,
+  renameSavedScenario,
+  resolveComparisonPair,
+  saveScenario,
+  type ComparisonSlot,
+  type SavedScenario,
+} from "../lib/savedScenarios";
 import { namedWeightRows } from "../lib/suitability";
 import {
   SUITABILITY_SCREENING_SHORT_LABEL,
   accountingBasisLabel,
   destinationFor,
   plainError,
+  profileLabel,
   type DashboardArea,
   type DataStatus,
   type NavDestination,
@@ -460,6 +475,28 @@ export default function Home() {
   const [suitSort, setSuitSort] = useState<SuitabilitySort>(SUITABILITY_DEFAULT_SORT);
   const [ranking, setRanking] = useState<SuitabilityCandidateCollection | null>(null);
   const [rankingError, setRankingError] = useState<string | null>(null);
+
+  // ④ 시나리오 저장 / ⑤ 비교할 시나리오 선택 (Page 4D).
+  //
+  // The saved list is a MIRROR of this browser's localStorage, held in state so
+  // React can render it; `lib/savedScenarios.ts` remains the only module that
+  // touches storage, and every mutator returns the new list, so the mirror is
+  // replaced from the store rather than patched here (another tab may have written
+  // in between). It starts EMPTY and is filled by a mount effect — reading storage
+  // in a `useState` initialiser would run on the server too and produce a
+  // hydration mismatch, since the server has no localStorage.
+  const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
+  const [savedScenarioWarnings, setSavedScenarioWarnings] = useState<string[]>([]);
+  const [scenarioSaving, setScenarioSaving] = useState(false);
+  const [scenarioSaveError, setScenarioSaveError] = useState<string | null>(null);
+  const [scenarioSaveNotice, setScenarioSaveNotice] = useState<string | null>(null);
+  // The A/B pair, as saved-scenario IDS — mirrored into `cmpA`/`cmpB`. Ids, not
+  // scenarios: the scenario a slot names can be renamed or deleted underneath it,
+  // and `resolveComparisonPair` is what turns an id back into a row (or into an
+  // explicit "이 브라우저에 없습니다" state).
+  const [cmpA, setCmpA] = useState<string | null>(null);
+  const [cmpB, setCmpB] = useState<string | null>(null);
+  const savedScenariosLoaded = useRef(false);
 
   const [scope, setScope] = useState<ScopeSelection>("all");
   const [topN, setTopN] = useState(10);
@@ -1014,6 +1051,170 @@ export default function Home() {
     [changeMode, changeSuitabilityView],
   );
 
+  // ------------------------------------------------------------------------- //
+  // ④ 시나리오 저장 / ⑤ 비교할 시나리오 선택 (Page 4D)
+  // ------------------------------------------------------------------------- //
+
+  /** Load this browser's saved scenarios once, on the client. Never throws. */
+  useEffect(() => {
+    if (savedScenariosLoaded.current || typeof window === "undefined") return;
+    savedScenariosLoaded.current = true;
+    // A one-time read of browser-external state on mount — the same shape as the
+    // URL restore below, not a render-derived computation, so it cannot cascade.
+    const { scenarios, warnings } = readSavedScenarios();
+    setSavedScenarios(scenarios);
+    setSavedScenarioWarnings(warnings);
+  }, []);
+
+  /**
+   * The Z/R/E/D weights ④ would save: the SERVED weights of the active 점수 반영
+   * 기준, resolved exactly as ② 계산 모델 가중치 설정 resolves them (the run's own
+   * profile, falling back to the policy's static profile only for a pre-CRITIC run
+   * that stored none). `null` when the run served nothing usable for that basis —
+   * never a fabricated default, and never a partially-filled vector.
+   */
+  const activeScenarioWeights = useMemo<UserScenarioWeights | null>(() => {
+    if (suit === null) return null;
+    const served =
+      (suit.run.weight_profiles ?? {})[profile] ?? suit.policy.weight_profiles[profile] ?? null;
+    return isCanonicalWeights(served) ? served : null;
+  }, [suit, profile]);
+
+  const activeRunId = suit?.run.id ?? null;
+
+  const scenarioSelection = useMemo(
+    () => resolveComparisonPair(savedScenarios, cmpA, cmpB),
+    [savedScenarios, cmpA, cmpB],
+  );
+
+  /** Apply a mutator's result: replace the mirror, or report why it was refused. */
+  const applyScenarioWrite = useCallback(
+    (result: ReturnType<typeof saveScenario>, successNotice: string | null) => {
+      setSavedScenarios(result.scenarios);
+      setSavedScenarioWarnings(result.warnings);
+      if (result.ok) {
+        setScenarioSaveError(null);
+        setScenarioSaveNotice(successNotice);
+      } else {
+        setScenarioSaveError(result.message);
+        setScenarioSaveNotice(null);
+      }
+      return result.ok;
+    },
+    [],
+  );
+
+  /**
+   * Save the active weights under a name — but ONLY after the backend has accepted
+   * them for this run.
+   *
+   * `POST /suitability/scenarios/preview` is the canonicalisation authority: it
+   * parses the weights as exact decimals, rejects an unusable vector with a
+   * structured 422, and echoes back `canonical_weights` and the `run_id` it applied
+   * them to. Those two echoed values are what gets persisted — not the client's
+   * copy — so a stored scenario is by construction one the analysis engine has
+   * already run. The preview's SCORES AND RANKS are deliberately discarded: they
+   * describe one run at one moment, and a stored copy would go stale while still
+   * looking authoritative (docs/figma-redesign/PAGE_5_SCENARIO_CONTRACT.md §6).
+   *
+   * `top_n: 1` because nothing in the response is displayed — this is a validation
+   * call, and asking for fifty candidates to throw them away would be waste.
+   */
+  const handleSaveScenario = useCallback(
+    (name: string) => {
+      if (activeScenarioWeights === null || activeRunId === null) return;
+      setScenarioSaving(true);
+      setScenarioSaveError(null);
+      setScenarioSaveNotice(null);
+      void previewUserWeightScenario({
+        run_id: activeRunId,
+        weights: activeScenarioWeights,
+        compare_profile: "baseline",
+        top_n: 1,
+      })
+        .then((preview) => {
+          applyScenarioWrite(
+            saveScenario({
+              name,
+              weights: preview.canonical_weights,
+              runId: preview.run_id,
+              profileSource: profile,
+            }),
+            `"${name.trim()}" 시나리오를 저장했습니다.`,
+          );
+        })
+        .catch((cause: unknown) => {
+          // A refused save says WHY. The backend's own weight message is preferred
+          // over a generic one, because it names the offending value.
+          setScenarioSaveNotice(null);
+          setScenarioSaveError(
+            cause instanceof ApiError && cause.detail
+              ? cause.detail.detail
+              : "가중치를 확인하지 못해 시나리오를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+          );
+        })
+        .finally(() => setScenarioSaving(false));
+    },
+    [activeScenarioWeights, activeRunId, profile, applyScenarioWrite],
+  );
+
+  const handleRenameScenario = useCallback(
+    (id: string, name: string) => {
+      // Identity is preserved by the storage layer, so any `cmpA`/`cmpB` pointing
+      // at this scenario keeps pointing at it — no slot bookkeeping is needed here.
+      applyScenarioWrite(renameSavedScenario(id, name), "시나리오 이름을 변경했습니다.");
+    },
+    [applyScenarioWrite],
+  );
+
+  const handleDeleteScenario = useCallback(
+    (id: string) => {
+      const ok = applyScenarioWrite(deleteSavedScenario(id), "시나리오를 삭제했습니다.");
+      if (!ok) return;
+      // Clear the slot IN THE SAME UPDATE as the delete. A `cmpA` left pointing at
+      // a deleted scenario would survive into the shared URL and into Page 5 as a
+      // dangling reference — the one failure this section must not have.
+      setCmpA((current) => (current === id ? null : current));
+      setCmpB((current) => (current === id ? null : current));
+    },
+    [applyScenarioWrite],
+  );
+
+  /**
+   * Put a scenario in a slot. A scenario can occupy only ONE slot: assigning it to
+   * A while it is already B empties B, so the pair can never degenerate into a
+   * scenario compared with itself.
+   */
+  const handleAssignScenarioSlot = useCallback((slot: ComparisonSlot, id: string) => {
+    if (slot === "A") {
+      setCmpA(id);
+      setCmpB((current) => (current === id ? null : current));
+    } else {
+      setCmpB(id);
+      setCmpA((current) => (current === id ? null : current));
+    }
+  }, []);
+
+  const handleClearScenarioSlot = useCallback((slot: ComparisonSlot) => {
+    if (slot === "A") setCmpA(null);
+    else setCmpB(null);
+  }, []);
+
+  const handleResetScenarioSlots = useCallback(() => {
+    setCmpA(null);
+    setCmpB(null);
+  }, []);
+
+  /**
+   * 두 시나리오 비교하기 → — move to 후보지 심층 비교 carrying the pair (Figma
+   * 225:443). The ids stay in state and therefore in the URL; this phase does not
+   * render the comparison itself, and Page 5A will re-verify both sides through the
+   * preview API before showing any number.
+   */
+  const handleCompareScenarios = useCallback(() => {
+    changeSuitabilityView("scenario");
+  }, [changeSuitabilityView]);
+
   useEffect(() => {
     if (mode === "transparency") return;
     /* eslint-disable react-hooks/set-state-in-effect -- mirror the current area so
@@ -1501,6 +1702,12 @@ export default function Home() {
       // Page-4 link cannot change what `scope`/`top` mean on Page 1.
       suitScope,
       suitSort,
+      // ⑤ 비교할 시나리오 선택. The RAW selected ids, not the resolved rows: a slot
+      // whose scenario this browser cannot find must survive into the link exactly
+      // as chosen, so the reader who opens it sees the explicit "이 브라우저에
+      // 없습니다" state instead of a silently shortened selection.
+      cmpA,
+      cmpB,
     }),
     [
       mode,
@@ -1531,6 +1738,9 @@ export default function Home() {
       // or sort change would never reach the URL.
       suitScope,
       suitSort,
+      // Load-bearing for the same reason: an A/B choice must reach the URL.
+      cmpA,
+      cmpB,
     ],
   );
 
@@ -1600,6 +1810,12 @@ export default function Home() {
     // 수도권 전체 and another for the shared one.
     if (state.suitScope !== undefined) setSuitScope(state.suitScope);
     if (state.suitSort !== undefined) setSuitSort(state.suitSort);
+    // ⑤ A/B pair. Restored as IDS only — whether either id names a scenario THIS
+    // browser holds is answered by `resolveComparisonPair` against the saved list,
+    // not here, so a link from another device restores its selection and is then
+    // shown as unresolvable rather than being quietly discarded.
+    if (state.cmpA !== undefined) setCmpA(state.cmpA);
+    if (state.cmpB !== undefined) setCmpB(state.cmpB);
     setUrlWarnings(warnings);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data]);
@@ -2489,6 +2705,40 @@ export default function Home() {
                   emptyScope={suitScope.kind !== "all" && ranking?.total_matched === 0}
                 />
               )
+            }
+            scenarioSavePanel={
+              // ④ — rendered only once the run is known, because the card's whole
+              // subject is "the weights currently in force on THIS run".
+              suit ? (
+                <SuitabilityScenarioSaveCard
+                  weights={activeScenarioWeights}
+                  weightsSourceLabel={profileLabel(profile)}
+                  activeRunId={activeRunId}
+                  scenarios={savedScenarios}
+                  storageWarnings={savedScenarioWarnings}
+                  saving={scenarioSaving}
+                  error={scenarioSaveError}
+                  notice={scenarioSaveNotice}
+                  onSave={handleSaveScenario}
+                  onRename={handleRenameScenario}
+                  onDelete={handleDeleteScenario}
+                  selection={scenarioSelection}
+                  onAssignSlot={handleAssignScenarioSlot}
+                  onClearSlot={handleClearScenarioSlot}
+                />
+              ) : null
+            }
+            scenarioComparePanel={
+              suit ? (
+                <SuitabilityScenarioComparePicker
+                  selection={scenarioSelection}
+                  activeRunId={activeRunId}
+                  savedCount={savedScenarios.length}
+                  onClearSlot={handleClearScenarioSlot}
+                  onReset={handleResetScenarioSlots}
+                  onCompare={handleCompareScenarios}
+                />
+              ) : null
             }
             scope={suitScope}
             onScopeChange={setSuitScope}

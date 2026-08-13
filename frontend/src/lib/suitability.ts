@@ -138,7 +138,13 @@ export function weightPercent(value: string | undefined): string {
  * "용도지역 호환성(Z) 40% · 도로 근접성 대리지표(R) 30% · …", never a bare letter.
  * Order is the shared `COMPONENT_ORDER`, so every surface lists them identically.
  */
-export function namedWeights(weights: Record<string, string> | undefined): string {
+export function namedWeights(
+  // Widened to the SAME parameter type `namedWeightRows` below already takes, so
+  // the exactly-four-keys `UserScenarioWeights` (a saved scenario's weights) and
+  // the open served profile map both go through this one formatter. Nothing else
+  // changes: only the four `COMPONENT_ORDER` keys are ever read.
+  weights: Readonly<Partial<Record<ScoreComponent, string>>> | undefined,
+): string {
   const w = weights ?? {};
   return COMPONENT_ORDER.map((c) => `${codeWithName(c)} ${weightPercent(w[c])}`).join(" · ");
 }

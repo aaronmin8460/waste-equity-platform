@@ -260,15 +260,32 @@ describe("the Figma numbered hierarchy", () => {
     expect(within(scope).getByTestId("suitability-scope-pill-all")).toBeDefined();
   });
 
-  it("renders NO ④ 시나리오 저장 or ⑤ 비교할 시나리오 선택 shell", async () => {
+  it("renders ④ 시나리오 저장 and ⑤ 비교할 시나리오 선택, in the RIGHT column", async () => {
     await enterDeepAnalysis();
-    // Their real storage/A-B behaviour is Page 4D. An inert shell would read as
-    // broken, and a populated one would be fabricated (spec §10).
+    // Page 4A shipped these two as deliberate ABSENCES: an inert shell would have
+    // read as broken and a populated one would have been fabricated. Page 4D gave
+    // them real localStorage persistence and A/B selection, so the numbering now
+    // runs ① ② ③ ④ ⑤ and the assertion becomes their presence. The Figma frame
+    // (136:8684) and the 기술요청 note (225:443, "우측 맨 하단 [두 시나리오
+    // 비교하기]") both place them at the foot of the results column.
+    expect(within(right()).getByTestId("scenario-save")).toBeDefined();
+    expect(within(right()).getByTestId("scenario-compare-picker")).toBeDefined();
+    expect(within(left()).queryByTestId("scenario-save")).toBeNull();
+
+    // Still no FABRICATED content: an untouched browser has no saved scenarios and
+    // neither slot is pre-filled. The three Figma mock rows never render.
     const workspace = `${left().textContent ?? ""} ${right().textContent ?? ""}`;
-    expect(workspace).not.toContain("시나리오 저장");
-    expect(workspace).not.toContain("비교할 시나리오 선택");
-    expect(workspace).not.toContain("A안");
-    expect(workspace).not.toContain("B안");
+    expect(workspace).toContain("(선택 0/2개)");
+    expect(workspace).not.toContain("시나리오 03");
+    expect(workspace).not.toContain("균형 중심안");
+  });
+
+  it("keeps the ④/⑤ pair out of the single-column layout Page 4A did not redesign", async () => {
+    // `part="all"` (the stacked phone layout and 후보지 심층 비교) has no results
+    // column for them to sit at the foot of, and neither shape is in Figma 136:8684.
+    await enterDeepAnalysis();
+    expect(screen.getAllByTestId("scenario-save")).toHaveLength(1);
+    expect(screen.getAllByTestId("scenario-compare-picker")).toHaveLength(1);
   });
 });
 
