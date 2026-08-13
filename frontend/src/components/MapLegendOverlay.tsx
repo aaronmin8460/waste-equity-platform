@@ -119,7 +119,7 @@ export default function MapLegendOverlay(props: MapLegendOverlayProps) {
     // one flex column makes non-collision structural. Only these small cards
     // overlay the map, so the rest of it stays interactive.
     <details
-      className="map-legend w-[min(86vw,288px)] rounded-card border border-hairline-strong bg-white/90 text-ink-muted shadow-float backdrop-blur-sm"
+      className="map-legend w-[min(86vw,288px)] isolate overflow-hidden rounded-card border border-hairline-strong bg-white/90 text-ink-muted shadow-float backdrop-blur-sm"
       data-testid="map-legend"
     >
       <summary
