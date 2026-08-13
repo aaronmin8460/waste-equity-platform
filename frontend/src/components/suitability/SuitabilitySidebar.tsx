@@ -103,6 +103,11 @@ export interface SuitabilitySidebarProps {
   rankingError: string | null;
   sort: SuitabilitySort;
   onSortChange: (sort: SuitabilitySort) => void;
+  /**
+   * Open 순위 전체보기. Passed straight through to the ranking block — this column
+   * neither owns the dialog nor knows what it renders, it only reports the intent.
+   */
+  onOpenFullRanking?: () => void;
 }
 
 export default function SuitabilitySidebar({
@@ -129,6 +134,7 @@ export default function SuitabilitySidebar({
   rankingError,
   sort,
   onSortChange,
+  onOpenFullRanking,
 }: SuitabilitySidebarProps) {
   // The error and loading states belong to ONE column. Rendering them in both
   // would duplicate a single failure into two identical messages on one screen.
@@ -166,6 +172,9 @@ export default function SuitabilitySidebar({
     scopeName,
     scopeActive: scope.kind !== "all",
     mapFollowsScope,
+    // Only the ranking block renders the trigger; the stability short-list is a
+    // different population and `showRanking` already gates it out there.
+    onOpenFullRanking,
   };
   return (
     <>

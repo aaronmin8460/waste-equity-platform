@@ -161,6 +161,7 @@ import type { WetlandType } from "../lib/wetland";
 import { defaultWetlandTypeVisibility } from "../lib/wetland";
 import RegionRanking from "../components/RegionRanking";
 import FullRankingDialog from "../components/FullRankingDialog";
+import SuitabilityRankingDialog from "../components/suitability/SuitabilityRankingDialog";
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
 import PageHeader from "../components/ui/PageHeader";
@@ -470,6 +471,12 @@ export default function Home() {
    */
   const [rankDirection, setRankDirection] = useState<RankDirection>("high");
   const [fullRankingOpen, setFullRankingOpen] = useState(false);
+  /**
+   * 순위 전체보기 (Page 4C) — the ③ ranking with the top-N cut removed. Page-only
+   * state, like `fullRankingOpen` above: the URL contract stays frozen, and an
+   * overlay is not something a shared link should restore.
+   */
+  const [suitRankingOpen, setSuitRankingOpen] = useState(false);
   const [reportKind, setReportKind] = useState<"ranking" | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<string[]>([]);
   // A scenario / candidate restored from a shared URL, held until consumed (the
@@ -972,6 +979,8 @@ export default function Home() {
         // must not leave an overlay armed to reappear when the reader comes back.
         setFullRankingOpen(false);
       }
+      // The same rule for 후보지 심층 분석's 순위 전체보기.
+      if (next !== "suitability") setSuitRankingOpen(false);
       setMode(next);
     },
     [clearScenario],
@@ -979,6 +988,9 @@ export default function Home() {
   const changeSuitabilityView = useCallback(
     (next: SuitabilityView) => {
       if (next !== "scenario") clearScenario();
+      // 순위 전체보기 belongs to the 점수 sub-view's ③ card; leaving that sub-view
+      // must not leave it armed to reappear over a different screen.
+      if (next !== "score") setSuitRankingOpen(false);
       setSuitabilityView(next);
     },
     [clearScenario],
@@ -2487,6 +2499,7 @@ export default function Home() {
             rankingError={rankingError}
             sort={suitSort}
             onSortChange={setSuitSort}
+            onOpenFullRanking={() => setSuitRankingOpen(true)}
           />
         </CollapsiblePanel>
       )}
@@ -2512,6 +2525,29 @@ export default function Home() {
         direction={rankDirection}
         selectedRegionCode={selectedRegionCode}
         onSelectRegion={(code) => setSelectedRegionCode(code)}
+      />
+
+      {/* 순위 전체보기 — the ③ ranking with the top-N cut removed (Figma 138:415).
+          It INHERITS the active run, ② 점수 반영 기준, ① 분석 범위 and ③ 순위 방향
+          rather than choosing its own, reads its pages through the same query
+          builder the card uses, and drives the page's own `setSuitSort` so the two
+          can never disagree. Mounted beside the map rather than inside the sidebar
+          so the dialog is not a child of a column that scrolls or can be resized
+          under it. Renders nothing while closed. */}
+      <SuitabilityRankingDialog
+        open={mode === "suitability" && suitabilityView === "score" && suitRankingOpen}
+        onClose={() => setSuitRankingOpen(false)}
+        runId={suit?.run.id ?? null}
+        profile={profile}
+        scope={suitScope}
+        scopeName={suitScopeName}
+        sort={suitSort}
+        onSortChange={setSuitSort}
+        // The SAME scoped bands the ③ card shows. Null (bands unavailable) leaves
+        // every grade cell empty rather than inventing one.
+        thresholds={gradeDistribution}
+        selectedCandidateId={selected?.candidate_id ?? null}
+        onSelect={onCandidateClick}
       />
 
       {/* Print / PNG report preview overlay (map-free). Opened from the equity

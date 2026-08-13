@@ -91,6 +91,13 @@ export interface SuitabilityCandidateListProps {
    * caller renders `"stable"` separately rather than putting a card inside a card.
    */
   section?: "ranking" | "stable" | "both";
+  /**
+   * Open 순위 전체보기 — the SAME scoped ranking with the top-N cut removed
+   * (Figma 138:415). Omitted where there is no dialog to open (the comparison
+   * sub-view), in which case the trigger is not rendered at all rather than
+   * rendered dead.
+   */
+  onOpenFullRanking?: () => void;
 }
 
 /**
@@ -185,6 +192,7 @@ export default function SuitabilityCandidateList({
   mapFollowsScope,
   nested = false,
   section = "both",
+  onOpenFullRanking,
 }: SuitabilityCandidateListProps) {
   const stableCandidates =
     stabilityAvailable && section !== "ranking" ? summary.top_stable_candidates : [];
@@ -320,6 +328,21 @@ export default function SuitabilityCandidateList({
             </p>
           </details>
         </div>
+
+        {/* 전체보기 ↗ — the last element of ③, where Figma 136:8684 puts it. It
+            opens the SAME scoped ranking with the top-N cut removed, never a
+            generic unfiltered one. Hidden while the ranking request has failed:
+            there is no ranking to show in full, and the error above says so. */}
+        {onOpenFullRanking !== undefined && rankingError === null && (
+          <button
+            type="button"
+            onClick={onOpenFullRanking}
+            className="mt-2 w-full rounded-control border border-primary-border bg-surface px-3 py-2 text-xs font-semibold text-ink hover:bg-surface-muted"
+            data-testid="open-full-ranking"
+          >
+            전체보기 ↗
+          </button>
+        )}
     </>
   );
 
