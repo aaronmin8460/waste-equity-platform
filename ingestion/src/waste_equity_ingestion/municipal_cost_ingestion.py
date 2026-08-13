@@ -43,9 +43,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 from waste_equity_backend.analysis.municipal_cost import (
     EXPECTED_COUNT_BY_METROPOLITAN,
@@ -114,6 +114,10 @@ from waste_equity_backend.models.municipal_cost import (
     STATUS_UNAVAILABLE,
     TRANSFORMATION_VERSION,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from sqlalchemy import CursorResult
+    from sqlalchemy.sql import Delete
 
 from .errors import IngestionError
 from .municipal_cost_parser import ParsedWorkbook, parse_workbook, sha256_file
@@ -1230,6 +1234,20 @@ def _upsert_source_files(
     _retire_superseded_source_files(session, outcomes, existing, report, counters)
 
 
+def _delete_rows(session: Session, statement: Delete) -> int:
+    """Execute one Core DELETE and report how many rows the database removed.
+
+    ``synchronize_session=False`` because the caller expunges the affected
+    objects itself: there is no in-session state left to reconcile, and the
+    matching strategies would each re-query for no benefit.
+    """
+
+    result = cast(
+        "CursorResult[Any]", session.execute(statement.execution_options(synchronize_session=False))
+    )
+    return int(result.rowcount)
+
+
 def _retire_superseded_source_files(
     session: Session,
     outcomes: Sequence[_FileOutcome],
@@ -1281,18 +1299,9 @@ def _retire_superseded_source_files(
     if not superseded:
         return
 
+    # Record the provenance before anything is removed, so the run report can
+    # name every retired workbook even though its row is about to disappear.
     for row in superseded:
-        for stored_quantity in session.scalars(
-            select(MunicipalWasteQuantity).where(MunicipalWasteQuantity.source_file_id == row.id)
-        ):
-            session.delete(stored_quantity)
-            counters["retired_quantities_deleted"] += 1
-        for stored_contract in session.scalars(
-            select(MunicipalWasteContract).where(MunicipalWasteContract.source_file_id == row.id)
-        ):
-            session.delete(stored_contract)
-            counters["retired_contracts_deleted"] += 1
-        session.flush()
         report.retired_source_files.append(
             {
                 "filename": row.filename,
@@ -1302,9 +1311,43 @@ def _retire_superseded_source_files(
                 "ingestion_decision": row.ingestion_decision,
             }
         )
-        session.delete(row)
-        counters["source_files_retired"] += 1
-    session.flush()
+
+    # Deleted as three ordered Core statements — children first, parents last —
+    # rather than as ORM object deletes. These mappers declare no
+    # ``relationship()``, so the unit of work has no mapper-level dependency
+    # between them and does not guarantee it will emit the quantity DELETE
+    # before the contract one. When it emits them the other way round,
+    # PostgreSQL's ``fk_mc_qty_contract ON DELETE CASCADE`` removes the
+    # quantities first and the ORM's own DELETE then matches nothing — the end
+    # state is the same, but the run logs SAWarnings and the deletion is really
+    # being done by the cascade this function is documented not to rely on.
+    # Stating the order here removes the ambiguity on both engines, and
+    # ``rowcount`` counts what the database actually removed instead of what was
+    # queued.
+    superseded_ids = [int(row.id) for row in superseded]
+    counters["retired_quantities_deleted"] += _delete_rows(
+        session,
+        delete(MunicipalWasteQuantity).where(
+            MunicipalWasteQuantity.source_file_id.in_(superseded_ids)
+        ),
+    )
+    counters["retired_contracts_deleted"] += _delete_rows(
+        session,
+        delete(MunicipalWasteContract).where(
+            MunicipalWasteContract.source_file_id.in_(superseded_ids)
+        ),
+    )
+    counters["source_files_retired"] += _delete_rows(
+        session,
+        delete(MunicipalCostSourceFile).where(MunicipalCostSourceFile.id.in_(superseded_ids)),
+    )
+
+    # ``synchronize_session=False`` leaves the deleted rows in the identity map;
+    # drop them so nothing later in this transaction can resurrect or re-flush a
+    # row that no longer exists.
+    for row in superseded:
+        session.expunge(row)
+
     report.warnings.append(
         f"retired {len(superseded)} superseded 2024 source file(s) from a previous "
         "delivery so the served provenance describes only the current source snapshot"

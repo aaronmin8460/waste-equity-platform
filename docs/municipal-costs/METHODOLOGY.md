@@ -458,11 +458,19 @@ Scope and safety:
 - it happens inside the single write transaction, so a later failure rolls the
   retirement back with everything else;
 - `--dry-run` never opens that transaction and therefore never retires anything;
-- children are deleted explicitly rather than left to `ON DELETE CASCADE`. The
-  cascade is declared on both child foreign keys and fires on PostgreSQL, but
-  SQLite enforces foreign keys only under `PRAGMA foreign_keys = ON`, which the
-  test engine does not set. Deleting in Python makes the two engines behave
-  identically;
+- children are deleted explicitly rather than left to `ON DELETE CASCADE`, as
+  three ordered statements — quantities, then contracts, then the source files.
+  The cascade is declared on both child foreign keys and fires on PostgreSQL,
+  but SQLite enforces foreign keys only under `PRAGMA foreign_keys = ON`, which
+  the test engine does not set, so relying on it would behave differently on the
+  two engines. The order is stated rather than left to the ORM: these mappers
+  declare no `relationship()`, so the unit of work has no mapper-level
+  dependency between them and does not guarantee it emits the quantity delete
+  before the contract one — when it emits them the other way round,
+  `fk_mc_qty_contract ON DELETE CASCADE` removes the quantities first, the ORM's
+  own delete matches nothing, and the run logs `SAWarning`s while the cascade
+  quietly does the work this rule says it must not. Row counts are read back
+  from the database, so the reported figures are what was actually removed;
 - every retired file is listed in the run report (`retired_source_files`) with
   its filename, dataset role and SHA-256, so the retirement is auditable from the
   run output and the ingestion-run history is unchanged.
