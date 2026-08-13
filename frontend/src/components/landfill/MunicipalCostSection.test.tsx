@@ -260,6 +260,32 @@ describe("section shell", () => {
     expect(MUNICIPAL_COST_SECTION_TITLE).toContain("시·군·구");
     expect(MUNICIPAL_COST_SECTION_TITLE).toContain("2024년");
   });
+
+  it("lays the section out as condition → comparison → methodology sub-cards", () => {
+    renderSection();
+    const filters = screen.getByTestId("municipal-cost-filters");
+    const comparison = screen.getByTestId("municipal-cost-comparison");
+    const methodology = screen.getByTestId("municipal-cost-methodology");
+    // Each is a named region of its own under the section's h2.
+    for (const card of [filters, comparison, methodology]) {
+      expect(card.tagName).toBe("SECTION");
+    }
+    expect(filters.compareDocumentPosition(comparison) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(
+      comparison.compareDocumentPosition(methodology) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("states the comparison's units in its card header", () => {
+    renderSection();
+    const comparison = screen.getByTestId("municipal-cost-comparison");
+    expect(within(comparison).getByRole("heading", { level: 3 })).toHaveTextContent(
+      "지자체별 상세 비교",
+    );
+    expect(comparison).toHaveTextContent("단위: 원/인, 억원");
+  });
 });
 
 // --------------------------------------------------------------------------- //
@@ -381,11 +407,13 @@ describe("filters and sorting", () => {
     const setSido = vi.fn();
     renderSection({ setSido });
     const select = screen.getByLabelText("지역") as HTMLSelectElement;
+    // Each metropolitan is named with the tier of 기초자치단체 it is made of. The three
+    // tiers are different kinds of local government and are not interchangeable.
     expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
       "전체",
-      "서울",
-      "인천",
-      "경기",
+      "서울 자치구",
+      "인천 군·구",
+      "경기 시·군",
     ]);
     fireEvent.change(select, { target: { value: "41" } });
     expect(setSido).toHaveBeenCalledWith("41");
@@ -394,25 +422,42 @@ describe("filters and sorting", () => {
     expect(setSido).toHaveBeenLastCalledWith(null);
   });
 
-  it("offers the status filter with Korean labels over the served enum values", () => {
+  it("offers the four status scopes as chips with Korean labels and no enum text", () => {
     const setStatus = vi.fn();
     renderSection({ setStatus });
-    const select = screen.getByLabelText("자료 상태") as HTMLSelectElement;
-    expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
-      "전체",
-      "계산 가능",
-      "일부 제한",
-      "자료 없음",
-    ]);
-    // The enum survives as the option VALUE — never as citizen-facing text.
-    expect(Array.from(select.options).map((option) => option.value)).toEqual([
-      "",
-      "AVAILABLE",
-      "PARTIAL",
-      "UNAVAILABLE",
-    ]);
-    fireEvent.change(select, { target: { value: "PARTIAL" } });
+    const group = screen.getByRole("group", { name: "자료 상태" });
+    expect(
+      within(group)
+        .getAllByRole("button")
+        // The served count rides inside the chip, so compare the leading label only.
+        .map((button) => button.textContent?.replace(/\d+$/, "").trim()),
+    ).toEqual(["계산 가능", "일부 제한", "자료 없음", "전체"]);
+    // The backend enum never becomes citizen-facing text.
+    expect(group.textContent ?? "").not.toContain("AVAILABLE");
+    expect(group.textContent ?? "").not.toContain("UNAVAILABLE");
+    fireEvent.click(within(group).getByTestId("municipal-cost-status-PARTIAL"));
     expect(setStatus).toHaveBeenCalledWith("PARTIAL");
+  });
+
+  it("reports 전체 as null — the backend's 'no status parameter', not a sentinel", () => {
+    const setStatus = vi.fn();
+    renderSection({ status: "AVAILABLE", setStatus });
+    fireEvent.click(screen.getByTestId("municipal-cost-status-ALL"));
+    expect(setStatus).toHaveBeenCalledWith(null);
+  });
+
+  it("switches between every status scope from the chips", () => {
+    const setStatus = vi.fn();
+    renderSection({ setStatus });
+    for (const [testId, expected] of [
+      ["municipal-cost-status-AVAILABLE", "AVAILABLE"],
+      ["municipal-cost-status-PARTIAL", "PARTIAL"],
+      ["municipal-cost-status-UNAVAILABLE", "UNAVAILABLE"],
+      ["municipal-cost-status-ALL", null],
+    ] as const) {
+      fireEvent.click(screen.getByTestId(testId));
+      expect(setStatus).toHaveBeenLastCalledWith(expected);
+    }
   });
 
   it("offers exactly the three backend sort orders and reports their enum values", () => {
@@ -431,8 +476,26 @@ describe("filters and sorting", () => {
   it("reflects the applied filters back into the controls", () => {
     renderSection({ sido: "28", status: "UNAVAILABLE", sort: "total_payment_desc" });
     expect(screen.getByLabelText("지역")).toHaveValue("28");
-    expect(screen.getByLabelText("자료 상태")).toHaveValue("UNAVAILABLE");
     expect(screen.getByLabelText("정렬")).toHaveValue("total_payment_desc");
+    // Chip state is `aria-pressed`, so it is announced rather than only coloured.
+    expect(screen.getByTestId("municipal-cost-status-UNAVAILABLE")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    for (const other of ["AVAILABLE", "PARTIAL", "ALL"]) {
+      expect(screen.getByTestId(`municipal-cost-status-${other}`)).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    }
+  });
+
+  it("restates the applied selection, including the tier of the chosen metropolitan", () => {
+    renderSection({ sido: "28", status: "PARTIAL", sort: "region_name_asc" });
+    const summary = screen.getByTestId("municipal-cost-summary");
+    expect(summary).toHaveTextContent("인천 군·구");
+    expect(summary).toHaveTextContent("일부 제한");
+    expect(summary).toHaveTextContent("지역 이름순");
   });
 
   it("renders rows in the SERVED order and never re-sorts them", () => {
@@ -443,6 +506,66 @@ describe("filters and sorting", () => {
       .getAllByTestId("municipal-cost-row")
       .map((element) => element.getAttribute("data-municipality"));
     expect(names).toEqual(["이천시", "부천시", "부평구", "강남구"]);
+  });
+
+  it("re-renders the served order a different sort returned, without reordering it", () => {
+    // Sorting is a BACKEND parameter: the component renders whatever order arrived.
+    const byName = [UNAVAILABLE_ROW, DERIVED_ROW, PARTIAL_ROW, row()];
+    renderSection({
+      sort: "region_name_asc",
+      data: response({ sort: "region_name_asc", municipalities: byName }),
+    });
+    expect(
+      within(screen.getByTestId("municipal-cost-table"))
+        .getAllByTestId("municipal-cost-row")
+        .map((element) => element.getAttribute("data-municipality")),
+    ).toEqual(["강남구", "부천시", "부평구", "이천시"]);
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 6b — the demo default scope
+// --------------------------------------------------------------------------- //
+
+describe("default comparison scope", () => {
+  it("marks the released 계산 가능 default as the pressed chip", () => {
+    // `app/page.tsx` opens on MUNICIPAL_COST_DEFAULT_STATUS; the section renders
+    // whatever scope it is handed, and this is that scope.
+    renderSection({ status: "AVAILABLE" });
+    expect(screen.getByTestId("municipal-cost-status-AVAILABLE")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("municipal-cost-status-ALL")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("says the view is narrowed and names the full scope it can be widened to", () => {
+    renderSection({ status: "AVAILABLE" });
+    const note = screen.getByTestId("municipal-cost-scope-note");
+    expect(note).toHaveTextContent("‘계산 가능’ 지자체만 표시합니다");
+    // The number is the SERVED expected_count, so widening is an honest offer.
+    expect(note).toHaveTextContent("66곳");
+  });
+
+  it("keeps every scope's served size on the control while one scope is applied", () => {
+    // The default hides nothing: the size of what it excludes is on screen.
+    renderSection({ status: "AVAILABLE" });
+    expect(screen.getByTestId("municipal-cost-count-available")).toHaveTextContent("20");
+    expect(screen.getByTestId("municipal-cost-count-partial")).toHaveTextContent("5");
+    expect(screen.getByTestId("municipal-cost-count-unavailable")).toHaveTextContent("41");
+    expect(screen.getByTestId("municipal-cost-count-expected")).toHaveTextContent("66");
+  });
+
+  it("drops the narrowed-view note when the reader has selected 전체", () => {
+    renderSection({ status: null });
+    expect(screen.queryByTestId("municipal-cost-scope-note")).toBeNull();
+    expect(screen.getByTestId("municipal-cost-status-ALL")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });
 
@@ -501,10 +624,46 @@ describe("status presentation", () => {
   });
 
   it("keeps unavailable municipalities in the list rather than hiding them", () => {
-    renderSection();
+    // Whatever scope is applied, a row the backend RETURNED is always rendered — the
+    // section never drops a served row for having no value.
+    renderSection({ status: null });
     expect(tableRow("강남구")).toBeInTheDocument();
-    // The full scope is the default: no status filter is applied.
-    expect(screen.getByLabelText("자료 상태")).toHaveValue("");
+    expect(screen.getByTestId("municipal-cost-status-ALL")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("marks a PARTIAL value on the value itself, not only in the status column", () => {
+    renderSection();
+    const partial = tableRow("부평구");
+    const marker = within(partial).getByTestId("municipal-cost-partial-marker");
+    expect(marker).toHaveTextContent("제한 있음");
+    // And the value points at the served limitation, so a screen-reader user hears
+    // the qualification at the number rather than a column away.
+    const limitation = within(partial).getByTestId("municipal-cost-row-limitation");
+    expect(limitation.id).not.toBe("");
+    const describedValue = partial.querySelector(`[aria-describedby='${limitation.id}']`);
+    expect(describedValue).not.toBeNull();
+    expect(describedValue?.textContent).toContain("19,863원/인");
+  });
+
+  it("puts no 제한 있음 marker on an unlimited available row", () => {
+    renderSection();
+    expect(
+      within(tableRow("이천시")).queryByTestId("municipal-cost-partial-marker"),
+    ).toBeNull();
+  });
+
+  it("does not describe an unavailable value by its reason — the cell already says it", () => {
+    // 자료 없음 is in the cell itself; pointing at the reason as well would announce
+    // absence twice.
+    renderSection();
+    const unavailable = tableRow("강남구");
+    expect(
+      within(unavailable).queryByTestId("municipal-cost-partial-marker"),
+    ).toBeNull();
+    expect(unavailable.querySelector("[aria-describedby]")).toBeNull();
   });
 
   it("uses the neutral missing badge for absence, not the amber caveat one", () => {
@@ -571,6 +730,144 @@ describe("derived Gyeonggi populations", () => {
     const { container } = renderSection();
     expect(container.querySelector("[data-testid='map-container']")).toBeNull();
     expect(container.querySelector("canvas")).toBeNull();
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 10b — local-government terminology
+// --------------------------------------------------------------------------- //
+
+describe("geographic terminology", () => {
+  it("names each municipality's metropolitan and its tier of local government", () => {
+    renderSection();
+    // 서울 자치구 / 인천 군·구 / 경기 시·군 — three different kinds of 기초자치단체, so a
+    // single "시·군·구" label would be right only in aggregate and wrong per row.
+    expect(
+      within(tableRow("강남구")).getByTestId("municipal-cost-scope-caption"),
+    ).toHaveTextContent("서울특별시 · 자치구");
+    expect(
+      within(tableRow("부평구")).getByTestId("municipal-cost-scope-caption"),
+    ).toHaveTextContent("인천광역시 · 군·구");
+    expect(
+      within(tableRow("이천시")).getByTestId("municipal-cost-scope-caption"),
+    ).toHaveTextContent("경기도 · 시·군");
+  });
+
+  it("carries the same caption in the mobile cards", () => {
+    renderSection();
+    const card = within(screen.getByTestId("municipal-cost-cards"))
+      .getAllByTestId("municipal-cost-card")
+      .find((element) => element.getAttribute("data-municipality") === "부평구")!;
+    expect(within(card).getByTestId("municipal-cost-scope-caption")).toHaveTextContent(
+      "인천광역시 · 군·구",
+    );
+  });
+
+  it("omits the tier rather than guessing one for an unrecognised metropolitan", () => {
+    // A row from outside the three published metropolitans has a tier this UI does
+    // not know; printing a plausible one would be a fabricated fact about it.
+    renderSection({
+      data: response({
+        municipalities: [row({ metropolitan_code: "99", metropolitan_name: "다른광역시" })],
+      }),
+    });
+    const caption = within(tableRow("이천시")).getByTestId("municipal-cost-scope-caption");
+    expect(caption).toHaveTextContent("다른광역시");
+    expect(caption.textContent).not.toContain("시·군");
+  });
+
+  it("explains the caption under the table rather than leaving it to be inferred", () => {
+    renderSection();
+    expect(screen.getByTestId("municipal-cost-table-notes")).toHaveTextContent(
+      "서울 자치구 · 인천 군·구 · 경기 시·군",
+    );
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 10c — the 2024 reference year
+// --------------------------------------------------------------------------- //
+
+describe("reference-year semantics", () => {
+  it("shows the SERVED reference year as a chip on the condition card", () => {
+    renderSection();
+    expect(screen.getByTestId("municipal-cost-reference-year")).toHaveTextContent("2024년 자료");
+  });
+
+  it("takes the year from the response, never from a frontend constant", () => {
+    renderSection({ data: response({ meta: meta({ reference_year: 2023 }) }) });
+    expect(screen.getByTestId("municipal-cost-reference-year")).toHaveTextContent("2023년 자료");
+  });
+
+  it("says the year does not follow the landfill view's own year control", () => {
+    // The screen above defaults to the latest complete landfill year. Without this
+    // sentence a reader who set that control to 2025 reads these as 2025 payments.
+    renderSection();
+    expect(screen.getByTestId("municipal-cost-year-note")).toHaveTextContent(
+      "위 반입 현황에서 고른 연도와 상관없이",
+    );
+    expect(screen.getByTestId("municipal-cost-year-note")).toHaveTextContent("2024년 자료만");
+  });
+
+  it("keeps the year in the section heading too, where it needs no expansion", () => {
+    renderSection();
+    expect(MUNICIPAL_COST_SECTION_TITLE).toContain("2024년");
+    expect(screen.getByTestId("municipal-cost-year-note").closest("details")).toBeNull();
+  });
+
+  it("shows no year chip before a response — the year is served, not assumed", () => {
+    renderSection({ data: null });
+    expect(screen.queryByTestId("municipal-cost-reference-year")).toBeNull();
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 10d — nothing is hard-coded
+// --------------------------------------------------------------------------- //
+
+describe("no frontend fallback data", () => {
+  it("moves every scope count when the served metadata changes", () => {
+    renderSection({
+      data: response({
+        meta: meta({
+          expected_count: 31,
+          available_count: 7,
+          partial_count: 2,
+          unavailable_count: 22,
+        }),
+      }),
+    });
+    expect(screen.getByTestId("municipal-cost-count-expected")).toHaveTextContent("31");
+    expect(screen.getByTestId("municipal-cost-count-available")).toHaveTextContent("7");
+    expect(screen.getByTestId("municipal-cost-count-partial")).toHaveTextContent("2");
+    expect(screen.getByTestId("municipal-cost-count-unavailable")).toHaveTextContent("22");
+  });
+
+  it("renders whichever municipalities were served, with no whitelist of its own", () => {
+    renderSection({
+      data: response({
+        municipalities: [row({ municipality_key: "41-포천시", display_name: "포천시" })],
+      }),
+    });
+    expect(tableRow("포천시")).toBeInTheDocument();
+    expect(screen.getAllByTestId("municipal-cost-row")).toHaveLength(1);
+    // And no municipality from the section's own fixtures leaked into the render.
+    expect(screen.queryByTestId("municipal-cost-table")?.textContent).not.toContain("강남구");
+  });
+
+  it("shows no scope figure at all when a request failed", () => {
+    // A failure means the platform knows nothing about the scope, so it says nothing
+    // rather than falling back to the released 66 / 20 / 5 / 41.
+    renderSection({ data: null, error: { message: "실패했습니다.", detail: null } });
+    for (const testId of [
+      "municipal-cost-count-expected",
+      "municipal-cost-count-available",
+      "municipal-cost-count-partial",
+      "municipal-cost-count-unavailable",
+    ]) {
+      expect(screen.queryByTestId(testId)).toBeNull();
+    }
+    expect(screen.queryByTestId("municipal-cost-scope-note")).toBeNull();
   });
 });
 
@@ -755,9 +1052,10 @@ describe("accessibility", () => {
     const headers = within(table)
       .getAllByRole("columnheader")
       .map((element) => element.textContent?.trim());
+    // The former standalone 광역 column is now a caption under the municipality's
+    // name, where it can also carry the tier the column could not.
     expect(headers).toEqual([
       "지자체",
-      "광역",
       "주민 1인당 지급액",
       "총 지급액",
       "자료 상태",

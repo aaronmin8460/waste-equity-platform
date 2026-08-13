@@ -149,6 +149,7 @@ import {
   shareableUrl,
   MAX_COMPARE,
   MUNICIPAL_COST_DEFAULT_SORT,
+  MUNICIPAL_COST_DEFAULT_STATUS,
   type AppUrlState,
 } from "../lib/urlState";
 import { downloadCsv, safeFilename } from "../lib/csv";
@@ -309,7 +310,13 @@ export default function Home() {
   // sent to the backend as `sido` / `status` / `sort`; nothing is filtered or
   // re-sorted client-side, so the server's nulls-last ordering is preserved.
   const [mcSido, setMcSido] = useState<MunicipalCostSido | null>(null);
-  const [mcStatus, setMcStatus] = useState<MunicipalCostStatus | null>(null);
+  // 계산 가능 by default — a SCOPE selection sent to the backend as `status`, never a
+  // curated list of municipalities. The served counts stay beside the control, so the
+  // 자료 없음 majority is visible and one click away rather than hidden
+  // (lib/urlState.ts `MUNICIPAL_COST_DEFAULT_STATUS`).
+  const [mcStatus, setMcStatus] = useState<MunicipalCostStatus | null>(
+    MUNICIPAL_COST_DEFAULT_STATUS,
+  );
   const [mcSort, setMcSort] = useState<MunicipalCostSort>(MUNICIPAL_COST_DEFAULT_SORT);
   /**
    * The municipal-payment outcome, TAGGED with the filter combination it describes,

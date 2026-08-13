@@ -67,6 +67,29 @@ const MUNICIPAL_COST_SORTS: readonly MunicipalCostSort[] = [
 ];
 /** The served default ordering; a link carrying it adds no parameter. */
 export const MUNICIPAL_COST_DEFAULT_SORT: MunicipalCostSort = "payment_per_capita_desc";
+/**
+ * The default 자료 상태 scope: the municipalities whose per-capita value is actually
+ * calculable.
+ *
+ * A comparison whose default view is "all 66" opens on a list that is mostly 자료 없음
+ * rows, which buries the comparable ones and reads as though the platform simply has
+ * nothing. Defaulting to 계산 가능 puts the comparable set first WITHOUT hiding
+ * anything: the served scope counts (`expected` / `available` / `partial` /
+ * `unavailable`) are computed before the status filter and stay on the control, so
+ * the size of what is being excluded is visible at all times and one click restores
+ * it. It is a scope selection sent to the backend as `status`, never a curated
+ * municipality list.
+ */
+export const MUNICIPAL_COST_DEFAULT_STATUS: MunicipalCostStatus | null = "AVAILABLE";
+/**
+ * The 전체 (unfiltered) selection's URL token.
+ *
+ * `null` is no longer the default, so it can no longer be encoded by omission — an
+ * absent `mcStatus` now restores 계산 가능. It needs a token of its own, exactly as the
+ * suitability status filter's all-hidden case needs its `none` sentinel. The token is
+ * never sent to the backend: 전체 means the `status` parameter is omitted there.
+ */
+const MUNICIPAL_COST_STATUS_ALL = "all";
 
 /** Max comparison regions (a hard product bound, mirrored by the UI). */
 export const MAX_COMPARE = 3;
@@ -124,10 +147,13 @@ export interface AppUrlState {
    * 시·군·구 수집·운반 계약 지급액 filters — a SEPARATE dataset that shares the 매립지
    * 현황 area, so its keys are prefixed `mc` and never collide with the four above.
    *
-   * `null` means 전체 for both filters, which is the product default; `sort` has a
-   * non-null default (`payment_per_capita_desc`) and so is written only when it
-   * differs. The reference year is deliberately NOT part of the URL: the release
-   * publishes exactly one year and the backend rejects any other with a 422.
+   * `null` means 전체. For `sido` that is also the product default, so it writes no
+   * parameter; for `status` the default is 계산 가능
+   * ({@link MUNICIPAL_COST_DEFAULT_STATUS}), so 전체 writes the explicit `all` token
+   * instead. `sort` likewise has a non-null default (`payment_per_capita_desc`) and is
+   * written only when it differs. The reference year is deliberately NOT part of the
+   * URL: the release publishes exactly one year and the backend rejects any other
+   * with a 422.
    */
   municipalCostSido: MunicipalCostSido | null;
   municipalCostStatus: MunicipalCostStatus | null;
@@ -302,7 +328,10 @@ export function decodeUrlState(search: string): DecodedUrlState {
 
   const mcStatus = params.get("mcStatus");
   if (mcStatus !== null) {
-    if ((MUNICIPAL_COST_STATUSES as readonly string[]).includes(mcStatus))
+    // The sentinel first: 전체 is a real selection that has to round-trip now that the
+    // default is 계산 가능, and it is not one of the backend's enum members.
+    if (mcStatus === MUNICIPAL_COST_STATUS_ALL) state.municipalCostStatus = null;
+    else if ((MUNICIPAL_COST_STATUSES as readonly string[]).includes(mcStatus))
       state.municipalCostStatus = mcStatus as MunicipalCostStatus;
     else warnings.push("알 수 없는 지급액 자료 상태 설정은 무시했습니다.");
   }
@@ -387,7 +416,11 @@ export function encodeUrlState(state: AppUrlState): string {
     // The municipal-payment filters share the area but not the keys: `mc`-prefixed
     // so a shared 매립지 현황 link carries both datasets' selections unambiguously.
     if (state.municipalCostSido !== null) params.set("mcSido", state.municipalCostSido);
-    if (state.municipalCostStatus !== null) params.set("mcStatus", state.municipalCostStatus);
+    // Written whenever it differs from the released default (계산 가능), including the
+    // 전체 case — which is why that case needs an explicit token: omitting it would
+    // encode 전체 as "restore the default" and quietly re-narrow a shared link.
+    if (state.municipalCostStatus !== MUNICIPAL_COST_DEFAULT_STATUS)
+      params.set("mcStatus", state.municipalCostStatus ?? MUNICIPAL_COST_STATUS_ALL);
     if (state.municipalCostSort !== MUNICIPAL_COST_DEFAULT_SORT)
       params.set("mcSort", state.municipalCostSort);
   }

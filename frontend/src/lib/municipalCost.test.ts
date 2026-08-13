@@ -9,20 +9,26 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "./api";
-import type { MunicipalCostRow } from "./api";
+import type { MunicipalCostMeta, MunicipalCostRow } from "./api";
 import {
   formatPayment,
   formatPaymentPerCapita,
   formatPopulation,
   hasDerivedPopulation,
+  metropolitanUnitLabel,
   municipalCostErrorFrom,
+  municipalityScopeCaption,
+  MUNICIPAL_COST_SIDO_OPTIONS,
   MUNICIPAL_COST_SORT_OPTIONS,
+  MUNICIPAL_COST_STATUS_CHOICES,
   MUNICIPAL_COST_STATUS_META,
   populationMethodCode,
   populationMethodLabel,
   primaryLimitation,
   reasonEntries,
   statusBadge,
+  statusChoiceCount,
+  statusChoiceLabel,
   statusLabel,
 } from "./municipalCost";
 
@@ -108,6 +114,82 @@ describe("status vocabulary", () => {
     expect(statusBadge("UNAVAILABLE")).toBe("missing");
     // AVAILABLE is this platform's arithmetic, not a published official figure.
     expect(statusBadge("AVAILABLE")).toBe("derived");
+  });
+});
+
+describe("status scope choices and their served counts", () => {
+  /** A metadata fixture carrying only the fields the scope helpers read. */
+  function scopeMeta(overrides: Partial<MunicipalCostMeta> = {}): MunicipalCostMeta {
+    return {
+      expected_count: 66,
+      available_count: 20,
+      partial_count: 5,
+      unavailable_count: 41,
+      returned_count: 20,
+      ...overrides,
+    } as MunicipalCostMeta;
+  }
+
+  it("offers the three statuses and 전체 last, so widening reads as the final step", () => {
+    expect(MUNICIPAL_COST_STATUS_CHOICES).toEqual(["AVAILABLE", "PARTIAL", "UNAVAILABLE", null]);
+    expect(MUNICIPAL_COST_STATUS_CHOICES.map(statusChoiceLabel)).toEqual([
+      "계산 가능",
+      "일부 제한",
+      "자료 없음",
+      "전체",
+    ]);
+  });
+
+  it("reads each choice's size from the served metadata", () => {
+    const meta = scopeMeta();
+    expect(statusChoiceCount(meta, "AVAILABLE")).toBe(20);
+    expect(statusChoiceCount(meta, "PARTIAL")).toBe(5);
+    expect(statusChoiceCount(meta, "UNAVAILABLE")).toBe(41);
+    // 전체 is the full published scope for the selected metropolitan.
+    expect(statusChoiceCount(meta, null)).toBe(66);
+  });
+
+  it("returns null — not 0 — before a response has arrived", () => {
+    // A 0 here would be a claim about the scope; absence of a response is not one.
+    for (const choice of MUNICIPAL_COST_STATUS_CHOICES) {
+      expect(statusChoiceCount(null, choice)).toBeNull();
+    }
+  });
+
+  it("reports a served zero as zero, because a counted zero is a real answer", () => {
+    expect(statusChoiceCount(scopeMeta({ partial_count: 0 }), "PARTIAL")).toBe(0);
+  });
+});
+
+describe("local-government tier", () => {
+  it("names the tier each metropolitan is actually composed of", () => {
+    // Not interchangeable: 서울 has 자치구, 인천 군·구, 경기 시·군. The wording matches
+    // the backend's own geography policy sentence.
+    expect(metropolitanUnitLabel("11")).toBe("자치구");
+    expect(metropolitanUnitLabel("28")).toBe("군·구");
+    expect(metropolitanUnitLabel("41")).toBe("시·군");
+    expect(MUNICIPAL_COST_SIDO_OPTIONS.map((option) => option.unit)).toEqual([
+      "자치구",
+      "군·구",
+      "시·군",
+    ]);
+  });
+
+  it("returns null for a code outside the published three rather than guessing", () => {
+    expect(metropolitanUnitLabel("99")).toBeNull();
+  });
+
+  it("builds the row caption from the served name plus the tier", () => {
+    expect(municipalityScopeCaption(row())).toBe("경기도 · 시·군");
+    expect(
+      municipalityScopeCaption(row({ metropolitan_code: "11", metropolitan_name: "서울특별시" })),
+    ).toBe("서울특별시 · 자치구");
+  });
+
+  it("falls back to the served metropolitan name alone for an unknown code", () => {
+    expect(
+      municipalityScopeCaption(row({ metropolitan_code: "99", metropolitan_name: "다른광역시" })),
+    ).toBe("다른광역시");
   });
 });
 

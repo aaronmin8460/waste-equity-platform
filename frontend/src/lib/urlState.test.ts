@@ -5,6 +5,7 @@ import {
   decodeUrlState,
   encodeUrlState,
   MAX_COMPARE,
+  MUNICIPAL_COST_DEFAULT_STATUS,
 } from "./urlState";
 
 const BASE: AppUrlState = {
@@ -26,7 +27,9 @@ const BASE: AppUrlState = {
   landfillOrigin: null,
   landfillWaste: null,
   municipalCostSido: null,
-  municipalCostStatus: null,
+  // The released default scope, not `null`: `null` is the 전체 selection and now
+  // encodes to an explicit `mcStatus=all` token.
+  municipalCostStatus: MUNICIPAL_COST_DEFAULT_STATUS,
   municipalCostSort: "payment_per_capita_desc",
 };
 
@@ -367,6 +370,31 @@ describe("municipal-payment filters", () => {
     expect(q).toContain("mcSido=41");
     expect(q).toContain("mcStatus=PARTIAL");
     expect(q).toContain("mcSort=region_name_asc");
+  });
+
+  it("restores the released 계산 가능 default when no mcStatus is present", () => {
+    // The default is a SCOPE, so a link that carries no status must reopen on the
+    // same scope the app opens on — not on 전체.
+    const { state } = decodeUrlState("?v=1&mode=flow");
+    expect(state.municipalCostStatus).toBeUndefined();
+    expect(MUNICIPAL_COST_DEFAULT_STATUS).toBe("AVAILABLE");
+  });
+
+  it("round-trips the 전체 selection through an explicit token", () => {
+    // 전체 can no longer be encoded by omission: an absent parameter now restores
+    // 계산 가능, so sharing a widened view would silently re-narrow it.
+    const q = encodeUrlState({ ...FLOW, municipalCostStatus: null });
+    expect(q).toContain("mcStatus=all");
+    const { state, warnings } = decodeUrlState(q);
+    expect(state.municipalCostStatus).toBeNull();
+    expect(warnings).toEqual([]);
+  });
+
+  it("never sends the 전체 token to the backend enum set", () => {
+    // `all` is a URL-layer sentinel only; the backend's `status` parameter takes the
+    // three enum members or nothing at all.
+    const { state } = decodeUrlState("?v=1&mode=flow&mcStatus=all");
+    expect(state.municipalCostStatus).toBeNull();
   });
 
   it("keeps the mc keys out of every other area", () => {

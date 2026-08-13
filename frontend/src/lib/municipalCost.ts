@@ -27,7 +27,12 @@
  */
 
 import { ApiError } from "./api";
-import type { MunicipalCostRow, MunicipalCostSort, MunicipalCostStatus } from "./api";
+import type {
+  MunicipalCostMeta,
+  MunicipalCostRow,
+  MunicipalCostSort,
+  MunicipalCostStatus,
+} from "./api";
 import { plainError } from "./glossary";
 import type { DataStatus } from "./glossary";
 import { formatKrwEok, formatKrwPerPerson } from "./landfill";
@@ -88,16 +93,108 @@ export function statusBadge(status: MunicipalCostStatus): DataStatus {
   return MUNICIPAL_COST_STATUS_META[status].badge;
 }
 
+/**
+ * The scope selections the 자료 상태 control offers, in reading order.
+ *
+ * `null` is the 전체 selection — the same value the backend treats as "no `status`
+ * parameter" — and it is LAST rather than first because the released default is
+ * 계산 가능: the control reads as "the comparable set, then each kind of exception,
+ * then everything", which is the order a reader widens the view in.
+ */
+export const MUNICIPAL_COST_STATUS_CHOICES: readonly (MunicipalCostStatus | null)[] = [
+  ...MUNICIPAL_COST_STATUSES,
+  null,
+];
+
+/** 전체 — the label for the unfiltered selection, in one place. */
+export const MUNICIPAL_COST_ALL_STATUS_LABEL = "전체";
+
+export function statusChoiceLabel(choice: MunicipalCostStatus | null): string {
+  return choice === null ? MUNICIPAL_COST_ALL_STATUS_LABEL : statusLabel(choice);
+}
+
+/**
+ * How many municipalities the SERVED metadata puts in a status choice.
+ *
+ * Read from `meta`, never counted from the rendered rows: the backend computes these
+ * over the selected metropolitan BEFORE applying the status filter, so they stay
+ * honest denominators while a filter is narrowing the list — the exact property that
+ * makes it safe to default the view to 계산 가능. `null` when no response has arrived,
+ * so a caller shows nothing rather than a 0 the platform has not yet earned.
+ *
+ * 전체 maps to `expected_count`: the full published scope for the selected
+ * metropolitan, which is what "no status filter" returns.
+ */
+export function statusChoiceCount(
+  meta: MunicipalCostMeta | null,
+  choice: MunicipalCostStatus | null,
+): number | null {
+  if (meta === null) return null;
+  switch (choice) {
+    case "AVAILABLE":
+      return meta.available_count;
+    case "PARTIAL":
+      return meta.partial_count;
+    case "UNAVAILABLE":
+      return meta.unavailable_count;
+    case null:
+      return meta.expected_count;
+  }
+}
+
 // --------------------------------------------------------------------------- //
-// Metropolitan filter
+// Metropolitan filter and local-government tier
 // --------------------------------------------------------------------------- //
 
-/** The three capital-region metropolitan units, matching the backend `sido` enum. */
-export const MUNICIPAL_COST_SIDO_OPTIONS: readonly { code: "11" | "28" | "41"; label: string }[] = [
-  { code: "11", label: "서울" },
-  { code: "28", label: "인천" },
-  { code: "41", label: "경기" },
+/**
+ * The three capital-region metropolitan units, matching the backend `sido` enum.
+ *
+ * `unit` is the tier of 기초자치단체 the metropolitan is actually made of, and it is
+ * NOT interchangeable between the three: 서울 has 자치구, 인천 has 군·구, and 경기 has
+ * 시·군. Calling all 66 rows "시·군·구" is only correct in aggregate; naming a single
+ * row's tier wrongly (an 인천 군 shown as a 자치구) is a factual error about Korean
+ * local government, so the tier travels with the code rather than being guessed at a
+ * call site.
+ *
+ * The wording is the BACKEND'S own: `meta.geography_policy` reads "서울 25개 자치구,
+ * 인천 10개 군·구, 경기 31개 시·군", so the UI and the served policy sentence use one
+ * vocabulary.
+ */
+export const MUNICIPAL_COST_SIDO_OPTIONS: readonly {
+  code: "11" | "28" | "41";
+  /** Short metropolitan name, for a control label. */
+  label: string;
+  /** The tier of 기초자치단체 this metropolitan is composed of. */
+  unit: string;
+}[] = [
+  { code: "11", label: "서울", unit: "자치구" },
+  { code: "28", label: "인천", unit: "군·구" },
+  { code: "41", label: "경기", unit: "시·군" },
 ];
+
+/**
+ * The tier noun for a served `metropolitan_code`, or `null` for a code outside the
+ * three this release publishes.
+ *
+ * `null` rather than a generic "시·군·구" fallback: a row from an unrecognised
+ * metropolitan is a row whose tier this UI does not know, and printing a plausible
+ * guess beside a municipality's name would be a fabricated fact about it. The caller
+ * simply omits the caption instead.
+ */
+export function metropolitanUnitLabel(metropolitanCode: string): string | null {
+  return MUNICIPAL_COST_SIDO_OPTIONS.find((option) => option.code === metropolitanCode)?.unit ?? null;
+}
+
+/**
+ * The secondary line under a municipality's name: its metropolitan and its tier.
+ *
+ * Both parts are served (`metropolitan_name`) or derived from a served code, and the
+ * tier is dropped rather than guessed when the code is unknown.
+ */
+export function municipalityScopeCaption(row: MunicipalCostRow): string {
+  const unit = metropolitanUnitLabel(row.metropolitan_code);
+  return unit ? `${row.metropolitan_name} · ${unit}` : row.metropolitan_name;
+}
 
 // --------------------------------------------------------------------------- //
 // Sorting

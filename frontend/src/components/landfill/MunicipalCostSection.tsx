@@ -29,6 +29,12 @@
  * for the four official landfill filters. There is no second copy of the filter
  * state anywhere in this directory.
  *
+ * ── Layout ─────────────────────────────────────────────────────────────────────
+ * Three sub-cards under one named section, matching the Page 2 design language:
+ * 조건 (filters + served scope + reference year) → 비교표 (the comparison, with its
+ * unit line in the card header) → 산출 방법과 한계. The distinction banner sits above
+ * all three because it qualifies every one of them.
+ *
  * ── Placement ──────────────────────────────────────────────────────────────────
  * Rendered by `LandfillDashboard` as the LAST region of 매립지 현황, outside the
  * official-data branch: the two datasets fail independently, so an official 404
