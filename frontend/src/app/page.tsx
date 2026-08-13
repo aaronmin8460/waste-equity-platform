@@ -158,6 +158,7 @@ import SuitabilitySidebar, {
 import { STATUS_LABELS } from "../components/suitability/shared";
 import SuitabilityScenarioSaveCard from "../components/suitability/SuitabilityScenarioSaveCard";
 import SuitabilityScenarioComparePicker from "../components/suitability/SuitabilityScenarioComparePicker";
+import SuitabilityScenarioComparison from "../components/suitability/SuitabilityScenarioComparison";
 import SuitabilityScenarioLab, { type AppliedScenario } from "../components/SuitabilityScenarioLab";
 import TransparencyDashboard from "../components/TransparencyDashboard";
 import WetlandLayerControl from "../components/WetlandLayerControl";
@@ -187,6 +188,7 @@ import { downloadCsv, safeFilename } from "../lib/csv";
 import { buildRankingCsv } from "../lib/exports";
 import { buildEquityReport, type ReportModel } from "../lib/report";
 import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario";
+import { hasComparisonIntent } from "../lib/scenarioComparison";
 import {
   deleteSavedScenario,
   isCanonicalWeights,
@@ -2086,6 +2088,45 @@ export default function Home() {
             regionBoundaries={reportingBoundaryCollection}
           />
         </div>
+      </DashboardShell>,
+    );
+  }
+
+  // 적합성 → 후보지 심층 비교 WITH AN A/B PAIR: the Page-5 comparison foundation, a
+  // full-width dashboard with no map (Figma 167:10554).
+  //
+  // ── THE DISPATCH ─────────────────────────────────────────────────────────────
+  // The branch is taken only when the URL carries a comparison intent — at least
+  // one `cmpA`/`cmpB` id. With neither, this area keeps its pre-existing 시나리오
+  // 실험실 behaviour untouched, which is what preserves every legacy Page-5 link:
+  // `wz`/`wr`/`we`/`wd`, `cmpProfile` and `cand` carry ad-hoc WEIGHTS and a
+  // candidate, never a saved-scenario id, so such a link has no comparison intent
+  // and lands in the lab exactly as before. The legacy keys are still decoded, still
+  // held in state, and still re-encoded unchanged when a pair is also present — this
+  // branch reads none of them and changes none of their meanings
+  // (docs/figma-redesign/PAGE_5_SCENARIO_CONTRACT.md §5).
+  //
+  // ONE id is enough to take the branch. A lone `cmpA` is a legal state the encoder
+  // writes on purpose; answering it with the weight editor would silently discard a
+  // half-made selection instead of saying B안 is still needed.
+  if (
+    viewMode === "suitability" &&
+    viewSubview === "scenario" &&
+    hasComparisonIntent(cmpA, cmpB)
+  ) {
+    return withDataDialog(
+      <DashboardShell destination={destination} onNavigate={navigate} variant="page">
+        <SuitabilityScenarioComparison
+          selection={scenarioSelection}
+          run={suit?.run ?? null}
+          runError={suitError}
+          title={destination.label}
+          orientation={<ModeOrientation destination={destination} />}
+          // Recovery only NAVIGATES. The pair is deliberately left in place so the
+          // reader arrives at ⑤ with their current selection shown, and nothing in
+          // localStorage is written on their behalf.
+          onBackToSelection={() => changeSuitabilityView("score")}
+        />
       </DashboardShell>,
     );
   }

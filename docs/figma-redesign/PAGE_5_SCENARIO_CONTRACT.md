@@ -311,3 +311,121 @@ added without a breaking change:
 | ⑤ card: no defaults, N/2 counter, CTA gating, MISSING slot, cross-run refusal | `frontend/src/components/suitability/SuitabilityScenarioComparePicker.test.tsx` |
 | Page integration: preview revalidation, "no result is persisted", delete clears A/B, rename keeps the id, URL round-trip, legacy links, hostile storage | `frontend/src/app/page.page4d.test.tsx` (27) |
 | Real browser: persistence across reload, rename across reload, A/B → URL, dangling-selection clearing, corrupt blob | `frontend/e2e/page4dScenarios.spec.ts` (8) |
+
+---
+
+## 9. The runtime comparison model (produced by Page 5A)
+
+§1–§8 are the seam between Page 4D and Page 5A. This section is the seam between
+Page 5A and the later Page-5 lanes. Page 5A implements §6 exactly once, and
+**Page 5B and Page 5C consume its output rather than repeating it.**
+
+> **Neither later lane may read `localStorage`, resolve `cmpA`/`cmpB`, or call
+> `POST /suitability/scenarios/preview`.** Two sections issuing the same request
+> can render two different answers to one question, which is the one failure an
+> A/B screen must not have.
+
+### 9.1 What to consume
+
+Defined in `frontend/src/lib/scenarioComparison.ts` (pure, React-free):
+
+```ts
+interface ScenarioComparison {
+  runId: number | null;          // the ACTIVE run both sides were validated against
+  sideA: ComparisonSide;
+  sideB: ComparisonSide;
+  status: ScenarioComparisonStatus;
+  loading: boolean;
+}
+
+interface ComparisonSide {
+  slot: "A" | "B";
+  scenarioId: string | null;     // exactly as it appeared in cmpA/cmpB
+  scenarioName: string | null;   // from storage — the API does not name a scenario
+  savedScenario: SavedScenario | null;
+  canonicalWeights: UserScenarioWeights | null;  // preview.canonical_weights
+  runId: number | null;                          // preview.run_id
+  preview: UserScenarioPreview | null;
+  state: ComparisonSideState;
+  errorMessage: string | null;   // only when state === "PREVIEW_ERROR"
+}
+
+type ComparisonSideState =
+  | "READY" | "LOADING" | "EMPTY" | "MISSING" | "OTHER_RUN"
+  | "PREVIEW_ERROR" | "RUN_UNKNOWN";
+```
+
+`canonicalWeights`, `runId` and `preview` are non-null **only** when
+`state === "READY"`. A later lane that renders a number MUST gate on that state;
+there is no other permission to draw.
+
+`preview` is the whole `UserScenarioPreview`, so `top_candidates`, the four
+`candidate_count_*` figures, `ranking_population`, `scenario_hash`, `tile_url`
+and the three disclaimer strings are all already loaded per side. Both sides are
+requested with the SAME frozen parameters, exported as constants:
+
+| | |
+|---|---|
+| `SCENARIO_COMPARISON_COMPARE_PROFILE` | `"baseline"` — identical on both sides, so the two responses' comparison columns describe one baseline |
+| `SCENARIO_COMPARISON_TOP_N` | `50` — the endpoint's documented maximum (`schemas/scenario.py`, `ge=1, le=50`) |
+
+`top_n` is the maximum deliberately: a rank *change* needs a candidate present in
+**both** sides' lists, and two top-10 lists of a reweighted ranking intersect
+poorly. If a later lane needs more than 50, that is a backend bound to raise —
+not a second request to add.
+
+### 9.2 How to obtain it
+
+`components/suitability/useScenarioComparison.ts` performs steps 2–3 of §6 once:
+both sides concurrently, each catching its own rejection, so `A succeeded /
+B failed` stays a two-sided screen. Page 5A calls it in
+`SuitabilityScenarioComparison.tsx` and passes the result down. **A later lane
+receives `ScenarioComparison` as a prop; it does not call the hook again.**
+
+### 9.3 Status, and why it is not one error
+
+`ScenarioComparisonStatus` is the derived page-level summary:
+`LOADING`, `READY`, `NO_RUN`, `INCOMPLETE_SELECTION`, `DUPLICATE_SELECTION`,
+`MISSING_{A,B,BOTH}`, `OTHER_RUN_{A,B,BOTH}`, `PREVIEW_ERROR_{A,B,BOTH}`, `MIXED`.
+
+The per-side `state` remains the primary truth; `MIXED` exists so two sides
+failing for *different* reasons are never flattened into one vague error.
+
+Two distinctions are load-bearing and must not be collapsed:
+
+* **`EMPTY` vs `MISSING`** — "you have not chosen a B안" and "the B안 in this link
+  is not in this browser" have different recoveries (§3).
+* **`RUN_UNKNOWN` vs `OTHER_RUN`** — `scenarioRunState` correctly treats an
+  unknown run as `OTHER_RUN` (§4.2), but *"we do not know the run yet"* is not
+  *"your scenario is from a different run"*. `ActiveRunResolution`
+  (`LOADING` | `ERROR` | `RESOLVED`) keeps them apart, so no reader is told on
+  first paint that both their scenarios were saved against the wrong run.
+
+### 9.4 What Page 5A already renders, so a later lane does not
+
+The Page-5 shell, the `<h1>`, the A/B identity cards, the run/reference context,
+the Z/R/E/D weight-comparison table with per-factor deltas and the precise-value
+disclosure, every state above, and the recovery route back to `view=score`.
+
+### 9.5 Standing prohibitions for every Page-5 lane
+
+* **Nothing derived is persisted** — not to `localStorage`, not into a
+  `SavedScenario`, not into the URL. A reload recomputes (§6).
+* **The four factors are `COMPONENT_ORDER`/`COMPONENT_META`.** The Figma frame's
+  시설부담 정도 / 토지피복 기반 적합도 / 장래 쓰레기 발생량 / 주민 반응 are mock labels:
+  three name factors that do not exist in this model, and the fourth inverts E.
+  The layout is the frame's; the content is the model's.
+* **No pass/fail.** No 60점/62점 threshold, no "newly passed" or "newly excluded"
+  region, no resident reaction, no future-generation forecast, no sensitivity
+  band. A scenario reweights the RANKING; screening is rule-based and does not
+  move with the weights, and A/B/C stays relative presentation grading.
+* **Prefer not rendering a section to rendering a placeholder.** An empty card
+  captioned 순위 변동 reads as "no candidate moved" — a fabricated finding.
+
+### 9.6 Page 5A test coverage that pins this section
+
+| Concern | File |
+|---|---|
+| Model: intent, per-side blocking, order, server-authoritative weights/run, every status, weight rows and deltas | `frontend/src/lib/scenarioComparison.test.ts` (39) |
+| Page integration: dispatch vs the legacy lab, resolution, one request per side, run compatibility, missing/duplicate/error states, no storage write, recovery, no false analytics | `frontend/src/app/page.page5a.test.tsx` (30) |
+| Real browser: comparison rebuilt across a reload, no storage write, missing id, other-run refusal, one-sided failure, legacy link, recovery | `frontend/e2e/page5aComparison.spec.ts` (7) |
