@@ -2276,7 +2276,15 @@ export default function Home() {
         />
 
         <ModeOrientation destination={destination} />
-          <SuitabilityScreeningNotice />
+          {/* NO standing disclaimer BANNER here. Figma 136:8684 opens the left
+              column with ① and nothing above it, and a full-width notice card of
+              three lines of prose ahead of the controls is exactly the wall of
+              text this remediation removes. The limitation itself is NOT dropped:
+              it stays printed on the map's own legend as
+              SUITABILITY_SCREENING_SHORT_LABEL, in the map's aria-description, in
+              계산 방법과 가정 (the run's served disclaimer) and in the 해석·주의
+              insight strip — and the other two suitability sub-views, which have
+              no map legend of their own, keep the full banner. */}
           <SuitabilitySidebar
             part="left"
             suit={suit}
@@ -2545,7 +2553,9 @@ export default function Home() {
           which is rendered here (in the page, not inside MapView) so it receives the
           already-computed legend data — the single source of truth shared with the
           map fill — and so the stubbed-MapView unit tests still exercise it. */}
-      <div className="map-pane relative min-w-0">
+      <div
+        className={`map-pane relative min-w-0${viewDeepAnalysis ? " wep-workspace-map" : ""}`}
+      >
         <MapView
           boundaries={activeBoundaries}
           regionValues={regionValues}

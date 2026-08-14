@@ -9,17 +9,21 @@
  *   LEFT   ① 분석 범위 → ② 계산 모델 가중치 설정 → 후보 상태 요약 →
  *          자료 공백 → 계산 방법과 가정
  *   RIGHT  ③ 종합 점수와 후보 순위 (상대 점수 구간 + 순위 보기) →
+ *          ④ 시나리오 저장 → ⑤ 비교할 시나리오 선택 →
  *          안정 후보 목록 → 선택한 후보 구역 → 제외 / 검토 사유
  *
- * ④ 시나리오 저장 and ⑤ 비교할 시나리오 선택 now WORK (Page 4D) and close the
+ * ④ 시나리오 저장 and ⑤ 비교할 시나리오 선택 WORK (Page 4D) and close the
  * numbering: they are injected as ready-made nodes (`scenarioSavePanel` /
  * `scenarioComparePanel`) the way `relativeGradePanel` already is, because the page
  * owns the localStorage list, the preview re-validation and the A/B state — this
  * column stays pure presentation with no storage access of its own.
  *
- * They sit at the FOOT of the right column, which is where the page-4 기술요청
- * annotation (Figma 225:443) puts the call to action: "우측 맨 하단
- * [두 시나리오 비교하기] 누르면 다음 페이지로 자동 이동".
+ * They follow ③ DIRECTLY. Figma 136:8684's right column is ③④⑤ and nothing else,
+ * so in the frame "우측 맨 하단" (the page-4 기술요청 annotation 225:443) and
+ * "directly after ③" are the same place. In production they are not: the four
+ * supporting cards between them pushed ④ and ⑤ far below the fold, which broke the
+ * numbered sequence the screen asks a reader to follow. The frame's ORDER wins and
+ * the supporting cards move below ⑤.
  *
  * (The screening disclaimer is rendered ABOVE this by the page, so it heads both
  * map sub-views; the page's `<h1>` and orientation line precede that.)
@@ -255,7 +259,7 @@ export default function SuitabilitySidebar({
           title="③ 종합 점수와 후보 순위"
           description="설정한 점수 반영 기준으로 합산한 점수와 그 순위입니다."
           testId="suitability-results"
-          className="wep-figma-card"
+          className="wep-figma-card wep-numbered-card"
         >
           <div className="flex flex-col gap-3">
             {relativeGradePanel}
@@ -286,6 +290,20 @@ export default function SuitabilitySidebar({
           </>
         )
       )}
+
+      {/* ④ → ⑤ IMMEDIATELY AFTER ③, which is the whole right column in Figma
+          136:8684 (340×535, 340×230, 340×429 and nothing else).
+          They used to sit at the very foot, below six unnumbered cards, on the
+          strength of the page-4 기술요청 annotation (225:443) reading "우측 맨 하단
+          [두 시나리오 비교하기]". In the frame those two things are the same
+          position; in production they are not — the extra cards pushed ④ and ⑤ some
+          1800px down, so the numbered sequence a reader is asked to follow was
+          broken by a scroll neither the frame nor the annotation has. The frame
+          wins: ③④⑤ read in order, and the supporting cards follow them.
+          ⑤ still follows ④ because you cannot select a scenario you have not
+          saved. */}
+      {showRight && part === "right" && scenarioSavePanel}
+      {showRight && part === "right" && scenarioComparePanel}
 
       {/* 기준을 바꿔도 상위권인 후보지 — a DIFFERENT population from the ranking
           above, so it stays its own card beside ③ rather than inside it. */}
@@ -324,13 +342,6 @@ export default function SuitabilitySidebar({
         testId="review-reason-summary"
       />
       )}
-
-      {/* ④ → ⑤, in that order, at the foot of the right column (Figma 225:443:
-          "우측 맨 하단 [두 시나리오 비교하기]"). ⑤ follows ④ because you cannot
-          select a scenario you have not saved, and the CTA that leaves this screen
-          is the last thing on it. */}
-      {showRight && part === "right" && scenarioSavePanel}
-      {showRight && part === "right" && scenarioComparePanel}
 
       {showLeft && summary.coverage_notes.length > 0 && (
         <SectionCard title="자료 공백 안내" testId="coverage-warnings">

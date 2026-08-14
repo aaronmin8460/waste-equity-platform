@@ -147,10 +147,36 @@ export const GRADE_LABELS: Record<RelativeGrade, string> = {
 
 export const RELATIVE_GRADE_TITLE = "상대 점수 구간";
 
+/**
+ * ONE short line, not a paragraph.
+ *
+ * It used to open by spelling out that the bands are the 상위 25% · 중간 50% ·
+ * 하위 25% of the eligible score distribution — three sentences of prose sitting
+ * between the reader and the ranking. That share is now printed BY EACH ROW
+ * ({@link GRADE_SHARE_LABELS}), where it is read beside the band it describes, so
+ * repeating it here was pure duplication.
+ *
+ * What is deliberately KEPT is the part no row can carry: that a relative band is
+ * not an eligibility judgement. Dropping that would let A/B/C be read as
+ * 적격/부적격, which is the single misreading these bands exist to prevent
+ * (spec §9), so it stays visible and never behind a disclosure.
+ */
 export const RELATIVE_GRADE_EXPLANATION =
-  "현재 점수가 계산된 스크리닝 통과 구역 전체의 점수 분포를 상위 25% · 중간 50% · 하위 25%로 나눈 " +
-  "상대 구간입니다. 구간은 서로 비교하기 위한 표시일 뿐이며, 법적 적합·부적합 판정이 아닙니다. " +
+  "상대 위치를 나눈 구간일 뿐 법적 적합·부적합 판정이 아닙니다. " +
   "A가 적격을 의미하지 않고 C가 제외를 의미하지 않습니다.";
+
+/**
+ * Each band's share of the population, as the row's own second line.
+ *
+ * These are the definitional quartile cuts (P75 / P25), not a served count — the
+ * served count and the served score boundary are printed beside them on the same
+ * row, so the share is never the only thing a reader gets.
+ */
+export const GRADE_SHARE_LABELS: Record<RelativeGrade, string> = {
+  A: "상위 25%",
+  B: "중간 50%",
+  C: "하위 25%",
+};
 
 /**
  * The one sentence that must sit next to any A/B/C surface, naming the population

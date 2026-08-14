@@ -71,30 +71,37 @@ export default function SuitabilityFactorCards({
         return (
           <li
             key={component}
-            className="rounded-card border bg-surface p-3"
+            // Figma 136:8684 draws each factor card at r=14 with 18/16 padding and
+            // an accent border, which is what these three values are.
+            className="rounded-[14px] border bg-surface px-[18px] py-4"
             style={{ borderColor: accent }}
             data-testid={`factor-card-${component}`}
           >
-            <div className="flex items-start gap-2">
+            {/* THE TITLE LINE, Figma's shape: the factor's name on the left and its
+                number on the right, both at title weight. In the frame that number
+                is a mock component score; here it is the weight actually in force,
+                because a factor card with no candidate selected has no score to
+                print and must not invent one. */}
+            <div className="flex items-baseline gap-2">
               <span
                 aria-hidden
-                className="mt-1 h-2.5 w-2.5 flex-none rounded-pill"
+                className="h-2.5 w-2.5 flex-none self-center rounded-pill"
                 style={{ backgroundColor: accent }}
               />
-              <h4 className="min-w-0 flex-1 text-sm font-semibold text-ink">
+              <h4 className="min-w-0 flex-1 text-[15px] font-bold leading-tight text-ink">
                 {codeWithName(component)}
               </h4>
-              {/* The weight, as text, beside the name — the bar above is a second
-                  encoding of this number, never its only home. */}
+              {/* The weight, as text, beside the name — the segmented bar above is
+                  a second encoding of this number, never its only home. */}
               <span
-                className="flex-none rounded-pill bg-primary-soft px-2 py-0.5 text-[11px] font-semibold tabular-nums text-ink"
+                className="flex-none text-[15px] font-bold tabular-nums text-ink"
                 data-testid={`factor-weight-${component}`}
               >
                 가중치 {weight?.percent ?? "-"}
               </span>
             </div>
 
-            <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">
+            <p className="mt-2 text-xs leading-snug text-ink-muted">
               {COMPONENT_DIRECTION[component]}
             </p>
 
@@ -110,16 +117,18 @@ export default function SuitabilityFactorCards({
               </span>
             </p>
 
-            <p className="mt-1.5 text-[11px] text-ink-subtle">
-              자료 근거: {COMPONENT_META[component].detail}
-            </p>
-
+            {/* Figma keeps one disclosure per card ("▼ 가중치 설명 펼치기"). The data
+                provenance that used to sit above it as a fifth always-on line joins
+                it inside, so the closed card is the four lines the frame draws. */}
             <details className="mt-1.5" data-testid={`factor-explain-${component}`}>
-              <summary className="cursor-pointer text-[11px] font-medium text-ink-muted">
+              <summary className="cursor-pointer text-xs font-medium text-ink-muted">
                 이 항목 설명 펼치기
               </summary>
               <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">
                 {componentExplanation(component)}
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-ink-subtle">
+                자료 근거: {COMPONENT_META[component].detail}
               </p>
             </details>
           </li>

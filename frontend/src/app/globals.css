@@ -218,6 +218,29 @@
   box-shadow: 0 6px 20px rgb(17 26 86 / 0.06);
 }
 
+/* The FIVE NUMBERED cards of 후보지 심층 분석 (Figma 136:8684 ①②③④⑤).
+ *
+ * In the frame those five carry a 20/24 bold title while every other card on the
+ * screen — 선택한 후보 구역, 계산 방법과 가정, the two reason breakdowns — stays at
+ * the dashboard's ordinary 14px. That difference is the whole reason the numbered
+ * sequence is legible at a glance from across a room during a presentation, so it
+ * is a real style, not a one-off override.
+ *
+ * It is a class on the CARD rather than a new SectionCard prop because the title
+ * element is already `<h2>` by contract there, and the five other dashboards share
+ * that primitive; a prop would be a shared-surface change for a single screen. The
+ * selector is deliberately `h2` only — nested content uses h3/h4 and keeps its own
+ * scale. */
+.wep-numbered-card > div:first-child h2 {
+  font-size: 1.25rem;
+  line-height: 1.5rem;
+  font-weight: 700;
+}
+.wep-numbered-card > div:first-child p {
+  font-size: 0.6875rem;
+  line-height: 1.2;
+}
+
 .wep-orient {
   color: var(--color-ink-muted);
   font-size: 0.8125rem;
@@ -914,12 +937,28 @@ body {
     /* Only the width animates; the body is display-toggled, so there is nothing
        to interpolate inside it. */
     transition: width 0.16s ease;
-  }
-  .wep-panel[data-side="left"] {
-    border-right: 1px solid var(--color-hairline);
+    /* FIGMA 136:8684 — the columns are no longer recessed trays with a divider.
+       They are part of the #f9f9f9 canvas, and the numbered cards float on it.
+       The page inset and the gutter are carried HERE, as the column's own
+       padding, rather than as a gap on <main>: <main> is shared by 지역 지표 and
+       후보지 심층 비교, and `.wep-panel` is used by this workspace and nothing
+       else (the only two CollapsiblePanel call sites are the two columns of this
+       screen). Because the map keeps `flex: 1 1 0%`, giving the columns their
+       Figma OUTER widths is enough to land the map on the frame's 668px without
+       hard-coding 668 anywhere. */
+    background: transparent;
+    padding: 0.75rem 0.5rem 0.75rem 0.75rem;
   }
   .wep-panel[data-side="right"] {
-    border-left: 1px solid var(--color-hairline);
+    padding: 0.75rem 0.75rem 0.75rem 0.5rem;
+  }
+  .wep-panel-bar {
+    padding: 0 0 0.5rem;
+  }
+  .wep-panel-body {
+    /* Figma stacks the numbered cards 20px apart in both columns. */
+    gap: 1.25rem;
+    padding: 0;
   }
   .wep-panel-toggle {
     display: inline-flex;
@@ -953,6 +992,10 @@ body {
   .wep-panel.wep-panel-collapsed {
     width: 3rem;
     overflow: hidden;
+    /* The Figma page inset above is an OPEN-column value. The rail keeps only its
+       vertical inset, so 3rem stays 3rem and e2e/deepAnalysisPanels' rail-width
+       measurement is unaffected by the horizontal padding. */
+    padding: 0.75rem 0;
   }
   .wep-panel-collapsed .wep-panel-bar {
     justify-content: center;
@@ -969,8 +1012,50 @@ body {
    This rule governs the OPEN column only — the collapsed rail above deliberately
    carries a higher-specificity selector so this later block cannot out-cascade it. */
 @media (min-width: 1280px) {
+  /* 336px OUTER. The Figma composition below is a 1440 design and is applied at
+     1440; between 1280 and 1439 the column keeps its shipped total width and
+     spends part of it on the inset instead of taking another 60px per side from
+     the map. Widening here would push the map under the dominance contract
+     (docs/ui-refresh/regression-contract.md §4, e2e/suitabilityDashboard) — a
+     narrower canvas also re-wraps the floating insight card taller, so the map
+     loses twice. */
   .wep-panel {
     width: 21rem; /* 336px */
+  }
+}
+
+@media (min-width: 1440px) {
+  /* THE FIGMA 136:8684 COMPOSITION, at the width it was drawn for. Expressed as
+     OUTER widths so the padding resolves to the frame's content widths exactly:
+       left   396 = 20 inset + 360 card + 16 gutter
+       right  376 = 16 gutter + 340 card + 20 inset
+       map    1440 - 396 - 376 = 668   (by `flex: 1 1 0%`, never hard-coded)  */
+  .wep-panel {
+    width: 24.75rem; /* 396px */
+    padding: 1.25rem 1rem 1.25rem 1.25rem; /* 20 inset, 16 gutter */
+  }
+  .wep-panel[data-side="right"] {
+    width: 23.5rem; /* 376px */
+    padding: 1.25rem 1.25rem 1.25rem 1rem;
+  }
+  /* The map's top inset is scoped to the same width for the same reason: it costs
+     the canvas 20px of height, and at 1280×800 that is enough to push the expanded
+     insight card past the 40%-of-map bound the dominance contract holds. The
+     rounded corners are NOT scoped — a radius costs no height. */
+  .wep-workspace-map {
+    padding-top: 1.25rem;
+  }
+  /* THE COLLAPSED RAIL IS RE-DECLARED HERE, and it must stay LAST in this block.
+     `.wep-panel[data-side="right"]` above is (0,2,0) — a class plus an attribute —
+     which is the SAME specificity as `.wep-panel.wep-panel-collapsed` in the ≥768
+     block, and this block is later in source order. Without this rule the right
+     column kept its full 376px when collapsed while the left correctly became a
+     rail: the exact cascade accident the ≥768 comment describes, in its
+     asymmetric form. e2e/deepAnalysisPanels.spec.ts measures both rails.
+     Still no horizontal inset on a rail — see that rule for why. */
+  .wep-panel.wep-panel-collapsed {
+    width: 3rem;
+    padding: 1.25rem 0;
   }
 }
 
@@ -1046,6 +1131,20 @@ body {
     height: 100%;
     min-height: 0;
     flex: 1 1 0%;
+  }
+}
+
+/* 후보지 심층 분석 only: the map is a rounded surface set into the canvas, the way
+   Figma 136:8684 draws it, instead of a full-bleed rectangle. The left/right
+   gutters come from the two columns' padding; the top inset is added at ≥1440
+   (see the panel block above for why it is scoped and why there is no bottom
+   inset — nothing may sit below the map). */
+@media (min-width: 768px) {
+  /* MapView's root wrapper. Clipping here (not on `.map-pane`) keeps the floating
+     legend/controls, which are siblings of it, outside the rounded corners. */
+  .wep-workspace-map > div:first-of-type {
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    overflow: hidden;
   }
 }
 

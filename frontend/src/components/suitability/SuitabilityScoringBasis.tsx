@@ -22,7 +22,15 @@
  * the scores and ranks on the map are a STORED run — editing a weight here would
  * imply a recomputation that does not happen. Weight experimentation already has its
  * own screen (후보지 심층 비교), which recomputes explicitly and labels the result as
- * a user scenario, so the profile radios below stay the honest control for this one.
+ * a user scenario, so the profile radios stay the honest control for this one.
+ *
+ * THE FIGMA REMEDIATION re-ordered the card to the frame's own reading — heading,
+ * segmented bar, the basis it belongs to, the control that changes it, the four
+ * factor cards, then the 안정 후보 row that closes it. The bar used to be three
+ * blocks down inside a tinted "현재 적용 중인 기준" panel, and the radio list carried
+ * two extra wrapped lines per option, which together put the factor cards a full
+ * screen below the heading of the card they are the subject of. Nothing was deleted:
+ * see the control block below for where each moved line went.
  *
  * Wording rules this component keeps (docs/SUITABILITY_CRITIC_STABILITY.md):
  *   - the fixed policy-assumption bases are labelled 운영 가정, never expert AHP;
@@ -39,7 +47,7 @@ import type {
   SuitabilityRun,
 } from "../../lib/api";
 import { PROFILE_META, profileLabel } from "../../lib/glossary";
-import { formatCount } from "../../lib/metrics";
+import { CANDIDATE_STABLE_OUTLINE_COLOR, formatCount } from "../../lib/metrics";
 import { namedWeightRows, namedWeights } from "../../lib/suitability";
 import SectionCard from "../ui/SectionCard";
 import SuitabilityFactorCards from "./SuitabilityFactorCards";
@@ -94,74 +102,80 @@ export default function SuitabilityScoringBasis({
       title="② 계산 모델 가중치 설정"
       description="네 항목을 어떤 비율로 반영해 후보 점수를 계산할지 결정합니다."
       testId="scoring-basis"
-      className="wep-figma-card"
+      className="wep-figma-card wep-numbered-card"
     >
-      {/* THE ACTIVE BASIS, answer-first. Everything here is already-served state:
-          the profile's glossary label + method sentence, and the run's own weights. */}
+      {/* THE SEGMENTED BAR SITS DIRECTLY UNDER THE HEADING, full width, exactly as
+          Figma 136:8684 draws it — before the restructure it was buried inside a
+          "현재 적용 중인 기준" sub-box three blocks down, so the card opened with a
+          tinted panel instead of with the distribution it is about. It is drawn
+          from the SAME served rows the factor cards print: it adds a shape, never
+          a number. */}
+      <SuitabilityWeightBar rows={activeRows} />
+
+      {/* WHICH basis those proportions belong to, in one line rather than a panel.
+          Everything here is already-served state: the profile's glossary label and
+          its method sentence. */}
       <div
-        className="rounded-card border border-primary-border bg-primary-soft p-3"
+        className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
         data-testid="suitability-active-basis"
       >
-        <p className="text-[11px] font-medium text-ink-subtle">현재 적용 중인 기준</p>
-        <p className="mt-0.5 text-base font-semibold text-ink" data-testid="active-basis-name">
+        <span className="text-[11px] text-ink-subtle">현재 적용 중인 기준</span>
+        <span className="text-sm font-semibold text-ink" data-testid="active-basis-name">
           {profileLabel(profile)}
-        </p>
+        </span>
+        {/* The four weights as text beside the bar — each with its full Korean name
+            and its numeric percentage, so the segmented bar is never the only
+            carrier of a value. */}
+        <span
+          className="w-full text-[11px] leading-snug tabular-nums text-ink-muted"
+          data-testid="active-basis-weights"
+        >
+          {activeRows.map((row) => `${row.label} ${row.percent}`).join(" · ")}
+        </span>
         {activeMeta?.detail ? (
-          <p className="mt-1 text-xs text-ink-muted" data-testid="active-basis-explanation">
+          <span
+            className="w-full text-[11px] leading-snug text-ink-subtle"
+            data-testid="active-basis-explanation"
+          >
             {activeMeta.detail}
-          </p>
+          </span>
         ) : null}
-        {/* The Figma segmented distribution strip, drawn from the SAME served rows
-            the labelled list below prints. It adds a shape, never a number. */}
-        <div className="mt-2">
-          <SuitabilityWeightBar rows={activeRows} />
-        </div>
-        {/* The four weights as labelled rows with their numeric percentage beside
-            the bar — the bar is never the only carrier of the value. */}
-        <dl className="mt-2 flex flex-col gap-1" data-testid="active-basis-weights">
-          {activeRows.map((row) => (
-            <div key={row.component} className="flex items-center gap-2 text-xs">
-              <dt className="min-w-0 flex-1 truncate text-ink-muted">{row.label}</dt>
-              <dd className="flex flex-none items-center gap-2">
-                <span aria-hidden className="hidden h-1.5 w-16 rounded-pill bg-surface sm:block">
-                  <span
-                    className="block h-full rounded-pill bg-primary"
-                    style={{ width: row.percent === "-" ? "0%" : row.percent }}
-                  />
-                </span>
-                <span className="w-9 text-right font-semibold tabular-nums text-ink">
-                  {row.percent}
-                </span>
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-2 text-[11px] text-ink-subtle" data-testid="active-basis-stability">
+        <span className="w-full text-[11px] leading-snug text-ink-subtle" data-testid="active-basis-stability">
           {stabilityAvailable
             ? "이 분석 실행은 기준을 바꿔도 상위권을 유지하는 정도(안정성)를 함께 제공합니다."
             : "이 분석 실행에는 안정성 결과가 없습니다."}
-        </p>
+        </span>
       </div>
 
-      {/* THE FOUR FACTORS, one card each (Figma card ②). Same weights, same order,
-          same glossary names — this is the active basis broken out per factor. */}
-      <SuitabilityFactorCards weights={activeRows} selected={selected} />
+      {/* THE CONTROL, directly under the distribution it changes.
+          Figma puts a free "가중치 설정 __%" input in every factor card; this screen
+          has none (see the file header — the map shows a STORED run), so the honest
+          control is the basis selector, and it belongs here rather than below the
+          four cards it drives.
 
-      {/* THE CONTROL. Native radios in one `name="profile"` group, so arrow keys
-          traverse the whole list; the checked input, the heavier label weight, and
-          the stronger border all mark the selection alongside the tint. Test ids
-          `profile-selector` / `profile-radio-*` are unchanged. */}
+          Native radios in one `name="profile"` group, so arrow keys traverse the
+          whole list; the checked input, the heavier label weight, and the stronger
+          border all mark the selection alongside the tint. Test ids
+          `profile-selector` / `profile-radio-*` are unchanged, and the inputs stay
+          visible (e2e/integration.spec.ts asserts it).
+
+          THE ROWS ARE ONE LINE EACH. They used to carry the option's method
+          sentence and its four named weights, which wrap to three lines at 360px —
+          five of those put the factor cards, the subject of this card, a full
+          screen below its heading. Neither is deleted: the method belongs to the
+          ACTIVE basis and is printed above by `active-basis-explanation`, and every
+          basis's weights are in the comparison disclosure below, where they can
+          actually be read side by side instead of scattered down a radio list. */}
       <fieldset className="mt-3 m-0 border-0 p-0" data-testid="profile-selector">
-        <legend className="mb-1 text-xs font-semibold text-ink-subtle">
-          점수 반영 기준
-        </legend>
+        <legend className="mb-1 text-[11px] font-semibold text-ink-subtle">점수 반영 기준</legend>
         <div className="flex flex-col gap-1">
           {PROFILE_OPTIONS.filter((option) => runProfiles.includes(option.key)).map((option) => {
             const selected = profile === option.key;
             return (
               <label
                 key={option.key}
-                className={`flex items-start gap-2 rounded-card border p-2 text-sm ${
+                title={option.method}
+                className={`flex items-center gap-2 rounded-control border px-2.5 py-1.5 text-xs ${
                   selected
                     ? "border-primary-border bg-primary-soft font-semibold text-ink"
                     : "border-hairline bg-surface text-ink-muted"
@@ -170,29 +184,43 @@ export default function SuitabilityScoringBasis({
                 <input
                   type="radio"
                   name="profile"
-                  className="mt-1"
                   checked={selected}
                   onChange={() => onSelectProfile(option.key)}
                   data-testid={`profile-radio-${option.key}`}
                 />
-                <span className="min-w-0">
-                  {option.label}
-                  <span className="mt-0.5 block text-[11px] font-normal text-ink-subtle">
-                    {option.method}
-                  </span>
-                  <span className="mt-0.5 block text-[11px] font-normal tabular-nums text-ink-subtle">
-                    {namedWeights(weightsFor(run, policy, option.key))}
-                  </span>
-                </span>
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
               </label>
             );
           })}
         </div>
+        {/* Every basis's four weights in one place, with their full Korean names —
+            never bare code letters. Closed by default; the one in force is already
+            stated above the list. */}
+        <details className="mt-1.5" data-testid="profile-weight-comparison">
+          <summary className="cursor-pointer text-[11px] font-medium text-ink-muted">
+            기준별 가중치 비교
+          </summary>
+          <dl className="mt-1 flex flex-col gap-1">
+            {PROFILE_OPTIONS.filter((option) => runProfiles.includes(option.key)).map((option) => (
+              <div key={option.key}>
+                <dt className="text-[11px] font-medium text-ink">{option.label}</dt>
+                <dd className="text-[10px] leading-snug tabular-nums text-ink-subtle">
+                  {namedWeights(weightsFor(run, policy, option.key))}
+                </dd>
+                <dd className="text-[10px] leading-snug text-ink-subtle">{option.method}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
       </fieldset>
+
+      {/* THE FOUR FACTORS, one card each (Figma card ②). Same weights, same order,
+          same glossary names — this is the active basis broken out per factor. */}
+      <SuitabilityFactorCards weights={activeRows} selected={selected} />
 
       {/* Distinguish the fixed policy-assumption bases from the data-distribution
           one. Unchanged wording. */}
-      <p className="mt-2 text-xs text-ink-subtle">
+      <p className="mt-3 text-[11px] leading-snug text-ink-subtle">
         기본·모두 똑같이·지역 부담 중심·도로 근접성 중심은 <strong>운영 가정</strong>으로 정한 고정
         비율이며 전문가 AHP 결과가 아닙니다. <strong>데이터 분포 기준</strong>은 이 분석 실행의 후보
         점수 분포에서 자동 계산된 비율입니다.
@@ -220,16 +248,30 @@ export default function SuitabilityScoringBasis({
           comparison bases (기본 · 모두 똑같이 · 데이터 분포), not four. Nothing is
           recomputed here — the classification comes from the stored run. */}
       {stabilityAvailable && (
-        <p
-          className="mt-2 rounded-card border border-hairline bg-surface-muted p-2 text-[11px] leading-relaxed text-ink-muted"
+        <div
+          className="mt-3 flex items-start gap-2.5 rounded-control border border-hairline bg-surface-muted px-4 py-3.5"
           data-testid="scoring-basis-stability"
         >
-          <span className="font-semibold text-ink">안정 후보</span> — {STABILITY_RULE_SHORT} 현재{" "}
-          <span className="font-semibold text-ink">
-            {stableOnly ? "안정 후보만 보기가 켜져 있습니다" : "안정 후보만 보기가 꺼져 있습니다"}
-          </span>
-          . 표시 설정은 지도 왼쪽 아래 범례에서 바꿀 수 있으며, 후보 수와 점수는 바뀌지 않습니다.
-        </p>
+          {/* The stable-candidate OUTLINE, not a checkbox: the swatch is the same
+              signal the map draws, so the row reads as the legend entry it is. */}
+          <span
+            aria-hidden
+            className="mt-0.5 h-3.5 w-3.5 flex-none rounded-[3px] border-2"
+            style={{ borderColor: CANDIDATE_STABLE_OUTLINE_COLOR }}
+          />
+          <p className="min-w-0 text-[11px] leading-snug text-ink-muted">
+            <span className="text-[13px] font-bold text-ink">안정 후보 표시</span>
+            <span className="mt-0.5 block">
+              {STABILITY_RULE_SHORT} 현재{" "}
+              <span className="font-semibold text-ink">
+                {stableOnly
+                  ? "안정 후보만 보기가 켜져 있습니다"
+                  : "안정 후보만 보기가 꺼져 있습니다"}
+              </span>
+              . 표시 설정은 지도 왼쪽 아래 범례에서 바꿀 수 있으며, 후보 수와 점수는 바뀌지 않습니다.
+            </span>
+          </p>
+        </div>
       )}
     </SectionCard>
   );

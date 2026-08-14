@@ -95,13 +95,38 @@ export default function SuitabilityScopeCard({
   const hasSelection = scope.kind !== "all";
 
   return (
-    <SectionCard title="① 분석 범위" testId="suitability-scope" className="wep-figma-card">
-      {/* COMPACT BY CONTRACT. The controls column must still show the active
+    <SectionCard
+      title="① 분석 범위"
+      description="공식 폐기물 자료가 있는 지역만 선택할 수 있습니다."
+      testId="suitability-scope"
+      className="wep-figma-card wep-numbered-card"
+    >
+      {/* FIGMA ORDER: search field, then the 시·도 pills, then the chips, then the
+          count line. The frame leads with the field because typing a city name is
+          the direct route and the pills are the three shortcuts beside it; the
+          shipped card had them the other way round.
+
+          Still COMPACT BY CONTRACT: the controls column has to show the active
           scoring basis without scrolling at the 1024×768 minimum
-          (e2e/suitabilityDashboard.spec.ts), so the 시·도 pills and the search sit
-          in one short block and the per-시·도 counts stay in a disclosure. */}
+          (e2e/suitabilityDashboard.spec.ts), so the per-시·도 counts stay in the
+          disclosure at the foot. */}
+      <div>
+        <label className="sr-only" htmlFor={searchId}>
+          시·군·구 검색
+        </label>
+        <input
+          id={searchId}
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="지역 이름 검색 (예: 안산, 부평)"
+          className="h-9 w-full rounded-control border border-hairline-strong bg-surface px-3 text-xs text-ink placeholder:text-ink-subtle"
+          data-testid="suitability-scope-search"
+        />
+      </div>
+
       <div
-        className="flex flex-wrap gap-x-0.5 gap-y-0.5"
+        className="mt-2 flex flex-wrap gap-1"
         role="group"
         aria-label="시·도 분석 범위"
         data-testid="suitability-scope-pills"
@@ -125,23 +150,8 @@ export default function SuitabilityScopeCard({
         ))}
       </div>
 
-      <div className="mt-1">
-        <label className="sr-only" htmlFor={searchId}>
-          시·군·구 검색
-        </label>
-        <input
-          id={searchId}
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="시·군·구 검색 (예: 안산, 부평)"
-          className="w-full rounded-card border border-hairline bg-surface px-2 py-1 text-xs text-ink placeholder:text-ink-subtle"
-          data-testid="suitability-scope-search"
-        />
-      </div>
-
       {query.trim() !== "" && (
-        <ul className="mt-1 flex flex-col gap-0.5" data-testid="suitability-scope-matches">
+        <ul className="mt-2 flex flex-col gap-0.5" data-testid="suitability-scope-matches">
           {matches.length === 0 ? (
             <li className="px-1 py-1 text-[11px] text-ink-subtle" data-testid="suitability-scope-no-match">
               검색과 일치하는 시·군·구가 없습니다.
@@ -189,7 +199,7 @@ export default function SuitabilityScopeCard({
       )}
 
       {hasSelection && (
-        <div className="mt-1 flex flex-wrap items-center gap-1" data-testid="suitability-scope-chips">
+        <div className="mt-2 flex flex-wrap items-center gap-1" data-testid="suitability-scope-chips">
           {scope.kind === "sido" && (
             <span
               className="rounded-full border border-primary-border bg-primary-soft px-2 py-0.5 text-[11px] font-medium text-ink"
@@ -239,6 +249,18 @@ export default function SuitabilityScopeCard({
           </button>
         </div>
       )}
+
+      {/* "선택한 지역 N개" — the count line Figma closes ① with. It states what the
+          chips above add up to, and names the whole-region case rather than
+          printing "0개", which would read as an empty selection when it is in fact
+          the widest one. */}
+      <p className="mt-2 text-[11px] text-ink-subtle" data-testid="suitability-scope-count">
+        {scope.kind === "all"
+          ? `분석 범위 ${SUITABILITY_SCOPE_ALL_LABEL}`
+          : scope.kind === "sido"
+            ? "선택한 지역 1개 (시·도)"
+            : `선택한 지역 ${selected.length + unknownCodes.length}개`}
+      </p>
 
       {/* The standing limit, in ONE line. Everything else the card used to state up
           front — the 시·도 breakdown and why the two region filters are never
@@ -329,7 +351,9 @@ function ScopePill({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`rounded-full border px-1.5 py-1 text-[11px] whitespace-nowrap ${
+      // Figma 136:8684 sizes the ① shortcuts as 35px rounded-rect buttons, not as
+      // the hairline micro-pills the card shipped with.
+      className={`h-9 rounded-control border px-3 text-xs whitespace-nowrap ${
         active
           ? "border-primary-border bg-primary-soft font-semibold text-ink"
           : "border-hairline bg-surface text-ink-muted hover:bg-surface-muted"

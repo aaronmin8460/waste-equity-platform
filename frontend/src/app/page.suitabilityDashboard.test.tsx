@@ -32,7 +32,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   FORBIDDEN_PRIMARY_TOKENS,
   PROFILE_META,
-  SUITABILITY_SCREENING_DISCLAIMER,
+  SUITABILITY_SCREENING_SHORT_LABEL,
 } from "../lib/glossary";
 
 // A stubbed MapView that surfaces a candidate-click trigger, so the map path and
@@ -388,14 +388,25 @@ describe("후보지 점수 — shell contracts", () => {
     expect(container.querySelectorAll('[data-testid="mode-switch"]')).toHaveLength(1);
   });
 
-  it("shows the screening disclaimer without opening any disclosure, and not as an alert", async () => {
+  it("carries the screening limitation without a banner, and never as an alert", async () => {
     await enterScore();
-    const notice = screen.getByTestId("suitability-screening-disclaimer");
-    expect(notice.textContent).toContain(SUITABILITY_SCREENING_DISCLAIMER);
-    // Not inside a <details>, so it is readable with no user interaction.
-    expect(notice.closest("details")).toBeNull();
-    // Standing explanatory content is never role="alert".
-    expect(notice.getAttribute("role")).not.toBe("alert");
+    // THE BANNER IS GONE. Figma 136:8684 opens the left column with ① and nothing
+    // above it, and a three-line notice card ahead of the controls was the wall of
+    // text the Page-4 remediation removed. Deleting the LIMITATION would be a
+    // different change, so the two surfaces that still carry it are pinned here.
+    expect(screen.queryByTestId("suitability-screening-notice")).toBeNull();
+    expect(screen.queryByTestId("suitability-screening-disclaimer")).toBeNull();
+
+    // 1. The map's own legend, permanently, beside the candidates it qualifies.
+    expect(screen.getByTestId("suitability-legend-note").textContent).toContain(
+      SUITABILITY_SCREENING_SHORT_LABEL,
+    );
+    // 2. The run's served disclaimer in 계산 방법과 가정 — not inside a <details>, so
+    //    it is readable with no user interaction, and never role="alert" (standing
+    //    explanatory content must not interrupt a screen reader).
+    const served = screen.getByTestId("suitability-disclaimer");
+    expect(served.closest("details")).toBeNull();
+    expect(served.getAttribute("role")).not.toBe("alert");
   });
 });
 

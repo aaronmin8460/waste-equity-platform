@@ -146,7 +146,11 @@ export default function SuitabilityScenarioSaveCard({
   };
 
   return (
-    <SectionCard title="④ 시나리오 저장" testId="scenario-save" className="wep-figma-card">
+    <SectionCard
+      title="④ 시나리오 저장"
+      testId="scenario-save"
+      className="wep-figma-card wep-numbered-card"
+    >
       {/* WHAT is about to be saved, before the name field asks for a label for it.
           A name box with no visible subject is a box a reader has to guess at. */}
       {weights === null ? (
@@ -159,17 +163,21 @@ export default function SuitabilityScenarioSaveCard({
       ) : (
         // The label already carries its own noun (`profileLabel` returns e.g.
         // "기본 기준"), so the sentence must not append another one.
-        <p className="text-[11px] leading-snug text-ink-muted" data-testid="scenario-save-weights">
+        <p className="text-[10px] leading-snug text-ink-subtle" data-testid="scenario-save-weights">
           <span className="font-medium text-ink">{weightsSourceLabel}</span>의 가중치를 저장합니다 ·{" "}
           {namedWeights(weights)}
         </p>
       )}
 
-      <div className="mt-2">
-        <label className="text-xs font-medium text-ink" htmlFor={nameId}>
+      <div className="mt-3">
+        <label className="text-[12.5px] font-bold text-ink" htmlFor={nameId}>
           시나리오 이름
         </label>
-        <div className="mt-1 flex items-center gap-2">
+        {/* Figma 136:8684 puts the counter INSIDE the field, right-aligned, so the
+            field spans the card instead of giving a quarter of its width to a
+            three-character count. The counter is still a separate element with its
+            own id, so `aria-describedby` on the input is unchanged. */}
+        <div className="mt-1.5 flex h-[39px] items-center gap-2 rounded-control border border-hairline-strong bg-surface pl-3.5 pr-3 focus-within:border-primary-border">
           <input
             id={nameId}
             type="text"
@@ -187,7 +195,7 @@ export default function SuitabilityScenarioSaveCard({
             // CODE POINTS below, and the counter shows the same number the rule uses.
             aria-describedby={`${nameId}-counter`}
             aria-invalid={tooLong || undefined}
-            className="min-w-0 flex-1 rounded-card border border-hairline bg-surface px-2 py-1 text-xs text-ink placeholder:text-ink-subtle"
+            className="min-w-0 flex-1 border-0 bg-transparent text-xs text-ink outline-none placeholder:text-ink-subtle"
             data-testid="scenario-name-input"
           />
           <span
@@ -200,11 +208,14 @@ export default function SuitabilityScenarioSaveCard({
         </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      {/* Two EQUAL 41px actions, the Figma pair: a quiet 취소 and the navy
+          시나리오 저장. Equal width because neither is a secondary afterthought —
+          one abandons the draft, the other commits it. */}
+      <div className="mt-2.5 flex items-stretch gap-2.5">
         <button
           type="button"
           onClick={resetForm}
-          className="wep-btn-quiet"
+          className="h-[41px] flex-1 rounded-[12px] border border-hairline-strong bg-surface text-sm font-bold text-ink hover:bg-surface-muted"
           data-testid="scenario-save-cancel"
         >
           취소
@@ -213,7 +224,7 @@ export default function SuitabilityScenarioSaveCard({
           type="button"
           onClick={submitSave}
           disabled={!canSave}
-          className="wep-btn-primary min-h-[36px] flex-1 text-xs disabled:opacity-40"
+          className="h-[41px] flex-1 rounded-[12px] bg-primary text-sm font-bold text-primary-ink hover:bg-primary-hover disabled:opacity-40"
           data-testid="scenario-save-submit"
         >
           {saving ? "확인 중…" : "시나리오 저장"}

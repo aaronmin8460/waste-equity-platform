@@ -119,6 +119,33 @@ function cellLocationLabel(sigungu: unknown): string {
  * centroid stay available in the selected-candidate panel. Dropping the prefix would
  * turn a cell score into a claim about a whole city.
  */
+/**
+ * THE AUTHORITATIVE COUNTS, as the ranking section's header aside.
+ *
+ * 표시 is this page's row count (`count`); 범위 내 is the backend's `total_matched`
+ * over the SAME WHERE clause — never inferred from the page length. Renders
+ * nothing at all while there is no served collection: a count is a served figure,
+ * and a placeholder "0개" beside a loading list would be a number we do not have.
+ */
+function RankingCounts({
+  ranking,
+  scopeName,
+}: {
+  ranking: SuitabilityCandidateCollection | null;
+  scopeName: string;
+}) {
+  if (ranking === null) return null;
+  return (
+    <p className="text-[11px] text-ink-muted" data-testid="candidate-ranking-counts">
+      표시 {formatCount(ranking.count)}개 · {scopeName} 범위 내{" "}
+      <span className="font-semibold tabular-nums text-ink">
+        {formatCount(ranking.total_matched)}
+      </span>
+      개
+    </p>
+  );
+}
+
 function CandidateRow({
   rank,
   sigungu,
@@ -146,32 +173,41 @@ function CandidateRow({
         type="button"
         aria-current={isSelected ? "true" : undefined}
         onClick={onSelect}
-        className={`flex w-full items-center gap-2 rounded-card border px-2 py-2 text-left text-xs ${
+        // FIGMA 136:8684 ROW GEOMETRY: a 36px rule-separated row with a leading
+        // accent bar, not a bordered card. Selection is still fill + border-left +
+        // a "✓ 선택됨" text mark, never colour alone.
+        className={`flex w-full items-center gap-2.5 border-b border-[var(--figma-rule)] px-1.5 py-2 text-left text-xs last:border-b-0 ${
           isSelected
-            ? "border-primary-border bg-primary-soft font-semibold text-ink"
-            : "border-hairline bg-surface text-ink-muted hover:bg-surface-muted"
+            ? "bg-primary-soft font-semibold text-ink"
+            : "bg-surface text-ink-muted hover:bg-surface-muted"
         }`}
         data-testid={testId}
       >
+        <span
+          aria-hidden
+          className={`h-7 w-[3px] flex-none rounded-pill ${
+            isSelected ? "bg-primary" : "bg-hairline-strong"
+          }`}
+        />
         {/* Rank in its own leading column, the way the Figma row reads. */}
-        <span className="flex-none text-sm font-bold tabular-nums text-ink">{rank}위</span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-ink">{sigungu}</span>
-          {/* The scored object, on its own line so it survives a narrow column:
-              the row is one 500 m grid cell, not the 시·군·구 named above it. */}
-          <span className="block text-[11px] text-ink-subtle">500m 후보 구역</span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-1">
-            {isSelected && (
-              <span className="font-semibold text-primary-hover" data-testid={selectedTestId}>
-                ✓ 선택됨
-              </span>
-            )}
-            {stabilityClass != null && stableCount != null && (
-              <StabilityBadge stabilityClass={stabilityClass} stableCount={stableCount} />
-            )}
-          </span>
+        <span className="flex-none tabular-nums text-ink-subtle">{rank}위</span>
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+          <span className="min-w-0 truncate text-[15px] font-bold text-ink">{sigungu}</span>
+          {/* THE SCORED OBJECT, still on every row — the row is one 500 m grid
+              cell, not the 시·군·구 named beside it. It moved from its own line to
+              an inline caption so the row fits Figma's 36px, but it is never
+              dropped: without it a cell score reads as a claim about a whole city. */}
+          <span className="flex-none text-[10px] text-ink-subtle">500m 후보 구역</span>
+          {isSelected && (
+            <span className="text-[11px] font-semibold text-primary-hover" data-testid={selectedTestId}>
+              ✓ 선택됨
+            </span>
+          )}
+          {stabilityClass != null && stableCount != null && (
+            <StabilityBadge stabilityClass={stabilityClass} stableCount={stableCount} />
+          )}
         </span>
-        <span className="flex-none text-sm font-bold tabular-nums text-ink">{score}점</span>
+        <span className="flex-none text-[15px] font-bold tabular-nums text-ink">{score}점</span>
       </button>
     </li>
   );
@@ -220,7 +256,8 @@ export default function SuitabilityCandidateList({
               type="button"
               aria-pressed={sort === option.value}
               onClick={() => onSortChange(option.value)}
-              className={`rounded-full border px-2.5 py-1 text-xs ${
+              // Figma 136:8684 draws these as 28px r=10 pill toggles.
+              className={`h-7 rounded-control border px-3 text-xs ${
                 sort === option.value
                   ? "border-primary-border bg-primary-soft font-semibold text-ink"
                   : "border-hairline bg-surface text-ink-muted hover:bg-surface-muted"
@@ -244,17 +281,8 @@ export default function SuitabilityCandidateList({
           </p>
         ) : (
           <>
-            {/* THE AUTHORITATIVE COUNTS. 표시 is this page's row count; 범위 내 is the
-                backend's `total_matched` over the same WHERE clause — never inferred
-                from the page length. */}
-            <p className="mb-1.5 text-[11px] text-ink-muted" data-testid="candidate-ranking-counts">
-              표시 {formatCount(ranking.count)}개 · {scopeName} 범위 내{" "}
-              <span className="font-semibold tabular-nums text-ink">
-                {formatCount(ranking.total_matched)}
-              </span>
-              개
-            </p>
-
+            {/* The authoritative counts moved to the section HEADER (RankingCounts),
+                where Figma 136:8684 right-aligns them beside "순위 보기". */}
             {ranking.total_matched === 0 ? (
               // A real, correct zero — e.g. 안산시 has candidate cells but none of them
               // is ELIGIBLE under the documented v1 zoning assumption. The scope is NOT
@@ -292,17 +320,18 @@ export default function SuitabilityCandidateList({
           </>
         )}
         {rows.length > 0 && (
-          <p className="mt-1.5 text-[11px] text-ink-subtle" data-testid="candidate-list-map-hint">
+          <p className="mt-1.5 text-[10px] leading-snug text-ink-subtle" data-testid="candidate-list-map-hint">
             각 행은 시·군·구 자체가 아니라 그 안에 있는 500m 후보 구역 한 곳입니다. 순위 번호는 분석
             실행 전체에서의 순위이며, 고른 범위 안에서 다시 매긴 번호가 아닙니다. 목록에서 후보를
             누르면 지도에서 해당 구역이 선택됩니다.
           </p>
         )}
-        <div className="mt-2 text-[11px] text-ink-subtle" data-testid="candidate-vector-note">
-          <p>
-            전체 후보 구역 {formatCount(summary.candidate_count_total)}개가 모두 지도에 표시됩니다. 표시
-            개수 제한 없이 전체 자료를 볼 수 있고, 화면에 보이는 부분만 빠르게 불러옵니다.
-          </p>
+        {/* Figma 136:8684 closes the ranking with ONE line — "목록을 누르면 지도에서
+            위치가 강조됩니다." The four paragraphs of small print that used to sit
+            here are not deleted: the two that are genuinely standing limitations
+            (a scope the map could not follow, and "not a siting decision") stay
+            visible, and the descriptive ones move inside 자세히 보기. */}
+        <div className="mt-1 text-[11px] text-ink-subtle" data-testid="candidate-vector-note">
           {/* Whether the MAP narrowed with the list, said plainly. A 시·군·구 범위 is
               applied to the map on exactly the attribute the request filtered on; a
               시·도 범위 cannot be, because the vector tile does not carry
@@ -315,16 +344,18 @@ export default function SuitabilityCandidateList({
                 : `순위와 개수는 ${scopeName} 기준이지만, 지도에는 수도권 전체 후보 구역이 그대로 표시됩니다.`}
             </p>
           )}
-          <p className="mt-0.5">
-            {statusLabel("ELIGIBLE")} {formatCount(summary.candidate_count_eligible)} ·{" "}
-            {statusLabel("REVIEW_REQUIRED")} {formatCount(summary.candidate_count_review)} ·{" "}
-            {statusLabel("EXCLUDED")} {formatCount(summary.candidate_count_excluded)} — 상태 필터는
-            지도에 함께 적용됩니다. 공공자료 기반 1차 비교이며 실제 입지 결정이 아닙니다.
-          </p>
           <details className="mt-1">
             <summary className="cursor-pointer text-ink-subtle">자세히 보기</summary>
-            <p className="mt-1 text-[11px] text-ink-subtle">
-              지도는 화면에 필요한 부분만 벡터 타일(MVT)로 전송해 빠르게 표시합니다.
+            <p className="mt-1">
+              전체 후보 구역 {formatCount(summary.candidate_count_total)}개가 모두 지도에 표시됩니다.
+              표시 개수 제한 없이 전체 자료를 볼 수 있고, 화면에 보이는 부분만 빠르게 불러옵니다. 지도는
+              화면에 필요한 부분만 벡터 타일(MVT)로 전송해 빠르게 표시합니다.
+            </p>
+            <p className="mt-1">
+              {statusLabel("ELIGIBLE")} {formatCount(summary.candidate_count_eligible)} ·{" "}
+              {statusLabel("REVIEW_REQUIRED")} {formatCount(summary.candidate_count_review)} ·{" "}
+              {statusLabel("EXCLUDED")} {formatCount(summary.candidate_count_excluded)} — 상태 필터는
+              지도에 함께 적용됩니다.
             </p>
           </details>
         </div>
@@ -334,14 +365,18 @@ export default function SuitabilityCandidateList({
             generic unfiltered one. Hidden while the ranking request has failed:
             there is no ranking to show in full, and the error above says so. */}
         {onOpenFullRanking !== undefined && rankingError === null && (
-          <button
-            type="button"
-            onClick={onOpenFullRanking}
-            className="mt-2 w-full rounded-control border border-primary-border bg-surface px-3 py-2 text-xs font-semibold text-ink hover:bg-surface-muted"
-            data-testid="open-full-ranking"
-          >
-            전체보기 ↗
-          </button>
+          // Right-aligned and content-width, the way the frame places it — not the
+          // full-width block it used to be, which read as the card's primary action.
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={onOpenFullRanking}
+              className="h-9 rounded-[12px] border border-primary-border bg-surface px-4 text-xs font-bold text-ink hover:bg-surface-muted"
+              data-testid="open-full-ranking"
+            >
+              전체보기 ↗
+            </button>
+          </div>
         )}
     </>
   );
@@ -358,12 +393,31 @@ export default function SuitabilityCandidateList({
       {showRanking &&
         (nested ? (
           <section aria-label={rankingTitle} data-testid="top-candidates">
-            <h3 className="text-xs font-semibold text-ink">{rankingTitle}</h3>
-            <p className="mb-1.5 mt-0.5 text-[11px] text-ink-subtle">{rankingDescription}</p>
+            {/* Figma 136:8684 sets "순위 보기" at 16px bold with the count meta
+                right-aligned on the SAME line, so the header costs one row rather
+                than three. `baseline` alignment keeps the two type sizes sitting on
+                one line rather than on two optical ones. */}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+              <h3 className="text-base font-bold text-ink">{rankingTitle}</h3>
+              <RankingCounts
+                ranking={rankingError === null ? ranking : null}
+                scopeName={scopeName}
+              />
+            </div>
+            <p className="mb-2 mt-0.5 text-[11px] leading-snug text-ink-subtle">
+              {rankingDescription}
+            </p>
             {rankingBody}
           </section>
         ) : (
-          <SectionCard title={rankingTitle} description={rankingDescription} testId="top-candidates">
+          <SectionCard
+            title={rankingTitle}
+            description={rankingDescription}
+            headerAside={
+              <RankingCounts ranking={rankingError === null ? ranking : null} scopeName={scopeName} />
+            }
+            testId="top-candidates"
+          >
             {rankingBody}
           </SectionCard>
         ))}

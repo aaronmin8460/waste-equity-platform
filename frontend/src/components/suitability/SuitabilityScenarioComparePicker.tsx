@@ -65,12 +65,16 @@ export default function SuitabilityScenarioComparePicker({
     <SectionCard
       title="⑤ 비교할 시나리오 선택"
       testId="scenario-compare-picker"
-      className="wep-figma-card"
+      className="wep-figma-card wep-numbered-card"
+      // Figma 136:8684 puts "(선택 N/2개)" on its own line UNDER the ⑤ heading, not
+      // beside it — at 20px the heading and the counter no longer share a line.
+      description={
+        <span className="tabular-nums" data-testid="scenario-compare-count">
+          (선택 {selection.selectedCount}/2개)
+        </span>
+      }
       headerAside={
         <div className="flex items-center gap-1">
-          <span className="text-[11px] tabular-nums text-ink-muted" data-testid="scenario-compare-count">
-            (선택 {selection.selectedCount}/2개)
-          </span>
           {/* The name is an `aria-label`, NOT an `sr-only` child element.
               `.sr-only` is `position: absolute`, and neither this card nor the
               scrolling `.wep-panel` around it establishes a containing block, so
@@ -84,7 +88,7 @@ export default function SuitabilityScenarioComparePicker({
             onClick={onReset}
             disabled={!anySelected}
             aria-label="비교 시나리오 선택 초기화"
-            className="rounded-full border border-hairline px-1.5 py-0.5 text-[11px] text-ink-muted hover:bg-surface-muted disabled:opacity-40"
+            className="h-9 w-11 rounded-[12px] border border-hairline-strong bg-surface text-sm text-ink-muted hover:bg-surface-muted disabled:opacity-40"
             data-testid="scenario-compare-reset"
           >
             <span aria-hidden="true">↻</span>
@@ -92,7 +96,7 @@ export default function SuitabilityScenarioComparePicker({
         </div>
       }
     >
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-3">
         <Slot resolution={selection.a} activeRunId={activeRunId} onClear={() => onClearSlot("A")} />
         <Slot resolution={selection.b} activeRunId={activeRunId} onClear={() => onClearSlot("B")} />
       </div>
@@ -113,7 +117,9 @@ export default function SuitabilityScenarioComparePicker({
         type="button"
         onClick={onCompare}
         disabled={!canCompare}
-        className="wep-btn-primary mt-2 w-full text-xs disabled:opacity-40"
+        // The Figma CTA: full width, 41px, r=12, navy. It is the one action that
+        // leaves this screen, and it closes the numbered sequence.
+        className="mt-4 flex h-[41px] w-full items-center justify-center gap-3 rounded-[12px] bg-primary text-sm font-bold text-primary-ink hover:bg-primary-hover disabled:opacity-40"
         data-testid="scenario-compare-cta"
       >
         두 시나리오 비교하기 <span aria-hidden="true">→</span>
@@ -149,63 +155,80 @@ function Slot({
   const otherRun = scenario !== null && scenarioRunState(scenario, activeRunId) === "OTHER_RUN";
 
   return (
-    <div
-      className="rounded-card border border-hairline bg-surface px-2 py-1.5"
-      data-testid={`scenario-compare-slot-${slot.toLowerCase()}`}
-    >
-      <div className="flex items-center gap-1">
-        <span
-          className="flex-none rounded-full border border-primary-border bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink"
-          aria-hidden="true"
-        >
-          {slot}
-        </span>
-        <span className="flex-none text-[11px] font-medium text-ink-muted">{slot}안</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-ink" data-testid="scenario-compare-slot-name">
-          {state === "RESOLVED" && scenario ? scenario.name : ""}
-        </span>
-        {state !== "EMPTY" && (
-          <button
-            type="button"
-            onClick={onClear}
-            // An attribute, not an `sr-only` box — see the reset button above.
-            aria-label={`${slot}안 선택 해제`}
-            className="flex-none rounded-full border border-hairline px-1.5 py-0.5 text-[11px] text-ink-muted hover:bg-surface-muted"
-            data-testid="scenario-compare-slot-clear"
+    // FIGMA 136:8684: "A안" is a label ABOVE the slot, and the slot itself is a
+    // r=14 card carrying a round letter avatar, the scenario name at title weight,
+    // a clear control, and the weights line. The frame tints A blue and B pink;
+    // that pairing is not in this palette and a second hue would have to mean
+    // something, so both slots keep the one navy selection tint and are told apart
+    // by the letter — the same rule the A/B/C chips follow.
+    <div data-testid={`scenario-compare-slot-${slot.toLowerCase()}`}>
+      <p className="text-[14.5px] font-bold text-ink">{slot}안</p>
+      <div
+        className={`mt-1.5 rounded-[14px] border px-[18px] py-4 ${
+          state === "RESOLVED"
+            ? "border-primary-border bg-primary-soft"
+            : "border-hairline bg-surface"
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-ink"
+            aria-hidden="true"
           >
-            <span aria-hidden="true">✕</span>
-          </button>
+            {slot}
+          </span>
+          <span
+            className="min-w-0 flex-1 truncate text-[15px] font-bold text-ink"
+            data-testid="scenario-compare-slot-name"
+          >
+            {state === "RESOLVED" && scenario ? scenario.name : ""}
+          </span>
+          {state !== "EMPTY" && (
+            <button
+              type="button"
+              onClick={onClear}
+              // An attribute, not an `sr-only` box — see the reset button above.
+              aria-label={`${slot}안 선택 해제`}
+              className="flex-none rounded-control border border-hairline px-1.5 py-0.5 text-[11px] text-ink-muted hover:bg-surface"
+              data-testid="scenario-compare-slot-clear"
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
+          )}
+        </div>
+
+        {state === "EMPTY" && (
+          <p className="mt-2 text-[11px] text-ink-subtle" data-testid="scenario-compare-slot-empty">
+            저장목록에서 {slot}안을 선택해 주세요.
+          </p>
+        )}
+
+        {/* An id that resolves to nothing is a REAL, nameable state — a link opened
+            in a browser that never held the scenario. Saying so is the whole point;
+            a blank slot here would read as "you have not chosen yet". */}
+        {state === "MISSING" && (
+          <p className="mt-2 text-[11px] leading-snug text-warn" data-testid="scenario-compare-slot-missing">
+            이 링크가 가리키는 시나리오를 이 브라우저에서 찾을 수 없습니다. 시나리오는 저장한
+            브라우저에만 남아 있습니다.
+          </p>
+        )}
+
+        {state === "RESOLVED" && scenario && (
+          <>
+            <p
+              className="mt-2 text-[12.5px] leading-snug text-ink-muted"
+              data-testid="scenario-compare-slot-weights"
+            >
+              {namedWeights(scenario.weights)}
+            </p>
+            {otherRun && (
+              <p className="mt-1 text-[11px] leading-snug text-warn" data-testid="scenario-compare-slot-other-run">
+                {SAVED_SCENARIO_OTHER_RUN_NOTICE}
+              </p>
+            )}
+          </>
         )}
       </div>
-
-      {state === "EMPTY" && (
-        <p className="mt-0.5 text-[10px] text-ink-subtle" data-testid="scenario-compare-slot-empty">
-          저장목록에서 {slot}안을 선택해 주세요.
-        </p>
-      )}
-
-      {/* An id that resolves to nothing is a REAL, nameable state — a link opened in
-          a browser that never held the scenario. Saying so is the whole point; a
-          blank slot here would read as "you have not chosen yet". */}
-      {state === "MISSING" && (
-        <p className="mt-0.5 text-[10px] leading-snug text-warn" data-testid="scenario-compare-slot-missing">
-          이 링크가 가리키는 시나리오를 이 브라우저에서 찾을 수 없습니다. 시나리오는 저장한 브라우저에만
-          남아 있습니다.
-        </p>
-      )}
-
-      {state === "RESOLVED" && scenario && (
-        <>
-          <p className="mt-0.5 text-[10px] leading-snug text-ink-muted" data-testid="scenario-compare-slot-weights">
-            {namedWeights(scenario.weights)}
-          </p>
-          {otherRun && (
-            <p className="mt-0.5 text-[10px] leading-snug text-warn" data-testid="scenario-compare-slot-other-run">
-              {SAVED_SCENARIO_OTHER_RUN_NOTICE}
-            </p>
-          )}
-        </>
-      )}
     </div>
   );
 }

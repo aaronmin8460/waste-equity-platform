@@ -189,13 +189,15 @@ for (const vp of VIEWPORTS) {
       await expect(page.locator("main")).toHaveCount(1);
     });
 
-    test("keeps the header, the disclaimer, and the analysis controls reachable", async ({
-      page,
-    }) => {
+    test("keeps the header, ① and the analysis controls reachable", async ({ page }) => {
       await openScore(page);
-      // Visible without scrolling the column.
+      // Visible without scrolling the column. The standing screening-disclaimer
+      // BANNER used to be asserted here; Figma 136:8684 opens the left column with
+      // ① and nothing above it, so the banner was removed and ① is what has to be
+      // above the fold instead. The limitation itself is pinned in
+      // app/page.suitabilityDashboard.test.tsx.
       await expect(page.locator("h1")).toBeInViewport();
-      await expect(page.getByTestId("suitability-screening-disclaimer")).toBeInViewport();
+      await expect(page.getByTestId("suitability-scope")).toBeInViewport();
       await expect(page.getByTestId("suitability-active-basis")).toBeInViewport();
 
       // Every profile radio, the status filters, and the stable-only control are

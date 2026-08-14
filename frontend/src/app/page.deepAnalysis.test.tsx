@@ -90,9 +90,13 @@ describe("the three-column workspace", () => {
 
   it("puts the analysis CONTROLS on the left and the RESULTS on the right", async () => {
     await enterDeepAnalysis();
-    // Left: what you ask.
+    // Left: what you ask. (The standing screening-disclaimer BANNER used to head
+    // this column; Figma 136:8684 opens it with ① and nothing above it, so the
+    // banner was removed here and the limitation is carried by the map's own
+    // legend instead — see "the screening limitation survives without the banner"
+    // in page.suitabilityDashboard.test.tsx.)
     expect(within(left()).getByTestId("suitability-active-basis")).toBeDefined();
-    expect(within(left()).getByTestId("suitability-screening-disclaimer")).toBeDefined();
+    expect(within(left()).queryByTestId("suitability-screening-disclaimer")).toBeNull();
     // Right: what you get.
     expect(within(right()).getByTestId("candidate-rank-framing")).toBeDefined();
     // …and neither column duplicates the other's content.

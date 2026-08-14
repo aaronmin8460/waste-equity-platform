@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   STATUS_META,
   SUITABILITY_SCREENING_DISCLAIMER,
+  SUITABILITY_SCREENING_SHORT_LABEL,
   UNMODELED_SUITABILITY_TITLE,
 } from "../lib/glossary";
 
@@ -73,16 +74,33 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("Phase 0 — the screening disclaimer is visible in every suitability sub-view", () => {
-  it("shows the full analytical-screening disclaimer in 후보지 점수 without a disclosure", async () => {
+// INTEGRATED CONTRACT. Every suitability sub-view still carries the screening
+// limitation, but no longer all by the same surface: 가중치 바꿔보기 and 후보지
+// 심층 비교 keep the full standing banner, 후보지 점수 carries it on the map legend
+// plus the run's own served disclaimer (Page-4 remediation), and 비용 살펴보기
+// carries it inside 계산 방법과 한계 (Page-3 remediation). The limitation is never
+// dropped — only the surface differs, per sub-view, for the reason each test states.
+describe("Phase 0 — the screening limitation is carried in every suitability sub-view", () => {
+  it("carries the screening limitation in 후보지 점수 without a banner", async () => {
     await enterSuitability();
-    const notice = screen.getByTestId("suitability-screening-disclaimer");
-    // Visible text (not behind a <details>) and the exact citizen wording.
-    expect(notice.textContent).toContain(SUITABILITY_SCREENING_DISCLAIMER);
-    expect(notice.closest("details")).toBeNull();
+    // THE BANNER IS GONE from 후보지 점수 (Figma 136:8684 opens the left column with
+    // ① and nothing above it; the full-width notice was the wall of text the Page-4
+    // remediation removed). The LIMITATION is not gone: this sub-view is the only
+    // one with a map legend, and the legend prints the short form permanently,
+    // beside the candidates it qualifies.
+    expect(screen.queryByTestId("suitability-screening-disclaimer")).toBeNull();
+    // The map legend carries the short form beside the candidates it qualifies…
+    expect(screen.getByTestId("suitability-legend-note").textContent).toContain(
+      SUITABILITY_SCREENING_SHORT_LABEL,
+    );
+    // …and the run's OWN served disclaimer stays in 계산 방법과 가정, visible with no
+    // interaction at all — not behind a <details>.
+    const served = screen.getByTestId("suitability-disclaimer");
+    expect(served.closest("details")).toBeNull();
+    expect(served.textContent).not.toBe("");
   });
 
-  it("keeps the disclaimer visible in 가중치 바꿔보기", async () => {
+  it("keeps the full disclaimer visible in 가중치 바꿔보기", async () => {
     await enterSuitability();
     fireEvent.click(screen.getByTestId("suitability-view-scenario"));
     await waitFor(() =>
@@ -117,6 +135,12 @@ describe("Phase 0 — the screening disclaimer is visible in every suitability s
 
   it("is a neutral informational notice, not an alert, and labels its severity by text", async () => {
     await enterSuitability();
+    // 후보지 점수 no longer carries the banner (see above), so this contract is
+    // exercised where the banner still lives: 후보지 심층 비교.
+    fireEvent.click(screen.getByTestId("suitability-view-scenario"));
+    await waitFor(() =>
+      expect(screen.getByTestId("suitability-screening-disclaimer")).toBeDefined(),
+    );
     const notice = screen.getByTestId("suitability-screening-disclaimer");
     // Not role="alert" (a standing disclaimer must not interrupt a screen reader).
     expect(notice.getAttribute("role")).not.toBe("alert");

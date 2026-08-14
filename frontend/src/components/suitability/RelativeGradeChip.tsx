@@ -15,6 +15,7 @@
 import type { GradeDistribution, RelativeGrade } from "../../lib/relativeGrade";
 import {
   GRADE_LABELS,
+  GRADE_SHARE_LABELS,
   RELATIVE_GRADE_EXPLANATION,
   RELATIVE_GRADE_TITLE,
   relativeGradeBasis,
@@ -49,10 +50,17 @@ export function RelativeGradeChip({ grade }: { grade: RelativeGrade }) {
  * relative position in the ELIGIBLE score distribution and has no authority over the
  * official screening status, which the backend already decided for every cell.
  *
- * So this panel takes the row LAYOUT and rejects the row CONTENT: the boundary is
- * printed as the served percentile it is (≥ P75 / P25 이상 ~ P75 미만 / < P25), the
- * arrow-to-status text is not rendered at all, and the chips keep their deliberately
- * non-status navy ramp (globals.css `.wep-grade-*`) instead of a traffic light.
+ * So this panel takes the row LAYOUT — three 36px rows, one line each — and rejects
+ * the row CONTENT: the boundary is printed as the served percentile it is (≥ P75 /
+ * P25 이상 ~ P75 미만 / < P25) beside the served count, the arrow-to-status text is
+ * not rendered at all, and the chips keep their deliberately non-status navy ramp
+ * (globals.css `.wep-grade-*`) instead of a traffic light.
+ *
+ * WHAT THE ROW CARRIES ON ITS LEFT is the band's SHARE (상위 25% · 중간 50% ·
+ * 하위 25%). That used to be the opening clause of a three-sentence paragraph above
+ * the rows; saying it once per row, beside the band it describes, is both shorter and
+ * closer to the thing it explains. The full Korean band name stays the chip's
+ * accessible name, so a screen reader still hears 상위 구간(A).
  *
  * `nested` drops the card chrome so the panel can sit inside ③ 종합 점수와 후보 순위
  * as its first block, which is where the Figma hierarchy puts it. The testids, the
@@ -72,63 +80,63 @@ export function RelativeGradePanel({
   scopeName?: string;
   nested?: boolean;
 }) {
-  const rows: { grade: RelativeGrade; range: string; band: string; count: number }[] = [
-    {
-      grade: "A",
-      range: `${distribution.p75} 이상`,
-      band: "상대점수 상위 구간",
-      count: distribution.countA,
-    },
+  const rows: { grade: RelativeGrade; range: string; count: number }[] = [
+    { grade: "A", range: `${distribution.p75} 이상`, count: distribution.countA },
     {
       grade: "B",
       range: `${distribution.p25} 이상 ~ ${distribution.p75} 미만`,
-      band: "상대점수 중간 구간",
       count: distribution.countB,
     },
-    {
-      grade: "C",
-      range: `${distribution.p25} 미만`,
-      band: "상대점수 하위 구간",
-      count: distribution.countC,
-    },
+    { grade: "C", range: `${distribution.p25} 미만`, count: distribution.countC },
   ];
 
   const body = (
     <>
-      {/* The disclaimer is NOT collapsible: it is the notice that stops A/B/C
-          being read as 적격/부적격, which is a critical analytical limitation
-          (spec §9). */}
-      <p className="text-xs leading-relaxed text-ink-muted" data-testid="relative-grade-explanation">
-        {RELATIVE_GRADE_EXPLANATION}
-      </p>
-      <dl className="mt-2 flex flex-col gap-1.5" data-testid="relative-grade-bands">
+      {/* THREE 36px ROWS, the Figma shape — one line each, chip and name on the
+          left, the served boundary and the served count on the right. The band's
+          share (상위 25% · 중간 50% · 하위 25%) rides in the row instead of in a
+          paragraph above it, which is what let the paragraph shrink to the single
+          caveat line below. */}
+      <dl className="flex flex-col gap-2" data-testid="relative-grade-bands">
         {rows.map((row) => (
           <div
             key={row.grade}
-            className="flex items-center gap-2 rounded-card border border-hairline bg-surface-muted px-2 py-1.5 text-xs"
+            className="flex h-9 items-center gap-2 rounded-control border border-hairline bg-surface-muted px-2.5 text-xs"
             data-testid={`relative-grade-row-${row.grade}`}
           >
-            <dt className="flex min-w-0 flex-1 items-center gap-1.5">
+            {/* The band's SHARE is the left-hand identity — "상위 25%" is what the
+                letter means, and it is short enough to sit on the 36px row beside
+                the served boundary. The full Korean name (상위 구간(A)) stays the
+                chip's accessible name, so nothing is lost to a screen reader. */}
+            <dt className="flex flex-none items-center gap-2 text-ink">
               <RelativeGradeChip grade={row.grade} />
-              <span className="min-w-0">
-                <span className="block truncate text-ink">{GRADE_LABELS[row.grade]}</span>
-                <span className="block truncate text-[11px] text-ink-subtle">{row.band}</span>
-              </span>
+              <span className="whitespace-nowrap">{GRADE_SHARE_LABELS[row.grade]}</span>
             </dt>
-            <dd className="flex-none text-right text-ink-muted">
-              {/* The numeric range and the exact count, so the band is legible
-                  without relying on the swatch at all. */}
-              <span className="block tabular-nums" data-testid={`relative-grade-range-${row.grade}`}>
+            {/* The numeric boundary and the exact count, so the band is legible
+                without relying on the chip's fill at all. */}
+            <dd className="flex min-w-0 flex-1 items-baseline justify-end gap-1.5 text-right text-ink-muted">
+              <span
+                className="min-w-0 truncate tabular-nums"
+                data-testid={`relative-grade-range-${row.grade}`}
+              >
                 {row.range}
               </span>
-              <span className="block text-[11px] tabular-nums text-ink-subtle">
+              <span className="flex-none text-[11px] tabular-nums text-ink-subtle">
                 {row.count.toLocaleString("ko-KR")}곳
               </span>
             </dd>
           </div>
         ))}
       </dl>
-      <p className="mt-2 text-[0.6875rem] leading-relaxed text-ink-subtle" data-testid="relative-grade-basis">
+      {/* The one caveat no row can carry, and NOT collapsible: it is what stops
+          A/B/C being read as 적격/부적격 (spec §9). */}
+      <p
+        className="mt-2 text-[11px] leading-snug text-ink-muted"
+        data-testid="relative-grade-explanation"
+      >
+        {RELATIVE_GRADE_EXPLANATION}
+      </p>
+      <p className="mt-1 text-[10px] leading-snug text-ink-subtle" data-testid="relative-grade-basis">
         {relativeGradeBasis(distribution, scopeName)}
       </p>
     </>
