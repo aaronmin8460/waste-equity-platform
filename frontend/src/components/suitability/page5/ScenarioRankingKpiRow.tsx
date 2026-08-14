@@ -19,7 +19,7 @@
  * 하락 / 공통 후보 수, each stated over the population it actually has.
  */
 
-import KpiCard from "../../ui/KpiCard";
+import ScenarioKpiCard from "./ScenarioKpiCard";
 import type { ScenarioRankingComparison } from "../../../lib/scenarioRankingComparison";
 
 export interface ScenarioRankingKpiRowProps {
@@ -44,13 +44,16 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
     : `TOP ${topNRetention.n} 유지 후보 구역`;
 
   return (
+    // The frame's five equal tiles at gap 14. `auto-rows-fr` keeps a tile whose
+    // caption wraps to three lines the same height as its neighbours.
     <dl
-      className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
+      className="grid auto-rows-fr gap-3.5 sm:grid-cols-2 xl:grid-cols-5"
       data-testid="scenario-ranking-kpis"
     >
       {/* ── 1위 후보 구역 ─────────────────────────────────────────────────────── */}
-      <KpiCard
+      <ScenarioKpiCard
         label="1위 후보 구역"
+        glyph="★"
         testId="scenario-ranking-kpi-top1"
         valueTestId="scenario-ranking-kpi-top1-value"
         {...(topCandidate.state === "UNAVAILABLE"
@@ -72,8 +75,9 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
       />
 
       {/* ── TOP-N 유지 ────────────────────────────────────────────────────────── */}
-      <KpiCard
+      <ScenarioKpiCard
         label={retentionLabel}
+        glyph="✓"
         testId="scenario-ranking-kpi-retention"
         valueTestId="scenario-ranking-kpi-retention-value"
         {...(topNRetention.denominator === 0
@@ -95,8 +99,9 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
       />
 
       {/* ── 순위 상승 / 하락 (공통 후보 한정) ─────────────────────────────────── */}
-      <KpiCard
+      <ScenarioKpiCard
         label="순위 상승 후보 구역"
+        glyph="↑"
         testId="scenario-ranking-kpi-rose"
         valueTestId="scenario-ranking-kpi-rose-value"
         {...(commonCount === 0
@@ -105,8 +110,9 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
         caption={commonCount === 0 ? null : `B안에서 순위가 앞당겨진 후보 · ${commonScope}`}
       />
 
-      <KpiCard
+      <ScenarioKpiCard
         label="순위 하락 후보 구역"
+        glyph="↓"
         testId="scenario-ranking-kpi-fell"
         valueTestId="scenario-ranking-kpi-fell-value"
         {...(commonCount === 0
@@ -116,8 +122,9 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
       />
 
       {/* ── 공통 후보 수 ──────────────────────────────────────────────────────── */}
-      <KpiCard
+      <ScenarioKpiCard
         label="양쪽에서 순위를 확인한 후보 구역"
+        glyph="⇄"
         testId="scenario-ranking-kpi-common"
         valueTestId="scenario-ranking-kpi-common-value"
         value={`${commonCount.toLocaleString("ko-KR")}개`}

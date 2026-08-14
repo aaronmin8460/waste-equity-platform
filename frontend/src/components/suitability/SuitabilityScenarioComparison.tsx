@@ -4,12 +4,14 @@
  * 후보지 심층 비교 — the A/B comparison FOUNDATION (Page 5A, Figma frame 167:10554).
  *
  * This is the structural upper half of Page 5: who A안 and B안 are, which analysis
- * run they were revalidated against, and how their four weights differ. The
- * analytical sections below it in the Figma frame — the slope chart, the rank-change
- * top 10, the comparison table, the sensitivity scatter, the A/B map — belong to
- * later lanes and are deliberately ABSENT here rather than stubbed: an empty card
- * captioned "순위 변동" reads as "no candidate moved", which would be a fabricated
- * finding. Nothing is drawn until it can be drawn from served data.
+ * run they were revalidated against, and how their four weights differ — the frame's
+ * single 1392×311.5 top card, whose header row IS the two A/B chips.
+ *
+ * Everything below it in the frame (the slope chart, the A/B map, the selected-cell
+ * comparison, the movement distribution, the comparison table) is composed through the
+ * `analysisSections` seam and is drawn ONLY in `READY`. Nothing is stubbed while it
+ * waits: an empty card captioned "순위 변동" reads as "no candidate moved", which
+ * would be a fabricated finding.
  *
  * ── WHAT THE FIGMA FRAME ASKS FOR, AND WHERE THIS DEPARTS FROM IT ────────────────
  * The frame's weight table names its four rows 시설부담 정도 / 토지피복 기반 적합도 /
@@ -59,7 +61,6 @@ import {
 } from "../../lib/savedScenarios";
 import InfoBanner from "../ui/InfoBanner";
 import PageHeader from "../ui/PageHeader";
-import SectionCard from "../ui/SectionCard";
 import { useScenarioComparison } from "./useScenarioComparison";
 
 export interface SuitabilityScenarioComparisonProps {
@@ -128,7 +129,7 @@ export default function SuitabilityScenarioComparison({
   const anyWeights = sideA.canonicalWeights !== null || sideB.canonicalWeights !== null;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 px-4 py-6 md:px-6">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-5 md:px-6">
       <PageHeader
         title={title}
         description="저장한 두 시나리오의 가중치를 현재 분석 실행에 다시 적용해 나란히 비교합니다."
@@ -144,106 +145,138 @@ export default function SuitabilityScenarioComparison({
         onBackToSelection={onBackToSelection}
       />
 
-      {/* ── A / B identity ──────────────────────────────────────────────────── */}
-      <SectionCard
-        title="비교 대상"
-        testId="scenario-comparison-identity"
-        className="wep-figma-card"
-        description="A안과 B안은 이 브라우저에 저장된 시나리오이며, 공식 계산 기준이 아닙니다."
+      {/* ── SECTION 1 — the frame's single top card (167:10554 Body>Card, 1392×311.5)
+          The frame puts the A/B identity chips and the weight table in ONE card, with
+          the chips acting as the card's header row rather than a separate 비교 대상
+          section. Merged here to match; the two testids are kept on the regions they
+          named before so nothing that addressed them has to learn a new name. */}
+      <section
+        className="wep-card wep-figma-card flex flex-col gap-4"
+        aria-labelledby="scenario-comparison-heading"
+        data-testid="scenario-comparison-identity"
       >
-        <div className="grid gap-3 md:grid-cols-2">
+        <h2 id="scenario-comparison-heading" className="sr-only">
+          비교 대상과 가중치 비교
+        </h2>
+
+        {/* The two chips, side by side and equal — the frame's 662+24+662. */}
+        <div className="grid gap-4 md:grid-cols-2">
           <SideIdentity side={sideA} />
           <SideIdentity side={sideB} />
         </div>
-      </SectionCard>
 
-      {/* ── Z/R/E/D weight comparison ───────────────────────────────────────── */}
-      {anyWeights ? (
-        <SectionCard
-          title="가중치 비교"
-          testId="scenario-comparison-weights"
-          className="wep-figma-card"
-          description="현재 분석 실행이 정규화해 돌려준 가중치입니다. 저장 당시의 값을 그대로 보여주지 않습니다."
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-hairline text-[11px] font-semibold text-ink-muted">
-                  <th scope="col" className="py-2 pr-3 font-semibold">
-                    평가 요소
-                  </th>
-                  <th scope="col" className="py-2 pr-3 font-semibold">
-                    A안 가중치
-                  </th>
-                  <th scope="col" className="py-2 pr-3 font-semibold">
-                    B안 가중치
-                  </th>
-                  <th scope="col" className="py-2 font-semibold">
-                    가중치 차이
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const delta = formatWeightDelta(row.deltaPercentPoints);
-                  return (
-                    <tr
-                      key={row.component}
-                      className="border-b border-hairline last:border-b-0"
-                      data-testid={`scenario-comparison-weight-row-${row.component}`}
-                    >
-                      <th
-                        scope="row"
-                        className="py-2.5 pr-3 text-[13px] font-normal text-ink"
+        {/* ── Z/R/E/D weight comparison ─────────────────────────────────────── */}
+        {anyWeights ? (
+          <div data-testid="scenario-comparison-weights">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] table-fixed border-collapse text-left">
+                <caption className="sr-only">
+                  A안과 B안의 평가 요소별 가중치와 그 차이
+                </caption>
+                <colgroup>
+                  {/* The frame's 295 / 400 / 454 / 130 of 1348. */}
+                  <col style={{ width: "21.9%" }} />
+                  <col style={{ width: "29.7%" }} />
+                  <col style={{ width: "33.7%" }} />
+                  <col style={{ width: "14.7%" }} />
+                </colgroup>
+                <thead>
+                  {/* The frame rules the head off in 1.5px NAVY, not a hairline — it is
+                      the only rule on the card that separates head from body. */}
+                  <tr className="border-b-[1.5px] border-primary text-[11.5px] font-bold text-ink-muted">
+                    <th scope="col" className="pb-2 pr-3 font-bold">
+                      평가 요소
+                    </th>
+                    <th scope="col" className="pb-2 pr-3 font-bold">
+                      A안 가중치
+                    </th>
+                    <th scope="col" className="pb-2 pr-3 font-bold">
+                      B안 가중치
+                    </th>
+                    <th scope="col" className="pb-2 font-bold">
+                      가중치 차이
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, index) => {
+                    const delta = formatWeightDelta(row.deltaPercentPoints);
+                    return (
+                      <tr
+                        key={row.component}
+                        className="border-b border-[var(--figma-rule)] last:border-b-0"
+                        data-testid={`scenario-comparison-weight-row-${row.component}`}
                       >
-                        {/* A code is never shown bare — always beside its Korean name. */}
-                        {row.label}
-                        <span className="text-ink-subtle">（{row.code}）</span>
-                      </th>
-                      <td className="py-2.5 pr-3">
-                        <WeightCell percent={row.aPercent} testId="scenario-comparison-weight-a" />
-                      </td>
-                      <td className="py-2.5 pr-3">
-                        <WeightCell percent={row.bPercent} testId="scenario-comparison-weight-b" />
-                      </td>
-                      <td
-                        className="py-2.5 text-[13px] font-semibold tabular-nums text-ink"
-                        data-testid="scenario-comparison-weight-delta"
-                      >
-                        {/* An em dash, not 0: an uncomputable delta is not "no change". */}
-                        {delta ?? "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <th
+                          scope="row"
+                          className="py-3 pr-3 text-[13.5px] font-normal text-ink"
+                        >
+                          {/* The frame numbers its four rows; the numeral is kept and the
+                              CONTENT is the model's — a code is never shown bare. */}
+                          <span className="mr-1.5 tabular-nums text-ink-subtle">{index + 1}</span>
+                          {row.label}
+                          <span className="text-ink-subtle">（{row.code}）</span>
+                        </th>
+                        <td className="py-3 pr-3">
+                          <WeightCell percent={row.aPercent} testId="scenario-comparison-weight-a" />
+                        </td>
+                        <td className="py-3 pr-3">
+                          <WeightCell percent={row.bPercent} testId="scenario-comparison-weight-b" />
+                        </td>
+                        {/* The frame tints this cell red for a rise and blue for a
+                            fall. Kept neutral: a weight going up is not "good" and down
+                            is not "bad", and the slope chart already refuses the same
+                            red/green reading for rank direction. The sign and the arrow
+                            carry the direction without the judgement.
+
+                            The arrow is a SIBLING of the tested span, not inside it:
+                            `formatWeightDelta` is the repo's one formatter for this
+                            figure and the element carrying its testid must read exactly
+                            what it returned — decoration cannot join the value. */}
+                        <td className="py-3 text-[13.5px] font-bold tabular-nums text-ink">
+                          <span data-testid="scenario-comparison-weight-delta">
+                            {/* An em dash, not 0: an uncomputable delta is not "no change". */}
+                            {delta ?? "—"}
+                          </span>
+                          {row.deltaPercentPoints !== null && row.deltaPercentPoints !== 0 ? (
+                            <span aria-hidden="true">
+                              {row.deltaPercentPoints > 0 ? " ↑" : " ↓"}
+                            </span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="mt-3 text-[11px] leading-snug text-ink-subtle">
+              · 백분율은 소수점 이하를 반올림해 표시하며, 가중치 차이는 표시된 두 값의 차이(%p)입니다.
+              현재 분석 실행이 정규화해 돌려준 값이며, 저장 당시의 값을 그대로 보여주지 않습니다.
+            </p>
+
+            {/* The exact served decimals stay reachable, as everywhere else a rounded
+                figure is shown. The rounding above is presentation; this is the value. */}
+            <details className="mt-2" data-testid="scenario-comparison-weight-precise">
+              <summary className="cursor-pointer text-[11px] text-ink-muted">정밀값 보기</summary>
+              <dl className="mt-2 grid gap-1 text-[11px] text-ink-muted">
+                {rows.map((row) => (
+                  <div key={row.component} className="flex flex-wrap gap-x-3">
+                    <dt className="font-medium">
+                      {row.label}（{row.code}）
+                    </dt>
+                    <dd className="tabular-nums">
+                      {SLOT_LABEL.A} {row.aWeight ?? "자료 없음"} · {SLOT_LABEL.B}{" "}
+                      {row.bWeight ?? "자료 없음"}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
           </div>
-
-          <p className="mt-3 text-[11px] leading-snug text-ink-subtle">
-            · 백분율은 소수점 이하를 반올림해 표시하며, 가중치 차이는 표시된 두 값의 차이(%p)입니다.
-          </p>
-
-          {/* The exact served decimals stay reachable, as everywhere else a rounded
-              figure is shown. The rounding above is presentation; this is the value. */}
-          <details className="mt-2" data-testid="scenario-comparison-weight-precise">
-            <summary className="cursor-pointer text-[11px] text-ink-muted">정밀값 보기</summary>
-            <dl className="mt-2 grid gap-1 text-[11px] text-ink-muted">
-              {rows.map((row) => (
-                <div key={row.component} className="flex flex-wrap gap-x-3">
-                  <dt className="font-medium">
-                    {row.label}（{row.code}）
-                  </dt>
-                  <dd className="tabular-nums">
-                    {SLOT_LABEL.A} {row.aWeight ?? "자료 없음"} · {SLOT_LABEL.B}{" "}
-                    {row.bWeight ?? "자료 없음"}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        </SectionCard>
-      ) : null}
+        ) : null}
+      </section>
 
       {/* The later Page-5 sections — ranking analytics, then candidate/contribution/
           map/export — composed under the shell with the ONE comparison this component
@@ -279,6 +312,11 @@ function RunMeta({ run, runError }: { run: SuitabilityRun | null; runError: stri
   );
 }
 
+/**
+ * A weight bar + its percentage. The frame's track is 310×10 with the figure to its
+ * right, which is what makes the two columns readable as a comparison at a glance —
+ * the previous 220px cap made a 35% and a 25% bar look nearly identical.
+ */
 function WeightCell({ percent, testId }: { percent: number | null; testId: string }) {
   if (percent === null) {
     return (
@@ -288,14 +326,16 @@ function WeightCell({ percent, testId }: { percent: number | null; testId: strin
     );
   }
   return (
-    <span className="flex items-center gap-2" data-testid={testId}>
-      <span className="h-2.5 w-full max-w-[220px] flex-1 rounded-pill bg-surface-muted" aria-hidden="true">
-        <span
-          className="block h-2.5 rounded-pill bg-primary"
-          style={{ width: `${percent}%` }}
-        />
+    <span className="flex items-center gap-3" data-testid={testId}>
+      <span
+        className="h-2.5 min-w-0 flex-1 rounded-pill bg-[var(--figma-rule)]"
+        aria-hidden="true"
+      >
+        <span className="block h-2.5 rounded-pill bg-primary" style={{ width: `${percent}%` }} />
       </span>
-      <span className="flex-none text-[13px] font-semibold tabular-nums text-ink">{percent}%</span>
+      <span className="w-9 flex-none text-right text-[13px] font-bold tabular-nums text-ink">
+        {percent}%
+      </span>
     </span>
   );
 }
@@ -308,13 +348,16 @@ function WeightCell({ percent, testId }: { percent: number | null; testId: strin
 function SideIdentity({ side }: { side: ComparisonSide }) {
   const { slot, state, savedScenario } = side;
   return (
+    // The frame's chip: a filled #F7F8FC block, r14, pad 16/12 — a quiet band inside
+    // the white card rather than a second bordered card. `--color-surface-muted` is
+    // the shipped role for exactly that ("a quiet block inside a white surface").
     <div
-      className="rounded-card border border-hairline bg-surface p-3"
+      className="rounded-[14px] bg-surface-muted px-4 py-3"
       data-testid={`scenario-comparison-side-${slot.toLowerCase()}`}
       data-state={state}
     >
-      <div className="flex items-center gap-2">
-        <span className="flex-none rounded-full border border-primary-border bg-primary-soft px-2 py-0.5 text-[11px] font-bold text-ink">
+      <div className="flex items-center gap-3">
+        <span className="flex-none rounded-full border border-primary-border bg-primary-soft px-2.5 py-1 text-[12.5px] font-bold text-ink">
           {SLOT_LABEL[slot]}
         </span>
         <span
@@ -326,13 +369,17 @@ function SideIdentity({ side }: { side: ComparisonSide }) {
               exact conflation §3 of the contract forbids. */}
           {savedScenario?.name ?? (state === "MISSING" ? "찾을 수 없는 시나리오" : "선택 없음")}
         </span>
+        {/* The frame's right-aligned 기준일. The product has no such field, so the slot
+            carries what it really knows: when the reader saved this scenario. */}
+        {savedScenario ? (
+          <span
+            className="flex-none text-[12px] tabular-nums text-ink-subtle"
+            data-testid="scenario-comparison-side-saved-at"
+          >
+            저장 {formatSavedAt(savedScenario.createdAt)} · 저장 시 실행 #{savedScenario.runId}
+          </span>
+        ) : null}
       </div>
-
-      {savedScenario ? (
-        <p className="mt-1 text-[11px] text-ink-subtle" data-testid="scenario-comparison-side-saved-at">
-          저장 {formatSavedAt(savedScenario.createdAt)} · 저장 시 분석 실행 #{savedScenario.runId}
-        </p>
-      ) : null}
 
       {state === "READY" ? (
         <p className="mt-1 text-[11px] text-ink-muted" data-testid="scenario-comparison-side-ready">

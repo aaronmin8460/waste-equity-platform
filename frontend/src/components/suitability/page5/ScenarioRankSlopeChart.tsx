@@ -50,15 +50,29 @@ export interface ScenarioRankSlopeChartProps {
   boundaryB: RankBoundary;
 }
 
-// Geometry. One lane per rank slot, plus a separated band for everything outside.
+// Geometry, matching the frame's `SlopeChart` (700×340, lane pitch 34). The frame
+// labels a lane with one short line — "1  안산시" — and hangs the score change off the
+// B column. The previous two-line label carried the full `capital-grid-500m-v1:…` key
+// on every node, which at 1440 is wider than the column it sits in: the labels
+// collided and the chart grew past 700px tall. The key is still reachable, in the
+// node's `<title>` and in the screen-reader table below, where it is not competing
+// for horizontal space with nine other rows.
 const LANE_HEIGHT = 34;
+/**
+ * The 상위 N 밖 band packs tighter than the numbered slots. Its nodes carry one short
+ * label and no rank numeral, and there can be up to 2N of them when the two cuts are
+ * disjoint — at the full 34px pitch that alone was ~680px of chart.
+ */
+const BAND_LANE_HEIGHT = 20;
 const TOP_PAD = 16;
 const BOTTOM_PAD = 14;
 const VIEW_WIDTH = 700;
-const NODE_A_X = 252;
-const NODE_B_X = 448;
+const NODE_A_X = 250;
+const NODE_B_X = 430;
 const LABEL_A_X = NODE_A_X - 12;
 const LABEL_B_X = NODE_B_X + 12;
+/** Where the "84.2 → 94.1" score-change string sits, right of the B labels. */
+const SCORE_X = VIEW_WIDTH - 4;
 /** Gap between the last rank slot and the 상위 N 밖 band, in lanes. */
 const BAND_GAP = 0.7;
 
@@ -102,7 +116,9 @@ export default function ScenarioRankSlopeChart({
   let outB = 0;
   const placed: PlacedRow[] = rows.map((row) => {
     const bandY = (index: number) =>
-      TOP_PAD + (RANKING_COMPARISON_TOP_N - 1 + BAND_GAP + index) * LANE_HEIGHT;
+      TOP_PAD +
+      (RANKING_COMPARISON_TOP_N - 1 + BAND_GAP) * LANE_HEIGHT +
+      index * BAND_LANE_HEIGHT;
     const yA = row.aSlot !== null ? slotY(row.aSlot) : bandY(outA++);
     const yB = row.bSlot !== null ? slotY(row.bSlot) : bandY(outB++);
     return { row, yA, yB, outA: row.aSlot === null, outB: row.bSlot === null };
@@ -111,7 +127,8 @@ export default function ScenarioRankSlopeChart({
   const bandLanes = Math.max(outA, outB);
   const height =
     TOP_PAD +
-    (RANKING_COMPARISON_TOP_N - 1 + (bandLanes > 0 ? BAND_GAP + bandLanes : 0)) * LANE_HEIGHT +
+    (RANKING_COMPARISON_TOP_N - 1 + (bandLanes > 0 ? BAND_GAP : 0)) * LANE_HEIGHT +
+    bandLanes * BAND_LANE_HEIGHT +
     BOTTOM_PAD;
   const bandTop = TOP_PAD + (RANKING_COMPARISON_TOP_N - 1 + BAND_GAP / 2) * LANE_HEIGHT + 6;
 
@@ -172,32 +189,48 @@ export default function ScenarioRankSlopeChart({
                 <circle cx={NODE_A_X} cy={yA} r={3.5} fill={STROKE[direction]} />
                 <circle cx={NODE_B_X} cy={yB} r={3.5} fill={STROKE[direction]} />
 
+                {/* The whole identity — cell key included — on hover/focus, so
+                    shortening the visible label loses no information. */}
+                <title>
+                  {`${row.locationLabel ?? "위치 정보 없음"} · ${row.candidateKey} · ` +
+                    `A안 ${row.aRank !== null ? `${row.aRank}위` : formatUnavailableRank(row.aRankState, "A", boundaryA)} → ` +
+                    `B안 ${row.bRank !== null ? `${row.bRank}위` : formatUnavailableRank(row.bRankState, "B", boundaryB)}`}
+                </title>
+
+                {/* A node in the 밖 band is labelled with the CELL, not with the band
+                    it is in: the band already carries "상위 N 밖" on its divider, and
+                    repeating it per node produced ten identical labels that named no
+                    candidate at all. The precise state wording stays in the <title>
+                    above and in the screen-reader table below. */}
                 <SideLabel
                   x={LABEL_A_X}
                   y={yA}
                   anchor="end"
-                  primary={
-                    row.aRank !== null
-                      ? `${row.aRank}위  ${row.locationLabel ?? ""}`.trim()
-                      : formatUnavailableRank(row.aRankState, "A", boundaryA)
-                  }
-                  secondary={
-                    row.aScore !== null ? `${row.candidateKey} · ${row.aScore}점` : row.candidateKey
-                  }
+                  rank={row.aRank}
+                  text={row.locationLabel ?? row.candidateKey}
                 />
                 <SideLabel
                   x={LABEL_B_X}
                   y={yB}
                   anchor="start"
-                  primary={
-                    row.bRank !== null
-                      ? `${row.bRank}위  ${row.locationLabel ?? ""}`.trim()
-                      : formatUnavailableRank(row.bRankState, "B", boundaryB)
-                  }
-                  secondary={
-                    row.bScore !== null ? `${row.candidateKey} · ${row.bScore}점` : row.candidateKey
-                  }
+                  rank={row.bRank}
+                  text={row.locationLabel ?? row.candidateKey}
                 />
+
+                {/* The frame's score-change string, right-aligned on the B row. Only
+                    when BOTH sides served a score — "69.2500 → 자료 없음" is not a
+                    change, and printing one side alone would read as one. */}
+                {row.aScore !== null && row.bScore !== null ? (
+                  <text
+                    x={SCORE_X}
+                    y={yB + 4}
+                    textAnchor="end"
+                    fontSize={11}
+                    fill="var(--color-ink-subtle)"
+                  >
+                    {`${row.aScore} → ${row.bScore}`}
+                  </text>
+                ) : null}
               </g>
             );
           })}
@@ -241,28 +274,38 @@ export default function ScenarioRankSlopeChart({
   );
 }
 
-/** Two lines of SVG text: rank + location, then the cell key and its score. */
+/**
+ * One lane label, on ONE line — the frame's "1  안산시".
+ *
+ * The rank numeral is drawn as a separate, tabular run so the ten numerals line up in
+ * a column instead of drifting with the place name's width, which is what makes the
+ * frame's two ranked columns read as columns.
+ */
 function SideLabel({
   x,
   y,
   anchor,
-  primary,
-  secondary,
+  rank,
+  text,
 }: {
   x: number;
   y: number;
   anchor: "start" | "end";
-  primary: string;
-  secondary: string;
+  rank: number | null;
+  text: string;
 }) {
   return (
-    <>
-      <text x={x} y={y - 1} textAnchor={anchor} fontSize={12} fill="var(--color-ink)">
-        {primary}
-      </text>
-      <text x={x} y={y + 11} textAnchor={anchor} fontSize={10} fill="var(--color-ink-subtle)">
-        {secondary}
-      </text>
-    </>
+    <text x={x} y={y + 4} textAnchor={anchor} fontSize={12} fill="var(--color-ink)">
+      {rank !== null ? (
+        <>
+          <tspan fontWeight={700}>{rank}</tspan>
+          <tspan dx={6} fill="var(--color-ink-muted)">
+            {text}
+          </tspan>
+        </>
+      ) : (
+        <tspan fill="var(--color-ink-subtle)">{text}</tspan>
+      )}
+    </text>
   );
 }

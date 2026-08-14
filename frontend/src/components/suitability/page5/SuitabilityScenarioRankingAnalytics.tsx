@@ -18,13 +18,22 @@
  * analytics on screen under a fresh error message.
  *
  * ── SECTION ORDER FOLLOWS THE FRAME ──────────────────────────────────────────────
- * KPI row → 순위 이동 + 순위 변화가 큰 후보 → 상세 비교표. The frame's other two
- * cards in this region (후보 결과 변화 지도, 선택 지역 상세 비교, 가중치 민감도)
- * belong to the candidate-detail lane and are deliberately absent rather than
- * stubbed.
+ * This component owns the frame's whole analytical grid:
+ *
+ *   ResultKPIRow   five tiles
+ *   Row3           [ 후보지 순위 변화 TOP 10 | 후보 결과 변화 지도 ]
+ *   Row4           [ 선택 지역 상세 비교     | 순위 변동 분포      ]
+ *   Card5          후보지 상세 비교표 (full width, last)
+ *
+ * Two of those four cells belong to the CANDIDATE lane, and the frame separates them
+ * — the map in Row3, the detail card in Row4 — so they can no longer be rendered as
+ * siblings by that lane. They arrive here as SLOTS. This component still derives no
+ * candidate state and issues no request; it only decides where a finished card sits.
+ * Without the slots (the standalone Page-5B view) the ranking cards simply take the
+ * full width, so the lane remains renderable on its own.
  */
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import SectionCard from "../../ui/SectionCard";
 import {
@@ -36,6 +45,7 @@ import {
 } from "../../../lib/scenarioRankingComparison";
 import type { ScenarioComparison } from "../../../lib/scenarioComparison";
 import ScenarioRankMovementList from "./ScenarioRankMovementList";
+import ScenarioRankMovementScatter from "./ScenarioRankMovementScatter";
 import ScenarioRankSlopeChart from "./ScenarioRankSlopeChart";
 import ScenarioRankingKpiRow from "./ScenarioRankingKpiRow";
 import ScenarioRankingTable from "./ScenarioRankingTable";
@@ -51,11 +61,17 @@ export interface SuitabilityScenarioRankingAnalyticsProps {
    * cannot be built from a different model than the table they are looking at.
    */
   model?: ScenarioRankingComparison | null;
+  /** 후보 결과 변화 지도 — the frame's Row3-right cell. */
+  mapSlot?: ReactNode;
+  /** 선택 지역 상세 비교 — the frame's Row4-left cell. */
+  detailSlot?: ReactNode;
 }
 
 export default function SuitabilityScenarioRankingAnalytics({
   comparison,
   model: providedModel,
+  mapSlot,
+  detailSlot,
 }: SuitabilityScenarioRankingAnalyticsProps) {
   const derived = useMemo(
     // Skipped entirely when the caller already derived it.
@@ -68,21 +84,23 @@ export default function SuitabilityScenarioRankingAnalytics({
   if (model === null) return null;
 
   return (
-    <div className="flex flex-col gap-4" data-testid="scenario-ranking-analytics">
+    <div className="flex flex-col gap-5" data-testid="scenario-ranking-analytics">
+      {/* ── SECTION 2 — ResultKPIRow ──────────────────────────────────────── */}
       <ScenarioRankingKpiRow model={model} />
 
       {/* The scope every figure above and below is bounded by, stated once in full
           rather than repeated in five captions. */}
       <p
-        className="text-[11px] leading-snug text-ink-subtle"
+        className="-mt-2 text-[11px] leading-snug text-ink-subtle"
         data-testid="scenario-ranking-scope"
       >
         {model.scopeDescription}
       </p>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* ── SECTION 3 — the frame's Row3: 740 | 636 ───────────────────────── */}
+      <div className="grid gap-4 xl:grid-cols-[740fr_636fr]">
         <SectionCard
-          title={`후보지 순위 이동 (상위 ${RANKING_COMPARISON_TOP_N})`}
+          title={`후보지 순위 변화 TOP ${RANKING_COMPARISON_TOP_N}`}
           testId="scenario-ranking-slope-card"
           className="wep-figma-card"
           description={`A안 또는 B안에서 상위 ${RANKING_COMPARISON_TOP_N}위에 든 후보 구역의 순위가 어떻게 이동했는지 보여줍니다.`}
@@ -94,16 +112,35 @@ export default function SuitabilityScenarioRankingAnalytics({
           />
         </SectionCard>
 
+        {mapSlot}
+      </div>
+
+      {/* ── SECTION 4 — the frame's Row4: 688 | 688 ───────────────────────── */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        {detailSlot}
+
         <SectionCard
-          title="순위 변화가 큰 후보 구역"
+          // NOT 가중치 민감도. The product runs no weight sweep; this is the rank
+          // difference between the reader's own two scenarios. See the scatter's
+          // own header comment.
+          title="순위 변동 분포"
           testId="scenario-ranking-movement-card"
           className="wep-figma-card"
-          description={`양쪽 상위 목록에서 순위가 모두 확인된 후보 구역 중, 변화가 큰 ${RANKING_MOVEMENT_LIST_SIZE}개입니다.`}
+          description="A안과 B안 양쪽에서 순위가 확인된 후보 구역이, B안에서 어느 순위대에 어느 정도 폭으로 움직였는지 보여줍니다. 가중치를 여러 번 바꿔 본 민감도 분석이 아니라 두 시나리오 사이의 순위 차이입니다."
         >
-          <ScenarioRankMovementList rows={movements} model={model} />
+          <ScenarioRankMovementScatter model={model} />
+
+          <div className="mt-4 border-t border-[var(--figma-rule)] pt-3">
+            <h3 className="text-[13px] font-bold text-ink">순위 변화가 큰 후보 구역</h3>
+            <p className="mb-2 mt-0.5 text-[11px] leading-snug text-ink-subtle">
+              위 분포에서 변화가 큰 순으로 최대 {RANKING_MOVEMENT_LIST_SIZE}개입니다.
+            </p>
+            <ScenarioRankMovementList rows={movements} model={model} />
+          </div>
         </SectionCard>
       </div>
 
+      {/* ── SECTION 5 — the frame's last full-width card ──────────────────── */}
       <SectionCard
         title="후보지 상세 비교표"
         testId="scenario-ranking-table-card"

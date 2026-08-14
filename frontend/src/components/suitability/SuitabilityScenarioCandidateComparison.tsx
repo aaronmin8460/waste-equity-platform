@@ -42,15 +42,14 @@
 import dynamic from "next/dynamic";
 import { useCallback, useMemo, useState } from "react";
 
-import { userScenarioTileUrl, type RegionBoundaryCollection } from "../../lib/api";
-import { SUITABILITY_SCREENING_SHORT_LABEL, statusLabel } from "../../lib/glossary";
+import { userScenarioTileUrl, type RegionBoundaryCollection, type UserScenarioWeights } from "../../lib/api";
+import { COMPONENT_ORDER, SUITABILITY_SCREENING_SHORT_LABEL, statusLabel } from "../../lib/glossary";
 import { defaultCoverageVisibility, emptyAvailableClasses } from "../../lib/landCoverLayer";
 import {
   CANDIDATE_EXCLUDED_COLOR,
   CANDIDATE_REVIEW_COLOR,
   CANDIDATE_SCORE_BREAKS,
   CANDIDATE_SCORE_PALETTE_5,
-  CANDIDATE_STABLE_OUTLINE_COLOR,
 } from "../../lib/metrics";
 import {
   SCENARIO_COMPARISON_TOP_N,
@@ -78,7 +77,6 @@ import {
   type ScenarioComparisonExportInput,
 } from "../../lib/scenarioComparisonExport";
 import { WETLAND_TYPES, type WetlandType } from "../../lib/wetland";
-import MapLegendOverlay from "../MapLegendOverlay";
 import { type StatusVisibility } from "../MapView";
 import InfoBanner from "../ui/InfoBanner";
 import SectionCard from "../ui/SectionCard";
@@ -143,11 +141,20 @@ export interface SuitabilityScenarioCandidateComparisonProps {
   exportExtension?: ScenarioComparisonExportExtension;
 }
 
-export default function SuitabilityScenarioCandidateComparison({
-  comparison,
-  initialCandidateId = null,
-  exportExtension,
-}: SuitabilityScenarioCandidateComparisonProps) {
+/**
+ * The lane's whole state, derived once.
+ *
+ * Extracted from the component because the Figma frame puts the two cards this lane
+ * owns in DIFFERENT bands — 후보 결과 변화 지도 sits in Row3 beside the slope chart,
+ * and 선택 지역 상세 비교 in Row4 — so they can no longer be siblings under one
+ * wrapper. The Page-5 grid renders them into their own cells and calls this hook
+ * ONCE above both, which keeps the single source of truth that the sibling layout
+ * used to get for free: one selection, one detail request pair, one export input.
+ */
+export function useScenarioCandidateSelection(
+  comparison: ScenarioComparison,
+  initialCandidateId: number | null = null,
+) {
   const { sideA, sideB } = comparison;
 
   // The pickable cells, drawn from the two ALREADY-LOADED previews.
@@ -196,27 +203,81 @@ export default function SuitabilityScenarioCandidateComparison({
     [comparison, candidateKey, candidateId, details.a.detail, details.b.detail, placementA, placementB, rows, impact],
   );
 
+  return {
+    sideA,
+    sideB,
+    choices,
+    candidateId,
+    onPick: setPicked,
+    details,
+    rows,
+    impact,
+    placementA,
+    placementB,
+    candidateKey,
+    exportInput,
+  };
+}
+
+export type ScenarioCandidateSelection = ReturnType<typeof useScenarioCandidateSelection>;
+
+/**
+ * 선택 지역 상세 비교 — the frame's Row4-left card, as a standalone cell.
+ * Presentational: every value comes from the selection the caller already derived.
+ */
+export function ScenarioCandidateDetailCard({
+  selection,
+  exportExtension,
+}: {
+  selection: ScenarioCandidateSelection;
+  exportExtension?: ScenarioComparisonExportExtension;
+}) {
+  return (
+    <CandidateDetailCard
+      choices={selection.choices}
+      candidateId={selection.candidateId}
+      onPick={selection.onPick}
+      details={selection.details}
+      rows={selection.rows}
+      impact={selection.impact}
+      placementA={selection.placementA}
+      placementB={selection.placementB}
+      candidateKey={selection.candidateKey}
+      exportInput={selection.exportInput}
+      exportExtension={exportExtension}
+    />
+  );
+}
+
+/** 후보 결과 변화 지도 — the frame's Row3-right card, as a standalone cell. */
+export function ScenarioCandidateMapCard({ selection }: { selection: ScenarioCandidateSelection }) {
+  return (
+    <ScenarioMapCard
+      sideA={selection.sideA}
+      sideB={selection.sideB}
+      details={selection.details}
+      candidateKey={selection.candidateKey}
+    />
+  );
+}
+
+/**
+ * The lane's OWN two-column composition, kept for the standalone Page-5C view and its
+ * unit test. The assembled Page-5 grid does not use it — it places the two cards in
+ * the frame's own bands via the exports above — but the lane still has to be
+ * renderable on its own, and this is what proves it.
+ */
+export default function SuitabilityScenarioCandidateComparison({
+  comparison,
+  initialCandidateId = null,
+  exportExtension,
+}: SuitabilityScenarioCandidateComparisonProps) {
+  const selection = useScenarioCandidateSelection(comparison, initialCandidateId);
+
   return (
     <div className="grid gap-4 xl:grid-cols-2" data-testid="scenario-candidate-comparison">
-      <CandidateDetailCard
-        choices={choices}
-        candidateId={candidateId}
-        onPick={setPicked}
-        details={details}
-        rows={rows}
-        impact={impact}
-        placementA={placementA}
-        placementB={placementB}
-        candidateKey={candidateKey}
-        exportInput={exportInput}
-        exportExtension={exportExtension}
-      />
-      <ScenarioMapCard
-        sideA={sideA}
-        sideB={sideB}
-        details={details}
-        candidateKey={candidateKey}
-      />
+      <ScenarioCandidateDetailCard selection={selection} exportExtension={exportExtension} />
+      <ScenarioCandidateMapCard selection={selection} />
     </div>
   );
 }
@@ -637,6 +698,19 @@ function ContributionCell({
 // 후보 결과 변화 지도 — one MapLibre instance, two scenario sources
 // --------------------------------------------------------------------------- //
 
+/**
+ * "35% / 25% / 25% / 15%" — the weights the tiles on screen were coloured by, so the
+ * map states its own provenance now that the legend overlay no longer carries it.
+ * `자료 없음` rather than a guess when a side has no served weights.
+ */
+function weightSummary(weights: UserScenarioWeights | null): string {
+  if (weights === null) return "자료 없음";
+  return COMPONENT_ORDER.map((component) => {
+    const value = Number(weights[component]);
+    return Number.isFinite(value) ? `${Math.round(value * 100)}%` : "자료 없음";
+  }).join(" / ");
+}
+
 function ScenarioMapCard({
   sideA,
   sideB,
@@ -716,11 +790,18 @@ function ScenarioMapCard({
           </p>
         </div>
       ) : (
-        // 520px, not the ~420 the Figma card implies: the product's floating legend
-        // is CSS-forced open at md+ (`.map-legend` in globals.css) and is a tall card.
-        // At 420 it covered most of a half-width map. Heightening this section is the
-        // local fix; collapsing the shared legend would change it on every map.
-        <div className="relative h-[520px] overflow-hidden rounded-card" data-testid="scenario-map-canvas">
+        // The frame's map区 is 272 tall inside a 636-wide card. 360 here: tall enough
+        // that the capital region is legible at this width, short enough that Row3
+        // stays close to the frame's 478.
+        //
+        // The floating `MapLegendOverlay` was REMOVED from this card (only this one).
+        // It is CSS-forced open at md+ (`.map-legend` in globals.css) and is a tall
+        // card; at 636 wide it covered roughly half the map and most of its height,
+        // which is what the previous 520px height was working around. The frame puts a
+        // one-line legend UNDER the map instead, and that is what this card now does —
+        // same screening statuses, same score ramp, same colours, no map obscured.
+        // The shared overlay is untouched, so every other map keeps it.
+        <div className="relative h-[360px] overflow-hidden rounded-card" data-testid="scenario-map-canvas">
           <MapView
             boundaries={EMPTY_BOUNDARIES}
             regionValues={new Map()}
@@ -763,48 +844,47 @@ function ScenarioMapCard({
               "배제·검토 판정은 규칙 기반이라 A안과 B안에서 같습니다. 상세 값은 왼쪽 '선택 후보지 상세 비교'에서 확인할 수 있습니다."
             }
           />
-          {/* The product's EXISTING suitability legend, unchanged. A/B does not create
-              new pass/fail categories, so the legend keeps its three screening statuses
-              and its score classes rather than being reinterpreted per side. */}
-          <div className="pointer-events-none absolute bottom-2 left-2 z-10 max-w-[min(90%,260px)]">
-            <div className="pointer-events-auto">
-              <MapLegendOverlay
-                mode="suitability"
-                scoreClasses={CANDIDATE_SCORE_PALETTE_5.map((color, index) => {
-                  const lower = index === 0 ? null : CANDIDATE_SCORE_BREAKS[index - 1];
-                  const upper =
-                    index < CANDIDATE_SCORE_BREAKS.length ? CANDIDATE_SCORE_BREAKS[index] : null;
-                  return {
-                    color,
-                    range:
-                      lower === null ? `< ${upper}` : upper === null ? `≥ ${lower}` : `${lower} – ${upper}`,
-                  };
-                })}
-                eligibleColor={CANDIDATE_SCORE_PALETTE_5[3]}
-                reviewColor={CANDIDATE_REVIEW_COLOR}
-                excludedColor={CANDIDATE_EXCLUDED_COLOR}
-                statusVisibility={ALL_STATUSES_VISIBLE}
-                // Read-only here: this map shows one cell in context, and hiding a
-                // status would change what the two sides are compared against.
-                onToggleStatus={() => undefined}
-                statusLabels={STATUS_LABELS}
-                statusCounts={null}
-                stabilityAvailable={false}
-                stableOnly={false}
-                onToggleStableOnly={() => undefined}
-                stableOutlineColor={CANDIDATE_STABLE_OUTLINE_COLOR}
-                disclaimer={SUITABILITY_SCREENING_SHORT_LABEL}
-                scenarioActive
-                scenarioWeights={active.canonicalWeights}
-              />
-            </div>
-          </div>
         </div>
       )}
 
+      {/* The frame's legend row, with the product's OWN categories. A/B does not create
+          new pass/fail categories, so this is the existing screening triple and the
+          existing score ramp — never 신규 통과 / 통과 유지 / 통과 → 제외, which would
+          describe a status change a reweighting cannot cause. */}
+      {tileUrl !== null ? (
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5" data-testid="scenario-map-legend">
+          {(
+            [
+              [STATUS_LABELS.ELIGIBLE, CANDIDATE_SCORE_PALETTE_5[3]],
+              [STATUS_LABELS.REVIEW_REQUIRED, CANDIDATE_REVIEW_COLOR],
+              [STATUS_LABELS.EXCLUDED, CANDIDATE_EXCLUDED_COLOR],
+            ] as const
+          ).map(([label, color]) => (
+            <span key={label} className="flex items-center gap-1.5 text-[11.5px] text-ink-muted">
+              <span
+                className="h-2.5 w-2.5 flex-none rounded-full"
+                style={{ backgroundColor: color }}
+                aria-hidden="true"
+              />
+              {label}
+            </span>
+          ))}
+
+          <span className="flex items-center gap-1.5 text-[11.5px] text-ink-muted">
+            <span className="flex overflow-hidden rounded-sm" aria-hidden="true">
+              {CANDIDATE_SCORE_PALETTE_5.map((color) => (
+                <span key={color} className="h-2.5 w-3.5" style={{ backgroundColor: color }} />
+              ))}
+            </span>
+            통과 셀 점수 0–100
+          </span>
+        </div>
+      ) : null}
+
       <p className="mt-2 text-[11px] leading-snug text-ink-subtle" data-testid="scenario-map-note">
-        지도의 색은 해당 시나리오 가중치로 다시 계산한 점수입니다. 배제·검토 판정(스크리닝)은 규칙
-        기반이며 A안과 B안에서 달라지지 않습니다.
+        지도의 색은 해당 시나리오 가중치로 다시 계산한 점수입니다. 적용 가중치 Z/R/E/D{" "}
+        {weightSummary(active.canonicalWeights)}. 배제·검토 판정(스크리닝)은 규칙 기반이며 A안과
+        B안에서 달라지지 않습니다. {SUITABILITY_SCREENING_SHORT_LABEL}.
       </p>
     </SectionCard>
   );

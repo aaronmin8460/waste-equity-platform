@@ -22,10 +22,22 @@
  * neither section is ever drawn under a status the shell refused to stand behind.
  *
  * ── ORDER ────────────────────────────────────────────────────────────────────────
- * Ranking first, candidate second (Figma 167:10554): the ranking establishes WHICH
- * candidates moved, and the candidate section then explains ONE of them in depth. A
- * reader who arrives at the contribution bars without the ranking above has no way to
- * know whether the cell they are reading is a notable mover or an arbitrary one.
+ * The frame interleaves the two lanes rather than stacking them:
+ *
+ *   Row3   [ 후보지 순위 변화 TOP 10 (ranking) | 후보 결과 변화 지도 (candidate) ]
+ *   Row4   [ 선택 지역 상세 비교     (candidate) | 순위 변동 분포     (ranking) ]
+ *
+ * So the two lanes can no longer each render one contiguous block. The grid itself is
+ * owned by `SuitabilityScenarioRankingAnalytics`, and this component hands it the two
+ * CANDIDATE cards as slots. The reading order the previous stack existed to protect is
+ * unchanged: the KPI row and the slope chart still establish WHICH candidates moved
+ * before the contribution bars explain ONE of them.
+ *
+ * ── ONE SELECTION, ACROSS TWO BANDS ──────────────────────────────────────────────
+ * The map and the detail card share a selected candidate, and the frame puts them in
+ * different rows. `useScenarioCandidateSelection` is therefore called ONCE here, above
+ * both, so there is still exactly one selection, one pair of detail requests and one
+ * export input — the guarantees the sibling layout used to get from being siblings.
  */
 
 import { useMemo } from "react";
@@ -33,7 +45,11 @@ import { useMemo } from "react";
 import { buildScenarioRankingComparison } from "../../../lib/scenarioRankingComparison";
 import { rankingComparisonExportExtension } from "../../../lib/scenarioRankingExport";
 import type { ScenarioComparison } from "../../../lib/scenarioComparison";
-import SuitabilityScenarioCandidateComparison from "../SuitabilityScenarioCandidateComparison";
+import {
+  ScenarioCandidateDetailCard,
+  ScenarioCandidateMapCard,
+  useScenarioCandidateSelection,
+} from "../SuitabilityScenarioCandidateComparison";
 import SuitabilityScenarioRankingAnalytics from "./SuitabilityScenarioRankingAnalytics";
 
 export interface SuitabilityScenarioAnalysisSectionsProps {
@@ -59,13 +75,35 @@ export default function SuitabilityScenarioAnalysisSections({
     [rankingModel, comparison],
   );
 
+  const selection = useScenarioCandidateSelection(comparison, initialCandidateId);
+
+  const detailCard = (
+    // The candidate lane's own marker travels with its card, so the lane stays
+    // addressable even though it no longer has a wrapper of its own.
+    <div data-testid="scenario-candidate-comparison" className="flex min-w-0 flex-col">
+      <ScenarioCandidateDetailCard selection={selection} exportExtension={exportExtension} />
+    </div>
+  );
+
+  // The ranking grid owns the frame's bands, and it draws nothing without a model. The
+  // candidate lane does not depend on the ranking model, so it keeps its own
+  // two-column layout rather than disappearing with the grid that would have hosted it.
+  if (rankingModel === null) {
+    return (
+      <div className="grid gap-4 xl:grid-cols-2" data-testid="scenario-analysis-sections">
+        {detailCard}
+        <ScenarioCandidateMapCard selection={selection} />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-4" data-testid="scenario-analysis-sections">
-      <SuitabilityScenarioRankingAnalytics comparison={comparison} model={rankingModel} />
-      <SuitabilityScenarioCandidateComparison
+    <div className="flex flex-col gap-5" data-testid="scenario-analysis-sections">
+      <SuitabilityScenarioRankingAnalytics
         comparison={comparison}
-        initialCandidateId={initialCandidateId}
-        exportExtension={exportExtension}
+        model={rankingModel}
+        mapSlot={<ScenarioCandidateMapCard selection={selection} />}
+        detailSlot={detailCard}
       />
     </div>
   );
