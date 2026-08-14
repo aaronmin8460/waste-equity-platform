@@ -31,7 +31,6 @@
 import { useMemo } from "react";
 
 import type { FacilityCostCalculate, FacilityCostOptions } from "../../lib/api";
-import { SUITABILITY_SCREENING_DISCLAIMER } from "../../lib/glossary";
 import { regionDisplayName } from "../../lib/regionDisplay";
 import EmptyState from "../ui/EmptyState";
 import InfoBanner from "../ui/InfoBanner";
@@ -40,7 +39,7 @@ import Skeleton from "../ui/Skeleton";
 import FacilityCostResultSummary from "./FacilityCostResultSummary";
 import {
   DETAILS_TITLE,
-  SETUP_NON_CLAIMS,
+  RESULT_FOOTNOTE,
   summariseRegions,
   wasteStreamLabel,
   type ScenarioState,
@@ -108,18 +107,6 @@ export default function FacilityCostResultCard({
 
   return (
     <SectionCard title="③ 비용 계산 결과" testId="facility-cost-step-result">
-      {/* Two standing lines, readable at every moment of the workflow — before a
-          calculation as well as beside its result, and without opening anything:
-          the regional-screening disclaimer this sub-view shares with the other two
-          (docs/SUITABILITY_PHASE_0_TRANSPARENCY.md requires it VISIBLE in every
-          suitability sub-view, so it cannot live only inside 계산 방법과 한계), and
-          the three claims a citizen must not misread. The full eight-item list
-          keeps its own home in 계산 방법과 한계. */}
-      <div className="mb-3 flex flex-col gap-1 text-xs text-ink-subtle">
-        <p data-testid="suitability-screening-disclaimer">{SUITABILITY_SCREENING_DISCLAIMER}</p>
-        <p data-testid="facility-cost-standing-non-claims">{SETUP_NON_CLAIMS}</p>
-      </div>
-
       <dl className="flex flex-col gap-2">
         <SummaryRow
           label="선택 지역"
@@ -182,12 +169,12 @@ export default function FacilityCostResultCard({
           </div>
         )}
 
+        {/* A GENUINE failure — kept in full, as an alert. Only the standing
+            paragraph that followed it (restating that we do not substitute data)
+            is gone; the served reason itself is the actionable content. */}
         {!calculating && errorCurrent && (
           <InfoBanner tone="error" title="계산할 수 없습니다" role="alert" testId="facility-cost-error">
             <p className="font-semibold">{calcError}</p>
-            <p className="mt-1 text-xs">
-              공식 데이터를 계산할 수 없으면 값을 표시하지 않습니다. 대체 데이터는 사용하지 않습니다.
-            </p>
           </InfoBanner>
         )}
 
@@ -197,11 +184,13 @@ export default function FacilityCostResultCard({
           </p>
         )}
 
-        {/* No result yet: an explicit instruction, never a placeholder number. */}
+        {/* No result yet: an explicit instruction, never a placeholder number.
+            The "not zero / no sample figures" restatement moved to 계산 방법과
+            한계 — the empty state itself already shows no number at all. */}
         {!calculating && !errorCurrent && result === null && (
           <EmptyState
             title="아직 계산한 결과가 없습니다."
-            description="지역을 선택하고 “비용 계산하기”를 누르면 결과가 여기에 표시됩니다. 결과가 없다는 것은 비용이 0이라는 뜻이 아니며, 예시 금액이나 임의의 값을 대신 보여주지 않습니다."
+            description="지역을 선택하고 “비용 계산하기”를 누르면 결과가 여기에 표시됩니다."
             testId="facility-cost-no-result"
           />
         )}
@@ -214,22 +203,39 @@ export default function FacilityCostResultCard({
             <div role="status" data-testid="facility-cost-results">
               <FacilityCostResultSummary result={result} />
             </div>
+            {/* A DATA-STATE message, not boilerplate: it appears only when the
+                backend reports the result as partial, and it is the one thing a
+                reader cannot infer from the figures. Compressed to a single line;
+                the missing components are enumerated, with their served reasons,
+                in 계산 방법과 한계 → 포함되지 않은 비용. */}
             {result.completeness.is_partial && (
               <p className="mt-2 text-xs text-warn" data-testid="facility-cost-partial">
-                일부 비용 항목은 자료가 없어 계산에 포함되지 않았습니다. 그 비용이 0이라는 뜻이 아니며,
-                빠진 항목은 「{DETAILS_TITLE}」에서 확인할 수 있습니다.
+                일부 비용 항목은 자료가 없어 빠졌습니다 (0이 아님) — 「{DETAILS_TITLE}」 참고.
               </p>
             )}
           </>
         )}
       </div>
 
+      {/* The ONE standing caveat of the primary screen (Figma 129:5709's own
+          footnote), visually subordinate and stated once — before a calculation
+          as well as beside its result. Everything it compresses is stated in
+          full, one click below, in 계산 방법과 한계. */}
+      <p
+        className="mt-3 text-[0.6875rem] text-ink-subtle"
+        data-testid="facility-cost-result-footnote"
+      >
+        *{RESULT_FOOTNOTE}
+      </p>
+
       {/* The one door to everything the primary workflow no longer shows inline:
-          scope, exclusions, assumptions, sources, and the exact values. */}
+          the regional-screening disclaimer and the page framing, the eight-item
+          exclusion list, the cost composition, the per-region official inputs,
+          the assumptions, the sources, and the exact values. */}
       <button
         type="button"
         onClick={onOpenDetails}
-        className="wep-btn-quiet mt-3 w-full"
+        className="wep-btn-quiet mt-2 w-full"
         data-testid="facility-cost-open-details"
       >
         {DETAILS_TITLE} 자세히 보기

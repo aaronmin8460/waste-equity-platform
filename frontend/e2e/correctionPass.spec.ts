@@ -193,10 +193,13 @@ for (const vp of WIDTHS) {
       await expect(page.getByTestId("facility-cost-notice")).toHaveCount(0);
       await expect(page.getByRole("heading", { name: "① 비용 계산 희망 지역 선택" })).toBeVisible();
 
-      // The standing non-claims stay readable WITHOUT opening anything, so the
-      // move did not hide the caveats a citizen must read beside the figures.
-      await expect(page.getByTestId("suitability-screening-disclaimer")).toBeVisible();
-      await expect(page.getByTestId("facility-cost-standing-non-claims")).toBeVisible();
+      // ONE compact caveat stays readable WITHOUT opening anything — the frame's
+      // own footnote — so the move did not leave the figures unqualified. The
+      // paragraph forms (screening sentence, long 표준공사비 non-claim) are behind
+      // the door, in full, and are asserted there below.
+      await expect(page.getByTestId("facility-cost-result-footnote")).toBeVisible();
+      await expect(page.getByTestId("suitability-screening-disclaimer")).toHaveCount(0);
+      await expect(page.getByTestId("facility-cost-standing-non-claims")).toHaveCount(0);
 
       // …and the full eight-item list is still there, in full, behind the door.
       await page.getByTestId("facility-cost-open-details").click();
@@ -205,6 +208,10 @@ for (const vp of WIDTHS) {
       const notice = page.getByTestId("facility-cost-notice");
       const completeness = page.getByTestId("facility-cost-completeness");
       await expect(notice).toHaveCount(1);
+      // Both paragraph forms are here, unchanged — nothing was softened by moving
+      // them off the primary screen.
+      await expect(notice).toContainText("광역 후보지 스크리닝");
+      await expect(notice).toContainText("주민 개인에게 청구되는");
       await expect(completeness).toHaveCount(1);
       await expect(completeness).toContainText("8가지");
 

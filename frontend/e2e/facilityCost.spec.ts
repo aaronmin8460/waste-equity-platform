@@ -146,10 +146,16 @@ for (const vp of VIEWPORTS) {
     await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
       await expect(page.locator("h1")).toHaveCount(1);
       await expect(page.locator("#main-content")).toHaveCount(1);
-      // The screening disclaimer stands on the screen itself; the longer
-      // "this page does not advocate" notice moved into 계산 방법과 한계.
-      await expect(page.getByTestId("suitability-screening-disclaimer")).toBeVisible();
+      // The primary workflow carries ONE compact caveat and no disclaimer block:
+      // the screening sentence and the "this page does not advocate" notice both
+      // live in 계산 방법과 한계 (docs/SUITABILITY_PHASE_0_TRANSPARENCY.md, the
+      // 비용 살펴보기 exception).
+      await expect(page.getByTestId("facility-cost-result-footnote")).toBeVisible();
+      await expect(page.getByTestId("suitability-screening-disclaimer")).toHaveCount(0);
       await page.getByTestId("facility-cost-open-details").click();
+      await expect(page.getByTestId("facility-cost-notice")).toContainText(
+        "광역 후보지 스크리닝",
+      );
       await expect(page.getByTestId("facility-cost-disclaimer")).toContainText(
         "권고하거나 반대를 설득하기 위한 페이지가 아닙니다",
       );

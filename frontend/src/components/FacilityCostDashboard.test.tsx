@@ -215,15 +215,23 @@ vi.mock("../lib/api", async (importOriginal) => {
 
 import FacilityCostDashboard from "./FacilityCostDashboard";
 
-// Calculable regions tagged with their waste stream. HOUSEHOLD spans all three
-// metropolitan areas and includes the two 중구 that share a name and differ only by
-// code (Seoul KR-SGIS-11140 vs Incheon KR-SGIS-23010 — the real SGIS sido digits,
-// 11/23/31, that lib/ranking.ts classifies); CONSTRUCTION has one.
+// Calculable regions tagged with their waste stream, shaped like the served RCIS
+// reporting coverage. HOUSEHOLD spans all three metropolitan areas and includes:
+//   - the two 중구 that share a name and differ only by code (Seoul KR-SGIS-11140
+//     vs Incheon KR-SGIS-23010 — the real SGIS sido digits, 11/23/31, that
+//     lib/ranking.ts classifies);
+//   - 경기도 수원시 under its RCIS CITY-level reporting code (KR-RCISRG-3101).
+//     RCIS reports the seven Gyeonggi cities at city level and SGIS has no SIGUNGU
+//     row for the city, so the CITY code — not a 일반구 code — is what the picker
+//     offers and what the calculate payload carries. Its 일반구 children appear
+//     nowhere, exactly as in production, because they have no waste row and the
+//     reporting boundary endpoint excludes them.
+// CONSTRUCTION has one region, which is what makes stream-change behaviour testable.
 const WASTE_REGIONS = [
   { code: "KR-SGIS-11110", name: "종로구", stream: "HOUSEHOLD" },
   { code: "KR-SGIS-11140", name: "중구", stream: "HOUSEHOLD" },
   { code: "KR-SGIS-23010", name: "중구", stream: "HOUSEHOLD" },
-  { code: "KR-SGIS-31011", name: "수원시 장안구", stream: "HOUSEHOLD" },
+  { code: "KR-RCISRG-3101", name: "경기도 수원시", stream: "HOUSEHOLD" },
   { code: "KR-SGIS-11110", name: "종로구", stream: "CONSTRUCTION" },
 ];
 
@@ -237,7 +245,7 @@ const BOUNDARY_CODES: [string, string][] = [
   ["KR-SGIS-11110", "종로구"],
   ["KR-SGIS-11140", "중구"],
   ["KR-SGIS-23010", "중구"],
-  ["KR-SGIS-31011", "수원시 장안구"],
+  ["KR-RCISRG-3101", "경기도 수원시"],
   ["KR-SGIS-23310", "강화군"],
 ];
 
@@ -363,19 +371,37 @@ describe("citizen framing", () => {
     expect(disclaimer).toContain("시민 의사결정 지원 도구");
   });
 
-  it("keeps the non-claims readable without expanding anything", async () => {
+  it("keeps ONE compact caveat readable without expanding anything", async () => {
     await renderPanel();
-    // The compact standing line carries the three claims a citizen must not
-    // misread — before any calculation, with nothing opened.
-    const standing = screen.getByTestId("facility-cost-standing-non-claims").textContent ?? "";
-    expect(standing).toContain("표준공사비");
-    expect(standing).toContain("실제 총사업비가 아니며");
-    expect(standing).toContain("세금 고지액도 아닙니다");
-    // The full eight-item list is still present, in 계산 방법과 한계, with its
-    // count stated.
+    // The screen's whole standing disclaimer is now the Figma footnote, present
+    // before any calculation and with nothing opened.
+    const footnote = screen.getByTestId("facility-cost-result-footnote").textContent ?? "";
+    expect(footnote).toContain("표준공사비 기준 참고용 추정치");
+    expect(footnote).toContain("실제 총사업비");
+    expect(footnote).toContain("청구 금액은 아님");
+    // …and it is said ONCE. A caveat repeated on every surface stops being read.
+    expect(screen.getAllByTestId("facility-cost-result-footnote")).toHaveLength(1);
+    // The long paragraph forms are not deleted — they are in 계산 방법과 한계, in
+    // full, together with the eight-item list and its stated count.
     await openDetails();
+    const scope = screen.getByTestId("facility-cost-notice").textContent ?? "";
+    expect(scope).toContain("실제 총사업비가 아니며");
+    expect(scope).toContain("세금 고지액도 아닙니다");
     const completeness = screen.getByTestId("facility-cost-completeness").textContent ?? "";
     expect(completeness).toContain("8가지");
+  });
+
+  it("shows no large disclaimer paragraph in the primary workflow", async () => {
+    await renderPanel();
+    // The two paragraphs the redesign removed from the screen: the regional
+    // screening sentence and the long 표준공사비 non-claim. Both must be absent
+    // from the workflow columns while nothing is expanded.
+    const workflow = screen.getByTestId("facility-cost-workflow").textContent ?? "";
+    expect(workflow).not.toContain("광역 후보지 스크리닝");
+    expect(workflow).not.toContain("환경영향평가");
+    expect(workflow).not.toContain("주민 개인에게 청구되는");
+    expect(screen.queryByTestId("facility-cost-standing-non-claims")).toBeNull();
+    expect(screen.queryByTestId("suitability-screening-disclaimer")).toBeNull();
   });
 });
 
@@ -454,10 +480,14 @@ describe("setup workflow", () => {
       .getAllByTestId("facility-cost-region-option")
       .map((o) => o.textContent ?? "");
     // HOUSEHOLD (default) → four calculable regions, deterministically ordered
-    // 서울 → 인천 → 경기, then by name.
-    expect(labels).toEqual(["서울 종로구", "서울 중구", "인천 중구", "경기 수원시 장안구"]);
+    // 서울 → 인천 → 경기, then by name. The RCIS city code classifies as 경기
+    // (lib/ranking.ts) and keeps its own served name, which already leads with
+    // its metropolitan word, so it is not given a second "경기" prefix.
+    expect(labels).toEqual(["서울 종로구", "서울 중구", "인천 중구", "경기도 수원시"]);
     // The two 중구 are distinguishable WITHOUT any raw region code being visible.
-    expect(screen.getByTestId("facility-cost-region-options").textContent).not.toContain("KR-SGIS");
+    const optionText = screen.getByTestId("facility-cost-region-options").textContent ?? "";
+    expect(optionText).not.toContain("KR-SGIS");
+    expect(optionText).not.toContain("KR-RCISRG");
     // Switching to a stream with narrower coverage narrows the choices — a citizen
     // can never pick a region the endpoint cannot calculate.
     fireEvent.change(screen.getByTestId("facility-cost-waste-stream"), {
@@ -482,23 +512,24 @@ describe("setup workflow", () => {
       expect(selectedChipLabels()).toEqual(["서울 종로구", "서울 중구", "인천 중구"]),
     );
     // A fourth, from a third metropolitan area, added individually.
-    selectRegion("KR-SGIS-31011");
+    selectRegion("KR-RCISRG-3101");
     await waitFor(() =>
       expect(selectedChipLabels()).toEqual([
         "서울 종로구",
         "서울 중구",
         "인천 중구",
-        "경기 수원시 장안구",
+        "경기도 수원시",
       ]),
     );
-    // All four reach the payload, in the same order.
+    // All four reach the payload, in the same order — including the RCIS CITY
+    // code, undecorated and unconverted.
     fireEvent.click(screen.getByTestId("facility-cost-calculate"));
     await waitFor(() => expect(h.calc).toHaveBeenCalled());
     expect(h.calc.mock.calls[0][0].regionCodes).toEqual([
       "KR-SGIS-11110",
       "KR-SGIS-11140",
       "KR-SGIS-23010",
-      "KR-SGIS-31011",
+      "KR-RCISRG-3101",
     ]);
   });
 
@@ -687,23 +718,175 @@ describe("processing share — shortcuts without losing free entry", () => {
   });
 });
 
+describe("region selection survives the calculation conditions", () => {
+  // THE BUG THIS GUARDS. `update()` used to special-case `wasteStream` and set
+  // `regionCodes: []`, so a citizen who had picked a dozen regions and then
+  // touched the 폐기물 종류 select lost all of them — including every region the
+  // new stream could calculate perfectly well.
+
+  const setWasteStream = (value: string) =>
+    fireEvent.change(screen.getByTestId("facility-cost-waste-stream"), { target: { value } });
+
+  it("keeps regions the new waste stream can still calculate, and drops only the rest", async () => {
+    await renderPanel();
+    // 종로구 has both HOUSEHOLD and CONSTRUCTION; 서울 중구 has HOUSEHOLD only.
+    selectRegion("KR-SGIS-11110");
+    selectRegion("KR-SGIS-11140");
+    await waitFor(() => expect(selectedChipLabels()).toEqual(["서울 종로구", "서울 중구"]));
+
+    setWasteStream("CONSTRUCTION");
+
+    // The survivor is KEPT — not cleared and not re-added by the citizen.
+    await waitFor(() => expect(selectedChipLabels()).toEqual(["서울 종로구"]));
+    // …and the one the new stream genuinely cannot calculate is named, compactly,
+    // as a polite status rather than a banner.
+    const dropped = screen.getByTestId("facility-cost-dropped-regions");
+    expect(dropped.getAttribute("role")).toBe("status");
+    expect(dropped.textContent).toContain("서울 중구");
+    expect(dropped.textContent).not.toContain("서울 종로구");
+    // The payload follows the surviving selection exactly.
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(h.calc).toHaveBeenCalled());
+    expect(h.calc.mock.calls[0][0].regionCodes).toEqual(["KR-SGIS-11110"]);
+    expect(h.calc.mock.calls[0][0].wasteStream).toBe("CONSTRUCTION");
+  });
+
+  it("says nothing when a stream change costs the citizen nothing", async () => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11110"); // calculable under both streams
+    await waitFor(() => expect(selectedChipLabels()).toEqual(["서울 종로구"]));
+
+    setWasteStream("CONSTRUCTION");
+
+    await waitFor(() => expect(selectedChipLabels()).toEqual(["서울 종로구"]));
+    // No note, because nothing was dropped — the message is information, not decor.
+    expect(screen.queryByTestId("facility-cost-dropped-regions")).toBeNull();
+  });
+
+  it("restores a region when the stream that lost it is chosen again", async () => {
+    // The selection is one authoritative list, so a round trip is not lossy for
+    // the regions that survive; the one genuinely dropped stays dropped rather
+    // than being resurrected from a shadow copy.
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    selectRegion("KR-SGIS-11140");
+    await waitFor(() => expect(selectedChipLabels()).toHaveLength(2));
+
+    setWasteStream("CONSTRUCTION");
+    await waitFor(() => expect(selectedChipLabels()).toEqual(["서울 종로구"]));
+    setWasteStream("HOUSEHOLD");
+
+    await waitFor(() => expect(selectedChipLabels()).toEqual(["서울 종로구"]));
+    expect(screen.queryByTestId("facility-cost-dropped-regions")).toBeNull();
+  });
+
+  it.each([
+    ["facility type", () => fireEvent.change(screen.getByTestId("facility-cost-facility-type"), {
+      target: { value: "incineration_new" },
+    })],
+    ["processing share", () => fireEvent.change(screen.getByTestId("facility-cost-processing-share"), {
+      target: { value: "50" },
+    })],
+    ["a share preset", () => fireEvent.click(screen.getByTestId("facility-cost-share-50"))],
+    ["operating days", () => fireEvent.change(screen.getByTestId("facility-cost-operating-days"), {
+      target: { value: "330" },
+    })],
+    ["the underground multiplier", () => fireEvent.change(screen.getByTestId("facility-cost-underground"), {
+      target: { value: "1.20" },
+    })],
+    ["the subsidy scheme", () => fireEvent.change(screen.getByTestId("facility-cost-subsidy-scheme"), {
+      target: { value: "metropolitan_city" },
+    })],
+  ])("never clears the selection when %s changes", async (_label, change) => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    selectRegion("KR-SGIS-11140");
+    selectRegion("KR-RCISRG-3101");
+    const before = selectedChipLabels();
+    expect(before).toHaveLength(3);
+
+    // The advanced controls live inside a collapsed <details>; expand it so the
+    // interaction is the one a citizen actually performs.
+    openSection("facility-cost-advanced-settings");
+    change();
+
+    await waitFor(() => expect(selectedChipLabels()).toEqual(before));
+    expect(screen.queryByTestId("facility-cost-dropped-regions")).toBeNull();
+  });
+
+  it("clears the dropped-region note once the citizen touches the selection again", async () => {
+    await renderPanel();
+    selectRegion("KR-SGIS-11110");
+    selectRegion("KR-SGIS-11140");
+    await waitFor(() => expect(selectedChipLabels()).toHaveLength(2));
+    setWasteStream("CONSTRUCTION");
+    await waitFor(() => expect(screen.getByTestId("facility-cost-dropped-regions")).toBeDefined());
+
+    clickMapRegion("KR-SGIS-11110", "종로구");
+
+    await waitFor(() => expect(screen.queryByTestId("facility-cost-dropped-regions")).toBeNull());
+  });
+});
+
+describe("the seven RCIS city-level regions are selectable", () => {
+  // 고양·부천·성남·수원·안산·안양·용인 are reported by RCIS at CITY level. They were
+  // drawn on the selection map and rejected by the picker, because the picker read
+  // /waste-statistics (native SGIS only) while the map read the reporting
+  // geography. They now come from the same served collection.
+
+  it("offers the city under its RCIS reporting code and sends that code unchanged", async () => {
+    await renderPanel();
+    selectRegion("KR-RCISRG-3101");
+    await waitFor(() => expect(selectedChipLabels()).toEqual(["경기도 수원시"]));
+    fireEvent.click(screen.getByTestId("facility-cost-calculate"));
+    await waitFor(() => expect(h.calc).toHaveBeenCalled());
+    // Not translated to a 일반구 code, and not decorated.
+    expect(h.calc.mock.calls[0][0].regionCodes).toEqual(["KR-RCISRG-3101"]);
+  });
+
+  it("treats the city as selectable on the map, not as a no-data region", async () => {
+    await renderPanel();
+    // The map registers its click handler once the (faked) map has loaded, which
+    // is a tick after the workflow mounts.
+    await waitFor(() => expect(mapHandlers.get("click:service-regions-fill")).toBeDefined());
+    clickMapRegion("KR-RCISRG-3101", "경기도 수원시");
+    await waitFor(() => expect(selectedChipLabels()).toEqual(["경기도 수원시"]));
+    // The click was honoured, so no "자료가 없어 선택할 수 없습니다" answer was given.
+    expect(screen.getByTestId("facility-cost-map-unavailable").textContent).toBe("");
+    // …and it is not listed among the regions that cannot be calculated.
+    const unavailable = screen.getByTestId("facility-cost-unavailable-regions").textContent ?? "";
+    expect(unavailable).not.toContain("수원시");
+  });
+});
+
 describe("coverage honesty", () => {
   it("states how many regions the chosen stream can and cannot be calculated for", async () => {
     await renderPanel();
     const coverage = () => screen.getByTestId("facility-cost-coverage").textContent ?? "";
     // Four calculable for HOUSEHOLD; the fifth boundary region has no HOUSEHOLD row.
-    expect(coverage()).toContain("계산할 수 있는 지역은 4곳");
-    expect(coverage()).toContain("선택할 수 없는 지역은 1곳");
-    // The excluded region is NAMED, and stated as absent rather than as zero.
+    // The counts are now stated compactly — the sentence form crowded the card and
+    // its reason is said once, in 계산 방법과 한계, instead of on every screen.
+    expect(coverage()).toContain("계산 가능 4곳");
+    expect(coverage()).toContain("자료 없음 1곳");
+    // The excluded region is still NAMED.
     const list = screen.getByTestId("facility-cost-unavailable-regions").textContent ?? "";
     expect(list).toContain("인천 강화군");
-    expect(list).toContain("발생량이 0이라는 뜻이 아니며");
     // Narrowing the stream widens the excluded set — the statement follows the data.
     fireEvent.change(screen.getByTestId("facility-cost-waste-stream"), {
       target: { value: "CONSTRUCTION" },
     });
-    await waitFor(() => expect(coverage()).toContain("계산할 수 있는 지역은 1곳"));
-    expect(coverage()).toContain("선택할 수 없는 지역은 4곳");
+    await waitFor(() => expect(coverage()).toContain("계산 가능 1곳"));
+    expect(coverage()).toContain("자료 없음 4곳");
+  });
+
+  it("still says an absent region is not a zero, in the detail surface", async () => {
+    // The statement was not deleted when the card's prose was compressed — it
+    // keeps one home, where the coverage is explained in full.
+    await renderPanel();
+    await openDetails();
+    openSection("facility-cost-coverage-section");
+    const text = screen.getByTestId("facility-cost-coverage-section").textContent ?? "";
+    expect(text).toContain("0이라는 뜻이 아닙니다");
   });
 
   it("names the general-gu limitation without inventing lower-level data", async () => {
@@ -797,7 +980,9 @@ describe("calculation lifecycle on one screen", () => {
     expect(screen.queryByTestId("facility-cost-results")).toBeNull();
     const empty = screen.getByTestId("facility-cost-no-result").textContent ?? "";
     expect(empty).toContain("아직 계산한 결과가 없습니다");
-    expect(empty).toContain("비용이 0이라는 뜻이 아니며");
+    // It shows no number at all, which is the guarantee that mattered; the
+    // "not a zero" restatement moved to 계산 방법과 한계 rather than repeating here.
+    expect(empty).not.toMatch(/\d/);
 
     await calculateToResults();
 
@@ -946,8 +1131,17 @@ describe("results — the five Figma figures", () => {
     await renderPanel();
     await calculateToResults();
     const caveat = screen.getByTestId("facility-cost-per-capita-caveat").textContent ?? "";
-    expect(caveat).toContain("개인에게 실제로 청구되는 세금이나 부담금이 아닙니다");
+    // The SERVED caveat, alone: it already carries both the derivation and the
+    // not-a-bill claim, so the static duplicate that used to precede it in bold
+    // is gone. `PER_CAPITA_NON_CLAIM` itself is unchanged and still listed in
+    // 계산 방법과 한계 (asserted below).
     expect(caveat).toContain("개인의 실제 세금 청구액이 아닙니다");
+    expect(caveat).toContain("동일 연도의 공식 인구로 나눈 환산값");
+    expect(caveat).not.toContain("개인에게 실제로 청구되는 세금이나 부담금이 아닙니다");
+    await openDetails();
+    expect(screen.getByTestId("facility-cost-completeness").textContent).toContain(
+      "주민 개인의 실제 세금 청구액이 아님",
+    );
     // The label itself stays the served term.
     const figures = screen.getByTestId("facility-cost-result-figures");
     expect(within(figures).getByText("주민 1인당 환산 지방비")).toBeDefined();
@@ -957,17 +1151,20 @@ describe("results — the five Figma figures", () => {
     }
   });
 
-  it("names the population basis and reference period beside the figures", async () => {
+  it("names the population and waste basis in 출처와 계산 방법", async () => {
+    // The two provenance lines moved off the result tiles (they crowded the card
+    // and are not caveats) into the detail surface, which states them in FULL —
+    // source id, definition, dataset, accounting basis, and reference period.
     await renderPanel();
     await calculateToResults();
-    const basis = screen.getByTestId("facility-cost-population-basis").textContent ?? "";
+    await openDetails();
+    openSection("facility-cost-methodology-section");
+    const text = screen.getByTestId("facility-cost-methodology-section").textContent ?? "";
     // Page 3's own denominator — the cost model's SGIS population, not Page 2's.
-    expect(basis).toContain("sgis");
-    expect(basis).toContain("2022");
-    expect(basis).toContain("SGIS_TOTAL_POPULATION");
-    const waste = screen.getByTestId("facility-cost-waste-basis").textContent ?? "";
-    expect(waste).toContain("RCIS 생활계");
-    expect(waste).toContain("2022");
+    expect(text).toContain("sgis");
+    expect(text).toContain("SGIS_TOTAL_POPULATION");
+    expect(text).toContain("RCIS 생활계");
+    expect(text).toContain("2022");
   });
 
   it("carries the compact non-claim footnote beside the numbers", async () => {
@@ -1172,17 +1369,19 @@ describe("계산 방법과 한계 — the progressive-disclosure surface", () =>
     expect(text).toContain("8가지");
   });
 
-  it("keeps the regional-screening disclaimer VISIBLE, not only inside this surface", async () => {
-    // docs/SUITABILITY_PHASE_0_TRANSPARENCY.md: every suitability sub-view shows
-    // the shared screening disclaimer without anything being opened.
+  it("keeps the regional-screening disclaimer, in this surface rather than on the screen", async () => {
+    // The 비용 살펴보기 exception to docs/SUITABILITY_PHASE_0_TRANSPARENCY.md: this
+    // sub-view shows no standing screening paragraph, because it presents a COST
+    // estimate rather than a candidate-suitability claim, and the redesign
+    // required the primary workflow to be free of disclaimer blocks. The sentence
+    // itself is unchanged and one click away, in 이 계산의 범위. The other two
+    // suitability sub-views (후보지 점수 / 가중치 바꿔보기) still show it inline.
     await renderPanel();
-    expect(screen.getByTestId("suitability-screening-disclaimer").textContent).toContain(
-      "광역 후보지 스크리닝",
-    );
-    // Exactly one element owns the contract, so it stays unambiguous once the
-    // detail surface (which restates the sentence in context) is open too.
+    expect(screen.queryByTestId("suitability-screening-disclaimer")).toBeNull();
     await openDetails();
-    expect(screen.getAllByTestId("suitability-screening-disclaimer")).toHaveLength(1);
+    const scope = screen.getByTestId("facility-cost-notice").textContent ?? "";
+    expect(scope).toContain("광역 후보지 스크리닝");
+    expect(scope).toContain("환경영향평가");
   });
 
   it("lists the analytical assumptions in force, beside the controls that set them", async () => {
@@ -1420,8 +1619,8 @@ describe("results — excluded cost components", () => {
     await calculateToResults();
     const partial = screen.getByTestId("facility-cost-partial");
     const text = partial.textContent ?? "";
-    expect(text).toContain("일부 비용 항목은 자료가 없어 계산에 포함되지 않았습니다");
-    expect(text).toContain("0이라는 뜻이 아니며");
+    expect(text).toContain("일부 비용 항목은 자료가 없어 빠졌습니다");
+    expect(text).toContain("0이 아님");
     // It points at the surface that holds the itemised list.
     expect(text).toContain("계산 방법과 한계");
     // A standing caveat must not interrupt a screen reader on every render.

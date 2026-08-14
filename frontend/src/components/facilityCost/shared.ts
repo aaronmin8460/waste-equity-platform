@@ -222,9 +222,6 @@ export const PAGE_DISCLAIMER =
   "이 페이지는 시설 설치를 권고하거나 반대를 설득하기 위한 페이지가 아닙니다. 공식 데이터로 필요성, " +
   "비용, 입지 조건과 불확실성을 함께 검토하기 위한 시민 의사결정 지원 도구입니다.";
 
-export const HEADER_SUBTITLE =
-  "선택한 지역의 공식 폐기물 자료를 기준으로 필요한 시설 규모와 표준공사비 기반 설치비를 계산합니다.";
-
 // The three non-claims that must be readable BEFORE anything is expanded, on both
 // views. The full eight-item exclusion list stays in the collapsed setup disclosure,
 // and the results view carries its own "포함되지 않은 비용" accordion. Nothing is
@@ -242,13 +239,20 @@ export const RESULTS_NON_CLAIMS =
 
 export const PER_CAPITA_NON_CLAIM = "개인에게 실제로 청구되는 세금이나 부담금이 아닙니다.";
 
-// The single line that sits under the five result KPIs on the Figma frame
-// (129:5709, "*표준공사비 기준 참고용 추정치이며, 실제 총사업비·청구 금액은 아님."). It is
-// the compact restatement of the three non-claims that must be readable WITHOUT
-// opening anything; the full eight-item list keeps its own home in the
-// 계산 방법과 한계 disclosure.
+// The ONE caveat card ③ carries, verbatim from the Figma frame's own footnote
+// (129:5709, "*표준공사비 기준 참고용 추정치이며, 실제 총사업비·청구 금액은 아님.").
+//
+// It is the whole of the standing disclaimer on the primary screen. The paragraph
+// forms that used to stand above the workflow — the regional-screening sentence
+// and the longer 표준공사비 non-claim — are not softened or deleted: both are
+// stated in full inside 계산 방법과 한계 (`FacilityCostNotice`), one click away and
+// reachable before a calculation as well as after one. What is removed is their
+// PROMINENCE, which is what the redesign asked for.
+//
+// It is deliberately the only place this warning appears on the main screen: a
+// caveat repeated three times reads as boilerplate and stops being read at all.
 export const RESULT_FOOTNOTE =
-  "표준공사비 기준 참고용 추정치이며, 실제 총사업비나 개인에게 청구되는 금액이 아닙니다.";
+  "표준공사비 기준 참고용 추정치이며, 실제 총사업비·청구 금액은 아님.";
 
 /** The one label the progressive-disclosure surface is opened by, used verbatim. */
 export const DETAILS_TITLE = "계산 방법과 한계";

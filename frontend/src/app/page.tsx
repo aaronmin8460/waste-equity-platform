@@ -1894,13 +1894,23 @@ export default function Home() {
     setRestoredCandidate(null);
   }, [restoredCandidate, mode, suitabilityView, suit, selected, onCandidateClick]);
 
-  // Service-region options for the cost lens, derived from CALCULABLE coverage:
-  // the regions that actually have RegionalWasteStatistics rows (which the cost
-  // backend joins by region_code, per stream), with their served names + codes.
-  // This excludes the 7 RCIS city-level cities' SGIS districts, which have no
-  // native waste row and would always return OFFICIAL_WASTE_UNAVAILABLE.
+  // Service-region options for the cost lens, derived from CALCULABLE coverage —
+  // read from the RCIS REPORTING geography, which is the same collection the
+  // selection map below is built from, so the picker and the map can never key
+  // regions differently.
   //
-  // Assumption: this uses /waste-statistics' single latest ingested year, which
+  // This used to read /waste-statistics (native `regional_waste_statistics`
+  // only). That endpoint has no row for the seven Gyeonggi cities RCIS reports at
+  // CITY level (고양·부천·성남·수원·안산·안양·용인): SGIS has no SIGUNGU row for the
+  // city, and its 일반구 children carry no waste row. The cities were therefore
+  // drawn on the map, told the citizen "공식 자료가 없어 선택할 수 없습니다", and were
+  // uncalculable — while their official city totals existed all along, in
+  // `reporting_region_waste_statistics`. /waste-reporting/statistics serves both
+  // halves (native SIGUNGU + the seven city rows), and /facility-cost/calculate
+  // now accepts the `KR-RCISRG-*` codes, so the swap is purely additive: measured
+  // per stream, the native set is identical and the seven cities are added.
+  //
+  // Assumption: this uses the endpoint's single latest ingested year, which
   // matches the current RCIS ingestion where every stream shares one reference
   // year. If a future PID-specific refresh left one stream a year behind, its
   // regions could be under-offered here even though /facility-cost/calculate
@@ -1937,9 +1947,9 @@ export default function Home() {
   const facilityCostWasteRegions = useMemo(
     () =>
       data
-        ? data.waste.items.map((item) => ({
-            code: item.region_code,
-            name: item.region_name,
+        ? data.reportingStats.items.map((item) => ({
+            code: item.reporting_region_code,
+            name: item.reporting_region_name,
             stream: item.waste_stream,
           }))
         : [],

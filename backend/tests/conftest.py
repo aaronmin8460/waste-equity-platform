@@ -44,7 +44,10 @@ from waste_equity_backend.models import (
     Region,
     RegionalPopulation,
     RegionalWasteStatistics,
+    ReportingRegionWasteStatistics,
     SuitabilityAnalysisRun,
+    WasteReportingRegion,
+    WasteReportingRegionMember,
 )
 
 METADATA_TABLES = [
@@ -79,6 +82,11 @@ METADATA_TABLES = [
     MunicipalWasteContract.__table__,
     MunicipalWasteQuantity.__table__,
     MunicipalCostIndicatorValue.__table__,
+    # RCIS reporting geography. The member lineage and the city statistics are
+    # genuinely non-spatial; `waste_reporting_regions` carries a derived display
+    # geometry and so gets the same geometry-less copy `regions` does, below.
+    WasteReportingRegionMember.__table__,
+    ReportingRegionWasteStatistics.__table__,
 ]
 
 # A copy of `regions` minus the geometry column, in its own MetaData so the
@@ -91,6 +99,20 @@ REGIONS_NONSPATIAL = Table(
     *[column._copy() for column in Region.__table__.columns if column.name != "geometry"],
 )
 
+# Same treatment for the RCIS reporting cities: the facility-cost route reads only
+# their code / name / child_region_count, never the derived display geometry, so a
+# geometry-less copy is enough to exercise the city path here. Seed it with
+# ``insert(WasteReportingRegion).values(...)``, not an ORM instance.
+WASTE_REPORTING_REGIONS_NONSPATIAL = Table(
+    "waste_reporting_regions",
+    _REGIONS_METADATA,
+    *[
+        column._copy()
+        for column in WasteReportingRegion.__table__.columns
+        if column.name != "geometry"
+    ],
+)
+
 
 @pytest.fixture
 def session_factory() -> Iterator[sessionmaker[Session]]:
@@ -100,7 +122,9 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine, tables=METADATA_TABLES)
-    _REGIONS_METADATA.create_all(engine, tables=[REGIONS_NONSPATIAL])
+    _REGIONS_METADATA.create_all(
+        engine, tables=[REGIONS_NONSPATIAL, WASTE_REPORTING_REGIONS_NONSPATIAL]
+    )
     yield sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     engine.dispose()
 

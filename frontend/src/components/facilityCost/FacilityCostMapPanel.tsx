@@ -75,7 +75,11 @@ export default function FacilityCostMapPanel({
       // the controls rather than growing to the height of the workflow column
       // beside it — at which point its own legend would sit hundreds of pixels
       // below the fold, which is exactly where it was found in review.
-      className="relative h-[22rem] overflow-hidden rounded-card border border-hairline bg-surface-muted lg:sticky lg:top-4 lg:h-[calc(100vh-9.5rem)] lg:max-h-[47.5rem] lg:min-h-[30rem]"
+      // Bounded so the panel ENDS at the fold rather than just past it: the
+      // offset is the shell header + page heading + orientation strip above it,
+      // so its own legend (bottom-left) stays on screen at the 1440×900 desktop
+      // target without scrolling.
+      className="relative h-[22rem] overflow-hidden rounded-card border border-hairline bg-surface-muted lg:sticky lg:top-4 lg:h-[calc(100vh-10.5rem)] lg:max-h-[47.5rem] lg:min-h-[30rem]"
       data-testid="facility-cost-map-panel"
     >
       <FacilityCostRegionMap

@@ -82,7 +82,7 @@ describe("Phase 0 — the screening disclaimer is visible in every suitability s
     expect(notice.closest("details")).toBeNull();
   });
 
-  it("keeps the disclaimer visible in 가중치 바꿔보기 and 비용 살펴보기", async () => {
+  it("keeps the disclaimer visible in 가중치 바꿔보기", async () => {
     await enterSuitability();
     fireEvent.click(screen.getByTestId("suitability-view-scenario"));
     await waitFor(() =>
@@ -91,12 +91,26 @@ describe("Phase 0 — the screening disclaimer is visible in every suitability s
     expect(screen.getByTestId("suitability-screening-disclaimer").textContent).toContain(
       "광역 후보지 스크리닝",
     );
+  });
 
+  it("moves the disclaimer into 계산 방법과 한계 in 비용 살펴보기, without dropping it", async () => {
+    // 비용 살펴보기 is the documented EXCEPTION to "visible in every suitability
+    // sub-view" (docs/SUITABILITY_PHASE_0_TRANSPARENCY.md §"비용 살펴보기"). That
+    // sub-view presents a COST estimate rather than a candidate-suitability claim,
+    // and its redesign (Figma 129:5709) requires a primary workflow free of
+    // disclaimer blocks. The sentence is unchanged and one click away; its own
+    // 표준공사비 caveat stays on the screen in its place.
+    await enterSuitability();
     fireEvent.click(screen.getByTestId("suitability-view-cost"));
-    await waitFor(() =>
-      expect(screen.getByTestId("suitability-screening-disclaimer")).toBeDefined(),
+    await waitFor(() => expect(screen.getByTestId("facility-cost-workflow")).toBeDefined());
+    expect(screen.queryByTestId("suitability-screening-disclaimer")).toBeNull();
+    expect(screen.getByTestId("facility-cost-result-footnote").textContent).toContain(
+      "표준공사비 기준 참고용 추정치",
     );
-    expect(screen.getByTestId("suitability-screening-disclaimer").textContent).toContain(
+
+    fireEvent.click(screen.getByTestId("facility-cost-open-details"));
+    await waitFor(() => expect(screen.getByTestId("facility-cost-notice")).toBeDefined());
+    expect(screen.getByTestId("facility-cost-notice").textContent).toContain(
       "광역 후보지 스크리닝",
     );
   });

@@ -98,7 +98,7 @@ export default function FacilityCostConditionsCard({
             ))}
           </select>
           <span className={captionClass}>
-            종류를 바꾸면 계산 가능한 지역이 달라져 선택한 지역이 초기화됩니다.
+            종류를 바꿔도 선택 지역은 유지되며, 자료가 없는 곳만 빠집니다.
           </span>
         </div>
 
@@ -153,7 +153,7 @@ export default function FacilityCostConditionsCard({
             <span className="flex-none text-xs text-ink-subtle">%</span>
           </div>
           <span className={captionClass}>
-            선택한 지역의 발생량 중 이 시설에서 처리할 비율입니다. 0–100 사이의 값만 계산할 수 있습니다.
+            선택 지역 발생량 중 이 시설에서 처리할 비율입니다 (0–100).
           </span>
         </div>
 

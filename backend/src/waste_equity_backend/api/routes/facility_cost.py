@@ -6,13 +6,32 @@ standard-construction-cost calculation over official waste + population data.
 The result is an explicitly PARTIAL standard-construction-cost analysis: it is not
 an actual project budget, an approved subsidy, an actual transport cost, or a
 personal tax bill. Handlers never call government APIs, never read credentials,
-aggregate only over leaf (SIGUNGU) regions to avoid double counting, never borrow
-population from another year, and return a structured 404/422 (never fabricated
-data) when the official inputs are missing or the aggregation is unsafe.
+aggregate only over non-overlapping reporting units to avoid double counting, never
+borrow population from another year, and return a structured 404/422 (never
+fabricated data) when the official inputs are missing or the aggregation is unsafe.
+
+SERVICE-REGION GEOGRAPHY. A service region is one of two things, and both are leaf
+reporting units that cannot overlap each other:
+
+  * a native SGIS SIGUNGU (`KR-SGIS-*`), whose official quantity is its own
+    `regional_waste_statistics` row; or
+  * one of the seven Gyeonggi cities RCIS reports at CITY level (`KR-RCISRG-*`,
+    고양·부천·성남·수원·안산·안양·용인), whose official quantity is the source's own
+    city total in `reporting_region_waste_statistics`, copied verbatim.
+
+The city case is a NAMING problem, not an aggregation one: SGIS 2024 has no
+SIGUNGU row for the city, only its 일반구 children, and those children carry no
+waste row of their own — so nothing is ever summed on the numerator side and the
+children can never contribute a quantity beside their parent. Only the city's
+population denominator is derived, as the exact sum of its children's SGIS
+populations (`SUM_OF_SGIS_CHILD_DISTRICTS`, the same rule
+`/waste-reporting/per-capita` uses), and it is dropped entirely rather than
+partially summed when that lineage is incomplete. Naming a city together with one
+of its own children is refused (`OVERLAPPING_REGIONS`).
 """
 
 from decimal import Decimal
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NamedTuple
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
@@ -24,8 +43,11 @@ from ...models import (
     Region,
     RegionalPopulation,
     RegionalWasteStatistics,
+    ReportingRegionWasteStatistics,
     SuitabilityAnalysisRun,
     SuitabilityCandidate,
+    WasteReportingRegion,
+    WasteReportingRegionMember,
 )
 from ...models.metadata import GRANULARITY_ANNUAL
 from ...schemas import UnavailableDataError
@@ -57,6 +79,12 @@ router = APIRouter(prefix="/api/v1/facility-cost", tags=["facility-cost"])
 
 _POPULATION_SOURCE_ID = "sgis"
 _POPULATION_GEOGRAPHIC_LEVEL = "SIGUNGU"
+# RCIS reports seven Gyeonggi cities (고양·부천·성남·수원·안산·안양·용인) at CITY
+# level. SGIS 2024 has no SIGUNGU `regions` row for the city itself — only its
+# 일반구 children — so the source-native city total lives in the reporting
+# geography under a minted `KR-RCISRG-*` code and cannot be addressed as a native
+# region. See `models/reporting_geography.py`.
+_REPORTING_REGION_PREFIX = "KR-RCISRG-"
 _UNIT_COST_UNIT = "억원/(톤·일)"
 _COST_UNIT = "억원"
 # The annualized figure is a per-year rate (억원 ÷ years), not a one-time amount.
@@ -199,6 +227,138 @@ def _parse_region_codes(raw: str) -> list[str]:
     return list(seen)
 
 
+class _CityPopulation(NamedTuple):
+    """A derived city denominator, shaped like a native population row.
+
+    Built ONLY from the exact sum of the city's SGIS child-district populations
+    (the same ``SUM_OF_SGIS_CHILD_DISTRICTS`` rule `/waste-reporting/per-capita`
+    uses), never from a value of our own invention. It carries the children's
+    single shared source / period / definition, which `_city_populations` refuses
+    to collapse when the children disagree.
+    """
+
+    population: int
+    source_id: str
+    reference_period: str
+    population_definition: str
+
+
+def _reporting_region_ids(session: SessionDep, codes: list[str]) -> dict[str, list[int]]:
+    """Reporting-region ids per `KR-RCISRG-*` code (a code may have vintages)."""
+    if not codes:
+        return {}
+    rows = session.execute(
+        select(WasteReportingRegion.reporting_region_code, WasteReportingRegion.id).where(
+            WasteReportingRegion.reporting_region_code.in_(codes)
+        )
+    ).all()
+    found: dict[str, list[int]] = {}
+    for code, region_id in rows:
+        found.setdefault(code, []).append(int(region_id))
+    return found
+
+
+def _city_child_codes(session: SessionDep, codes: list[str]) -> dict[str, list[str]]:
+    """The SGIS child-district codes composing each requested reporting city."""
+    if not codes:
+        return {}
+    rows = session.execute(
+        select(
+            WasteReportingRegion.reporting_region_code,
+            WasteReportingRegionMember.child_region_code,
+        )
+        .join(
+            WasteReportingRegion,
+            WasteReportingRegionMember.reporting_region_id == WasteReportingRegion.id,
+        )
+        .where(WasteReportingRegion.reporting_region_code.in_(codes))
+    ).all()
+    children: dict[str, list[str]] = {}
+    for code, child_code in rows:
+        children.setdefault(code, []).append(child_code)
+    return children
+
+
+def _city_populations(
+    session: SessionDep, codes: list[str], resolved_year: int
+) -> dict[str, _CityPopulation]:
+    """Exact child-sum denominators for the requested reporting cities.
+
+    A city is included ONLY when its children are complete and compatible: the
+    expected number of children, exactly one eligible population row each at the
+    SAME year, and one shared definition / period / source across them. Any gap
+    leaves the city out, which makes the caller's per-capita null with a reason —
+    never a partial sum presented as the city's population.
+    """
+    if not codes:
+        return {}
+    member_rows = session.execute(
+        select(
+            WasteReportingRegion.reporting_region_code,
+            WasteReportingRegion.child_region_count,
+            WasteReportingRegionMember.child_region_code,
+        )
+        .join(
+            WasteReportingRegion,
+            WasteReportingRegionMember.reporting_region_id == WasteReportingRegion.id,
+        )
+        .where(WasteReportingRegion.reporting_region_code.in_(codes))
+    ).all()
+    expected: dict[str, int] = {}
+    children: dict[str, set[str]] = {}
+    for code, child_count, child_code in member_rows:
+        expected[code] = int(child_count)
+        children.setdefault(code, set()).add(child_code)
+
+    all_children = sorted({c for group in children.values() for c in group})
+    if not all_children:
+        return {}
+    pop_rows = session.execute(
+        select(
+            Region.region_code,
+            RegionalPopulation.population,
+            RegionalPopulation.source_id,
+            RegionalPopulation.reference_period,
+            RegionalPopulation.population_definition,
+        )
+        .join(Region, RegionalPopulation.region_id == Region.id)
+        .where(
+            Region.region_code.in_(all_children),
+            RegionalPopulation.reference_year == resolved_year,
+            RegionalPopulation.population_temporal_granularity == GRANULARITY_ANNUAL,
+            RegionalPopulation.source_id == _POPULATION_SOURCE_ID,
+            RegionalPopulation.source_geographic_level == _POPULATION_GEOGRAPHIC_LEVEL,
+        )
+    ).all()
+    by_child: dict[str, list[Any]] = {}
+    for row in pop_rows:
+        by_child.setdefault(row.region_code, []).append(row)
+
+    resolved: dict[str, _CityPopulation] = {}
+    for code, child_codes in children.items():
+        # The lineage itself must be complete before its sum can mean anything.
+        if len(child_codes) != expected.get(code, -1):
+            continue
+        rows = [by_child.get(child, []) for child in sorted(child_codes)]
+        # Exactly one eligible row per child: none → undercount, several →
+        # ambiguous. Either way the city gets no denominator rather than a guess.
+        if any(len(r) != 1 for r in rows):
+            continue
+        picked = [r[0] for r in rows]
+        definitions = {r.population_definition for r in picked}
+        periods = {r.reference_period for r in picked}
+        sources = {r.source_id for r in picked}
+        if len(definitions) != 1 or len(periods) != 1 or len(sources) != 1:
+            continue
+        resolved[code] = _CityPopulation(
+            population=sum(r.population for r in picked),
+            source_id=next(iter(sources)),
+            reference_period=next(iter(periods)),
+            population_definition=next(iter(definitions)),
+        )
+    return resolved
+
+
 def _candidate_context(session: SessionDep, candidate_id: int) -> CandidateContextOut:
     # Column-scoped (no geometry) so this works without loading the spatial column.
     row = session.execute(
@@ -250,7 +410,15 @@ def calculate(
     waste_stream: WasteStream,
     subsidy_scheme: SubsidySchemeParam,
     region_codes: Annotated[
-        str, Query(description="Comma-separated SIGUNGU region codes (the service area).")
+        str,
+        Query(
+            description=(
+                "Comma-separated service-area region codes: SGIS SIGUNGU codes, and/or the "
+                "RCIS city-level reporting codes (KR-RCISRG-*) for the seven Gyeonggi cities "
+                "the source reports at city level. A city and its own child district cannot "
+                "both be given."
+            )
+        ),
     ],
     reference_year: Annotated[int | None, Query(ge=1990, le=2100)] = None,
     processing_share_percent: Annotated[Decimal, Query(ge=0, le=100)] = Decimal("100"),
@@ -276,19 +444,35 @@ def calculate(
         )
 
     codes = _parse_region_codes(region_codes)
+    # A service region is either a native SGIS leaf or one of the seven RCIS
+    # city-level reporting regions. The two are validated against different
+    # tables, then merged into ONE waste/population lookup keyed by code, so
+    # every provenance and completeness check below runs over the whole request.
+    reporting_codes = [c for c in codes if c.startswith(_REPORTING_REGION_PREFIX)]
+    native_codes = [c for c in codes if not c.startswith(_REPORTING_REGION_PREFIX)]
+
     # Column-scoped (never selects the PostGIS geometry): the cost model needs only
     # code/name/level, so this also runs on the non-spatial SQLite test tier. Waste
     # and population are joined by region_code (below), not by a resolved region_id,
     # so a code that maps to several boundary vintages is handled correctly.
     # Existence + level validation only (region_level is stable across vintages).
     # The DISPLAY name comes later from the vintage the waste row is joined to.
-    region_rows = session.execute(
-        select(Region.region_code, Region.region_level)
-        .where(Region.region_code.in_(codes))
-        .distinct()
-    ).all()
+    region_rows = (
+        session.execute(
+            select(Region.region_code, Region.region_level)
+            .where(Region.region_code.in_(native_codes))
+            .distinct()
+        ).all()
+        if native_codes
+        else []
+    )
     found_levels = {r.region_code: r.region_level for r in region_rows}
-    missing_codes = [code for code in codes if code not in found_levels]
+    found_reporting = _reporting_region_ids(session, reporting_codes)
+    missing_codes = [
+        code
+        for code in codes
+        if code not in found_levels and code not in found_reporting
+    ]
     if missing_codes:
         raise _not_found(
             UnavailableDataError(
@@ -296,11 +480,33 @@ def calculate(
                 detail=f"Unknown region code(s): {missing_codes}.",
             )
         )
-    non_leaf = [code for code in codes if found_levels[code] != _POPULATION_GEOGRAPHIC_LEVEL]
+    non_leaf = [code for code in native_codes if found_levels[code] != _POPULATION_GEOGRAPHIC_LEVEL]
     if non_leaf:
         raise _bad_request(
             "NON_LEAF_REGION",
             f"Service regions must be SIGUNGU (leaf) to avoid double counting; got {non_leaf}.",
+        )
+    # A reporting city and one of its OWN child districts in the same request would
+    # count that district's population twice (the city denominator is the sum of
+    # its children). The children carry no waste row, so the numerator could not
+    # double count, but the request is still incoherent and is refused rather than
+    # silently resolved. Cross-city overlap is impossible by construction:
+    # `waste_reporting_region_members` is UNIQUE on child_region_id.
+    child_codes_by_city = _city_child_codes(session, reporting_codes)
+    requested_native = set(native_codes)
+    overlapping = sorted(
+        {
+            child
+            for children in child_codes_by_city.values()
+            for child in children
+            if child in requested_native
+        }
+    )
+    if overlapping:
+        raise _bad_request(
+            "OVERLAPPING_REGIONS",
+            "A city-level reporting region and its own child district(s) cannot both be "
+            f"service regions (the population would be counted twice); got {overlapping}.",
         )
 
     # Resolve the reference year from the waste series for this stream.
@@ -316,27 +522,60 @@ def calculate(
     # Official waste aggregation, joined by region_code. Every requested region MUST
     # have exactly one row: none → undercount (refuse); more than one → ambiguous
     # (refuse) rather than double count.
-    waste_rows = session.execute(
-        select(
-            Region.region_code,
-            # The region NAME comes from the Region the waste row is joined to — the
-            # correct boundary vintage — so a historical year never reports a name
-            # from another vintage that the unscoped validation query might hold.
-            Region.region_name,
-            RegionalWasteStatistics.generation_quantity,
-            RegionalWasteStatistics.quantity_unit,
-            RegionalWasteStatistics.accounting_basis,
-            RegionalWasteStatistics.source_id,
-            RegionalWasteStatistics.official_dataset_name,
-            RegionalWasteStatistics.reference_period,
+    waste_rows = list(
+        session.execute(
+            select(
+                Region.region_code,
+                # The region NAME comes from the Region the waste row is joined to — the
+                # correct boundary vintage — so a historical year never reports a name
+                # from another vintage that the unscoped validation query might hold.
+                Region.region_name,
+                RegionalWasteStatistics.generation_quantity,
+                RegionalWasteStatistics.quantity_unit,
+                RegionalWasteStatistics.accounting_basis,
+                RegionalWasteStatistics.source_id,
+                RegionalWasteStatistics.official_dataset_name,
+                RegionalWasteStatistics.reference_period,
+            )
+            .join(Region, RegionalWasteStatistics.region_id == Region.id)
+            .where(
+                Region.region_code.in_(native_codes),
+                RegionalWasteStatistics.reference_year == resolved_year,
+                RegionalWasteStatistics.waste_stream == waste_stream,
+            )
+        ).all()
+        if native_codes
+        else []
+    )
+    # The seven RCIS city-level regions, from the SAME columns in the reporting
+    # table. The quantity is the source's own city total copied verbatim — nothing
+    # is summed here — so appending it to `waste_rows` puts it through exactly the
+    # duplicate, unit, and provenance checks the native rows already face.
+    if reporting_codes:
+        waste_rows.extend(
+            session.execute(
+                select(
+                    WasteReportingRegion.reporting_region_code.label("region_code"),
+                    WasteReportingRegion.reporting_region_name.label("region_name"),
+                    ReportingRegionWasteStatistics.generation_quantity,
+                    ReportingRegionWasteStatistics.quantity_unit,
+                    ReportingRegionWasteStatistics.accounting_basis,
+                    ReportingRegionWasteStatistics.source_id,
+                    ReportingRegionWasteStatistics.official_dataset_name,
+                    ReportingRegionWasteStatistics.reference_period,
+                )
+                .join(
+                    WasteReportingRegion,
+                    ReportingRegionWasteStatistics.reporting_region_id
+                    == WasteReportingRegion.id,
+                )
+                .where(
+                    WasteReportingRegion.reporting_region_code.in_(reporting_codes),
+                    ReportingRegionWasteStatistics.reference_year == resolved_year,
+                    ReportingRegionWasteStatistics.waste_stream == waste_stream,
+                )
+            ).all()
         )
-        .join(Region, RegionalWasteStatistics.region_id == Region.id)
-        .where(
-            Region.region_code.in_(codes),
-            RegionalWasteStatistics.reference_year == resolved_year,
-            RegionalWasteStatistics.waste_stream == waste_stream,
-        )
-    ).all()
     waste_by_code: dict[str, Any] = {}
     duplicate_codes: list[str] = []
     for row in waste_rows:
@@ -391,26 +630,35 @@ def calculate(
     # Population aggregation (same year only — never borrowed), joined by region_code.
     # Missing/ambiguous population makes the per-capita share null + reason; the cost
     # part still runs.
-    population_rows = session.execute(
-        select(
-            Region.region_code,
-            RegionalPopulation.population,
-            RegionalPopulation.source_id,
-            RegionalPopulation.reference_period,
-            RegionalPopulation.population_definition,
-        )
-        .join(Region, RegionalPopulation.region_id == Region.id)
-        .where(
-            Region.region_code.in_(codes),
-            RegionalPopulation.reference_year == resolved_year,
-            RegionalPopulation.population_temporal_granularity == GRANULARITY_ANNUAL,
-            RegionalPopulation.source_id == _POPULATION_SOURCE_ID,
-            RegionalPopulation.source_geographic_level == _POPULATION_GEOGRAPHIC_LEVEL,
-        )
-    ).all()
+    population_rows = (
+        session.execute(
+            select(
+                Region.region_code,
+                RegionalPopulation.population,
+                RegionalPopulation.source_id,
+                RegionalPopulation.reference_period,
+                RegionalPopulation.population_definition,
+            )
+            .join(Region, RegionalPopulation.region_id == Region.id)
+            .where(
+                Region.region_code.in_(native_codes),
+                RegionalPopulation.reference_year == resolved_year,
+                RegionalPopulation.population_temporal_granularity == GRANULARITY_ANNUAL,
+                RegionalPopulation.source_id == _POPULATION_SOURCE_ID,
+                RegionalPopulation.source_geographic_level == _POPULATION_GEOGRAPHIC_LEVEL,
+            )
+        ).all()
+        if native_codes
+        else []
+    )
     population_by_code: dict[str, list[Any]] = {}
     for pop_row in population_rows:
         population_by_code.setdefault(pop_row.region_code, []).append(pop_row)
+    # A reporting city has no SGIS population row of its own, so its denominator is
+    # the exact sum of its child districts' — complete and single-definition, or
+    # absent. Shaped like a native row so every check below is the same check.
+    for city_code, city_pop in _city_populations(session, reporting_codes, resolved_year).items():
+        population_by_code[city_code] = [city_pop]
     # Exactly one population row per requested region (ambiguous or missing → not
     # complete → per-capita is null with a reason, never fabricated).
     population_complete = all(len(population_by_code.get(code, [])) == 1 for code in codes)

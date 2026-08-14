@@ -15,7 +15,8 @@ claim that a passing cell is a *suitable, buildable, permittable site*. It is no
 Phase 0 makes the screen's **scope and limitations visible and understandable** to a
 first-time citizen **without changing any analytical result**. It renames misleading
 terms to what is actually measured, heads every sub-view with a standing
-analytical-screening disclaimer, explains each screening status, discloses the
+analytical-screening disclaimer (with one documented exception, 비용 살펴보기, where
+it lives one click away instead), explains each screening status, discloses the
 physical/environmental conditions that are **not** yet evaluated, and carries all of
 that into the exports.
 
@@ -77,6 +78,33 @@ Where space is limited (the floating map legend), the short persistent label
 
 The disclaimer appears **only** in 후보지 분석 mode, so it is never shown as a claim
 about the equity map's calculations.
+
+### Exception — 비용 살펴보기 (시설 비용, Figma 129:5709)
+
+The cost sub-view shows **no standing disclaimer paragraph** on its primary screen.
+Two reasons, and neither is a relaxation of the transparency contract:
+
+1. **It is not a suitability claim.** The screen answers "what would a facility of
+   this size cost, at standard construction rates", from official waste and
+   population statistics. It ranks no candidate and asserts no site's suitability,
+   so the screening sentence is not qualifying anything the screen actually says.
+2. **The redesign requires a clean workflow.** The Figma frame is a one-screen
+   three-column workflow; a block of caveat above it pushed the primary action
+   below the fold and, stacked with the 표준공사비 non-claim, read as boilerplate.
+
+Nothing is deleted or softened. `SUITABILITY_SCREENING_DISCLAIMER` is rendered
+**verbatim** inside 계산 방법과 한계 → 이 계산의 범위 (`FacilityCostNotice`), which is
+reachable in one click at any time — before a calculation as well as after one —
+together with the page framing, the 표준공사비 non-claim, and the eight-item
+exclusion list. What the screen keeps standing, without anything being expanded, is
+the frame's own footnote:
+
+> *표준공사비 기준 참고용 추정치이며, 실제 총사업비·청구 금액은 아님.
+
+The other two sub-views (score / scenario) are unchanged and still show the
+disclaimer inline. Contracted by `page.phase0.test.tsx` ("moves the disclaimer into
+계산 방법과 한계 in 비용 살펴보기, without dropping it") and by
+`FacilityCostDashboard.test.tsx`.
 
 ## Status meanings (`statusExplanation()`)
 
@@ -150,7 +178,8 @@ Frontend (single source of truth + surfaces):
 - `frontend/src/lib/scenario.ts` — component labels/explanations now derive from the
   glossary (no second copy).
 - `frontend/src/components/DashboardShell.tsx` — renders the standing screening
-  disclaimer for every suitability sub-view.
+  disclaimer for every suitability sub-view except 비용 살펴보기 (see the exception
+  above), where the sentence is served verbatim from 계산 방법과 한계 instead.
 - `frontend/src/app/page.tsx` — candidate-detail component labels, per-status
   explanation, status-explanations disclosure, the "not yet included" disclosure
   (score view + candidate detail), and contextual wording (road proxy, "스크리닝 통과

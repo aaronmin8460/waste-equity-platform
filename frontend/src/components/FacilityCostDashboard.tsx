@@ -65,7 +65,6 @@ import FacilityCostRegionCard from "./facilityCost/FacilityCostRegionCard";
 import FacilityCostResultCard from "./facilityCost/FacilityCostResultCard";
 import {
   advancedChanged,
-  HEADER_SUBTITLE,
   validateScenario,
   wasteStreamLabel,
   WASTE_STREAMS,
@@ -177,20 +176,62 @@ export default function FacilityCostDashboard({
     };
   }, []);
 
+  /**
+   * The calculable region codes per waste stream, from the one served coverage
+   * list. Built once here so a stream change can be answered from state the
+   * screen already holds — it introduces no second source of truth, because it
+   * is derived from the same `wasteRegions` prop `regionOptions` reads.
+   */
+  const codesByStream = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const region of wasteRegions) {
+      let set = map.get(region.stream);
+      if (!set) {
+        set = new Set<string>();
+        map.set(region.stream, set);
+      }
+      set.add(region.code);
+    }
+    return map;
+  }, [wasteRegions]);
+
+  // How many regions the last stream change had to drop, and their names, so the
+  // screen can say so compactly instead of silently shrinking the selection.
+  const [droppedRegions, setDroppedRegions] = useState<string[]>([]);
+
   const update = useCallback(
     <K extends keyof ScenarioState>(key: K, value: ScenarioState[K]) => {
       // Any input change invalidates the standing no-data message, which named a
       // region under the PREVIOUS stream.
       setUnavailableNotice("");
+      if (key !== "wasteStream") {
+        // Facility type, processing share, and every advanced value are scored
+        // over WHATEVER regions are selected — none of them changes which regions
+        // have official data, so none of them may touch the selection.
+        setDroppedRegions([]);
+        setScenario((prev) => (prev ? { ...prev, [key]: value } : prev));
+        return;
+      }
+      // A stream change DOES change which regions are calculable, but most of a
+      // selection normally survives it. Keep every code the new stream can still
+      // calculate and drop only the ones it genuinely cannot — the old behaviour
+      // cleared the whole selection, which threw away work the data supported.
+      const nextStream = value as string;
+      const calculable = codesByStream.get(nextStream) ?? new Set<string>();
       setScenario((prev) => {
         if (!prev) return prev;
-        // Changing the waste stream changes which regions are calculable, so drop
-        // the current region selection (it may not exist for the new stream).
-        if (key === "wasteStream") return { ...prev, wasteStream: value as string, regionCodes: [] };
-        return { ...prev, [key]: value };
+        const kept = prev.regionCodes.filter((code) => calculable.has(code));
+        const dropped = prev.regionCodes.filter((code) => !calculable.has(code));
+        setDroppedRegions(
+          dropped.map((code) => {
+            const region = wasteRegions.find((r) => r.code === code);
+            return regionDisplayName(code, region?.name ?? code);
+          }),
+        );
+        return { ...prev, wasteStream: nextStream, regionCodes: kept };
       });
     },
-    [],
+    [codesByStream, wasteRegions],
   );
 
   // The calculable regions for the SELECTED stream, deduped by code. Only these are
@@ -243,6 +284,9 @@ export default function FacilityCostDashboard({
   const toggleRegion = useCallback(
     (code: string) => {
       setUnavailableNotice("");
+      // The citizen has acted on the selection themselves; the note about what a
+      // previous stream change dropped has been read and is no longer news.
+      setDroppedRegions([]);
       setScenario((prev) =>
         prev
           ? {
@@ -299,10 +343,18 @@ export default function FacilityCostDashboard({
 
   return (
     <div
-      className="mx-auto w-full max-w-screen-2xl px-4 pb-8 sm:px-6 lg:px-8"
+      // Figma 129:5709 body: 1400 content width inside a 20 outer inset (1440
+      // desktop). 1400 = 360 (①②) + 16 + 340 (③) + 16 + 668 (map), which is
+      // exactly the column template below, so the map lands on its drawn width
+      // at the target viewport and absorbs the slack on wider ones.
+      className="mx-auto w-full max-w-[calc(87.5rem+2.5rem)] px-4 pb-6 sm:px-5"
       data-testid="facility-cost-dashboard"
     >
-      <PageHeader title={title} description={HEADER_SUBTITLE} testId="facility-cost-header">
+      {/* No `description`: the destination's own orientation strip below already
+          says what this screen does ("처리 대상 지역을 정하고 공식 표준공사비로 설치비를
+          살펴봅니다.", lib/glossary.ts). Carrying a second, near-identical sentence
+          under the same <h1> cost a line of the fold and told a reader nothing new. */}
+      <PageHeader title={title} testId="facility-cost-header">
         {orientation}
       </PageHeader>
 
@@ -349,6 +401,7 @@ export default function FacilityCostDashboard({
           setDetailsOpen={setDetailsOpen}
           unavailableNotice={unavailableNotice}
           onUnavailableRegion={reportUnavailableRegion}
+          droppedRegions={droppedRegions}
         />
       )}
     </div>
@@ -380,6 +433,7 @@ function FacilityCostBody({
   setDetailsOpen,
   unavailableNotice,
   onUnavailableRegion,
+  droppedRegions,
 }: {
   options: FacilityCostOptions;
   scenario: ScenarioState;
@@ -403,6 +457,8 @@ function FacilityCostBody({
   setDetailsOpen: (open: boolean) => void;
   unavailableNotice: string;
   onUnavailableRegion: (regionName: string, regionCode: string) => void;
+  /** Regions the last waste-stream change had to drop, already named. */
+  droppedRegions: string[];
 }) {
   const validationMessage = validateScenario(scenario, options);
   const noRegions = scenario.regionCodes.length === 0;
@@ -439,6 +495,7 @@ function FacilityCostBody({
             onChangeRegions={(codes) => update("regionCodes", codes)}
             wasteStreamLabel={streamLabel}
             headingRef={stepHeadingRef}
+            droppedRegions={droppedRegions}
           />
           <FacilityCostConditionsCard
             options={options}

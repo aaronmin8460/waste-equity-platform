@@ -190,10 +190,14 @@ for (const vp of VIEWPORTS) {
         expect(heroSize).toBeGreaterThan(secondarySize);
       }
 
-      // The standing non-claims are readable WITHOUT opening anything, and a total
-      // cost is never claimed.
-      await expect(page.getByTestId("facility-cost-standing-non-claims")).toBeVisible();
+      // The standing caveat is readable WITHOUT opening anything, and a total cost
+      // is never claimed. It is now ONE line (Figma 129:5709's own footnote); the
+      // longer paragraph forms moved into 계산 방법과 한계.
       await expect(page.getByTestId("facility-cost-result-footnote")).toBeVisible();
+      await expect(page.getByTestId("facility-cost-result-footnote")).toContainText(
+        "표준공사비 기준 참고용 추정치",
+      );
+      await expect(page.getByTestId("facility-cost-standing-non-claims")).toHaveCount(0);
       await expect(page.getByText("총비용")).toHaveCount(0);
 
       await expectNoHorizontalOverflow(page);

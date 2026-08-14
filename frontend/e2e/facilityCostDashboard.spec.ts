@@ -250,7 +250,10 @@ for (const vp of VIEWPORTS) {
       const empty = page.getByTestId("facility-cost-no-result");
       await empty.scrollIntoViewIfNeeded();
       await expect(empty).toBeVisible();
-      await expect(empty).toContainText("비용이 0이라는 뜻이 아니며");
+      await expect(empty).toContainText("아직 계산한 결과가 없습니다");
+      // The empty state shows no number at all — the guarantee that mattered. Its
+      // "not a zero" restatement moved to 계산 방법과 한계 with the other caveats.
+      await expect(empty).not.toContainText(/\d/);
       // No result-shaped surface exists before a calculation.
       await expect(page.getByTestId("facility-cost-results")).toHaveCount(0);
       await expect(page.getByTestId("facility-cost-hero")).toHaveCount(0);
@@ -434,13 +437,14 @@ test.describe("suitability sub-view regression at 1440×900", () => {
   }) => {
     await openCost(page);
     await expect(page.getByTestId("suitability-view-cost")).toHaveAttribute("aria-pressed", "true");
-    // The regional-screening disclaimer stays VISIBLE without opening anything —
-    // docs/SUITABILITY_PHASE_0_TRANSPARENCY.md requires it in every suitability
-    // sub-view, so the single-screen refresh keeps it standing in card ③.
-    await expect(page.getByTestId("suitability-screening-disclaimer")).toBeVisible();
-    // The longer "this page does not advocate" notice moved into 계산 방법과 한계,
-    // under 이 계산의 범위, which opens by default.
+    // The primary workflow carries no disclaimer block at all — only the frame's
+    // own compact footnote (Figma 129:5709). The screening sentence is INTACT but
+    // lives in 계산 방법과 한계 (docs/SUITABILITY_PHASE_0_TRANSPARENCY.md, the
+    // 비용 살펴보기 exception), together with the longer "does not advocate" notice.
+    await expect(page.getByTestId("facility-cost-result-footnote")).toBeVisible();
+    await expect(page.getByTestId("suitability-screening-disclaimer")).toHaveCount(0);
     await openDetails(page);
+    await expect(page.getByTestId("facility-cost-notice")).toContainText("광역 후보지 스크리닝");
     await expect(page.getByTestId("facility-cost-disclaimer")).toContainText(
       "권고하거나 반대를 설득하기 위한 페이지가 아닙니다",
     );

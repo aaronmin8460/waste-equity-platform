@@ -40,7 +40,7 @@ import {
 } from "../../lib/displayNumber";
 import { perCapitaUnavailableExplanation } from "../../lib/glossary";
 import { formatQuantity } from "../../lib/metrics";
-import { approxOrExact, PER_CAPITA_NON_CLAIM, RESULT_FOOTNOTE } from "./shared";
+import { approxOrExact } from "./shared";
 
 /** One of the four supporting figures. A missing value states why, never 0. */
 function ResultTile({
@@ -147,29 +147,25 @@ export default function FacilityCostResultSummary({ result }: { result: Facility
         </div>
       </dl>
 
-      {/* The non-claims that must be readable WITHOUT opening anything. The
-          per-capita caveat stays adjacent to the figure it qualifies. */}
-      <div className="flex flex-col gap-1 text-[0.6875rem] text-ink-subtle">
-        <p data-testid="facility-cost-result-footnote">*{RESULT_FOOTNOTE}</p>
-        <p data-testid="facility-cost-per-capita-caveat">
-          <span className="font-medium text-warn">1인당 참고치 — {PER_CAPITA_NON_CLAIM}</span>{" "}
-          {per_capita.caveat}
-        </p>
-        {/* Population basis + reference period, beside the two figures derived from
-            it. Page 3's denominator is the cost model's own SGIS population; it is
-            named here rather than assumed (docs/FACILITY_COST_MODEL_V1.md §6). */}
-        <p data-testid="facility-cost-population-basis">
-          인구 기준: {official_input.population_source_id ?? "출처 미제공"}
-          {official_input.population_reference_period
-            ? ` · 기준 시점 ${official_input.population_reference_period}`
-            : ""}
-          {official_input.population_definition ? ` · ${official_input.population_definition}` : ""}
-        </p>
-        <p data-testid="facility-cost-waste-basis">
-          발생량 기준: {official_input.waste_official_dataset_name} · 기준 시점{" "}
-          {official_input.waste_reference_period}
-        </p>
-      </div>
+      {/* The ONE caveat that stays adjacent to a specific figure: the per-capita
+          tile is the single number a citizen is most likely to misread as a bill,
+          so its non-claim travels with it rather than being generalised away.
+          The standard-cost footnote is card ③'s, stated once there; the population
+          and waste provenance lines moved to 계산 방법과 한계 → 출처와 계산 방법,
+          which states both in full (source id, definition, dataset, period).
+
+          The SERVED caveat is used alone. It already carries both halves — the
+          derivation ("동일 연도의 공식 인구로 나눈 환산값") and the non-claim
+          ("개인의 실제 세금 청구액이 아닙니다") — so the static `PER_CAPITA_NON_CLAIM`
+          that used to precede it was the same claim written twice, in bold, on the
+          one screen the redesign is meant to keep quiet. That constant is
+          unchanged and still stated in 계산 방법과 한계 (`NON_CLAIM_NOTICES`). */}
+      <p className="text-[0.6875rem] text-ink-subtle" data-testid="facility-cost-per-capita-caveat">
+        {/* A short pointer, not the served term: repeating `term_ko` here would
+            put the tile's own label on the screen twice. */}
+        <span className="font-medium text-ink-secondary">1인당 참고치 —</span>{" "}
+        {per_capita.caveat}
+      </p>
     </div>
   );
 }
