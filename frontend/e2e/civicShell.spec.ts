@@ -203,15 +203,27 @@ for (const vp of DESKTOP_VIEWPORTS) {
       await gotoMapView(page, "/?v=1&mode=suitability&view=score");
       await expect(page.getByTestId("map-container")).toHaveCount(1);
 
-      for (const query of [
-        "/?v=1&mode=suitability&view=cost",
-        "/?v=1&mode=flow",
-        "/?v=1&mode=transparency",
-      ]) {
+      for (const query of ["/?v=1&mode=suitability&view=cost", "/?v=1&mode=flow"]) {
         await gotoView(page, query);
         // Gone from the DOM, not hidden with CSS.
         await expect(page.getByTestId("map-container"), query).toHaveCount(0);
       }
+
+      // 데이터·출처 is NOT a map-free area: it is a dialog layered over the previous
+      // destination (`withDataDialog`, src/app/page.tsx §8), and on a cold deep link
+      // `lastArea` defaults to 지역 지표 — so that area's map legitimately stays mounted
+      // behind it (`src/app/page.dataDialog.test.tsx`, "puts a real destination behind
+      // a cold deep link, not a blank frame"). Listing it above asserted the opposite
+      // of the shipped contract, and only passed when the map lost the mount race.
+      //
+      // The contract this file can still hold is the one `citizenFlows.spec.ts` and
+      // `finalUiIntegration.spec.ts` already state: the CATALOGUE itself carries no
+      // map, and the app never ends up with two.
+      await gotoView(page, "/?v=1&mode=transparency");
+      const catalogue = page.getByTestId("data-sources-dialog");
+      await expect(catalogue).toBeVisible();
+      await expect(catalogue.getByTestId("map-container")).toHaveCount(0);
+      expect(await page.getByTestId("map-container").count()).toBeLessThanOrEqual(1);
     });
   });
 }
