@@ -1579,9 +1579,10 @@ body {
   .landfill-compact-stack {
     gap: 0.625rem; /* gap-4 (1rem) → 0.625rem */
   }
-  .landfill-compact [data-testid="landfill-limitation"] {
-    padding-block: 0.375rem; /* wep-banner 0.75rem */
-  }
+  /* The `landfill-limitation` banner rule is GONE with the banner itself (Page-2
+     remediation): removing the panel reclaims far more of the fold than tightening
+     it ever did, and a selector for an element that no longer renders is a rule
+     nobody can tell is dead. */
   .landfill-compact [data-testid="landfill-filters"],
   .landfill-compact [data-testid="landfill-kpis"] > * {
     padding-block: 0.5rem; /* wep-card 1rem */

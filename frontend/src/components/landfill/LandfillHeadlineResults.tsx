@@ -7,20 +7,30 @@
  * 총 폐기물 발생량 · 총 시설 처리량 · 수도권매립지 반입량 · 공식 반입수수료 ·
  * 톤당 환산 수수료 · 주민 1인당 환산 수수료.
  *
- * FOUR of them are bound to served values. The first two are NOT, and they say so.
- * This platform holds waste generation and facility throughput as official
- * PER-REGION, PER-STREAM series (RCIS `NTN007`/`NTN008`/…, and the facility-burden
- * indicator); no source publishes a single capital-region total, and adding the
- * series together in the browser would manufacture a statistic no publisher stands
- * behind — the one thing repo AGENTS.md forbids outright. So those two cards carry an
- * honest unavailable state that names what the platform DOES hold and where to read
- * it, rather than a number that would look official and be ours.
+ * ── The two totals, and the period they actually have ─────────────────────────
+ * 발생량 and 처리량 are published as complete per-municipality official series
+ * (RCIS `NTN007`/`NTN008`/`NTN018`/`NTN022`, and the facility-burden indicator).
+ * No publisher issues a capital-region TOTAL for either, so the total is derived
+ * here — an exact sum of those official rows, computed in
+ * `lib/capitalRegionWaste.ts`, badged 계산값, and captioned with how many
+ * municipalities it covers and what it excludes. It is never labelled a reported
+ * figure.
+ *
+ * Their reference period is the SOURCE's, not the landfill filter's. The RCIS
+ * series and the facility inventory are ANNUAL and currently 2024; the landfill
+ * inbound series is monthly and currently through 2025. The Figma mock puts "2025"
+ * on all four cards — that year is a mock, and pretending the four share one period
+ * would be the false statement. Each card therefore states its own.
+ *
+ * The two totals also carry their ACCOUNTING BASIS on the card, because the single
+ * most likely misuse of this row is dividing one by the other: generation is
+ * origin-based, throughput is facility-location-based, and the served facility
+ * envelope forbids combining them in its own `assumptions`.
  *
  * The three tonne/fee cards below are the SAME served values, formatters, and
- * provenance the dashboard has always shown. Nothing here computes a quantity: every
- * figure is the backend's own decimal string put through `lib/landfill.ts`, and an
- * unavailable value renders its SERVED reason — never 0, never a placeholder, never a
- * figure carried forward from a previous selection.
+ * provenance the dashboard has always shown. An unavailable value renders its
+ * SERVED reason — never 0, never a placeholder, never a figure carried forward from
+ * a previous selection.
  *
  * ── Prior-period comparison ───────────────────────────────────────────────────
  * The 전년 대비 deltas are computed from the SAME endpoint at the immediately
@@ -30,11 +40,14 @@
  */
 
 import type { LandfillFeePerCapita, LandfillSummary } from "../../lib/api";
+import type { CapitalRegionWaste, DerivedTotal } from "../../lib/capitalRegionWaste";
+import { coverageSentence } from "../../lib/capitalRegionWaste";
 import {
   formatEffectiveFee,
   formatKrwEok,
   formatKrwPerPerson,
   formatPercentChange,
+  formatTonQuantity,
   formatTons,
   partialYearRange,
   percentChange,
@@ -44,11 +57,16 @@ import {
 import DataStatusBadge from "../ui/DataStatusBadge";
 import KpiCard from "../ui/KpiCard";
 import {
+  CROSS_BASIS_NOTICE,
   EFFECTIVE_FEE_LABEL,
   FEE_CAVEAT,
+  GENERATION_BASIS_NOTE,
+  GENERATION_TOTAL_LABEL,
   PER_CAPITA_DESCRIPTION,
   PER_CAPITA_LABEL,
   POPULATION_BASIS_NOTE,
+  TREATMENT_BASIS_NOTE,
+  TREATMENT_TOTAL_LABEL,
   UNBOUND_TOTAL_REASON,
 } from "./shared";
 
@@ -64,6 +82,14 @@ export interface LandfillHeadlineResultsProps {
   priorSettled: boolean;
   /** How the prior period is described in the delta's own words, e.g. `2024년 3월`. */
   priorPeriodLabel: string;
+  /**
+   * The joined municipal model the two derived totals come from, already scoped to
+   * the selected 출발 지역. `null` while the underlying series are still loading —
+   * in which case the two cards state the absence rather than showing a zero.
+   */
+  capitalRegion: CapitalRegionWaste | null;
+  /** The tier noun for the counted units in the coverage sentence (시·군·구 etc.). */
+  tierNoun: string;
 }
 
 export default function LandfillHeadlineResults({
@@ -72,6 +98,8 @@ export default function LandfillHeadlineResults({
   priorSummary,
   priorSettled,
   priorPeriodLabel,
+  capitalRegion,
+  tierNoun,
 }: LandfillHeadlineResultsProps) {
   const period = summary.period;
   // A partial year is stated as the range it ACTUALLY covers. `available_through_month`
@@ -85,12 +113,20 @@ export default function LandfillHeadlineResults({
 
   return (
     <section aria-labelledby="landfill-headline-heading" data-testid="landfill-headline">
+      {/* The visible 핵심 지표 label is gone: the Figma frame puts the KPI row
+          directly under 조회 조건, and a heading that only repeats "these are the
+          numbers" above four labelled numbers costs a line of the fold and tells a
+          reader nothing. The heading itself REMAINS for the accessibility tree, so
+          the region is still enumerable and still named. */}
       <div className="landfill-compact-headline-title mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 id="landfill-headline-heading" className="text-base font-bold text-ink">
+        <h2 id="landfill-headline-heading" className="sr-only">
           핵심 지표
         </h2>
+        {/* Scoped to the landfill pair BY NAME. It used to read as the period of the
+            whole row, which was false the moment the two derived totals stated their
+            own (2024) source year. */}
         <p className="text-xs text-ink-subtle">
-          기준 기간: <span className="font-medium text-ink-muted">{periodLabel}</span>
+          수도권매립지 기준 기간: <span className="font-medium text-ink-muted">{periodLabel}</span>
           {!period.is_complete_year && (
             <span data-testid="landfill-partial-year" className="ml-1 text-warn">
               · 부분 연도 ({partialRange ?? `${period.available_through_month ?? "?"}까지`}) — 연간
@@ -105,15 +141,19 @@ export default function LandfillHeadlineResults({
         data-testid="landfill-kpis"
         className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1.6fr]"
       >
-        <UnboundTotalKpi
+        <DerivedTotalKpi
           testId="landfill-kpi-generation"
-          label="총 폐기물 발생량"
-          detail="공식 발생량은 지역별·폐기물 계열별로만 공표되며, 이를 하나로 더한 공식 총계는 없습니다. 아래 지역별 비교에서 계열별 값을 확인할 수 있습니다."
+          label={GENERATION_TOTAL_LABEL}
+          basisNote={GENERATION_BASIS_NOTE}
+          total={capitalRegion?.generation ?? null}
+          tierNoun={tierNoun}
         />
-        <UnboundTotalKpi
+        <DerivedTotalKpi
           testId="landfill-kpi-treatment"
-          label="총 시설 처리량"
-          detail="시설 처리량은 시설 소재지 기준의 지역별 지표로만 제공되며, 이를 합산한 공식 총계는 없습니다. 아래 지역별 비교에서 지역 단위 값을 확인할 수 있습니다."
+          label={TREATMENT_TOTAL_LABEL}
+          basisNote={TREATMENT_BASIS_NOTE}
+          total={capitalRegion?.throughput ?? null}
+          tierNoun={tierNoun}
         />
         <KpiCard
           size="hero"
@@ -134,41 +174,86 @@ export default function LandfillHeadlineResults({
         />
         <FeeCard
           summary={summary}
+          periodLabel={periodLabel}
           priorSummary={priorSummary}
           priorSettled={priorSettled}
           priorPeriodLabel={priorPeriodLabel}
         />
       </dl>
+      {/* One line, directly under the row it qualifies. The two derived totals are
+          adjacent on screen and are both tonnages, which is precisely why the
+          prohibition on dividing them has to be visible without expanding anything. */}
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-subtle" data-testid="landfill-kpi-basis-note">
+        {CROSS_BASIS_NOTICE}
+      </p>
     </section>
   );
 }
 
 /**
- * A Figma headline concept this platform cannot serve as one number.
+ * A headline total this platform DERIVES from the official per-municipality series.
  *
- * Rendered rather than dropped, because silently omitting it would hide the gap; and
- * rendered WITHOUT a value, because the alternative — a browser-side sum of official
- * per-region series — would put a figure on screen that no publisher issued. The
- * badge is the neutral 자료 없음 gray, not amber: amber cautions about a value that
- * exists (docs/ui-refresh/design-tokens.md §"Missing data").
+ * The arithmetic is an exact sum of served values (`lib/capitalRegionWaste.ts`), so
+ * the figure is reproducible from the same endpoints the table below reads. It is
+ * badged 계산값 rather than 공식 보고값 — no publisher issues this number — and its
+ * caption states the source year, the accounting basis, how many municipalities
+ * were counted, and anything excluded from the sum.
+ *
+ * With no value to sum (the series has not arrived, or the selection has no
+ * municipalities) it shows the served-absence reason. The badge is then the neutral
+ * 자료 없음 gray, not amber: amber cautions about a value that exists
+ * (docs/ui-refresh/design-tokens.md §"Missing data").
  */
-function UnboundTotalKpi({
+function DerivedTotalKpi({
   testId,
   label,
-  detail,
+  basisNote,
+  total,
+  tierNoun,
 }: {
   testId: string;
   label: string;
-  detail: string;
+  basisNote: string;
+  total: DerivedTotal | null;
+  tierNoun: string;
 }) {
+  if (total == null || total.tons === null) {
+    return (
+      <KpiCard
+        testId={testId}
+        label={label}
+        status={<DataStatusBadge status="missing" reason={UNBOUND_TOTAL_REASON} />}
+        unavailableReason={UNBOUND_TOTAL_REASON}
+        valueTestId={`${testId}-unavailable`}
+        caption={
+          <span className="block">
+            시·군·구별 공식 {label.replace("총 ", "")} 자료를 아직 불러오지 못했습니다. 값이 0이라는
+            뜻이 아닙니다.
+          </span>
+        }
+      />
+    );
+  }
   return (
     <KpiCard
       testId={testId}
       label={label}
-      status={<DataStatusBadge status="missing" reason={UNBOUND_TOTAL_REASON} />}
-      unavailableReason={UNBOUND_TOTAL_REASON}
-      valueTestId={`${testId}-unavailable`}
-      caption={<span className="block">{detail}</span>}
+      value={formatTonQuantity(total.tons)}
+      status={<DataStatusBadge status="derived" />}
+      valueTestId={`${testId}-value`}
+      caption={
+        <>
+          {/* The card's OWN period. It is deliberately not the landfill period: the
+              RCIS and facility series are annual and currently a year behind. */}
+          <span className="block" data-testid={`${testId}-period`}>
+            기준 기간 {total.referenceYear != null ? `${total.referenceYear}년` : "확인 필요"} ·{" "}
+            {basisNote}
+          </span>
+          <span className="mt-0.5 block" data-testid={`${testId}-coverage`}>
+            {coverageSentence(total, tierNoun)}
+          </span>
+        </>
+      }
     />
   );
 }
@@ -184,11 +269,13 @@ function UnboundTotalKpi({
  */
 function FeeCard({
   summary,
+  periodLabel,
   priorSummary,
   priorSettled,
   priorPeriodLabel,
 }: {
   summary: LandfillSummary;
+  periodLabel: string;
   priorSummary: LandfillSummary | null;
   priorSettled: boolean;
   priorPeriodLabel: string;
@@ -211,6 +298,11 @@ function FeeCard({
           <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
             {formatKrwEok(summary.total_inbound_fee_krw)}
           </dd>
+          {/* This card's own period, stated on the card rather than inherited from a
+              row-level line — the two cards to its left are a different year. */}
+          <p className="mt-1 text-xs text-ink-subtle" data-testid="landfill-fee-card-period">
+            공식 보고값 · 기준 기간 {periodLabel}
+          </p>
           <p className="mt-1 text-xs text-ink-subtle" data-testid="landfill-fee-caveat">
             {FEE_CAVEAT}
           </p>

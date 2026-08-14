@@ -514,14 +514,16 @@ test.describe("primary surfaces stay in plain Korean", () => {
     }
   });
 
-  test("a standing disclaimer is not an alert", async ({ page }) => {
+  test("a successful screen carries no standing disclaimer panel at all", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await mockLandfillBackend(page);
     await page.goto("/?v=1&mode=flow");
-    // The metropolitan-scope banner is standing information, not something gone
-    // wrong: it must never interrupt a screen reader.
-    await expect(page.getByTestId("landfill-limitation")).toBeVisible();
-    await expect(page.getByTestId("landfill-limitation")).not.toHaveAttribute("role", "alert");
+    // Page-2 remediation: the metropolitan-scope panel is gone. Standing information
+    // that never changes does not belong above an analytical dashboard — it now
+    // lives beside the rows it governs and in 근거와 한계. Nothing on a successful
+    // screen may be an alert, and no banner may sit above the values.
+    await expect(page.getByTestId("landfill-limitation")).toHaveCount(0);
+    await expect(page.getByTestId("landfill-dashboard").locator("[role='alert']")).toHaveCount(0);
   });
 
   test("no live region is trapped inside a collapsed disclosure", async ({ page }) => {

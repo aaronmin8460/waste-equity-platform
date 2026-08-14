@@ -219,8 +219,20 @@ export default function LandfillFilterPanel({
 }
 
 /**
- * 현재 선택 — the four asked-for conditions restated as text, plus one sentence
- * saying what the platform currently holds for them.
+ * 현재 선택 — the asked-for conditions as ONE compact line, plus one sentence saying
+ * what the platform currently holds for them.
+ *
+ * ── Why it is a line and not a definition list ────────────────────────────────
+ * It used to be a four-entry `<dl>` — 연도 2023 · 기간 7월 · 출발 지역 경기도 ·
+ * 폐기물 종류 생활 — sitting immediately below the four labelled `<select>`s that
+ * already say exactly that. Repeating each control's LABEL beside each control's
+ * VALUE, one line under the control, is duplication rather than a summary, and it
+ * cost four lines of the fold. The Figma frame agrees: `125:5092` shows one inline
+ * line, "2025년 · 연간 · 전체 폐기물".
+ *
+ * The VALUES are kept, in the controls' own order, so the selection is still
+ * readable as a sentence and a reader who has scrolled the controls out of view can
+ * still see what was asked. What went is the four repeated field names.
  *
  * It reports STATE, never a result: no count, no total, no share, and no number the
  * backend did not serve. Before a response arrives it says so rather than showing a
@@ -243,32 +255,27 @@ function LandfillSelectionSummary({
   waste: string | null;
   outcome: LandfillSelectionOutcome;
 }) {
-  const items: { term: string; value: string }[] = [
+  const values: string[] = [
     // The bare year, exactly as the `<option>` spells it — deliberately NOT
     // `2024년`. `기준 기간 …년` is the SERVED period, and several specs wait for it
     // to prove new values have arrived; echoing it from filter state would satisfy
     // that wait while the previous period's numbers were still on screen.
-    { term: "연도", value: year != null ? String(year) : "최신 완결연도" },
-    { term: "기간", value: month != null ? `${month}월` : "연간" },
-    { term: "출발 지역", value: originLabel(origin) },
-    { term: "폐기물 종류", value: waste ?? "전체" },
+    year != null ? String(year) : "최신 완결연도",
+    month != null ? `${month}월` : "연간",
+    originLabel(origin),
+    waste ?? "전체",
   ];
   return (
     <div
-      className="mt-3 border-t border-hairline pt-3"
+      className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-hairline pt-3"
       data-testid="landfill-selection"
     >
       <p className="text-xs font-medium text-ink-subtle">현재 선택</p>
-      <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {items.map((item) => (
-          <div key={item.term}>
-            <dt className="inline text-ink-subtle">{item.term} </dt>
-            <dd className="inline font-medium text-ink">{item.value}</dd>
-          </div>
-        ))}
-      </dl>
+      <p className="text-xs font-medium text-ink" data-testid="landfill-selection-values">
+        {values.join(" · ")}
+      </p>
       <p
-        className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-ink-subtle"
+        className="flex flex-wrap items-center gap-1.5 text-xs text-ink-subtle"
         data-testid="landfill-selection-status"
       >
         <LandfillSelectionOutcomeText outcome={outcome} />

@@ -49,13 +49,60 @@ export const PER_CAPITA_LABEL = "주민 1인당 환산 반입수수료";
 export const EFFECTIVE_FEE_LABEL = "톤당 환산 수수료";
 
 /**
- * Why the two Figma headline totals carry no number.
+ * Why a headline total carries no number.
  *
- * Short enough to read as a value substitute in a KPI card; the card's caption
- * carries the full explanation. It states the absence of an official TOTAL, not the
- * absence of the data — the per-region series are published and are on this page.
+ * This is now only ever reached when the underlying per-region series has not
+ * ARRIVED — not when it is merely unaggregated. The totals themselves are built
+ * deterministically from the official rows (`lib/capitalRegionWaste.ts`); what this
+ * reason states is the absence of the source series for the current selection.
  */
-export const UNBOUND_TOTAL_REASON = "합산 공식값 없음";
+export const UNBOUND_TOTAL_REASON = "지역별 공식 자료 없음";
+
+/** The two Figma headline concepts this platform derives from per-region series. */
+export const GENERATION_TOTAL_LABEL = "총 폐기물 발생량";
+export const TREATMENT_TOTAL_LABEL = "총 시설 처리량";
+
+/**
+ * The accounting bases of the two derived totals, in plain Korean.
+ *
+ * They are stated ON the cards, not in a disclosure, because the single most
+ * likely misuse of this row is reading 처리량 ÷ 발생량 as a treatment rate. The two
+ * figures count different things over different geographies: generation is where
+ * waste AROSE, throughput is what facilities SITED in the region processed —
+ * including waste that arose elsewhere, and excluding this region's waste treated
+ * outside it. The served `facility-burden` envelope states the same prohibition in
+ * its own `assumptions`.
+ */
+export const GENERATION_BASIS_NOTE = "발생지 기준";
+export const TREATMENT_BASIS_NOTE = "시설 소재지 기준";
+
+/**
+ * Stated once, beneath the KPI row: the two derived totals may not be divided by
+ * one another. Short, because a caveat nobody finishes reading protects nobody.
+ */
+export const CROSS_BASIS_NOTICE =
+  "발생량은 발생지 기준, 시설 처리량은 시설 소재지 기준입니다. 서로 나누거나 빼서 처리율로 읽을 수 없습니다.";
+
+/**
+ * The municipal contract-payment column group's own name and unit line, used in the
+ * 지역별 상세 현황 drill-down.
+ *
+ * It names the DATASET, the SPATIAL UNIT, and the YEAR in one string, because those
+ * three are exactly what distinguish it from the official inbound fee two column
+ * groups to its left.
+ */
+export const CONTRACT_PAYMENT_GROUP_LABEL = "생활폐기물 수집·운반 계약 지급액";
+export const CONTRACT_PAYMENT_TOTAL_LABEL = "총 계약 지급액";
+export const CONTRACT_PAYMENT_PER_CAPITA_LABEL = "1인당 계약 지급액";
+
+/**
+ * Why the landfill columns are blank on a 시·군·구 row.
+ *
+ * Not "자료 없음": the value is not missing, it does not EXIST at this grain. The
+ * corporation reports inbound per 시·도 and declares no municipal origin, so a
+ * municipal inbound figure would have to be invented by apportionment.
+ */
+export const LANDFILL_NOT_AT_MUNICIPAL_GRAIN = "시·도 단위 보고";
 
 /**
  * The population basis, stated where the per-resident conversion is read.

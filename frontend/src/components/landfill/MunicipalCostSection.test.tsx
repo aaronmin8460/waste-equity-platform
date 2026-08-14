@@ -40,6 +40,7 @@ import type {
 import { FORBIDDEN_PRIMARY_TOKENS } from "../../lib/glossary";
 import MunicipalCostSection from "./MunicipalCostSection";
 import {
+  MUNICIPAL_COST_DISTINCTION_TITLE,
   MUNICIPAL_COST_NO_MATCH_TITLE,
   MUNICIPAL_COST_SECTION_TITLE,
   MUNICIPAL_COST_UNAVAILABLE_LABEL,
@@ -306,9 +307,16 @@ describe("distinction from the official landfill dataset", () => {
     expect(banner).toHaveTextContent("회계 기준·제공기관·공간 단위가 모두 달라");
   });
 
-  it("carries a text severity label, so the caution never depends on colour", () => {
+  it("states the distinction in words, never as a colour or a severity chip", () => {
     renderSection();
-    expect(screen.getByTestId("municipal-cost-distinction-tone")).toHaveTextContent("주의");
+    // Page-2 remediation: this is no longer a coloured `tone="warning"` banner. It
+    // is a compact note — so there is no severity chip to assert, and the whole
+    // statement has to survive in TEXT. That is the stronger contract: a caution
+    // carried by a chip and a background is a caution a grayscale render loses.
+    const note = screen.getByTestId("municipal-cost-distinction");
+    expect(note.className).not.toContain("wep-banner");
+    expect(note).toHaveTextContent(MUNICIPAL_COST_DISTINCTION_TITLE);
+    expect(note).toHaveTextContent("두 값을 더하거나 같은 비용으로 비교할 수 없습니다");
   });
 
   it("is not an alert — a standing caveat must not interrupt on every render", () => {

@@ -30,16 +30,38 @@
  *     scopes every value on the screen and deleting it would remove the only way to
  *     ask a per-origin question.
  *
- * The standing scope banner is still exactly ONE `tone="info"` InfoBanner carrying
- * the metropolitan-only sentence verbatim, and it is still the only banner on a
- * successful screen: a permanent caveat repeated in a second coloured panel stops
- * being read.
+ * ── Page-2 remediation ─────────────────────────────────────────────────────────
+ * 1. NO standing notice banner. The screen previously opened with a coloured
+ *    `자료 범위` panel carrying two permanent paragraphs, and the municipal section
+ *    opened with a second coloured panel carrying two more. Between them they
+ *    consumed the top of a presentation screen with text that never changes, which
+ *    is how a permanent caveat stops being read. None of it is LOST — every
+ *    sentence moved to where it is actually used:
+ *      · the 시·도-grain limitation → the 지역별 상세 현황 note, beside the rows it
+ *        governs, and 한계와 주의사항;
+ *      · the period / "absent is not zero" rule → 한계와 주의사항;
+ *      · the served contract-vs-inbound-fee distinction → the 계약 지급액 column
+ *        group's own footnote, rendered verbatim at the point of use.
+ *    Failure alerts, loading, and empty states are untouched — those are actionable
+ *    and transient, which is exactly what a banner is for.
  *
- * The 시·군·구 수집·운반 계약 지급액 module is NOT in the Figma design and is NOT
- * removed. It is a real analytical surface over a separate published dataset; the
- * redesign lowers its visual priority (it sits last, after 근거와 한계) and changes
- * nothing about its filters, table, methodology, or limitations.
+ * 2. 총 폐기물 발생량 and 총 시설 처리량 now carry REAL values and REAL periods. They
+ *    are exact sums of the official per-municipality series (`lib/capitalRegionWaste.ts`),
+ *    badged 계산값, each stating its own source year — which is NOT the landfill
+ *    year, and never the Figma mock's 2025.
+ *
+ * 3. 지역별 상세 현황 is now two-grain: the three metropolitan rows expand to their
+ *    자치구 / 군·구 / 시·군, which is what the Figma frame asks for in writing. The
+ *    2024 수집·운반 계약 지급액 appears on those municipal rows — the grain it is
+ *    actually published on — as its own column group, never blended into the
+ *    official inbound fee.
+ *
+ * The standalone 시·군·구 수집·운반 계약 지급액 module is KEPT below: it owns the
+ * dataset's filters, source-file inventory, rejected-file list and methodology,
+ * none of which belongs in a table cell. What it lost is its coloured banner.
  */
+
+import { useMemo } from "react";
 
 import type {
   FacilityBurdenEnvelope,
@@ -47,8 +69,16 @@ import type {
   LandfillOrigin,
   LandfillSummary,
   LandfillTrends,
+  MunicipalCostResponse,
   ReportingPerCapitaEnvelope,
+  ReportingWasteStatisticsEnvelope,
 } from "../lib/api";
+import type { CapitalRegionWaste } from "../lib/capitalRegionWaste";
+import {
+  buildCapitalRegionWaste,
+  MUNICIPAL_TIER_LABELS,
+  scopeOfLandfillOrigin,
+} from "../lib/capitalRegionWaste";
 import type { LandfillUnavailableState } from "../lib/landfill";
 import { formatTons } from "../lib/landfill";
 import LandfillCompositionSection from "./landfill/LandfillCompositionSection";
@@ -65,13 +95,7 @@ import { LandfillError, LandfillLoading, LandfillNoData } from "./landfill/Landf
 import LandfillTrendSection from "./landfill/LandfillTrendSection";
 import type { MunicipalCostSectionProps } from "./landfill/MunicipalCostSection";
 import MunicipalCostSection from "./landfill/MunicipalCostSection";
-import {
-  HEADER_SUMMARY,
-  LIMITATION_NOTICE,
-  PERIOD_NOTICE,
-  periodLabelOf,
-} from "./landfill/shared";
-import InfoBanner from "./ui/InfoBanner";
+import { HEADER_SUMMARY, periodLabelOf } from "./landfill/shared";
 import PageHeader from "./ui/PageHeader";
 
 export interface LandfillDashboardData {
@@ -143,6 +167,13 @@ export interface LandfillDashboardProps {
   reportingPerCapita: ReportingPerCapitaEnvelope | null;
   facilityBurden: FacilityBurdenEnvelope | null;
   /**
+   * The official per-municipality generation series (RCIS reporting geography).
+   * Already loaded by the page for the 지역 지표 area, so this view issues no
+   * request of its own; it is the numerator of the 총 폐기물 발생량 total and of the
+   * 발생량 columns in the municipal drill-down.
+   */
+  reportingStats: ReportingWasteStatisticsEnvelope | null;
+  /**
    * The area's one-line orientation strip, supplied by the page. It renders inside
    * this view's header, directly BELOW the <h1> it supports — the same position it
    * occupies in the other three areas. (Rendering it above the dashboard instead
@@ -168,6 +199,17 @@ export interface LandfillDashboardProps {
    * landfill contract above stays exactly as it was.
    */
   municipalCost: MunicipalCostSectionProps;
+  /**
+   * The UNFILTERED municipal contract-payment response, joined into the 지역별 상세
+   * 현황 drill-down.
+   *
+   * Deliberately NOT `municipalCost.data`: that one is scoped by the section's own
+   * 자료 상태 control, whose default is 계산 가능 — so it holds 38 of the 66
+   * municipalities. A municipality filtered OUT of that section must never appear in
+   * the table as though it had no data, and the metropolitan coverage counts must
+   * describe the published scope rather than the current filter.
+   */
+  municipalCostAll: MunicipalCostResponse | null;
 }
 
 export default function LandfillDashboard({
@@ -187,11 +229,41 @@ export default function LandfillDashboard({
   priorSummary,
   priorSettled,
   reportingPerCapita,
+  reportingStats,
   facilityBurden,
   orientation,
   title,
   municipalCost,
+  municipalCostAll,
 }: LandfillDashboardProps) {
+  /**
+   * The two-grain capital-region model, scoped to the SAME 출발 지역 the landfill
+   * values are scoped to — so the KPI row and the table describe one selection
+   * rather than two. The crosswalk is not optional: the filter speaks
+   * administrative sido codes (11/28/41) and every region row speaks SGIS
+   * (11/23/31), so joining on the raw digits would silently empty 인천 and 경기.
+   *
+   * Built here, once, and handed to both consumers: two independent joins over the
+   * same four envelopes would be two chances for the totals and the rows beneath
+   * them to disagree.
+   */
+  const scope = scopeOfLandfillOrigin(origin);
+  const capitalRegion: CapitalRegionWaste = useMemo(
+    () =>
+      buildCapitalRegionWaste({
+        reportingStats,
+        reportingPerCapita,
+        facilityBurden,
+        municipalCost: municipalCostAll,
+        scope,
+      }),
+    [reportingStats, reportingPerCapita, facilityBurden, municipalCostAll, scope],
+  );
+  // The tier noun for the units the totals counted. Only a single-metropolitan
+  // selection has ONE true tier; the capital region as a whole mixes all three, so
+  // it gets the aggregate noun rather than a wrong specific one.
+  const tierNoun = scope ? MUNICIPAL_TIER_LABELS[scope] : "시·군·구";
+
   // What the filter summary states. Derived from the props the page already hands
   // down — no second request state, and no classification of its own.
   const outcome: LandfillSelectionOutcome = data
@@ -222,15 +294,8 @@ export default function LandfillDashboard({
           {orientation}
         </PageHeader>
 
-        {/* ONE compact neutral banner. The metropolitan-only sentence is preserved
-            verbatim; the detailed caveats live in the 한계와 주의사항 disclosure
-            rather than being repeated in a second coloured panel. It is a standing
-            statement of what this dataset covers, so it must stay visible without
-            expanding anything — and must NOT be role="alert". */}
-        <InfoBanner tone="info" title="자료 범위" testId="landfill-limitation">
-          <p>{LIMITATION_NOTICE}</p>
-          <p className="mt-1 text-xs">{PERIOD_NOTICE}</p>
-        </InfoBanner>
+        {/* No standing notice panel here — see the file header. The scope sentence
+            it carried is in the page header's own description, beside the <h1>. */}
 
         <LandfillFilterPanel
           availableYears={availableYears}
@@ -263,6 +328,12 @@ export default function LandfillDashboard({
             priorSettled={priorSettled}
             reportingPerCapita={reportingPerCapita}
             facilityBurden={facilityBurden}
+            capitalRegion={capitalRegion}
+            tierNoun={tierNoun}
+            contractReferenceYear={municipalCostAll?.meta.reference_year ?? null}
+            contractDistinction={
+              municipalCostAll?.meta.difference_from_official_landfill_fee ?? null
+            }
           />
         )}
 
@@ -291,12 +362,20 @@ function LandfillBody({
   priorSettled,
   reportingPerCapita,
   facilityBurden,
+  capitalRegion,
+  tierNoun,
+  contractReferenceYear,
+  contractDistinction,
 }: {
   data: LandfillDashboardData;
   priorSummary: LandfillSummary | null;
   priorSettled: boolean;
   reportingPerCapita: ReportingPerCapitaEnvelope | null;
   facilityBurden: FacilityBurdenEnvelope | null;
+  capitalRegion: CapitalRegionWaste;
+  tierNoun: string;
+  contractReferenceYear: number | null;
+  contractDistinction: string | null;
 }) {
   const { summary, trends } = data;
   const periodLabel = periodLabelOf(summary.period);
@@ -324,6 +403,8 @@ function LandfillBody({
         priorSummary={priorSummary}
         priorSettled={priorSettled}
         priorPeriodLabel={priorPeriodLabel}
+        capitalRegion={capitalRegion}
+        tierNoun={tierNoun}
       />
 
       {/* Figma Row2 — the comparison and the inbound structure side by side. */}
@@ -350,7 +431,15 @@ function LandfillBody({
         </div>
       </div>
 
-      <LandfillRegionTable summary={summary} originMax={originMax} periodLabel={periodLabel} />
+      <LandfillRegionTable
+        summary={summary}
+        originMax={originMax}
+        periodLabel={periodLabel}
+        capitalRegion={capitalRegion}
+        municipalReferenceYear={capitalRegion.generation.referenceYear}
+        contractReferenceYear={contractReferenceYear}
+        contractDistinction={contractDistinction}
+      />
 
       {/* The export sits INSIDE the official-fee block, above the methodology and
           well above the municipal section, so the files it produces are unmistakably

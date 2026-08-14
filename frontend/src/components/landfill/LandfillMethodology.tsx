@@ -24,6 +24,7 @@ import {
   LIMITATION_NOTICE,
   MOIS_SOURCE_ID,
   PER_CAPITA_LABEL,
+  PERIOD_NOTICE,
 } from "./shared";
 
 export interface LandfillMethodologyProps {
@@ -160,6 +161,14 @@ export default function LandfillMethodology({ summary }: LandfillMethodologyProp
 
         <Accordion label="한계와 주의사항" testId="landfill-limitation-details">
           <p>{LIMITATION_NOTICE}</p>
+          {/* Moved here from the removed standing banner. It is a permanent rule
+              about how to read every figure on the screen, not an event, so it
+              belongs with the other permanent rules rather than in a coloured panel
+              above the dashboard that a returning reader has already stopped
+              seeing. Nothing about it changed. */}
+          <p className="mt-1" data-testid="landfill-period-notice">
+            {PERIOD_NOTICE}
+          </p>
           <ul className="mt-2 list-disc space-y-1 pl-4" data-testid="landfill-caveats">
             {summary.caveats.map((caveat) => (
               <li key={caveat}>{caveat}</li>

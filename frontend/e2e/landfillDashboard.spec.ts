@@ -179,8 +179,12 @@ for (const vp of VIEWPORTS) {
       const rows = page.getByTestId("landfill-region-row");
       await expect(rows).toHaveCount(3);
       const tableTons = await Promise.all(
+        // By test id, not by column index: the row now leads with the municipal
+        // generation and throughput columns, so `td` index 0 is a different dataset.
         [0, 1, 2].map(async (index) =>
-          parseTons(await rows.nth(index).locator("td").first().innerText()),
+          parseTons(
+            await rows.nth(index).getByTestId("landfill-region-quantity").innerText(),
+          ),
         ),
       );
       const barTons = await Promise.all(
@@ -324,9 +328,9 @@ test.describe("1440×900 — the refreshed workflow", () => {
     await expect(page.getByTestId("landfill-selection-status")).toContainText(
       "자료를 불러오지 못해",
     );
-    // The standing scope notice survives every state, and never becomes an alert.
-    await expect(page.getByTestId("landfill-limitation")).toBeVisible();
-    await expect(page.getByTestId("landfill-limitation")).not.toHaveAttribute("role", "alert");
+    // Page-2 remediation: there is no standing scope panel in ANY state. The one
+    // banner a failure may show is the retryable alert asserted above it.
+    await expect(page.getByTestId("landfill-limitation")).toHaveCount(0);
     await expectNoHorizontalOverflow(page, "error");
   });
 

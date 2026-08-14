@@ -450,6 +450,22 @@ export default function Home() {
   const mcMatchesFilters = mcResult?.key === mcKey;
   const mcData = mcMatchesFilters ? mcResult.data : null;
   const mcError = mcMatchesFilters ? mcResult.error : null;
+  /**
+   * The UNFILTERED municipal-payment response, for the 지역별 상세 현황 drill-down.
+   *
+   * A second request to the same endpoint, and deliberately so. `mcResult` above is
+   * scoped by the section's own three controls, whose released default is
+   * `status=AVAILABLE` — so it holds 38 of the 66 municipalities. Joining the
+   * drill-down against THAT would have printed 자료 없음 on every PARTIAL
+   * municipality (a value exists, with a caveat) and would have made the
+   * metropolitan coverage counts read 13/25 for 서울 where 17 municipalities have
+   * published an amount. A filter on one surface must never look like an absence on
+   * another.
+   *
+   * It takes no filters, so it is fetched once per visit to the area and is never
+   * re-requested when the section's controls move.
+   */
+  const [mcAll, setMcAll] = useState<MunicipalCostResponse | null>(null);
   const [suit, setSuit] = useState<SuitabilityMeta | null>(null);
   const [suitError, setSuitError] = useState<string | null>(null);
   const [selected, setSelected] = useState<CandidateDetail | null>(null);
@@ -965,6 +981,28 @@ export default function Home() {
     // does not change how often this runs — it only keeps the tag written into
     // `mcResult` in step with the request that produced it.
   }, [mode, mcKey, mcSido, mcStatus, mcSort]);
+
+  // The unfiltered municipal-payment set the 지역별 상세 현황 drill-down joins against
+  // (see `mcAll`). No filter state in its dependencies, so the section's controls
+  // never re-issue it — and a failure here leaves the drill-down's municipal columns
+  // as an honest absence while the official landfill values and the section's own
+  // filtered table both carry on.
+  useEffect(() => {
+    if (mode !== "flow" || mcAll !== null) return;
+    let cancelled = false;
+    fetchMunicipalCosts({ sido: null, status: null, sort: "region_name_asc" })
+      .then((data) => {
+        if (!cancelled) setMcAll(data);
+      })
+      .catch(() => {
+        // Deliberately silent: the section below reports municipal-request failures
+        // with its own retryable message, and a second alert for the same endpoint
+        // would tell the reader the same thing twice.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, mcAll]);
 
   const retry = useCallback(() => {
     setError(null);
@@ -2054,11 +2092,17 @@ export default function Home() {
           maxMonth={flowMaxMonth}
           priorSummary={flowPriorSummary}
           priorSettled={flowPriorSettled}
-          // The two SERVED equity indicators the 발생·처리 비교 reads. Already loaded
-          // for the 지역 지표 area, so the landfill view issues no extra request and
-          // computes no aggregate of its own.
+          // The SERVED per-municipality series the 발생·처리 비교, the two derived
+          // headline totals, and the 시·군·구 drill-down all read. Already loaded for
+          // the 지역 지표 area, so the landfill view issues no extra request; the
+          // joining and the summation live in `lib/capitalRegionWaste.ts`.
           reportingPerCapita={data?.reportingPerCapita ?? null}
+          reportingStats={data?.reportingStats ?? null}
           facilityBurden={data?.facilityBurden ?? null}
+          // The UNFILTERED 2024 municipal payments, for the 지역별 상세 현황
+          // drill-down. Kept separate from the filtered `municipalCost` below so a
+          // scope chosen in that section can never read as missing data in the table.
+          municipalCostAll={mcAll}
           // The 2024 municipal contract-payment dataset. One prop object, so the
           // two datasets' state can never be crossed at this call site.
           municipalCost={{

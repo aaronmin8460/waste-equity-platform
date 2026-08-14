@@ -123,9 +123,12 @@ for (const vp of VIEWPORTS) {
       // columns, so the header is now TWO rows: three group cells over five leaf
       // columns, plus 지역 spanning both rows. Every leaf keeps its own scope="col"
       // so the grouping is announced rather than merely drawn.
-      await expect(table.locator("thead th")).toHaveCount(8);
-      await expect(table.locator('thead th[scope="col"]')).toHaveCount(6);
-      await expect(table.locator("thead th[colspan]")).toHaveCount(2);
+      // Two-grain header (Figma 125:5367): five column GROUPS over eleven leaf
+      // columns, plus the row-spanning 지역 column. The grouping is announced
+      // rather than merely drawn.
+      await expect(table.locator("thead th[colspan]")).toHaveCount(5);
+      await expect(table.locator('thead th[scope="col"]')).toHaveCount(12);
+      await expect(table.locator("thead th")).toHaveCount(17);
       // One row per served origin, at every width.
       await expect(page.getByTestId("landfill-region-row")).toHaveCount(3);
       // The page itself still never scrolls sideways.
@@ -160,16 +163,13 @@ for (const vp of VIEWPORTS) {
       }) => {
         await mockLandfillBackend(page);
         await gotoLandfill(page);
-        // The four things a reader needs first must be above the fold at the desktop
+        // The things a reader needs first must be above the fold at the desktop
         // targets — the Phase 0 complaint was that a warning block pushed the values
-        // down. Asserted with `toBeInViewport`, which is about intersection rather
-        // than exact pixel geometry, so a different font on another machine cannot
-        // flip the result over a one-line wrap.
-        for (const testId of [
-          "landfill-limitation",
-          "landfill-filters",
-          "landfill-kpi-quantity",
-        ]) {
+        // down, and the Page-2 remediation finished the job by deleting the block.
+        // Asserted with `toBeInViewport`, which is about intersection rather than
+        // exact pixel geometry, so a different font on another machine cannot flip
+        // the result over a one-line wrap.
+        for (const testId of ["landfill-filters", "landfill-kpi-quantity"]) {
           await expect(
             page.getByTestId(testId),
             `${testId} is fully within the first viewport`,
@@ -219,44 +219,38 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     }
   });
 
-  test("the standing limitation is one compact info banner, not an alert", async ({ page }) => {
+  test("a successful screen carries no notice banner anywhere", async ({ page }) => {
     await mockLandfillBackend(page);
     await gotoLandfill(page);
-    const banner = page.getByTestId("landfill-limitation");
-    await expect(banner).toBeVisible();
-    // Severity is carried by a text word, never by colour alone.
-    await expect(page.getByTestId("landfill-limitation-tone")).toContainText("알림");
-    // A permanent disclaimer must not be an alert.
-    await expect(banner).not.toHaveAttribute("role", "alert");
-    await expect(banner).toContainText("시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다");
 
-    // It is subordinate to the values: it sits ABOVE the KPI row and does not
-    // overlap it, and it occupies a small share of the viewport rather than
-    // dominating the screen the way the Phase 0 amber block did. Both are ordering
-    // and proportion checks rather than exact text metrics, so a font substitution
-    // that adds a wrapped line cannot flip them.
-    const bannerBox = (await banner.boundingBox())!;
-    const kpiBox = (await page.getByTestId("landfill-kpis").boundingBox())!;
-    expect(bannerBox.y + bannerBox.height, "banner precedes and clears the KPI row")
-      .toBeLessThanOrEqual(kpiBox.y);
-    expect(bannerBox.height, "banner does not dominate the viewport").toBeLessThan(900 * 0.25);
+    // Page-2 remediation requirement A. The screen used to open with TWO coloured
+    // standing panels — the landfill 자료 범위 notice and the municipal-cost
+    // distinction — between them consuming the top of a presentation screen with
+    // text that never changes. Both are gone as panels; neither statement is lost.
+    await expect(page.getByTestId("landfill-limitation")).toHaveCount(0);
+    await expect(page.locator('[data-testid="landfill-dashboard"] .wep-banner')).toHaveCount(0);
 
-    // Exactly one banner in the OFFICIAL LANDFILL section.
-    //
-    // This used to count `.wep-banner` across the whole dashboard, which was the
-    // same thing while the page held one dataset. It no longer is: the municipal
-    // contract-payment section renders its own warning banner — the notice that
-    // stops its 지급액 being read as a landfill fee — and that banner is required,
-    // not surplus. So the count is scoped to the section this test is about
-    // rather than relaxed.
-    const officialBanners = page.locator(
-      '[data-testid="landfill-dashboard"] .wep-banner:not([data-testid="municipal-cost-section"] .wep-banner)',
+    // The scope sentence is still on the page, in 근거와 한계 and beside the rows
+    // it governs.
+    await expect(page.getByTestId("landfill-region-grain-note")).toContainText(
+      "광역지자체(시·도) 단위로만 보고",
     );
-    await expect(officialBanners).toHaveCount(1);
-    // …and the municipal section still carries its own distinct notice.
-    await expect(
-      page.getByTestId("municipal-cost-section").locator(".wep-banner"),
-    ).not.toHaveCount(0);
+    await expect(page.getByTestId("landfill-limitation-details")).toContainText(
+      "시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다",
+    );
+
+    // And the municipal distinction survives as a compact note — still visible on
+    // arrival, still not behind a disclosure, still the served sentence verbatim.
+    const distinction = page.getByTestId("municipal-cost-distinction");
+    await expect(distinction).toBeVisible();
+    await expect(distinction).not.toHaveAttribute("role", "alert");
+    await expect(page.getByTestId("municipal-cost-distinction-served")).not.toBeEmpty();
+
+    // With the panel gone, the filters now lead the screen and clear the KPI row.
+    const filtersBox = (await page.getByTestId("landfill-filters").boundingBox())!;
+    const kpiBox = (await page.getByTestId("landfill-kpis").boundingBox())!;
+    expect(filtersBox.y + filtersBox.height, "filters precede and clear the KPI row")
+      .toBeLessThanOrEqual(kpiBox.y);
   });
 
   test("filters drive a load and never leave stale values on screen", async ({ page }) => {
@@ -531,7 +525,8 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     // The single remaining origin row accounts for the whole scoped total.
     const total = await totalOf();
     const rowQuantity = parseTons(
-      await page.getByTestId("landfill-region-row").locator("td").first().innerText(),
+      // By test id: the first `<td>` is now the municipal generation column.
+      await page.getByTestId("landfill-region-quantity").innerText(),
     );
     expect(rowQuantity).toBeCloseTo(total, 0);
 

@@ -317,7 +317,17 @@ function renderDashboard(props: Partial<Parameters<typeof LandfillDashboard>[0]>
       // here keeps this file about the official landfill dataset; the scatter's own
       // join is covered by `lib/landfillScatter.test.ts`.
       reportingPerCapita={null}
+      // The per-municipality generation series behind 총 폐기물 발생량 and the 발생량
+      // columns of the drill-down. Null here keeps this file about the official
+      // landfill dataset and proves the honest-absence path; the join and the
+      // summation have their own suite (`lib/capitalRegionWaste.test.ts`), and the
+      // populated-drill-down behaviour is asserted in
+      // `landfill/LandfillRegionTable.test.tsx`.
+      reportingStats={null}
       facilityBurden={null}
+      // The UNFILTERED municipal set the drill-down joins against — distinct from
+      // the filtered `municipalCost` below, which the section owns.
+      municipalCostAll={null}
       municipalCost={municipalCostProps()}
       {...props}
     />,
@@ -325,15 +335,23 @@ function renderDashboard(props: Partial<Parameters<typeof LandfillDashboard>[0]>
 }
 
 describe("LandfillDashboard", () => {
-  it("renders the heading and the metropolitan-only limitation notice", () => {
+  it("renders the heading and keeps the metropolitan-only limitation, without a banner", () => {
     renderDashboard();
     expect(screen.getByText(TITLE)).toBeDefined();
     // Phase 5: the supporting sentence states the scope without claiming a
     // real-time figure, a resident bill, or any flow outside the inbound dataset.
     const orientation = screen.getByText(/수도권매립지로 반입된 공식 반입량과 반입수수료/);
     expect(orientation.textContent).toContain("선택한 기간과 조건");
-    expect(screen.getByTestId("landfill-limitation").textContent).toContain(
+    // Page-2 remediation: the standing 자료 범위 panel is GONE from the presentation
+    // screen. The sentence it carried is not — it is still on the page verbatim, in
+    // the 근거와 한계 disclosure, and the 시·도-grain consequence is restated in the
+    // table note beside the rows it governs.
+    expect(screen.queryByTestId("landfill-limitation")).toBeNull();
+    expect(screen.getByTestId("landfill-limitation-details").textContent).toContain(
       "광역지자체 단위 자료이며 시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다.",
+    );
+    expect(screen.getByTestId("landfill-region-grain-note").textContent).toContain(
+      "광역지자체(시·도) 단위로만 보고",
     );
   });
 
@@ -373,23 +391,33 @@ describe("LandfillDashboard", () => {
   });
 
   it("renders the grouped regional table with three metropolitan rows for 전체", () => {
-    // Figma 125:5358 groups the leaf columns under the two things they measure.
-    // The 폐기물 발생량 / 시설 처리량 groups the design also shows are deliberately
-    // ABSENT: those datasets are published on 시·군·구 units and the landfill source
-    // reports 시·도 only, so filling them would mean summing official per-district
-    // figures into a total no publisher issued.
+    // Figma 125:5367 groups the leaf columns under the five things they measure.
+    // The 폐기물 발생량 / 시설 처리량 groups the design shows are now PRESENT: they
+    // are filled from the official per-municipality series and their group total is
+    // an exact sum of those rows, stated as a 계산값 with its own reference year.
+    // The 계약 지급액 group is a sixth, separately-headed pair — never folded into
+    // 공식 반입수수료.
     renderDashboard();
     const table = screen.getByTestId("landfill-region-table");
     const headers = within(table).getAllByRole("columnheader");
     expect(headers.map((h) => h.textContent)).toEqual([
       "지역",
+      "폐기물 발생량",
+      "시설 처리량 (지역 내)",
       "수도권매립지 반입량",
       "공식 반입수수료",
+      "생활폐기물 수집·운반 계약 지급액",
+      "총 발생량",
+      "1인당 (kg/인·년)",
+      "총 처리량",
+      "1인당 (kg/인·년)",
       "반입량",
       "비중",
       "금액",
       "톤당 환산 수수료",
       "주민 1인당 환산 반입수수료",
+      "총 계약 지급액",
+      "1인당 계약 지급액",
     ]);
     const rows = screen.getAllByTestId("landfill-region-row");
     expect(rows).toHaveLength(3);
@@ -398,9 +426,12 @@ describe("LandfillDashboard", () => {
     const names = rows.map((row) => within(row).getAllByRole("rowheader")[0].textContent ?? "");
     expect(names.map((name) => name.split("\n")[0].replace(/[\d,]+명|인구 자료 없음/, "").trim()))
       .toEqual(["서울시", "인천시", "경기도"]);
-    // 시·군·구 drill-down is not offered, because the source has no such rows.
+    // The drill-down is announced, and the reason the landfill columns stop at 시·도.
     expect(screen.getByTestId("landfill-region-grain-note").textContent).toContain(
-      "시·군·구 단위로 펼칠 수 없습니다",
+      "지역 이름을 누르면 시·군·구 단위 상세 자료가 펼쳐집니다",
+    );
+    expect(screen.getByTestId("landfill-region-grain-note").textContent).toContain(
+      "광역지자체(시·도) 단위로만 보고",
     );
   });
 
@@ -620,7 +651,9 @@ describe("LandfillDashboard", () => {
         priorSummary={null}
         priorSettled
         reportingPerCapita={null}
+        reportingStats={null}
         facilityBurden={null}
+        municipalCostAll={null}
         data={{
           ...data(),
           trends: {
@@ -771,24 +804,20 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
     expect(container.querySelector("main")).toBeNull();
   });
 
-  it("shows the limitation as one compact info banner, not a standing alert", () => {
+  it("carries NO standing notice panel, and keeps its statements where they are read", () => {
     renderDashboard();
-    const banner = screen.getByTestId("landfill-limitation");
-    // tone="info", and the severity word is TEXT so it never depends on color.
-    expect(banner.className).toContain("wep-banner-info");
-    expect(screen.getByTestId("landfill-limitation-tone").textContent).toContain("알림");
-    // A permanent disclaimer must not interrupt a screen reader on every render.
-    expect(banner.getAttribute("role")).toBeNull();
-    // It still carries the four things a reader must know before any number.
-    const text = banner.textContent ?? "";
-    expect(text).toContain("공식 자료가 있는 기간만 표시");
-    expect(text).toContain("부분 자료");
-    expect(text).toContain("0이 아니라 자료 없음");
-    // Exactly one banner IN THE OFFICIAL LANDFILL VIEW: the caveat is not repeated
-    // in a second coloured panel. The 수집·운반 계약 지급액 section below owns one
-    // banner of its own — the statement that it is a DIFFERENT dataset — which is
-    // not a repetition of this caveat and is excluded here rather than counted.
-    expect(officialLandfillBanners()).toHaveLength(1);
+    // Page-2 remediation requirement A: a successful screen shows ZERO banners.
+    // Not one, not "one compact one" — a permanent caveat panel above an analytical
+    // dashboard is exactly the surface a returning reader stops seeing, and it was
+    // costing the top of the fold.
+    expect(screen.queryByTestId("landfill-limitation")).toBeNull();
+    expect(officialLandfillBanners()).toHaveLength(0);
+    // Nothing was deleted, only relocated. The period rule and the
+    // absence-is-not-zero rule are still on the page, verbatim, in 근거와 한계.
+    const evidence = screen.getByTestId("landfill-limitation-details").textContent ?? "";
+    expect(evidence).toContain("공식 자료가 있는 기간만 표시");
+    expect(evidence).toContain("부분 자료");
+    expect(evidence).toContain("0이 아니라 자료 없음");
   });
 
   it("keeps the four native selects, each with an accessible label", () => {
@@ -1002,9 +1031,11 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
     const table = section.querySelector("table");
     expect(table).not.toBeNull();
     expect(table?.querySelector("caption")).not.toBeNull();
-    // Five leaf columns under three group headers; the group cells carry colSpan
-    // instead of scope="col", which is what makes them announce as groups.
-    expect(section.querySelectorAll("th[scope='col']")).toHaveLength(6);
+    // Eleven leaf columns plus the row-spanning 지역 column, under five group
+    // headers; the group cells carry colSpan instead of scope="col", which is what
+    // makes them announce as groups rather than as columns.
+    expect(section.querySelectorAll("th[scope='col']")).toHaveLength(12);
+    expect(section.querySelectorAll("th[colspan]")).toHaveLength(5);
     expect(section.querySelectorAll("th[scope='row']").length).toBeGreaterThan(0);
     // The table — not the page — owns its horizontal overflow.
     expect(table?.parentElement?.className).toContain("overflow-x-auto");
@@ -1312,27 +1343,29 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     expect(screen.getByText(/수도권매립지로 반입된 공식 반입량과 반입수수료/)).toBeDefined();
   });
 
-  it("keeps the standing scope notice visible in every state, never as an alert", () => {
+  it("shows no scope banner in any state, and still alerts on a genuine failure", () => {
+    // The scope statement is permanent, so it moved off the presentation screen.
+    // The two states that are NOT permanent — a genuine failure and a served
+    // "no record" — keep exactly the treatment they had: an alert for the fault the
+    // reader can retry, and a plain panel for the answer of absence.
     for (const props of [
       {},
       { data: null, unavailable: null },
       { data: null, unavailable: noDataState() },
-      { data: null, unavailable: genuineError() },
     ]) {
       cleanup();
       renderDashboard(props);
-      const banner = screen.getByTestId("landfill-limitation");
-      expect(banner.className).toContain("wep-banner-info");
-      expect(banner.getAttribute("role")).toBeNull();
-      // The metropolitan-only sentence is never behind a disclosure.
-      expect(banner.closest("details")).toBeNull();
-      expect(banner.textContent).toContain(
-        "광역지자체 단위 자료이며 시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다.",
-      );
+      expect(screen.queryByTestId("landfill-limitation")).toBeNull();
     }
+    cleanup();
+    renderDashboard({ data: null, unavailable: genuineError() });
+    expect(screen.queryByTestId("landfill-limitation")).toBeNull();
+    // A retryable fault is still announced — removing the standing panel must not
+    // have removed the one banner that is genuinely actionable.
+    expect(document.querySelector("[role='alert']")).not.toBeNull();
   });
 
-  it("restates the four selected conditions without duplicating a control", () => {
+  it("restates the selected conditions as one line, without repeating the field names", () => {
     renderDashboard({ year: 2023, month: 7, origin: "41", waste: "생활" });
     const selection = screen.getByTestId("landfill-selection");
     const text = selection.textContent ?? "";
@@ -1340,6 +1373,19 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     expect(text).toContain("7월");
     expect(text).toContain("경기도");
     expect(text).toContain("생활");
+    // One inline line (Figma 125:5092), not a four-entry definition list whose
+    // terms merely repeat the labels of the four controls directly above it.
+    expect(screen.getByTestId("landfill-selection-values").textContent).toBe(
+      "2023 · 7월 · 경기도 · 생활",
+    );
+    // No definition list: the control labels are no longer repeated as terms beside
+    // their own values. (Only the two field names that appear nowhere else are
+    // asserted by text — 연도 is a substring of 최신 완결연도 and 기간 of the served
+    // 기준 기간, and neither of those is a repeated control label.)
+    expect(selection.querySelectorAll("dl, dt, dd")).toHaveLength(0);
+    for (const fieldName of ["출발 지역", "폐기물 종류"]) {
+      expect(text, `${fieldName} is already the control's own label`).not.toContain(fieldName);
+    }
     // The summary reports state; it never becomes a second set of controls.
     expect(selection.querySelectorAll("select, input, button")).toHaveLength(0);
   });
@@ -1441,12 +1487,15 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     expect(derivedBadges.length).toBeGreaterThanOrEqual(2);
     // The badge label is text, so provenance survives a grayscale render.
     expect(derivedBadges[0].textContent).toBe("계산값");
-    // The two headline concepts the platform holds no official TOTAL for say so
-    // rather than showing a browser-side sum of official per-region series.
+    // With no per-municipality series supplied (this fixture passes `reportingStats`
+    // and `facilityBurden` as null), the two derived totals state the absence of the
+    // SOURCE series — they never fall back to a zero. The populated case, where they
+    // carry an exact sum badged 계산값, is covered in
+    // `landfill/LandfillHeadlineResults.test.tsx`.
     expect(statusOf("landfill-kpi-generation")).toBe("missing");
     expect(statusOf("landfill-kpi-treatment")).toBe("missing");
     expect(screen.getByTestId("landfill-kpi-generation-unavailable").textContent).toBe(
-      "합산 공식값 없음",
+      "지역별 공식 자료 없음",
     );
   });
 
@@ -1511,8 +1560,10 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     expect(table.parentElement?.className).toContain("overflow-x-auto");
     // Exactly one scroll container in the section, and it is the table's.
     expect(section.querySelectorAll(".overflow-x-auto")).toHaveLength(1);
-    // The section states the zero-versus-missing rule where the values are read.
-    expect(section.textContent).toContain("0이 아니라 자료 없음");
+    // The section still states the zero-versus-missing rule where the values are
+    // read. It moved out of the card description — which now carries the three
+    // datasets' reference periods — and into the note under the rows it governs.
+    expect(section.textContent).toContain("값이 0이라는 뜻이 아닙니다");
   });
 
   it("puts both trend metrics behind one chart with a switch, and states its scope", () => {
@@ -1617,12 +1668,24 @@ describe("LandfillDashboard — the separate municipal contract-payment section"
   });
 
   it("leaves the official landfill values untouched", () => {
-    // The regional table is the official view's exact-value surface; the municipal
-    // section must add no row to it and change no figure in it.
+    // The regional table now carries the municipal payments as their OWN column
+    // group (Page-2 remediation requirement D), so the boundary is no longer "the
+    // word 수집·운반 must not appear" — it is that the section's rows never leak in
+    // and that no official figure is altered or combined.
     renderDashboard();
     const officialTable = screen.getByTestId("landfill-region-table");
     expect(within(officialTable).queryByTestId("municipal-cost-row")).toBeNull();
-    expect(officialTable.textContent).not.toContain("수집·운반");
+    // The official fee columns still hold exactly the served values. (Plain
+    // textContent, not `toHaveTextContent` — this file does not load jest-dom.)
+    const row = within(officialTable).getAllByTestId("landfill-region-row")[0];
+    expect(row.textContent).toContain("416.5억원");
+    expect(row.textContent).toContain("101,954 원/t");
+    // …and the contract group is a separate, separately-headed pair of columns
+    // whose metropolitan cell is a coverage count, never a money total.
+    const coverage = within(officialTable).getAllByTestId(
+      "landfill-region-contract-coverage",
+    )[0];
+    expect(coverage.textContent).not.toMatch(/억원|원\/인/);
   });
 });
 

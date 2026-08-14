@@ -55,9 +55,16 @@ test("landfill dashboard: renders full-width with no map and official values", a
   await expect(page.locator(".maplibregl-canvas")).toHaveCount(0);
   await expect(page.getByTestId("map-container")).toHaveCount(0);
 
-  // Heading + the mandated limitation notice.
+  // Heading + the mandated limitation, which is now stated where it is used rather
+  // than in a standing panel above the dashboard: the 지역별 상세 현황 note carries
+  // the 시·도-grain consequence beside the rows it governs, and the verbatim
+  // sentence remains in 근거와 한계.
   await expect(page.getByRole("heading", { name: "폐기물 처리 현황" })).toBeVisible();
-  await expect(page.getByTestId("landfill-limitation")).toContainText(
+  await expect(page.getByTestId("landfill-limitation")).toHaveCount(0);
+  await expect(page.getByTestId("landfill-region-grain-note")).toContainText(
+    "광역지자체(시·도) 단위로만 보고",
+  );
+  await expect(page.getByTestId("landfill-limitation-details")).toContainText(
     "시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다",
   );
   // The official fee caveat is retained.
@@ -108,12 +115,21 @@ test("landfill dashboard: four-column regional table narrows with the origin fil
 }) => {
   await openLandfillDashboard(page);
 
-  // All origins -> the three metropolitan rows, exactly four columns.
+  // All origins -> the three metropolitan rows. The table is now two-grain (Figma
+  // 125:5367): five column GROUPS in the first header row, and the leaf columns in
+  // the second. Asserted by name rather than by count so adding a column to one
+  // group cannot silently pass while moving a value into the wrong group.
   const table = page.getByTestId("landfill-region-table");
   await expect(table).toBeVisible();
-  await expect(table.locator("thead th")).toHaveCount(4);
-  await expect(table.locator("thead th").nth(0)).toHaveText("지역");
-  await expect(table.locator("thead th").nth(3)).toHaveText("주민 1인당 환산 반입수수료");
+  const groups = table.locator("thead tr").first().locator("th");
+  await expect(groups.nth(0)).toHaveText("지역");
+  await expect(groups.nth(1)).toHaveText("폐기물 발생량");
+  await expect(groups.nth(3)).toHaveText("수도권매립지 반입량");
+  await expect(groups.nth(4)).toHaveText("공식 반입수수료");
+  await expect(groups.nth(5)).toContainText("생활폐기물 수집·운반 계약 지급액");
+  await expect(table.locator("thead tr").nth(1).locator("th").last()).toHaveText(
+    "1인당 계약 지급액",
+  );
 
   const rows = page.getByTestId("landfill-region-row");
   await expect(rows).toHaveCount(3);
