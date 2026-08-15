@@ -130,11 +130,14 @@ export default function SuitabilityScenarioComparison({
 
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-5 md:px-6">
-      <PageHeader
-        title={title}
-        description="저장한 두 시나리오의 가중치를 현재 분석 실행에 다시 적용해 나란히 비교합니다."
-        meta={<RunMeta run={run} runError={runError} />}
-      />
+      {/* NO `description`. The orientation strip immediately below is this area's own
+          one-line statement of purpose ("점수 반영 기준을 바꾸어 두 가정의 순위를
+          비교합니다.", lib/glossary.ts), and a header description saying the same thing
+          put two near-identical sentences in the page's most valuable copy space. What
+          the description uniquely carried — that the weights are re-applied to the run
+          on screen rather than read back from storage — is now stated once, under the
+          weight table it qualifies, and the run itself is named by `RunMeta`. */}
+      <PageHeader title={title} meta={<RunMeta run={run} runError={runError} />} />
       {orientation}
 
       <StatusNotice
