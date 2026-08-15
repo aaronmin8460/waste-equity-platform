@@ -3,13 +3,18 @@
 /**
  * Responsive-layout structure tests for the dashboard shell.
  *
- * jsdom does not compute CSS layout, so these assert the responsive contract at
- * the class/DOM level: the root is a mobile-first vertical column that becomes a
- * side-by-side row at md+, the sidebar is full-width on mobile and a fixed column
- * on desktop, the map wrapper carries an explicit mobile minimum height (so the
- * flex column can never collapse it to zero), and the verbose control panels are
- * native <details> disclosures that keep the mobile sidebar short. Actual pixel
- * behaviour at real viewports is verified by e2e/responsive.spec.ts.
+ * jsdom does not compute CSS layout, so these assert the responsive contract at the
+ * class/DOM level. The contract itself changed: 여기다 is desktop-required, so there
+ * is now ONE layout — the desktop one — and a gate below 1024px, instead of a
+ * mobile-first column that became a row at `md`. What is asserted here is that the
+ * shell describes exactly that one layout, that the height chain the map depends on
+ * is intact, and that the gate replaces (never merely hides) the dashboards.
+ * Actual pixel behaviour at real viewports is verified by e2e/responsive.spec.ts.
+ *
+ * jsdom reports `window.innerWidth === 1024` and does not implement `matchMedia`, so
+ * the default environment here is exactly the desktop floor — every test below
+ * renders the real application, and only `narrowScreenGate.test.tsx`, which stubs
+ * `matchMedia`, exercises the gate.
  *
  * The map (MapLibre/WebGL) is stubbed and the backend is mocked, exactly as the
  * mode-routing test does — this is about layout, not rendering or data.
@@ -49,13 +54,12 @@ function classes(el: Element | null): string[] {
   return (el?.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
 }
 
-describe("responsive application shell", () => {
-  // Phase 1 moved the viewport-height ownership one level up: the shell root
-  // (components/DashboardShell.tsx) is now the fixed-height flex COLUMN that holds
-  // the global navigation plus <main>, and <main> is the row that holds the sidebar
-  // and the map. The invariants below are the same ones as before — the
-  // fallback-before-dvh ordering and the column→row switch — asserted on whichever
-  // element now owns each.
+describe("desktop application shell", () => {
+  // The shell root (components/DashboardShell.tsx) is the fixed-height flex COLUMN
+  // that holds the global navigation plus <main>, and <main> is the row that holds
+  // the sidebar and the map. Both used to carry `md:`-prefixed variants in front of
+  // a phone branch; the phone branch is gone with the desktop floor, so the classes
+  // are unconditional.
   it("gives the shell root a definite viewport height with the vh fallback first", async () => {
     const { container } = await renderLoaded();
     const shell = container.querySelector('[data-testid="app-shell"]');
@@ -66,42 +70,46 @@ describe("responsive application shell", () => {
     // parent to resolve against.
     expect(tokens).toContain("flex");
     expect(tokens).toContain("flex-col");
-    // Dynamic-viewport height so mobile browser chrome never crops the app, and a
-    // fixed viewport height on desktop (no unintended document scroll).
-    expect(tokens).toContain("min-h-dvh");
-    expect(tokens).toContain("md:h-dvh");
-    // Each dvh utility is preceded by its static-viewport fallback, so an engine
+    // A fixed viewport height (no unintended document scroll), dynamic-viewport so
+    // browser chrome never crops the app.
+    expect(tokens).toContain("h-screen");
+    expect(tokens).toContain("h-dvh");
+    // The dvh utility is preceded by its static-viewport fallback, so an engine
     // without `dvh` support keeps a valid full-viewport height instead of dropping
-    // the declaration entirely (which would leave the desktop column — and the map
-    // pane inside it — with no definite height).
-    expect(tokens).toContain("min-h-screen");
-    expect(tokens).toContain("md:h-screen");
+    // the declaration entirely (which would leave the column — and the map pane
+    // inside it — with no definite height).
     // Ordering matters: the fallback must come BEFORE the dvh class so a
     // dvh-supporting engine applies dvh (later rule, equal specificity). This is
-    // also what the `@supports` two-class overrides in globals.css key on.
-    expect(tokens.indexOf("min-h-screen")).toBeLessThan(tokens.indexOf("min-h-dvh"));
-    expect(tokens.indexOf("md:h-screen")).toBeLessThan(tokens.indexOf("md:h-dvh"));
-    // No bare, unconditional static `h-screen` (the pre-responsive full-height
-    // row) remains — the fallbacks above are the min-h-/md:h- prefixed forms.
-    expect(tokens).not.toContain("h-screen");
+    // also what the `@supports` two-class override in globals.css keys on.
+    expect(tokens.indexOf("h-screen")).toBeLessThan(tokens.indexOf("h-dvh"));
+    // The `md:`-scoped height variants are gone: there is no second layout for them
+    // to switch between, and leaving them would be a second source of truth.
+    expect(tokens).not.toContain("md:h-screen");
+    expect(tokens).not.toContain("md:h-dvh");
+    // A fixed height, not a minimum — a `min-h` alone leaves the height indefinite
+    // and the percentage-height map child collapses.
+    expect(tokens).not.toContain("min-h-dvh");
   });
 
-  it("stacks vertically on mobile and switches to a row at the md breakpoint", async () => {
+  it("lays <main> out as the full-height row that holds the sidebar and the map", async () => {
     const { container } = await renderLoaded();
     const main = container.querySelector("main");
     const tokens = classes(main);
-    // Mobile-first: a vertical column that becomes a row only at md+.
     expect(tokens).toContain("flex");
-    expect(tokens).toContain("flex-col");
-    expect(tokens).toContain("md:flex-row");
-    // At md+ <main> fills the shell column's remaining height. `min-h-0` is
-    // load-bearing: without it the default `min-height: auto` would let the content
-    // push the row past the viewport bottom, and the map would no longer end exactly
-    // at the viewport edge.
-    expect(tokens).toContain("md:flex-1");
-    expect(tokens).toContain("md:min-h-0");
+    // A row at every width the app renders at. The `flex-col` + `md:flex-row` pair
+    // that stacked the sidebar above the map on a phone is gone.
+    expect(tokens).toContain("flex-row");
+    expect(tokens).not.toContain("flex-col");
+    expect(tokens).not.toContain("md:flex-row");
+    // <main> fills the shell column's remaining height. `min-h-0` is load-bearing:
+    // without it the default `min-height: auto` would let the content push the row
+    // past the viewport bottom, and the map would no longer end exactly at the
+    // viewport edge.
+    expect(tokens).toContain("flex-1");
+    expect(tokens).toContain("min-h-0");
     // The height chain itself lives on the shell root, not here.
     expect(tokens).not.toContain("min-h-dvh");
+    expect(tokens).not.toContain("h-dvh");
   });
 
   it("exposes exactly one skip-link target, owned by the shared shell", async () => {
@@ -115,49 +123,46 @@ describe("responsive application shell", () => {
     expect(container.querySelectorAll("main")).toHaveLength(1);
   });
 
-  it("makes the sidebar full-width on mobile and a RESIZABLE column on desktop", async () => {
+  it("renders the sidebar as the resizable desktop column", async () => {
     const { container } = await renderLoaded();
     const aside = container.querySelector("aside");
     const tokens = classes(aside);
-    expect(tokens).toContain("w-full");
-    expect(tokens).toContain("md:flex-none");
-    // The fixed 384px desktop column is gone: the width is now reader-controlled
+    // The fixed 384px desktop column is gone: the width is reader-controlled
     // (300–520, default 360) and carried by `.wep-sidebar` reading the custom
     // property below — see components/ui/ResizableSidebar.tsx and spec §3.
     expect(tokens).toContain("wep-sidebar");
     expect(tokens).not.toContain("md:w-96");
     expect(tokens).not.toContain("w-96");
     // The width must be a custom property, never an inline `width`, or it would
-    // beat the media query and pin the PHONE column to the desktop size too.
+    // beat the stylesheet and pin the column to one size.
     expect((aside as HTMLElement).style.width).toBe("");
     expect((aside as HTMLElement).style.getPropertyValue("--wep-sidebar-width")).toBe("360px");
   });
 
-  it("hides the desktop resize handle behind a class the phone layout never shows", async () => {
+  it("always offers the resize handle (there is no width at which it is hidden)", async () => {
     await renderLoaded();
-    // `.wep-sidebar-resizer` is `display: none` until 768px (globals.css), so a
-    // phone gets no handle and no drag behaviour. jsdom loads no stylesheet, so
-    // the contract asserted here is the class that owns that rule.
+    // `.wep-sidebar-resizer` used to be `display: none` until 768px so a phone got no
+    // handle. With no phone layout the rule is unconditional (globals.css). jsdom
+    // loads no stylesheet, so the contract asserted here is the class that owns it.
     const resizer = screen.getByTestId("sidebar-resizer");
     expect(resizer.className).toContain("wep-sidebar-resizer");
     expect(resizer.getAttribute("role")).toBe("separator");
   });
 
-  it("sizes the map wrapper via the dedicated .map-pane class (definite mobile height, flex fill at md+)", async () => {
+  it("sizes the map wrapper via the dedicated .map-pane class, with no viewport-relative height", async () => {
     await renderLoaded();
     const wrapper = screen.getByTestId("map-container").parentElement;
     const tokens = classes(wrapper);
-    // A single dedicated class owns the responsive sizing (globals.css): a definite
-    // 60vh/60dvh with a minimum on mobile so the MapLibre child (h-full) never
-    // collapses, and `height:100% / flex:1 1 0%` at md+ so it fills the full row —
-    // no broadly-scoped @supports rule can force the mobile 60dvh onto the desktop
-    // map (the old ambiguous `h-[60vh] h-[60dvh] md:h-auto md:min-h-0 md:flex-1`
-    // stack is replaced). Actual pixel behaviour is asserted in e2e/responsive.spec.ts.
+    // A single dedicated class owns the sizing (globals.css): `height: 100%` of the
+    // fixed-height shell row plus `flex: 1 1 0%`, so the pane fills both the
+    // remaining width and the full row height and nothing is left below the canvas.
     expect(tokens).toContain("map-pane");
     // min-w-0 keeps the flex child shrinkable so long content never overflows.
     expect(tokens).toContain("min-w-0");
-    // The ambiguous height utilities that previously forced 60dvh at desktop are gone.
+    // Neither retired height may come back as a utility: the ambiguous stack that
+    // forced 60dvh at desktop, nor the mobile 60vh the class itself used to carry.
     expect(tokens).not.toContain("h-[60dvh]");
+    expect(tokens).not.toContain("h-[60vh]");
     expect(tokens).not.toContain("md:h-auto");
     expect(tokens).not.toContain("md:flex-1");
   });
@@ -178,7 +183,7 @@ describe("responsive application shell", () => {
   });
 });
 
-describe("mobile control collapsing", () => {
+describe("disclosures on the desktop-only shell", () => {
   it("keeps the verbose equity panels as native <details> beside what they explain", async () => {
     const { container } = await renderLoaded();
     // Phase 1 moved both of the sidebar's disclosures to where their subject is:
@@ -192,20 +197,22 @@ describe("mobile control collapsing", () => {
     expect(sources.tagName).toBe("DETAILS");
     expect(within(sources).getByText("출처와 계산 방법")).toBeDefined();
     // The facility toggle still lives inside the DOM (never permanently hidden) and
-    // is now directly visible rather than behind a disclosure.
+    // is directly visible rather than behind a disclosure.
     expect(screen.getByTestId("facilities-toggle")).toBeDefined();
     expect(screen.getByTestId("facility-type-legend")).toBeDefined();
   });
 
-  it("renders the equity legend as a single floating overlay, not in the sidebar", async () => {
+  it("renders the equity legend as a single always-open floating overlay", async () => {
     const { container } = await renderLoaded();
-    // The legend is now a floating <details> over the map (its own class), and there
-    // is exactly one legend section (single source of truth — no sidebar duplicate).
+    // The legend is a floating <details> over the map (its own class), and there is
+    // exactly one legend section (single source of truth — no sidebar duplicate).
+    // `.map-legend` is now force-open at every width: its collapsed-on-mobile branch
+    // existed only for the stacked phone map, which no longer renders.
     const floating = container.querySelectorAll("details.map-legend");
     expect(floating.length).toBe(1);
     expect(screen.getByTestId("legend")).toBeDefined();
-    // Its collapse control is labelled text ("범례"), not icon-only. Phase 4 removed
-    // the English duplication from the primary label.
+    // Its summary is still labelled text ("범례"), not icon-only — the element stays
+    // in the DOM and is hidden by CSS, so nothing about the markup contract changed.
     expect(screen.getByTestId("map-legend-summary").textContent).toContain("범례");
     expect(screen.getByTestId("map-legend-summary").textContent).not.toContain("(Legend)");
     // The legend is NOT one of the sidebar mobile-collapsible disclosures.
@@ -215,18 +222,19 @@ describe("mobile control collapsing", () => {
     expect(sidebarLegend).toBeNull();
   });
 
-  it("scrolls the six-destination nav track rather than wrapping or overflowing the page", async () => {
+  it("keeps the six-destination nav on one unwrapped row", async () => {
     const { container } = await renderLoaded();
     const group = container.querySelector('[data-testid="mode-switch"]');
-    // Six Korean destination labels cannot wrap gracefully, and the spec requires
-    // one row from 1024px up, so `.wep-nav-track` scrolls horizontally instead
-    // (`overflow-x: auto` + `min-width: 0` in globals.css). jsdom never loads that
-    // stylesheet, so the contract asserted here is that the track still carries the
-    // class that owns the behaviour — and that nothing re-introduced `flex-wrap`,
-    // which would put the nav on two rows at 1024px.
+    // Six Korean destination labels cannot wrap gracefully, and one unwrapped row is
+    // a desktop invariant from the 1024 floor up. `.wep-nav-track` owns that
+    // (`flex-wrap` is never set on it; `overflow-x: auto` + `min-width: 0` in
+    // globals.css contain any overflow inside the nav rather than on the page).
+    // jsdom never loads that stylesheet, so the contract asserted here is that the
+    // track still carries the class that owns the behaviour — and that nothing
+    // re-introduced `flex-wrap`, which would put the nav on two rows at 1024px.
     expect(classes(group)).toContain("wep-nav-track");
     expect(classes(group)).not.toContain("flex-wrap");
-    // All six destinations are present and reachable at this width.
+    // All six destinations are present and reachable.
     expect(group?.querySelectorAll("button")).toHaveLength(6);
   });
 });
