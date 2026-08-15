@@ -117,6 +117,7 @@ import { landfillUnavailableFromAll } from "../lib/landfill";
 import type { MunicipalCostErrorState } from "../lib/municipalCost";
 import { municipalCostErrorFrom } from "../lib/municipalCost";
 import DashboardShell from "../components/DashboardShell";
+import NarrowScreenGate, { useIsDesktopViewport } from "../components/ui/NarrowScreenGate";
 import ResizableSidebar from "../components/ui/ResizableSidebar";
 import CollapsiblePanel from "../components/ui/CollapsiblePanel";
 import Dialog from "../components/ui/Dialog";
@@ -280,6 +281,12 @@ function priorPeriodKey(
 }
 
 export default function Home() {
+  // The desktop floor. Read here at the top so the check is a plain unconditional hook
+  // call; it is CONSUMED further down, immediately before the first early return, so
+  // every branch this component can take — error, cold-start skeleton, and the four
+  // dashboard branches — sits behind the same floor. See the comment at that guard.
+  const isDesktopViewport = useIsDesktopViewport();
+
   const [data, setData] = useState<LoadedData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [metricKey, setMetricKey] = useState<MetricKey>("population");
@@ -1955,6 +1962,27 @@ export default function Home() {
         : [],
     [data],
   );
+
+  // ── The desktop floor, applied to the PRE-SHELL branches ────────────────────────
+  // The three branches below (error, cold-start skeleton, and every dashboard) do not
+  // all pass through `DashboardShell`: the error and loading branches return their own
+  // `<main>` directly, so the floor `DashboardShell` owns would not cover them. Because
+  // `page.tsx` fetches in an effect, `data` is null on the FIRST client render of every
+  // visit — so without this check a narrow viewport would reliably see the analytical
+  // cold-start skeleton (a sidebar column stacked above a map pane) before anything
+  // else, which is exactly the phone composition this cleanup retired.
+  //
+  // This reuses `useIsDesktopViewport` — the one viewport source of truth that
+  // `DashboardShell`/`NarrowScreenGate` already use — rather than adding a second,
+  // competing width system. It is a `useSyncExternalStore` read whose server snapshot
+  // is `true`, so the prerender and the hydration render agree on the desktop shape and
+  // the client corrects on its first commit: no hydration mismatch.
+  //
+  // HOOK RULES: every hook in `Home` runs above this line and none run below it, so
+  // this is an unconditional call followed by conditional RENDERING only.
+  if (!isDesktopViewport) {
+    return <NarrowScreenGate />;
+  }
 
   if (error !== null) {
     return (
