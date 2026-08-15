@@ -135,9 +135,12 @@ export default function TopNavigation({ active, onNavigate }: TopNavigationProps
           분석 영역 선택
         </span>
         {/* `.wep-nav-track` is the Figma pill track (74:2000) the six tabs sit
-            inside. It NEVER wraps: at desktop the six labels fit one row down to
-            1024px on compressed spacing, and at phone widths the track itself
-            scrolls horizontally so the PAGE never gains a horizontal scrollbar. */}
+            inside. It NEVER wraps: the six labels fit one row down to the 1024px
+            desktop floor on compressed spacing, which is the narrowest width this
+            bar renders at (below it the shell renders ui/NarrowScreenGate instead).
+            The track keeps `overflow-x: auto` as the overflow valve — if the labels
+            ever did outgrow 1024, the overflow stays inside the nav and the PAGE
+            still never gains a horizontal scrollbar. */}
         <div
           className="wep-nav-track"
           role="group"

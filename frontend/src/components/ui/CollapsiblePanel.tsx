@@ -14,7 +14,7 @@
  * zero height in the FLOW direction; here the column has to change its WIDTH and
  * hand that width to a flex sibling, which `<details>` does not express. The
  * collapsed state is also a persistent layout preference, not a disclosure of
- * supporting text — the two behave differently on reopen and under `md`.
+ * supporting text — the two behave differently on reopen.
  *
  * ── The MapLibre contract ────────────────────────────────────────────────────────
  * Collapsing changes this column's width, which widens the sibling `.map-pane`.
@@ -34,11 +34,15 @@
  * element consistent means one landmark vocabulary across the whole app, and a
  * screen-reader user meets the same landmark type in every map view.
  *
- * ── Mobile ───────────────────────────────────────────────────────────────────────
- * Below `md` the three columns stack, so a width-collapse is meaningless. The
- * rail and the collapse control are hidden there and the body is always shown;
- * each column is simply a section in the stack. Nothing analytical is ever hidden
- * behind a toggle a phone user cannot reach.
+ * ── One layout, no phone branch ──────────────────────────────────────────────────
+ * This workspace used to have a second form: below `md` the three columns stacked,
+ * a width-collapse was meaningless there, so the rail and the collapse control were
+ * hidden and each column became a section in a vertical scroll. That produced left
+ * panel → map → right panel as a multi-screen phone page, which the canonical Figma
+ * file never specified. 여기다 is desktop-required now — below 1024px the shell
+ * renders `ui/NarrowScreenGate` instead of any dashboard — so the stacked branch was
+ * unreachable and both it and its CSS are gone. Every width this component renders
+ * at is a width where the collapse means something.
  */
 
 import type { ReactNode } from "react";
