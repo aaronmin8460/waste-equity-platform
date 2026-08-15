@@ -14,10 +14,14 @@
  *   - never renders a missing weight as 0%. `weightPercent` returns "-" for an
  *     absent value; that segment is omitted and the absence is stated in text.
  *
- * The bar is `aria-hidden`: it is a second, redundant encoding of the labelled
- * `<dl>` that sits directly beneath it in the card, so announcing it again would
- * duplicate every value for a screen-reader user. Colour is therefore never the
- * only carrier of a weight — the number is always beside its Korean factor name.
+ * The bar is `aria-hidden`: it is a second, redundant encoding of the weights the
+ * four factor cards print in the same card, so announcing it again would duplicate
+ * every value for a screen-reader user. Colour is therefore never the only carrier
+ * of a weight — each factor card carries `가중치 NN%` beside that factor's full
+ * Korean name (`SuitabilityFactorCards`, `factor-weight-*`). Until the primary-copy
+ * cleanup the labelled carrier was a one-line Z/R/E/D sentence directly beneath the
+ * bar; that line was a third copy of the same four numbers and was removed, so the
+ * factor cards are now the text home the bar redundantly encodes.
  */
 
 import type { ScoreComponent } from "../../lib/glossary";

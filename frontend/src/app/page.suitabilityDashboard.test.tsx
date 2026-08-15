@@ -415,22 +415,22 @@ describe("후보지 점수 — shell contracts", () => {
 // --------------------------------------------------------------------------- //
 
 describe("후보지 점수 — the active scoring basis", () => {
-  it("states the active profile, its plain-Korean method, and its weights", async () => {
+  it("names the active profile, and carries its weights on the factor cards", async () => {
     await enterScore();
     const basis = screen.getByTestId("suitability-active-basis");
     expect(within(basis).getByTestId("active-basis-name").textContent).toBe(
       PROFILE_META.baseline.primary,
     );
-    expect(within(basis).getByTestId("active-basis-explanation").textContent).toBe(
-      PROFILE_META.baseline.detail,
-    );
     // The four component weights, each with its Korean name AND a numeric value.
-    const weights = within(basis).getByTestId("active-basis-weights").textContent ?? "";
-    expect(weights).toContain("용도지역 호환성(Z)");
-    expect(weights).toContain("도로 근접성 대리지표(R)");
-    expect(weights).toContain("기존 지역 부담(E)");
-    expect(weights).toContain("폐기물 처리 수요(D)");
-    expect(weights).toContain("40%");
+    // These live on the factor cards, not in a separate one-line sentence beside
+    // the bar: the sentence was a third copy of the same four numbers and was
+    // removed from the primary card (see page.page4PrimaryCopy.test.tsx).
+    const cards = screen.getByTestId("factor-cards").textContent ?? "";
+    expect(cards).toContain("용도지역 호환성(Z)");
+    expect(cards).toContain("도로 근접성 대리지표(R)");
+    expect(cards).toContain("기존 지역 부담(E)");
+    expect(cards).toContain("폐기물 처리 수요(D)");
+    expect(screen.getByTestId("factor-weight-zoning").textContent).toContain("40%");
   });
 
   it("follows the profile radio and describes CRITIC as data-derived, never importance", async () => {
@@ -439,7 +439,9 @@ describe("후보지 점수 — the active scoring basis", () => {
     await waitFor(() =>
       expect(screen.getByTestId("active-basis-name").textContent).toBe(PROFILE_META.critic.primary),
     );
-    expect(screen.getByTestId("active-basis-explanation").textContent).toContain(
+    // The active profile's method sentence moved into the 가중치 계산 방법
+    // disclosure; it still follows the radio, and it still says what CRITIC is NOT.
+    expect(screen.getByTestId("active-basis-method-detail").textContent).toContain(
       "항목의 중요도 판단이 아닙니다",
     );
     // The run's own CRITIC weights, with their Korean names, plus the caveat.

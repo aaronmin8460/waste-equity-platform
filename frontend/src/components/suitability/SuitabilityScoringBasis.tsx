@@ -32,6 +32,27 @@
  * screen below the heading of the card they are the subject of. Nothing was deleted:
  * see the control block below for where each moved line went.
  *
+ * THE PRIMARY-COPY CLEANUP finished that job. Figma 136:8684 draws card ② as five
+ * things and no prose: the heading, the segmented bar, four factor cards, and the
+ * 안정 후보 row — every explanation in the frame sits behind a per-card
+ * "가중치 설명 펼치기" disclosure. Production had grown four standing explanatory
+ * blocks that the frame has no room for, three of which repeated something the card
+ * already showed:
+ *
+ *   - the one-line Z/R/E/D percentage sentence → the bar draws it and each factor
+ *     card prints its own weight beside the factor's Korean name;
+ *   - the active profile's method sentence → 기준별 가중치 비교, where all five
+ *     methods can be compared, and the 가중치 계산 방법 disclosure;
+ *   - the standing "this run also reports stability" sentence → the 안정 후보 row
+ *     states the rule AND the live state, and `critic-unavailable` covers the run
+ *     that has no stability at all;
+ *   - the 운영 가정 paragraph and the CRITIC derivation note → the 가중치 계산 방법
+ *     disclosure at the foot of the card.
+ *
+ * NOTHING LEFT THE PRODUCT and no second methodology card was created: every line
+ * has a named home above, and each removal is pinned by a test in
+ * app/page.page4PrimaryCopy.test.tsx so it cannot drift back into the primary card.
+ *
  * Wording rules this component keeps (docs/SUITABILITY_CRITIC_STABILITY.md):
  *   - the fixed policy-assumption bases are labelled 운영 가정, never expert AHP;
  *   - 데이터 분포 기준 (CRITIC) is described as automatically computed from the
@@ -112,9 +133,23 @@ export default function SuitabilityScoringBasis({
           a number. */}
       <SuitabilityWeightBar rows={activeRows} />
 
-      {/* WHICH basis those proportions belong to, in one line rather than a panel.
-          Everything here is already-served state: the profile's glossary label and
-          its method sentence. */}
+      {/* WHICH basis those proportions belong to — the NAME, and nothing else.
+          This row used to carry three more standing lines, all of which said again
+          what the card already shows or explains elsewhere:
+
+            - `active-basis-weights`, the one-line "용도지역 호환성(Z) 25% · …"
+              sentence. The bar directly above draws that distribution and the four
+              factor cards below each print `가중치 NN%` beside the factor's full
+              Korean name, so this was a third copy of the same four numbers.
+            - `active-basis-explanation`, the profile's method sentence ("…민감도
+              비교 가정입니다."). Every basis's method is in 기준별 가중치 비교 below,
+              where the five can actually be read against one another.
+            - `active-basis-stability`, a standing sentence saying this run reports
+              stability. The 안정 후보 표시 row closes the card with the actual rule
+              and the actual state; when the run has NO stability the
+              `critic-unavailable` notice below says so in actionable terms.
+
+          Nothing was deleted from the product — see each line's new home above. */}
       <div
         className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
         data-testid="suitability-active-basis"
@@ -122,28 +157,6 @@ export default function SuitabilityScoringBasis({
         <span className="text-[11px] text-ink-subtle">현재 적용 중인 기준</span>
         <span className="text-sm font-semibold text-ink" data-testid="active-basis-name">
           {profileLabel(profile)}
-        </span>
-        {/* The four weights as text beside the bar — each with its full Korean name
-            and its numeric percentage, so the segmented bar is never the only
-            carrier of a value. */}
-        <span
-          className="w-full text-[11px] leading-snug tabular-nums text-ink-muted"
-          data-testid="active-basis-weights"
-        >
-          {activeRows.map((row) => `${row.label} ${row.percent}`).join(" · ")}
-        </span>
-        {activeMeta?.detail ? (
-          <span
-            className="w-full text-[11px] leading-snug text-ink-subtle"
-            data-testid="active-basis-explanation"
-          >
-            {activeMeta.detail}
-          </span>
-        ) : null}
-        <span className="w-full text-[11px] leading-snug text-ink-subtle" data-testid="active-basis-stability">
-          {stabilityAvailable
-            ? "이 분석 실행은 기준을 바꿔도 상위권을 유지하는 정도(안정성)를 함께 제공합니다."
-            : "이 분석 실행에는 안정성 결과가 없습니다."}
         </span>
       </div>
 
@@ -218,17 +231,48 @@ export default function SuitabilityScoringBasis({
           same glossary names — this is the active basis broken out per factor. */}
       <SuitabilityFactorCards weights={activeRows} selected={selected} />
 
-      {/* Distinguish the fixed policy-assumption bases from the data-distribution
-          one. Unchanged wording. */}
-      <p className="mt-3 text-[11px] leading-snug text-ink-subtle">
-        기본·모두 똑같이·지역 부담 중심·도로 근접성 중심은 <strong>운영 가정</strong>으로 정한 고정
-        비율이며 전문가 AHP 결과가 아닙니다. <strong>데이터 분포 기준</strong>은 이 분석 실행의 후보
-        점수 분포에서 자동 계산된 비율입니다.
-      </p>
+      {/* THE METHODOLOGY, BEHIND ONE DISCLOSURE. Both blocks below are unchanged in
+          wording and both used to stand open in the primary card: a reader had to
+          get past a four-line paragraph about 운영 가정 and a six-line CRITIC
+          derivation (candidate population, method version, the raw weight vector,
+          zero-variance criteria, the normative-importance caveat) before reaching
+          the 안정 후보 row that closes the card.
 
-      {stabilityAvailable ? (
-        <CriticMethodNote run={run} />
-      ) : (
+          Neither is optional information, so neither moves out of the card and
+          neither is duplicated into a second methodology card — they move ONE
+          keystroke away, which is the same treatment Figma 136:8684 gives every
+          factor card's own explanation (가중치 설명 펼치기). The mandatory
+          "이것은 규범적 중요도가 아니다" caveat still travels with the CRITIC
+          weights it qualifies, and is never separated from them. */}
+      <details className="mt-3" data-testid="scoring-basis-method">
+        <summary className="cursor-pointer text-[11px] font-medium text-ink-muted">
+          가중치 계산 방법 펼치기
+        </summary>
+
+        {/* Distinguish the fixed policy-assumption bases from the data-distribution
+            one. Unchanged wording. */}
+        <p className="mt-1.5 text-[11px] leading-snug text-ink-subtle">
+          기본·모두 똑같이·지역 부담 중심·도로 근접성 중심은 <strong>운영 가정</strong>으로 정한 고정
+          비율이며 전문가 AHP 결과가 아닙니다. <strong>데이터 분포 기준</strong>은 이 분석 실행의 후보
+          점수 분포에서 자동 계산된 비율입니다.
+        </p>
+
+        {/* The method sentence for the basis currently in force. It left the primary
+            row above; this is where it lands, beside the paragraph that frames what
+            kind of assumption it is. */}
+        {activeMeta?.detail ? (
+          <p
+            className="mt-1.5 text-[11px] leading-snug text-ink-subtle"
+            data-testid="active-basis-method-detail"
+          >
+            현재 기준({profileLabel(profile)}): {activeMeta.detail}
+          </p>
+        ) : null}
+
+        {stabilityAvailable && <CriticMethodNote run={run} />}
+      </details>
+
+      {stabilityAvailable ? null : (
         <p
           className="mt-2 rounded-card border border-warn-border bg-warn-surface p-2 text-[11px] text-ink-muted"
           data-testid="critic-unavailable"
