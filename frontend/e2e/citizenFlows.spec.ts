@@ -219,6 +219,49 @@ async function setup(page: Page) {
   await page.route("**/api/v1/suitability/summary**", (r) =>
     json(r, { ...SUMMARY, top_candidates: [TOP_CANDIDATE] }),
   );
+  // ③ 종합 점수와 후보 순위 reads the SCOPED ranking from the candidates COLLECTION,
+  // not from `summary.top_candidates` — the summary has no scope parameters, so it
+  // could only ever describe the whole run. This fixture predates that move and
+  // mocked only the summary and the per-candidate DETAIL route, which left the
+  // ranking list genuinely empty and `top-candidate-item` absent.
+  //
+  // Registered BEFORE the detail route on purpose: Playwright matches the most
+  // recently registered route first, so the narrower `/candidates/{id}` regex below
+  // must come last or it would never win against this glob.
+  await page.route("**/api/v1/suitability/candidates**", (r) =>
+    json(r, {
+      type: "FeatureCollection",
+      indicator: "SUITABILITY_SCREENING",
+      derivation_version: "suitability-screening-v3",
+      policy_version: "suitability-policy-v2",
+      candidate_grid_version: "capital-grid-500m-v1",
+      weight_profile: "baseline",
+      reference_year: 2024,
+      run_id: 47,
+      count: 1,
+      total_matched: 1,
+      limit: 10,
+      offset: 0,
+      sido: null,
+      sigungu: [],
+      sort: "score_desc",
+      features: [
+        {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [126.4, 37.7] },
+          properties: {
+            ...TOP_CANDIDATE,
+            // The summary spells the location `sigungu`; a candidate feature spells
+            // it `sigungu_region_name`.
+            sigungu_region_name: TOP_CANDIDATE.sigungu,
+            status: "ELIGIBLE",
+          },
+        },
+      ],
+      assumptions: [],
+      disclaimer: "Analytical screening only — not a legal determination.",
+    }),
+  );
   await page.route(/\/api\/v1\/suitability\/candidates\/\d+/, (r) => json(r, CANDIDATE_DETAIL));
   await page.goto("/");
   await expect(page.getByTestId("map-container")).toBeVisible({ timeout: 15000 });
@@ -294,9 +337,23 @@ test.describe("Task B — 후보지 심층 분석 (suitability score)", () => {
     await expect(page.getByTestId("candidate-counts")).toContainText("스크리닝 통과");
     await expect(page.getByTestId("candidate-counts")).toContainText("추가 검토 필요");
     await expect(page.getByTestId("candidate-counts")).toContainText("프로젝트 스크리닝 제외");
-    // Phase 0: the analytical-screening disclaimer is visible near the top.
-    await expect(page.getByTestId("suitability-screening-disclaimer")).toContainText(
-      "광역 후보지 스크리닝",
+    // The analytical-screening limitation is stated on the MAP, not as a standing
+    // banner above the controls.
+    //
+    // Phase 0 put a full `suitability-screening-disclaimer` banner at the head of the
+    // suitability sidebar. 후보지 심층 분석 no longer has that sidebar: Figma 136:8684
+    // opens the left column with ① and nothing above it, so `app/page.tsx` renders the
+    // collapsible workspace instead and deliberately carries no standing banner there
+    // ("NO standing disclaimer BANNER here" — the limitation is not dropped, it is
+    // printed on the map's own legend as SUITABILITY_SCREENING_SHORT_LABEL, in the
+    // map's aria-description, and in 계산 방법과 가정).
+    //
+    // The other two suitability sub-views, which have no map legend of their own,
+    // still render the full banner — `suitabilityDashboard.spec.ts` owns that. Here
+    // the correct assertion is the legend note, which is where a citizen on THIS
+    // screen actually meets the limitation.
+    await expect(page.getByTestId("suitability-legend-note")).toContainText(
+      "법적·공학적 적합 판정 아님",
     );
     // Choose a scoring basis (점수 반영 기준) — plain labels.
     await expect(page.getByText("점수 반영 기준", { exact: true })).toBeVisible();

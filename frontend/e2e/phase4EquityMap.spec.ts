@@ -136,7 +136,13 @@ test.describe("equity map structure at 1440×900", () => {
     expect(count).toBeGreaterThanOrEqual(1);
     for (let i = 0; i < count; i += 1) {
       await expect(rows.nth(i)).toContainText("급");
-      await expect(rows.nth(i)).toContainText("persons");
+      // The legend prints the unit in KOREAN. It used to echo the backend's raw
+      // `persons`, which is an English API token rather than something a citizen
+      // reads; the production hotfix that replaced it with 명 is in this branch's
+      // history, and this assertion is the last place still expecting the old token.
+      // The point of the check is unchanged — every class row still carries its unit,
+      // so a number is never shown without one.
+      await expect(rows.nth(i)).toContainText("명");
     }
     await expect(page.getByTestId("choropleth-scale-method")).not.toBeEmpty();
     await expect(page.getByTestId("choropleth-legend-nodata")).toContainText("데이터 없음");

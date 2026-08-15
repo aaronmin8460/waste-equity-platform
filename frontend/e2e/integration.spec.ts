@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { mockBackend } from "./mockBackend";
+import { mockBackend, mockReportingStatistics } from "./mockBackend";
 
 /**
  * Pre-deployment integration regression (Phase 6).
@@ -81,6 +81,13 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify(ONE_REGION),
     }),
   );
+  // The cost lens leg of the tour selects 서울 종로구. The picker's options come from
+  // the REPORTING statistics endpoint, which `mockBackend` serves empty, so without
+  // this the tour times out on a picker that correctly has nothing to offer. See
+  // `mockReportingStatistics` in mockBackend.ts.
+  await mockReportingStatistics(page, [
+    { code: "KR-SGIS-11110", name: "종로구", stream: "HOUSEHOLD" },
+  ]);
 });
 
 for (const vp of VIEWPORTS) {

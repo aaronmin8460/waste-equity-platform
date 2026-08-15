@@ -435,8 +435,18 @@ test.describe("cost sub-view regression at 1440×900", () => {
     // The sub-view bar is retired — the six destinations select `view` (spec §2.1).
     await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
     await expect(page.getByTestId("mode-switch")).toHaveCount(1);
-    // The screening disclaimer follows into the cost view's own notice.
-    await expect(page.getByTestId("suitability-screening-disclaimer")).toBeVisible();
+    // The screening disclaimer follows into the cost view's own notice — but the cost
+    // view has no sidebar to head, and its primary surface carries only the compact
+    // footnote Figma 129:5709 draws. The screening sentence is INTACT, one keystroke
+    // away in 계산 방법과 한계 (docs/SUITABILITY_PHASE_0_TRANSPARENCY.md, the
+    // 비용 살펴보기 exception), which is exactly what `facilityCost.spec.ts` and
+    // `facilityCostDashboard.spec.ts` assert. This line asserted the retired standing
+    // banner and contradicted both.
+    await expect(page.getByTestId("suitability-screening-disclaimer")).toHaveCount(0);
+    await expect(page.getByTestId("facility-cost-result-footnote")).toBeVisible();
+    await page.getByTestId("facility-cost-open-details").click();
+    await expect(page.getByTestId("facility-cost-notice")).toContainText("광역 후보지 스크리닝");
+    await page.getByTestId("facility-cost-details-close").click();
     await expectNoHorizontalOverflow(page, "cost 1440×900");
 
     // Returning restores the score workspace and its single map.

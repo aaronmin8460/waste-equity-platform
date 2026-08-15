@@ -238,7 +238,17 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     // distinction — between them consuming the top of a presentation screen with
     // text that never changes. Both are gone as panels; neither statement is lost.
     await expect(page.getByTestId("landfill-limitation")).toHaveCount(0);
-    await expect(page.locator('[data-testid="landfill-dashboard"] .wep-banner')).toHaveCount(0);
+    // STANDING notice panels only. `role="alert"` is excluded deliberately: this
+    // fixture serves no 지자체 계약비 endpoint (the municipal-cost feature shipped
+    // after `phase5Fixtures` was written), so that section correctly renders its
+    // genuine "불러오지 못했습니다" error alert. That alert is exactly the kind of
+    // actionable, live error this remediation was required to KEEP — the two things
+    // it removed were unchanging explanatory panels — so asserting it away, or
+    // silencing it by inventing official 지급액 figures for the fixture, would both
+    // be wrong. The assertion is narrowed to what the test is actually about.
+    await expect(
+      page.locator('[data-testid="landfill-dashboard"] .wep-banner:not([role="alert"])'),
+    ).toHaveCount(0);
 
     // The scope sentence is still on the page, in 근거와 한계 and beside the rows
     // it governs.
