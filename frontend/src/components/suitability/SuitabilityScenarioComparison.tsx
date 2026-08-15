@@ -251,9 +251,13 @@ export default function SuitabilityScenarioComparison({
               </table>
             </div>
 
+            {/* The one place that says whose numbers these are. The header states the
+                page's purpose; this states the provenance of the figures in this table,
+                which is the fact a reader can actually be misled about. The two per-side
+                chips no longer repeat it — see `scenario-comparison-side-ready`. */}
             <p className="mt-3 text-[11px] leading-snug text-ink-subtle">
-              · 백분율은 소수점 이하를 반올림해 표시하며, 가중치 차이는 표시된 두 값의 차이(%p)입니다.
-              현재 분석 실행이 정규화해 돌려준 값이며, 저장 당시의 값을 그대로 보여주지 않습니다.
+              · 저장 당시 값이 아니라 현재 분석 실행이 정규화해 돌려준 값입니다. 백분율은 반올림,
+              차이는 표시된 두 값의 차(%p)입니다.
             </p>
 
             {/* The exact served decimals stay reachable, as everywhere else a rounded
@@ -381,9 +385,14 @@ function SideIdentity({ side }: { side: ComparisonSide }) {
         ) : null}
       </div>
 
+      {/* A per-side MARKER, not a sentence. The full statement — that these are the
+          current run's normalised values and not the stored ones — is made once under
+          the weight table; repeating it in both chips said the same thing three times
+          before the reader reached a single number. The run id is not repeated either:
+          `RunMeta` already names the run in the page header. */}
       {state === "READY" ? (
         <p className="mt-1 text-[11px] text-ink-muted" data-testid="scenario-comparison-side-ready">
-          현재 분석 실행 #{side.runId} 기준으로 다시 계산했습니다.
+          현재 실행 기준으로 재계산됨
         </p>
       ) : null}
 

@@ -126,7 +126,10 @@ export default function SuitabilityScenarioRankingAnalytics({
           title="순위 변동 분포"
           testId="scenario-ranking-movement-card"
           className="wep-figma-card"
-          description="A안과 B안 양쪽에서 순위가 확인된 후보 구역이, B안에서 어느 순위대에 어느 정도 폭으로 움직였는지 보여줍니다. 가중치를 여러 번 바꿔 본 민감도 분석이 아니라 두 시나리오 사이의 순위 차이입니다."
+          // One line, as the frame's captions are. The "not a sensitivity sweep"
+          // qualifier is kept — it is the one misreading this chart invites — but as a
+          // clause rather than a second sentence of methodology under the title.
+          description="양쪽에서 순위가 확인된 후보 구역이 B안에서 어느 순위대로 얼마나 움직였는지 보여줍니다. 가중치를 여러 번 바꿔 본 분석이 아니라 두 시나리오 사이의 순위 차이입니다."
         >
           <ScenarioRankMovementScatter model={model} />
 
