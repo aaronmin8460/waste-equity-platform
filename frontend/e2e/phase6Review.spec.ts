@@ -120,12 +120,19 @@ test.describe("1280×800", () => {
 test.describe("390×844", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("captures the mobile stacking", async ({ page }) => {
+  // This used to capture "the mobile stacking" of the source list. 여기다 is
+  // desktop-required below 1024px (frontend/RESPONSIVE_LAYOUT.md), so there is no
+  // stacked data-sources dashboard to photograph — the reader gets the gate. The
+  // capture is kept rather than deleted because this file's job is to produce the
+  // review screenshots, and the narrow width is still one a reviewer looks at; what
+  // it now records is the gate, which is the honest narrow-screen answer.
+  test("captures the narrow-screen gate", async ({ page }) => {
     await mockTransparencyBackend(page);
     await page.goto(URL);
-    await expect(page.getByTestId("transparency-source-list")).toBeVisible();
+    await expect(page.getByTestId("narrow-screen-gate")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("transparency-source-list")).toHaveCount(0);
     await page.screenshot({
-      path: join(OUT_DIR, "data-sources-default-full-390x844.png"),
+      path: join(OUT_DIR, "data-sources-narrow-gate-390x844.png"),
       fullPage: true,
     });
   });

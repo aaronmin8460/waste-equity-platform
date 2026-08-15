@@ -26,9 +26,19 @@ import {
 
 const FLOW_URL = "/?v=1&mode=flow";
 
+/**
+ * The widths the 수도권매립지 dashboard is exercised at.
+ *
+ * The two sub-floor entries (390×844, 768×1024) are gone: below the 1024px desktop
+ * floor 여기다 does not mount this dashboard at all (frontend/RESPONSIVE_LAYOUT.md),
+ * so its filters, KPIs and regional table have nothing to render into. The gate that
+ * replaces them is asserted in `responsive.spec.ts` and `finalUiIntegration.spec.ts`.
+ *
+ * The `desktop` flag stays a WIDE-LAYOUT tier rather than a "is this desktop" flag —
+ * 1024×768 remains `false` because it is the compressed floor, where the wide-layout
+ * invariants are deliberately not required.
+ */
 const VIEWPORTS = [
-  { name: "mobile 390×844", width: 390, height: 844, desktop: false },
-  { name: "tablet 768×1024", width: 768, height: 1024, desktop: false },
   { name: "small desktop 1024×768", width: 1024, height: 768, desktop: false },
   { name: "desktop 1280×800", width: 1280, height: 800, desktop: true },
   { name: "desktop 1440×900", width: 1440, height: 900, desktop: true },

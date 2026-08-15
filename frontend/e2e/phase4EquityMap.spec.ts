@@ -23,9 +23,18 @@ const DESKTOP = [
   { name: "desktop 1440×900", width: 1440, height: 900 },
 ];
 
+/**
+ * The narrow END of the supported desktop range — not sub-desktop widths.
+ *
+ * 390×844 and 768×1024 used to live here and asserted the retired phone stack (a
+ * sidebar above a map with a definite ~30vh minimum height). 여기다 is desktop-required
+ * below 1024px (frontend/RESPONSIVE_LAYOUT.md): the equity map is not mounted there,
+ * so neither the geometry nor the map-height branch below has a subject. The gate is
+ * asserted in `responsive.spec.ts`; what stays here is the tightest width the map
+ * layout genuinely has to survive.
+ */
 const REGRESSION = [
-  { name: "mobile 390×844", width: 390, height: 844 },
-  { name: "tablet-portrait 768×1024", width: 768, height: 1024 },
+  { name: "desktop floor 1024×768", width: 1024, height: 768 },
   { name: "narrow-desktop 1054×800", width: 1054, height: 800 },
 ];
 
@@ -205,7 +214,6 @@ test.describe("selected-region flow at 1440×900", () => {
 for (const vp of [...REGRESSION, ...DESKTOP]) {
   test.describe(vp.name, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });
-    const isDesktop = vp.width >= 768;
 
     test("never scrolls horizontally", async ({ page }) => {
       await openEquity(page);
@@ -215,42 +223,40 @@ for (const vp of [...REGRESSION, ...DESKTOP]) {
     test("leaves no empty strip below the map", async ({ page }) => {
       await openEquity(page);
       const box = (await page.getByTestId("map-container").boundingBox())!;
-      if (isDesktop) {
-        // The map fills the row to the viewport bottom (rounding tolerance), so no
-        // empty or black strip can appear beneath it.
-        expect(box.y + box.height).toBeGreaterThanOrEqual(vp.height - 6);
-        expect(box.height).toBeGreaterThan(vp.height * 0.75);
-      } else {
-        // Mobile stacks the sidebar above a map with a definite minimum height.
-        expect(box.height).toBeGreaterThan(vp.height * 0.3);
+      // The map fills the row to the viewport bottom (rounding tolerance), so no
+      // empty or black strip can appear beneath it.
+      //
+      // This used to branch on `vp.width >= 768`, with a sub-768 arm allowing a
+      // ~30vh stacked map. Every viewport in this loop is now at or above the 1024px
+      // desktop floor — the only widths that mount a map at all — so that arm was
+      // unreachable and is gone rather than left as a dead alternative contract.
+      expect(box.y + box.height).toBeGreaterThanOrEqual(vp.height - 6);
+      expect(box.height).toBeGreaterThan(vp.height * 0.75);
+    });
+
+    test("floats the legend inside the map, clear of the attribution", async ({ page }) => {
+      await openEquity(page);
+      const mapBox = (await page.getByTestId("map-container").boundingBox())!;
+      const legend = page.getByTestId("map-legend");
+      await expect(legend).toBeVisible();
+      const legendBox = (await legend.boundingBox())!;
+      expect(legendBox.x).toBeGreaterThanOrEqual(mapBox.x - 2);
+      expect(legendBox.y).toBeGreaterThanOrEqual(mapBox.y - 2);
+      expect(legendBox.x + legendBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width + 2);
+      expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(mapBox.y + mapBox.height + 2);
+      const attribBox = await page.locator(".maplibregl-ctrl-attrib").boundingBox();
+      if (attribBox) {
+        expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(attribBox.y + 2);
       }
     });
 
-    if (isDesktop) {
-      test("floats the legend inside the map, clear of the attribution", async ({ page }) => {
-        await openEquity(page);
-        const mapBox = (await page.getByTestId("map-container").boundingBox())!;
-        const legend = page.getByTestId("map-legend");
-        await expect(legend).toBeVisible();
-        const legendBox = (await legend.boundingBox())!;
-        expect(legendBox.x).toBeGreaterThanOrEqual(mapBox.x - 2);
-        expect(legendBox.y).toBeGreaterThanOrEqual(mapBox.y - 2);
-        expect(legendBox.x + legendBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width + 2);
-        expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(mapBox.y + mapBox.height + 2);
-        const attribBox = await page.locator(".maplibregl-ctrl-attrib").boundingBox();
-        if (attribBox) {
-          expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(attribBox.y + 2);
-        }
-      });
-
-      test("keeps every metric radio reachable without a disclosure", async ({ page }) => {
-        await openEquity(page);
-        await expect(page.getByTestId("map-legend-summary")).toBeHidden();
-        // Seven category rows; the four per-capita metrics are on the row switch.
-        await expect(page.locator('input[type="radio"][name="metric"]')).toHaveCount(7);
-        await expect(page.getByTestId("choropleth-legend-row").first()).toBeVisible();
-      });
-    }
+    test("keeps every metric radio reachable without a disclosure", async ({ page }) => {
+      await openEquity(page);
+      await expect(page.getByTestId("map-legend-summary")).toBeHidden();
+      // Seven category rows; the four per-capita metrics are on the row switch.
+      await expect(page.locator('input[type="radio"][name="metric"]')).toHaveCount(7);
+      await expect(page.getByTestId("choropleth-legend-row").first()).toBeVisible();
+    });
 
     test("walks the keyboard from the skip link into the controls with no trap", async ({
       page,

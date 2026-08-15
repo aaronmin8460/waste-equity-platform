@@ -42,7 +42,22 @@ const DESKTOP_VIEWPORTS = [
   { name: "1920×1080", width: 1920, height: 1080 },
 ];
 
-/** The two smaller viewports are REGRESSION checks, not a mobile redesign. */
+/**
+ * The two sub-floor viewports. These were never a mobile redesign — they were a
+ * regression check — and they still are, but the thing being checked changed.
+ *
+ * 여기다 is desktop-required below 1024px (frontend/RESPONSIVE_LAYOUT.md), so below
+ * the floor no view mounts its dashboard: `DashboardShell` returns `NarrowScreenGate`
+ * instead of its children. The old assertions here (one `top-navigation`, `view.maps`
+ * map containers) described the retired phone stack and cannot hold. They are replaced
+ * below by the invariants that DO have to hold at every width — exactly one `<h1>`,
+ * exactly one `#main-content` skip target, and no page-level horizontal scroll — plus
+ * the positive statement that what renders is the gate.
+ *
+ * That is stronger coverage than deleting the block: it runs every view URL in `VIEWS`
+ * through the narrow branch, so a destination that somehow bypassed the floor (as the
+ * pre-shell loading/error branches once did) fails here.
+ */
 const RESPONSIVE_VIEWPORTS = [
   { name: "768×1024", width: 768, height: 1024 },
   { name: "390×844", width: 390, height: 844 },
@@ -361,22 +376,39 @@ for (const vp of DESKTOP_VIEWPORTS) {
 }
 
 // --------------------------------------------------------------------------- //
-// 2. Basic responsive regression (NOT a mobile redesign)
+// 2. Below the desktop floor: every view answers with the gate
 // --------------------------------------------------------------------------- //
 
 for (const vp of RESPONSIVE_VIEWPORTS) {
-  test.describe(`responsive regression at ${vp.name}`, () => {
+  test.describe(`below the desktop floor at ${vp.name}`, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });
 
-    test("keeps every view single-h1, duplication-free, and free of page-level side scroll", async ({
+    test("answers every view URL with the gate, single-h1 and free of page-level side scroll", async ({
       page,
     }) => {
       for (const view of VIEWS) {
-        await openView(page, view);
+        // NOT `openView` — that waits for the view's `ready` testid, which is a
+        // dashboard element and must never appear below the floor.
+        await page.goto(view.url);
+
+        // The gate REPLACES the dashboard rather than hiding it: the view's own
+        // ready element and every map are absent from the DOM, so no MapView is
+        // mounted and no WebGL context or tile request is created.
+        await expect(
+          page.getByTestId("narrow-screen-gate"),
+          `${view.name} @ ${vp.name}: gate`,
+        ).toBeVisible({ timeout: 15000 });
+        await expect(
+          page.getByTestId(view.ready),
+          `${view.name} @ ${vp.name}: dashboard not mounted`,
+        ).toHaveCount(0);
+        await expect(page.getByTestId("map-container")).toHaveCount(0);
+        await expect(page.getByTestId("top-navigation")).toHaveCount(0);
+
+        // The invariants that hold at EVERY width: one heading, one skip target,
+        // no duplicated singletons, and no sideways scroll.
         await expect(page.locator("h1"), `${view.name}: one h1`).toHaveCount(1);
         await expect(page.locator("#main-content")).toHaveCount(1);
-        await expect(page.getByTestId("top-navigation")).toHaveCount(1);
-        await expect(page.getByTestId("map-container")).toHaveCount(view.maps);
         await expectNoDuplicateTestIds(page, `${view.name} @ ${vp.name}`);
         await expectNoHorizontalOverflow(page, `${view.name} @ ${vp.name}`);
       }

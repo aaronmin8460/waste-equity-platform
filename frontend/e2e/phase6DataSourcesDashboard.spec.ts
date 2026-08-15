@@ -30,10 +30,23 @@ const URL = "/?v=1&mode=transparency";
 /** Records in `SYNTHETIC_SOURCES`. Asserted, not assumed — see phase6Fixtures.ts. */
 const SOURCE_COUNT = 11;
 
+/**
+ * The widths the data-sources dashboard is exercised at.
+ *
+ * The three sub-floor entries (390×844, 430×932, 768×1024) are gone: 여기다 is
+ * desktop-required below 1024px (frontend/RESPONSIVE_LAYOUT.md), so the transparency
+ * dashboard — its search, its two filters, its catalog — is not mounted there and
+ * every assertion below would be aimed at `NarrowScreenGate`. That narrow contract is
+ * covered in `responsive.spec.ts` and, for this destination's own URL, in
+ * `finalUiIntegration.spec.ts`.
+ *
+ * The `desktop` flag is a WIDE-LAYOUT tier, not a "is this a desktop" flag: it selects
+ * the viewports that must put all three controls on one row and the catalog in more
+ * than one column. 1024×768 keeps `desktop: false` because it is the compressed floor
+ * where those wide-layout invariants are deliberately not required — only that the
+ * dashboard works and does not scroll sideways.
+ */
 const VIEWPORTS = [
-  { name: "mobile 390×844", width: 390, height: 844, desktop: false },
-  { name: "mobile 430×932", width: 430, height: 932, desktop: false },
-  { name: "tablet 768×1024", width: 768, height: 1024, desktop: false },
   { name: "small desktop 1024×768", width: 1024, height: 768, desktop: false },
   { name: "desktop 1280×800", width: 1280, height: 800, desktop: true },
   { name: "desktop 1440×900", width: 1440, height: 900, desktop: true },

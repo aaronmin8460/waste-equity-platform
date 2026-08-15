@@ -18,8 +18,23 @@ import { mockEquityBackend } from "./phase4Fixtures";
  * server, no government API. Structure and geometry only, never a fixture value.
  */
 
+/**
+ * The widths this checklist is re-checked at.
+ *
+ * The review originally named a 390×844 phone as its third width. 여기다 is now
+ * desktop-required below 1024px (frontend/RESPONSIVE_LAYOUT.md): below the floor the
+ * dashboards are not laid out differently, they are NOT MOUNTED, and the reader gets
+ * `NarrowScreenGate` instead. Every statement in this file is about the analytical
+ * workspace — where the intro block sits, how the panels give width to the map, how
+ * the cost workflow reads — so at 390 there is simply no subject left to check.
+ *
+ * The phone width is therefore not "dropped coverage": it moved to the file that owns
+ * the narrow contract. `responsive.spec.ts` asserts the gate at 390×844, 430×932,
+ * 768×1024 and 1023×800, and `accessibility.spec.ts` keeps the skip link working
+ * there. What remains here is the desktop floor and the review width, which is where
+ * these four regressions can actually recur.
+ */
 const WIDTHS = [
-  { name: "390×844 (phone)", width: 390, height: 844 },
   { name: "1024×768 (minimum desktop)", width: 1024, height: 768 },
   { name: "1440×900 (review width)", width: 1440, height: 900 },
 ];

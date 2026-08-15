@@ -210,10 +210,15 @@ test("25: the browser never requests a raw land-cover feature or geometry endpoi
   expect(forbidden, `raw land-cover requests: ${forbidden.join(", ")}`).toHaveLength(0);
 });
 
-test("mobile: the layer control and legend are usable with no horizontal overflow", async ({
+// Was a 390×844 "mobile" check. 여기다 is desktop-required below 1024px
+// (frontend/RESPONSIVE_LAYOUT.md), so the suitability map — and with it the
+// land-cover layer control and legend this test is about — is not mounted at that
+// width. 1024×768 is the narrowest viewport where the control actually exists, and is
+// therefore the real worst case for "does it fit without side scroll".
+test("desktop floor: the layer control and legend are usable with no horizontal overflow", async ({
   browser,
 }) => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
   const page = await context.newPage();
   await gotoSuitability(page);
   await openControl(page);

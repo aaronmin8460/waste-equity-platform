@@ -247,22 +247,36 @@ test.describe("small desktop 1024×800 — the minimum supported width", () => {
   });
 });
 
+/**
+ * Below the desktop floor there is no sidebar to resize.
+ *
+ * This block used to assert a phone COLUMN: the resizer hidden by CSS, the sidebar
+ * stretched to the full 390px, and a stored desktop width not leaking into it. 여기다
+ * is desktop-required below 1024px now (frontend/RESPONSIVE_LAYOUT.md) — the equity
+ * dashboard is not mounted at all, so the sidebar and its resizer are absent rather
+ * than restyled.
+ *
+ * The stored-preference half of the old test is the part worth keeping, and it is
+ * kept: a width persisted from a desktop session must not cause the narrow branch to
+ * render anything but the gate. That is a real regression path (the value is read from
+ * `localStorage` on mount), so it is exercised here rather than dropped.
+ */
 test.describe("mobile 390×844", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("has no resize handle and no desktop width", async ({ page }) => {
+  test("mounts no sidebar and no resizer, even with a stored desktop width", async ({ page }) => {
     await gotoEquity(page);
-    // Hidden by CSS below md, so there is nothing to drag and nothing to focus.
-    await expect(page.getByTestId("sidebar-resizer")).toBeHidden();
+    await expect(page.getByTestId("narrow-screen-gate")).toBeVisible({ timeout: 15000 });
 
-    const asideBox = (await page.getByTestId("equity-sidebar").boundingBox())!;
-    expect(asideBox.width).toBeGreaterThan(390 - 4);
+    // Absent, not merely hidden — the gate replaces the dashboard subtree.
+    await expect(page.getByTestId("sidebar-resizer")).toHaveCount(0);
+    await expect(page.getByTestId("equity-sidebar")).toHaveCount(0);
 
-    // A stored DESKTOP preference must not leak into the phone column.
+    // A stored DESKTOP preference must not resurrect any of it.
     await page.evaluate(() => window.localStorage.setItem("yeogida.equity.sidebarWidth", "300"));
     await page.reload();
-    await expect(page.getByTestId("equity-sidebar")).toBeVisible();
-    const after = (await page.getByTestId("equity-sidebar").boundingBox())!;
-    expect(after.width, "phone column stays full-width").toBeGreaterThan(390 - 4);
+    await expect(page.getByTestId("narrow-screen-gate")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("equity-sidebar")).toHaveCount(0);
+    await expect(page.getByTestId("sidebar-resizer")).toHaveCount(0);
   });
 });

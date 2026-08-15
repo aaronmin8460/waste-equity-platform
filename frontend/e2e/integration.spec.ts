@@ -43,10 +43,23 @@ const ONE_REGION = {
   ],
 };
 
+/**
+ * The widths the full-application tour runs at.
+ *
+ * This tour drives every mode — map, summary, CRITIC/stability, cost dashboard,
+ * landfill, transparency — so it is a test OF THE ANALYTICAL APPLICATION. 여기다 is
+ * desktop-required below 1024px (frontend/RESPONSIVE_LAYOUT.md): under the floor the
+ * dashboards are not mounted at all, so none of the destinations this tour visits
+ * exists there and every step would be asserting against `NarrowScreenGate`.
+ *
+ * The three sub-floor entries (390×844, 430×932, 768×1024) are therefore gone from
+ * this list, not silently skipped. Their contract did not disappear — it is asserted
+ * where it belongs, in `responsive.spec.ts`, which visits exactly those three widths
+ * (plus the 1023×800 boundary) and requires the gate at each. The floor itself stays
+ * first here, so the tour still proves every mode works at the narrowest width the
+ * application actually claims to support.
+ */
 const VIEWPORTS = [
-  { name: "iPhone 390×844", width: 390, height: 844 },
-  { name: "large phone 430×932", width: 430, height: 932 },
-  { name: "tablet portrait 768×1024", width: 768, height: 1024 },
   { name: "tablet landscape 1024×768", width: 1024, height: 768 },
   { name: "desktop 1440×900", width: 1440, height: 900 },
 ];

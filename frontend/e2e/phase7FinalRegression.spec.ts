@@ -58,6 +58,18 @@ const DESKTOP = [
   { name: "1280×800", width: 1280, height: 800 },
 ];
 
+/**
+ * Every required viewport, including the sub-floor ones.
+ *
+ * These stay complete on purpose. The smoke below asserts only width-agnostic
+ * invariants — a visible `#main-content`, exactly one `<h1>`, and no page-level
+ * horizontal scroll — and those must hold at EVERY width. Below the 1024px desktop
+ * floor the answer is `NarrowScreenGate` rather than a dashboard
+ * (frontend/RESPONSIVE_LAYOUT.md), and the gate deliberately renders its own
+ * `<main id="main-content">` and its own single `<h1>` so these three statements keep
+ * their meaning there. So this list needs no sub-floor pruning: it now doubles as the
+ * check that the gate does not regress on the skip target or start scrolling sideways.
+ */
 const ALL_VIEWPORTS = [
   { name: "mobile 390×844", width: 390, height: 844 },
   { name: "mobile 430×932", width: 430, height: 932 },
@@ -340,9 +352,15 @@ test.describe("보고서 미리보기 uses the desktop width it needs (X7)", () 
     expect(scrolls).toBe("auto");
   });
 
+  // The narrowest widths the report modal can be checked at. It is opened FROM the
+  // analytical workspace, which 여기다 only mounts at or above the 1024px desktop
+  // floor (frontend/RESPONSIVE_LAYOUT.md), so a 390/768 run would be measuring a
+  // dialog that cannot be reached rather than one that overflows. 1024×768 is the
+  // real worst case for "does this modal fit", and it is kept alongside 1280×800 so
+  // the check still spans two widths.
   for (const vp of [
-    { name: "mobile 390×844", width: 390, height: 844 },
-    { name: "tablet 768×1024", width: 768, height: 1024 },
+    { name: "desktop floor 1024×768", width: 1024, height: 768 },
+    { name: "desktop 1280×800", width: 1280, height: 800 },
   ]) {
     test(`remains viewport-safe at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });

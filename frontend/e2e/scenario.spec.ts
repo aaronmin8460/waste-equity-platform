@@ -93,8 +93,15 @@ test.describe("weight scenario lab workflow", () => {
     await expect(page.getByTestId("landfill-dashboard")).toBeVisible();
   });
 
-  test("scenario lab has no horizontal overflow and usable controls on mobile", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
+  // Was a 390×844 "mobile" check. Below the 1024px desktop floor 여기다 does not mount
+  // the scenario lab at all (frontend/RESPONSIVE_LAYOUT.md), so its sliders and inputs
+  // do not exist there to be reachable. 1024×768 is the narrowest width the lab is
+  // specified to work at, which makes it the real test of "do the four slider rows and
+  // their numeric inputs still fit without side scroll".
+  test("scenario lab has no horizontal overflow and usable controls at the desktop floor", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
     await enterScenario(page);
     await page.getByTestId("scenario-preset-equal").click();
     await expect(page.getByTestId("scenario-apply")).toBeVisible();

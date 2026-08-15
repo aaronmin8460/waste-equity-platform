@@ -33,7 +33,7 @@ const DESKTOP_VIEWPORTS = [
   { name: "1920×1080", width: 1920, height: 1080 },
 ];
 
-/** The two smaller sizes are REGRESSION checks, not a mobile redesign. */
+/** The two sub-floor sizes, where the gate replaces the map entirely (§4 below). */
 const NARROW_VIEWPORTS = [
   { name: "mobile 390×844", width: 390, height: 844 },
   { name: "tablet-portrait 768×1024", width: 768, height: 1024 },
@@ -558,42 +558,46 @@ test.describe("후보지 분석 map controls stay operable beside the collapsed 
 // 4. Narrow-viewport regression (NOT a mobile redesign)
 // --------------------------------------------------------------------------- //
 
+/**
+ * These two widths used to assert that the insight overlay stepped aside while the
+ * SIDEBAR still carried its reference period and source lines — i.e. that a working
+ * phone dashboard existed without the overlay. 여기다 is desktop-required below 1024px
+ * now (frontend/RESPONSIVE_LAYOUT.md): there is no sidebar below the floor, because
+ * there is no dashboard. The old assertions described the retired phone stack.
+ *
+ * What replaces them is the statement that still matters for THIS spec's subject: no
+ * insight overlay exists below the floor — and, stronger than before, neither does the
+ * map it would overlay. The reference-period/source disclosure obligation those old
+ * assertions protected has not been dropped; it moved with the dashboard, and is
+ * asserted at the desktop widths in section 1 above.
+ */
 for (const vp of NARROW_VIEWPORTS) {
   test.describe(`insight overlays at ${vp.name}`, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });
 
-    test("renders no map-insight bar below 1024px, and keeps its content in the sidebar", async ({
+    test("mounts no map, and therefore no insight bar, below the desktop floor", async ({
       page,
     }) => {
-      await openEquity(page);
-      // Unchanged from before this milestone: below the 1024px minimum supported
-      // width the overlay does not participate at all. It hides no required
-      // disclosure, because the sidebar carries the same reference period and the
-      // same source lines (repo AGENTS.md; docs/ui-refresh/equity-dashboard.md).
-      await expect(page.getByTestId("equity-insight-strip")).toBeHidden();
-      await expect(page.getByTestId("equity-summary-reference-period")).toBeVisible();
-      await expect(page.getByTestId("selected-region-metric-source").first()).toBeVisible();
-      await expectNoHorizontalOverflow(page, `equity @ ${vp.name}`);
+      await page.goto("/?v=1&mode=equity");
+      await expect(page.getByTestId("narrow-screen-gate")).toBeVisible({ timeout: 15000 });
 
-      // The collapsed overlay's positioning row must not clip or scroll the page
-      // even while display:none, and the legend stays operable at these widths.
-      await expect(page.getByTestId("map-legend")).toBeVisible();
-      const mapBox = await box(page.getByTestId("map-container"));
-      expect(mapBox.width).toBeLessThanOrEqual(vp.width + 1);
+      // Not merely hidden — absent. The gate REPLACES the dashboard subtree, so the
+      // overlay, the legend and the map are all out of the DOM together.
+      await expect(page.getByTestId("equity-insight-strip")).toHaveCount(0);
+      await expect(page.getByTestId("map-legend")).toHaveCount(0);
+      await expect(page.getByTestId("map-container")).toHaveCount(0);
+      await expectNoHorizontalOverflow(page, `equity @ ${vp.name}`);
     });
 
-    test("keeps the suitability map free of a stray disclosure and of side scroll", async ({
-      page,
-    }) => {
-      await openSuitability(page, "score");
-      await expect(page.getByTestId("suitability-insight-strip")).toBeHidden();
-      await expect(page.getByTestId("map-container")).toHaveCount(1);
-      await expectNoHorizontalOverflow(page, `suitability @ ${vp.name}`);
+    test("does the same on the suitability map", async ({ page }) => {
+      await page.goto("/?v=1&mode=suitability&view=score");
+      await expect(page.getByTestId("narrow-screen-gate")).toBeVisible({ timeout: 15000 });
 
-      // The top-left layer controls remain the reachable, unobstructed surface.
-      await page.getByTestId("land-cover-layer-summary").click();
-      await expect(page.getByTestId("land-cover-layer-toggle")).toBeVisible();
-      await expectNoHorizontalOverflow(page, `suitability layer control @ ${vp.name}`);
+      await expect(page.getByTestId("suitability-insight-strip")).toHaveCount(0);
+      await expect(page.getByTestId("map-container")).toHaveCount(0);
+      // The top-left layer stack goes with the map rather than surviving alone.
+      await expect(page.getByTestId("land-cover-layer-summary")).toHaveCount(0);
+      await expectNoHorizontalOverflow(page, `suitability @ ${vp.name}`);
     });
   });
 }

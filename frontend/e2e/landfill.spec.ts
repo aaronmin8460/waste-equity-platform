@@ -262,8 +262,13 @@ test("landfill dashboard: shows the MOIS source, v2 version and comparability no
   );
 });
 
-test("landfill dashboard: usable on a mobile viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+// Was a 390×844 "mobile" check. 여기다 is desktop-required below 1024px
+// (frontend/RESPONSIVE_LAYOUT.md): the 수도권매립지 dashboard is not mounted there, so
+// its filters, KPIs and regional table cannot be exercised. 1024×768 is the narrowest
+// supported width and therefore the real case for "does the regional table stay
+// reachable without the page itself scrolling sideways".
+test("landfill dashboard: usable at the desktop floor viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
   await openLandfillDashboard(page);
   await expect(page.getByTestId("landfill-filters")).toBeVisible();
   await page.getByTestId("landfill-kpis").scrollIntoViewIfNeeded();

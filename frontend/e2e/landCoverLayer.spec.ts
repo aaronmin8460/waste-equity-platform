@@ -311,12 +311,17 @@ test.describe("land-cover map layer — live", () => {
     await expect(page.getByTestId("status-toggle-ELIGIBLE")).toBeChecked();
   });
 
-  test("23-24: usable on desktop and on a narrow mobile viewport, with no horizontal overflow", async ({
+  // The 375×720 "mobile" leg is gone: below the 1024px desktop floor 여기다 does not
+  // mount the suitability map (frontend/RESPONSIVE_LAYOUT.md), so the land-cover layer
+  // control this checks does not exist there. 1024×768 — the compressed floor — is the
+  // narrowest width where the control is real, and is the case that can actually push
+  // the card outside the viewport.
+  test("23-24: usable at the canonical desktop and at the desktop floor, with no horizontal overflow", async ({
     page,
   }) => {
     for (const viewport of [
       { width: 1440, height: 900, label: "desktop" },
-      { width: 375, height: 720, label: "mobile" },
+      { width: 1024, height: 768, label: "desktop floor" },
     ]) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await gotoSuitability(page);

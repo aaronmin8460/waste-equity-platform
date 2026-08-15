@@ -125,8 +125,17 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+/**
+ * The widths the cost lens is driven at.
+ *
+ * The 390×844 entry is gone and 1024×768 replaces it: below the 1024px desktop floor
+ * 여기다 does not mount the cost dashboard at all (frontend/RESPONSIVE_LAYOUT.md), so
+ * there is no setup-to-results workflow at 390 to drive. The gate that renders there
+ * instead is asserted in `responsive.spec.ts` and, for this view's own URL, in
+ * `finalUiIntegration.spec.ts`. The floor is kept as the narrowest real case.
+ */
 const VIEWPORTS = [
-  { name: "mobile 390×844", width: 390, height: 844, desktop: false },
+  { name: "desktop floor 1024×768", width: 1024, height: 768, desktop: true },
   { name: "desktop 1280×800", width: 1280, height: 800, desktop: true },
   { name: "desktop 1440×900", width: 1440, height: 900, desktop: true },
 ];

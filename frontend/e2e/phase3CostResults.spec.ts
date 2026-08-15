@@ -129,10 +129,23 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+/**
+ * The widths the cost workflow is driven at.
+ *
+ * The 390×844 entry is gone: 여기다 is desktop-required below 1024px
+ * (frontend/RESPONSIVE_LAYOUT.md), so the cost dashboard is not mounted there at all
+ * and this spec's subject — that the result joins the setup on ONE screen instead of
+ * replacing it — has nothing to attach to. The narrow contract is asserted in
+ * `responsive.spec.ts` (the gate) and `finalUiIntegration.spec.ts` (the gate on every
+ * view URL, including this one).
+ *
+ * 1024×768 takes its place as the narrowest width the workflow actually has to fit,
+ * which is the case most likely to break the single-screen layout.
+ */
 const VIEWPORTS = [
   { name: "desktop 1440x900", width: 1440, height: 900, desktop: true },
   { name: "desktop 1280x800", width: 1280, height: 800, desktop: true },
-  { name: "mobile 390x844", width: 390, height: 844, desktop: false },
+  { name: "desktop floor 1024x768", width: 1024, height: 768, desktop: true },
 ];
 
 for (const vp of VIEWPORTS) {
