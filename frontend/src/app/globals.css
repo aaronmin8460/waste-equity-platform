@@ -317,36 +317,30 @@
  *
  * The Figma geometry applies from 1280px up, which is the width at which it fits:
  * brand 194 + nav 907 + 2x28 padding = 1157px, so 1280 clears it with ~120px of
- * slack while 1024 does not. Below 1280 the same SHAPE is kept (pill track, pill
- * active tab) at compact metrics, so no width gets a different active-state idiom.
+ * slack while 1024 does not. Between the 1024 desktop floor and 1280 the same SHAPE
+ * is kept (pill track, pill active tab) at compact metrics, so no width the app
+ * renders at gets a different active-state idiom.
  * 78px is still inside the 12%-of-viewport chrome budget the responsive spec holds
  * the bar to (96px at 1280x800), so the map keeps its height.
+ *
+ * `flex-wrap: nowrap` is unconditional. The bar used to wrap below 1024 so six
+ * Korean labels could fall to a second row on a phone; the app no longer renders
+ * below 1024 (components/ui/NarrowScreenGate.tsx), and one unwrapped nav row is a
+ * desktop invariant, so the wrapping branch is gone rather than left unreachable.
  *
  * Horizontal padding lives HERE rather than on Tailwind utilities in the JSX: the
  * `.wep-*` layer is unlayered and would win against them anyway, so two sources for
  * one value would only be able to disagree. */
 .wep-appbar-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
+  /* SIX destinations share one row with the brand at the 1024 floor, so the gap
+     between the two blocks is tight here and opens up at the Figma width. */
   gap: 0 1rem;
   min-height: 3.5rem;
-  padding: 0.5rem 1rem;
-}
-@media (min-width: 640px) {
-  .wep-appbar-row {
-    padding-inline: 1.5rem;
-  }
-}
-/* SIX destinations have to share one row with the brand from 1024px up, so the
-   gap between the two blocks tightens as the width does. */
-@media (min-width: 1024px) {
-  .wep-appbar-row {
-    flex-wrap: nowrap;
-    gap: 0 1rem;
-    padding-inline: 2rem;
-  }
+  padding: 0.5rem 2rem;
 }
 @media (min-width: 1280px) {
   .wep-appbar-row {
@@ -433,23 +427,22 @@
   line-height: 13px;
   white-space: nowrap;
 }
-/* Phone widths have no room for the subtitle; the product name always stays
-   (spec §1). The nav track below scrolls rather than the page. */
-@media (max-width: 639px) {
-  .wep-brand-sub {
-    display: none;
-  }
-}
 
 /* The tab track — Figma frame 74:2000: a 907x50 pill (radius 999) filled with the
    canvas grey, 6px of padding and a 2px gap, holding the six tabs.
 
-   It NEVER wraps. Six Korean labels cannot wrap gracefully, and the spec requires
-   one row from 1024px up, so the track instead SCROLLS horizontally at narrow
-   widths. `min-width: 0` is load-bearing: without it the flex item refuses to
-   shrink below its content and the PAGE gains a horizontal scrollbar — exactly
-   what the mobile contract forbids. Scrolling the track keeps the overflow inside
-   the nav, and is why the track (not the row) owns the pill background. */
+   It NEVER wraps: six Korean labels cannot wrap gracefully, and one unwrapped nav
+   row is a desktop invariant from the 1024 floor up.
+
+   `overflow-x: auto` + `min-width: 0` are kept as the OVERFLOW VALVE, not as a phone
+   affordance. They used to exist so a 390px phone scrolled the track instead of the
+   page; the app no longer renders below 1024. They stay because they are what
+   guarantees the remaining invariant — should a longer destination label or a wider
+   font ever push the six tabs past the available width at exactly 1024, the overflow
+   is contained INSIDE the nav and the PAGE still never gains a horizontal scrollbar.
+   `min-width: 0` is the load-bearing half: without it the flex item refuses to shrink
+   below its content and the document overflows. It is also why the track (not the
+   row) owns the pill background. */
 .wep-nav-track {
   display: flex;
   align-items: center;
@@ -826,84 +819,100 @@ body {
 /* Resizable 지역 지표 control column (components/ui/ResizableSidebar.tsx).
 
    The width arrives as the `--wep-sidebar-width` custom property, set inline by
-   the component, and is READ ONLY inside the md+ block below. That is what makes
-   the phone layout structurally immune to the desktop width: below 768px the
-   property is never consumed, so the column is plainly `width: 100%` and no JS
-   branch has to remember to skip it.
+   the component. Both rules below used to be `md`-scoped, with a `width: 100%` /
+   `display: none` phone branch in front of them, so a phone got a full-width column
+   and no drag handle. The app no longer renders below 1024
+   (components/ui/NarrowScreenGate.tsx), so that branch was unreachable and is gone:
+   the column is always the resizable desktop column.
 
    The divider is a real 10px flex item — a comfortable pointer target — that
    paints only a 1px hairline down its centre, so the visible seam stays as quiet
    as the border it replaced. (The column's old `md:border-r` is gone; this line
-   IS that border now, which is why the map still starts immediately after it.)
-   It is hidden below md, so a phone has no handle and receives no pointer
-   handlers at all. */
+   IS that border now, which is why the map still starts immediately after it.) */
 .wep-sidebar {
-  width: 100%;
+  width: var(--wep-sidebar-width, 360px);
 }
 .wep-sidebar-resizer {
-  display: none;
+  display: block;
+  position: relative;
+  flex: none;
+  width: 10px;
+  align-self: stretch;
+  background: transparent;
+  /* The cursor is the affordance: the 10px band reads as a hairline until the
+     pointer is over it. */
+  cursor: col-resize;
+  /* Never let a drag select the sidebar text it starts next to. */
+  user-select: none;
+  /* Claim horizontal gestures so a trackpad drag resizes instead of scrolling. */
+  touch-action: none;
 }
-@media (min-width: 768px) {
-  .wep-sidebar {
-    width: var(--wep-sidebar-width, 360px);
-  }
-  .wep-sidebar-resizer {
-    display: block;
-    position: relative;
-    flex: none;
-    width: 10px;
-    align-self: stretch;
-    background: transparent;
-    /* The cursor is the affordance: the 10px band reads as a hairline until the
-       pointer is over it. */
-    cursor: col-resize;
-    /* Never let a drag select the sidebar text it starts next to. */
-    user-select: none;
-    /* Claim horizontal gestures so a trackpad drag resizes instead of scrolling. */
-    touch-action: none;
-  }
-  .wep-sidebar-resizer::before {
-    content: "";
-    position: absolute;
-    inset-block: 0;
-    left: 50%;
-    width: 1px;
-    transform: translateX(-50%);
-    background: var(--color-hairline);
-    transition: background-color 0.12s ease, width 0.12s ease;
-  }
-  /* Hover and keyboard focus both thicken and tint the line, so the handle is
-     discoverable by pointer AND visibly targeted when tabbed to. */
-  .wep-sidebar-resizer:hover::before,
-  .wep-sidebar-resizer:focus-visible::before {
-    width: 3px;
-    background: var(--color-primary);
-  }
+.wep-sidebar-resizer::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--color-hairline);
+  transition: background-color 0.12s ease, width 0.12s ease;
+}
+/* Hover and keyboard focus both thicken and tint the line, so the handle is
+   discoverable by pointer AND visibly targeted when tabbed to. */
+.wep-sidebar-resizer:hover::before,
+.wep-sidebar-resizer:focus-visible::before {
+  width: 3px;
+  background: var(--color-primary);
 }
 
 /* Three-column 후보지 심층 분석 workspace (components/ui/CollapsiblePanel.tsx).
 
-   Mobile: every column is just a section in the stack — full width, body always
-   shown, no rail and no toggle. A phone must never be able to reach a state where
-   an analytical panel is closed with no way to open it.
-
-   md+: each column is a fixed-width flex item beside the map. Collapsing swaps
-   that width for a narrow rail, and the freed width goes to `.map-pane`
+   Each column is a fixed-width flex item beside the map. Collapsing swaps that
+   width for a narrow rail, and the freed width goes to `.map-pane`
    (`flex: 1 1 0%`), whose existing ResizeObserver in MapView then resizes the
-   canvas. Nothing here touches the map. */
+   canvas. Nothing here touches the map.
+
+   These rules used to sit behind `@media (min-width: 768px)`, in front of a phone
+   branch where every column was a full-width section in a vertical stack with no
+   rail and no toggle. That stack was the multi-screen phone scroll the desktop floor
+   removes (components/ui/NarrowScreenGate.tsx), so the branch is gone and the media
+   wrapper with it — the workspace has one layout now. */
 .wep-panel {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border-bottom: 1px solid var(--color-hairline);
-  background: var(--color-surface-sunken);
+  flex: none;
+  /* 248px between the 1024 floor and 1279. TWO columns flank the map here, so the
+     pair costs double: at 21rem each they left only ~336px of map at the 1024px
+     minimum, and the floating overlays (legend, layer stack, insight card) then
+     collided with each other and with the columns. 15.5rem keeps the map above
+     500px at 1024 while still fitting the controls. */
+  width: 15.5rem;
+  overflow-y: auto;
+  /* Only the width animates; the body is display-toggled, so there is nothing
+     to interpolate inside it. */
+  transition: width 0.16s ease;
+  /* FIGMA 136:8684 — the columns are no longer recessed trays with a divider.
+     They are part of the #f9f9f9 canvas, and the numbered cards float on it.
+     The page inset and the gutter are carried HERE, as the column's own
+     padding, rather than as a gap on <main>: <main> is shared by 지역 지표 and
+     후보지 심층 비교, and `.wep-panel` is used by this workspace and nothing
+     else (the only two CollapsiblePanel call sites are the two columns of this
+     screen). Because the map keeps `flex: 1 1 0%`, giving the columns their
+     Figma OUTER widths is enough to land the map on the frame's 668px without
+     hard-coding 668 anywhere. */
+  background: transparent;
+  padding: 0.75rem 0.5rem 0.75rem 0.75rem;
+}
+.wep-panel[data-side="right"] {
+  padding: 0.75rem 0.75rem 0.75rem 0.5rem;
 }
 .wep-panel-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0 0 0.5rem;
 }
 .wep-panel-title {
   color: var(--color-ink);
@@ -913,99 +922,59 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.wep-panel-toggle {
-  display: none; /* desktop-only affordance; see the md+ block */
-}
 .wep-panel-body {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 0 0.75rem 0.75rem;
+  /* Figma stacks the numbered cards 20px apart in both columns. */
+  gap: 1.25rem;
+  padding: 0;
+}
+.wep-panel-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  /* 32px: comfortably clickable while keeping the collapsed rail narrow. */
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  cursor: pointer;
 }
 
-@media (min-width: 768px) {
-  .wep-panel {
-    flex: none;
-    /* 248px between 768 and 1279. TWO columns flank the map here, so the pair
-       costs double: at 21rem each they left only ~336px of map at the 1024px
-       minimum, and the floating overlays (legend, layer stack, insight card)
-       then collided with each other and with the columns. 15.5rem keeps the map
-       above 500px at 1024 while still fitting the controls. */
-    width: 15.5rem;
-    border-bottom: 0;
-    overflow-y: auto;
-    /* Only the width animates; the body is display-toggled, so there is nothing
-       to interpolate inside it. */
-    transition: width 0.16s ease;
-    /* FIGMA 136:8684 — the columns are no longer recessed trays with a divider.
-       They are part of the #f9f9f9 canvas, and the numbered cards float on it.
-       The page inset and the gutter are carried HERE, as the column's own
-       padding, rather than as a gap on <main>: <main> is shared by 지역 지표 and
-       후보지 심층 비교, and `.wep-panel` is used by this workspace and nothing
-       else (the only two CollapsiblePanel call sites are the two columns of this
-       screen). Because the map keeps `flex: 1 1 0%`, giving the columns their
-       Figma OUTER widths is enough to land the map on the frame's 668px without
-       hard-coding 668 anywhere. */
-    background: transparent;
-    padding: 0.75rem 0.5rem 0.75rem 0.75rem;
-  }
-  .wep-panel[data-side="right"] {
-    padding: 0.75rem 0.75rem 0.75rem 0.5rem;
-  }
-  .wep-panel-bar {
-    padding: 0 0 0.5rem;
-  }
-  .wep-panel-body {
-    /* Figma stacks the numbered cards 20px apart in both columns. */
-    gap: 1.25rem;
-    padding: 0;
-  }
-  .wep-panel-toggle {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    /* 32px: comfortably clickable while keeping the collapsed rail narrow. */
-    width: 2rem;
-    height: 2rem;
-    border: 1px solid var(--color-hairline-strong);
-    border-radius: var(--radius-control);
-    background: var(--color-surface);
-    color: var(--color-ink-muted);
-    cursor: pointer;
-  }
-  .wep-panel-toggle:hover {
-    border-color: var(--color-primary-border);
-    background: var(--color-primary-soft);
-    color: var(--color-primary);
-  }
-  /* Collapsed: a rail just wide enough for the toggle plus its padding.
+.wep-panel-toggle:hover {
+  border-color: var(--color-primary-border);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+/* Collapsed: a rail just wide enough for the toggle plus its padding.
 
-     THE DOUBLE CLASS IS LOAD-BEARING — do not simplify it to `.wep-panel-collapsed`.
-     The ≥1280px block below re-declares `.wep-panel { width: 21rem }`. At the single
-     class both rules have specificity (0,1,0), and the 1280 block is LATER in source
-     order, so above 1280px the open width beat the collapsed rail: the body hid, the
-     column kept its full 336px, and the map never received the freed width. That is
-     the defect the post-production visual review found, and `.wep-panel` +
-     `.wep-panel-collapsed` (0,2,0) is what makes the collapsed state win at every
-     width regardless of block order. Measured by e2e/deepAnalysisPanels.spec.ts. */
-  .wep-panel.wep-panel-collapsed {
-    width: 3rem;
-    overflow: hidden;
-    /* The Figma page inset above is an OPEN-column value. The rail keeps only its
-       vertical inset, so 3rem stays 3rem and e2e/deepAnalysisPanels' rail-width
-       measurement is unaffected by the horizontal padding. */
-    padding: 0.75rem 0;
-  }
-  .wep-panel-collapsed .wep-panel-bar {
-    justify-content: center;
-    padding-inline: 0.5rem;
-  }
-  .wep-panel-collapsed .wep-panel-body {
-    /* Removes it from layout, the a11y tree, and the tab order — the correct
-       state for a column the reader has closed. React keeps it mounted. */
-    display: none;
-  }
+   THE DOUBLE CLASS IS LOAD-BEARING — do not simplify it to `.wep-panel-collapsed`.
+   The ≥1280px block below re-declares `.wep-panel { width: 21rem }`. At the single
+   class both rules have specificity (0,1,0), and the 1280 block is LATER in source
+   order, so above 1280px the open width beat the collapsed rail: the body hid, the
+   column kept its full 336px, and the map never received the freed width. That is
+   the defect the post-production visual review found, and `.wep-panel` +
+   `.wep-panel-collapsed` (0,2,0) is what makes the collapsed state win at every
+   width regardless of block order. Measured by e2e/deepAnalysisPanels.spec.ts. */
+.wep-panel.wep-panel-collapsed {
+  width: 3rem;
+  overflow: hidden;
+  /* The Figma page inset above is an OPEN-column value. The rail keeps only its
+     vertical inset, so 3rem stays 3rem and e2e/deepAnalysisPanels' rail-width
+     measurement is unaffected by the horizontal padding. */
+  padding: 0.75rem 0;
+}
+.wep-panel-collapsed .wep-panel-bar {
+  justify-content: center;
+  padding-inline: 0.5rem;
+}
+.wep-panel-collapsed .wep-panel-body {
+  /* Removes it from layout, the a11y tree, and the tab order — the correct
+     state for a column the reader has closed. React keeps it mounted. */
+  display: none;
 }
 
 /* Above 1280px there is room for the roomier column the controls prefer.
@@ -1047,8 +1016,8 @@ body {
   }
   /* THE COLLAPSED RAIL IS RE-DECLARED HERE, and it must stay LAST in this block.
      `.wep-panel[data-side="right"]` above is (0,2,0) — a class plus an attribute —
-     which is the SAME specificity as `.wep-panel.wep-panel-collapsed` in the ≥768
-     block, and this block is later in source order. Without this rule the right
+     which is the SAME specificity as the unconditional `.wep-panel.wep-panel-collapsed`
+     rule above, and this block is later in source order. Without this rule the right
      column kept its full 376px when collapsed while the left correctly became a
      rail: the exact cascade accident the ≥768 comment describes, in its
      asymmetric form. e2e/deepAnalysisPanels.spec.ts measures both rails.
@@ -1099,53 +1068,46 @@ body {
   color: #5b6070;
 }
 
-/* Map pane sizing.
-   Replaces the ambiguous stack of `h-[60vh] h-[60dvh] md:h-auto md:min-h-0
-   md:flex-1` utilities that previously sized the map wrapper. Two problems it
-   fixes:
-     1. The old desktop reset (`md:h-auto`) is a single-class utility, so the
-        `@supports` override that re-asserted the dynamic mobile height
-        (`.h-\[60vh\].h-\[60dvh\] { height: 60dvh }`, two classes) out-specified it
-        and forced 60dvh even at md+ — leaving the map only 60% tall with a large
-        empty (black, under the old dark <body>) strip below it inside the
-        full-height row.
-     2. A percentage-height MapLibre child (`h-full`) needs a definite parent
-        height on mobile, which a bare `min-h` cannot provide.
-   Mobile: a definite 60% viewport height (static `vh` fallback first, then the
-   dynamic `dvh` value under @supports) with a sensible minimum, so the canvas
-   never collapses. md+: fill the fixed-height sidebar row — flex to the remaining
-   width AND the full row height — so nothing is left below the canvas. */
+/* Map pane sizing — ONE rule, one layout.
+   The map wrapper fills the fixed-height shell row: flex to the remaining width AND
+   the full row height, so nothing is ever left below the canvas.
+
+   MapLibre's container is `h-full` (100% of this wrapper), and a percentage height
+   needs a DEFINITE parent height — which `height: 100%` of the shell's
+   `h-screen h-dvh` row supplies. `min-height: 0` is what lets the flex item shrink
+   to exactly the row.
+
+   ── Two retired heights, and why neither may come back ───────────────────────────
+   1. `h-[60vh] h-[60dvh] md:h-auto md:min-h-0 md:flex-1` utilities. The `@supports`
+      override that re-asserted the dynamic mobile height
+      (`.h-\[60vh\].h-\[60dvh\] { height: 60dvh }`, two classes) out-specified the
+      single-class `md:h-auto` desktop reset and forced 60dvh even at md+ — the map
+      was ~60% tall with a large empty (black, under the old dark <body>) strip below
+      it inside the full-height row. Replacing the stack with this one class fixed it.
+   2. The `60vh`/`60dvh` MOBILE height this class then carried, plus its `360px`
+      floor and its `@supports` companion. That existed so the map survived being
+      stacked under the sidebar in the phone column. The app no longer renders below
+      1024 (components/ui/NarrowScreenGate.tsx), so the mobile height was unreachable
+      and is gone — with it the last rule in this file that could put a viewport-
+      relative height on the analytical map. Do not reintroduce one: a `vh` height
+      here is what the empty-strip defect was made of. */
 .map-pane {
-  height: 60vh;
-  min-height: 360px;
-}
-@supports (height: 100dvh) {
-  .map-pane {
-    height: 60dvh;
-  }
-}
-@media (min-width: 768px) {
-  /* Written AFTER the @supports block so, at equal (single-class) specificity,
-     this desktop rule wins over the mobile 60dvh value at md+ widths. */
-  .map-pane {
-    height: 100%;
-    min-height: 0;
-    flex: 1 1 0%;
-  }
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 0%;
 }
 
 /* 후보지 심층 분석 only: the map is a rounded surface set into the canvas, the way
    Figma 136:8684 draws it, instead of a full-bleed rectangle. The left/right
    gutters come from the two columns' padding; the top inset is added at ≥1440
    (see the panel block above for why it is scoped and why there is no bottom
-   inset — nothing may sit below the map). */
-@media (min-width: 768px) {
-  /* MapView's root wrapper. Clipping here (not on `.map-pane`) keeps the floating
-     legend/controls, which are siblings of it, outside the rounded corners. */
-  .wep-workspace-map > div:first-of-type {
-    border-radius: var(--radius-card) var(--radius-card) 0 0;
-    overflow: hidden;
-  }
+   inset — nothing may sit below the map).
+
+   MapView's root wrapper. Clipping here (not on `.map-pane`) keeps the floating
+   legend/controls, which are siblings of it, outside the rounded corners. */
+.wep-workspace-map > div:first-of-type {
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  overflow: hidden;
 }
 
 /* Skip navigation link (본문으로 바로가기).
@@ -1185,21 +1147,26 @@ body {
   outline-offset: 1px;
 }
 
-/* Responsive control sections.
-   On small screens each section is a native <details> disclosure so the sidebar
-   stays short and the map is reachable; the <summary> is the tappable label.
-   On md+ (desktop/tablet-landscape) the summary is hidden and the body is forced
-   visible, so the desktop sidebar renders exactly as before — no toggles are
-   added to the desktop UI and no analytical option is ever permanently hidden.
+/* `.mobile-collapsible` — a legacy class name with NO remaining conditional
+   behaviour.
 
-   NOTE (Phase 1): 지역 지표 was the only consumer, and its two disclosures moved —
-   the facility control onto the map, 출처와 계산 방법 into the 선택한 지역 card — so
-   this block currently has none. It is kept because Pages 2-6 have not been
-   redesigned yet and the same mobile behaviour is likely to be wanted there; if the
-   last page phase also finds no use for it, delete it then. */
+   It used to be a real responsive disclosure: below 768px each section collapsed
+   behind a tappable <summary> so the phone sidebar stayed short and the stacked map
+   was reachable, and only at md+ was the summary hidden and the body forced open.
+   The app no longer renders below 1024 (components/ui/NarrowScreenGate.tsx), so the
+   collapsing half was unreachable — the `max-width: 767px` branch and the `md`
+   wrapper around the force-open half are both gone. What remains is unconditional:
+   the summary never shows and the body is always open.
+
+   The NAME is deliberately unchanged. It is asserted by name in existing tests and
+   would otherwise have to be renamed across components other work streams own; the
+   contract it now expresses is "an always-open <details>", which is what the rules
+   below say. It has no consumer in the shipped UI either way — 지역 지표 was the last
+   one, and both of its disclosures moved to where their subject is (the facility
+   control onto the map, 출처와 계산 방법 into the 선택한 지역 card). Delete the class
+   outright once nothing references it. */
 .mobile-collapsible > summary {
-  list-style: none;
-  cursor: pointer;
+  display: none;
 }
 .mobile-collapsible > summary::-webkit-details-marker {
   display: none;
@@ -1207,46 +1174,38 @@ body {
 .mobile-collapsible-chevron {
   transition: transform 0.15s ease;
 }
-.mobile-collapsible[open] > summary .mobile-collapsible-chevron {
-  transform: rotate(180deg);
+/* Force the disclosure open across both <details> UA models: older engines hide the
+   non-summary children with `display: none`, while current Chromium/Safari/Firefox
+   wrap them in the ::details-content pseudo and hide it with `content-visibility`.
+   Override both, so no analytical option is ever hidden behind a toggle. */
+.mobile-collapsible > .mobile-collapsible-body {
+  display: block;
 }
-@media (max-width: 767px) {
-  .mobile-collapsible[open] > .mobile-collapsible-body {
-    margin-top: 0.5rem;
-  }
-}
-@media (min-width: 768px) {
-  .mobile-collapsible > summary {
-    display: none;
-  }
-  /* Force the disclosure open on desktop across both <details> UA models:
-     older engines hide the non-summary children with `display: none`, while
-     current Chromium/Safari/Firefox wrap them in the ::details-content pseudo
-     and hide it with `content-visibility`. Override both so the desktop sidebar
-     always shows the panel and no analytical option is hidden behind a toggle. */
-  .mobile-collapsible > .mobile-collapsible-body {
-    display: block;
-  }
-  .mobile-collapsible::details-content {
-    content-visibility: visible;
-  }
+.mobile-collapsible::details-content {
+  content-visibility: visible;
 }
 
 /* Floating map legend (Phase 2/3 UX cleanup).
    The equity legend and the suitability status/score legend render as a floating
    <details> card over the map (components/MapLegendOverlay.tsx), not in the sidebar.
-   Mobile: a real disclosure — collapsed by default behind a labelled "범례" summary,
-   so it never covers most of the map; the body scrolls internally.
-   md+ (tablet-landscape/desktop): the summary is hidden and the body is forced open
-   so the legend reads as an always-expanded floating card. This is the SAME
-   force-open technique as the sidebar `.mobile-collapsible` (both <details> UA
-   models: legacy `display:none` children and the modern ::details-content wrapper),
-   but scoped to its own class so the floating legend and the sidebar disclosures
-   never affect each other. Toggling it never resizes the MapLibre canvas: the card
-   is an absolutely-positioned overlay, not part of the map container's box. */
+   It is an ALWAYS-EXPANDED floating card: the summary is hidden and the body is
+   forced open, so a legend key is never hidden behind a toggle.
+
+   The `md`-scoped branch this used to sit behind is gone. Below 768px the legend was
+   a real disclosure, collapsed by default behind a labelled "범례" summary so it
+   never covered most of the phone map — a behaviour that existed only to serve the
+   stacked phone map, which the desktop floor removed
+   (components/ui/NarrowScreenGate.tsx). The force-open half is now unconditional.
+
+   The technique is the same as `.mobile-collapsible` (both <details> UA models:
+   legacy `display:none` children and the modern ::details-content wrapper), but it
+   stays scoped to its own class so the floating legend and the sidebar disclosures
+   never affect each other. `.map-insight` is deliberately a THIRD class and keeps
+   genuinely collapsing — see its own note below. Toggling never resizes the MapLibre
+   canvas: the card is an absolutely-positioned overlay, not part of the map
+   container's box. */
 .map-legend > summary {
-  list-style: none;
-  cursor: pointer;
+  display: none;
 }
 .map-legend > summary::-webkit-details-marker {
   display: none;
@@ -1254,22 +1213,13 @@ body {
 .map-legend-chevron {
   transition: transform 0.15s ease;
 }
-.map-legend[open] > summary .map-legend-chevron {
-  transform: rotate(180deg);
+.map-legend > .map-legend-body {
+  display: block;
+  /* The hidden summary used to supply the top padding; the body carries it now. */
+  padding-top: 0.75rem;
 }
-@media (min-width: 768px) {
-  .map-legend > summary {
-    display: none;
-  }
-  .map-legend > .map-legend-body {
-    display: block;
-    /* The summary supplied the top padding on mobile; restore it here since the
-       summary is hidden on desktop. */
-    padding-top: 0.75rem;
-  }
-  .map-legend::details-content {
-    content-visibility: visible;
-  }
+.map-legend::details-content {
+  content-visibility: visible;
 }
 
 /* SHORT-VIEWPORT BOUND on the legend body — a map-overlay collision fix, not a
@@ -1290,9 +1240,12 @@ body {
    no break, no color, and no count is lost: a scroll replaces a taller card. Nothing
    analytical is hidden, and no data behaviour changes.
 
-   Scoped by HEIGHT, not width: it is vertical space the two stacks compete for, and
-   at ≥860px heights they never meet, so the legend keeps its full 46vh there. */
-@media (min-width: 768px) and (max-height: 820px) {
+   Scoped by HEIGHT ONLY: it is vertical space the two stacks compete for, and at
+   ≥860px heights they never meet, so the legend keeps its full 46vh there. The query
+   used to read `(min-width: 768px) and (max-height: 820px)`; the width half only
+   existed to keep the cap off the phone layout, which no longer renders, so it was
+   dropped rather than left as an always-true condition. */
+@media (max-height: 820px) {
   .map-legend > .map-legend-body {
     max-height: 30vh;
   }
@@ -1312,7 +1265,7 @@ body {
   max-height: 40vh;
   overflow-y: auto;
 }
-@media (min-width: 768px) and (max-height: 820px) {
+@media (max-height: 820px) {
   .wep-map-overlay-card {
     max-height: 26vh;
   }
@@ -1400,12 +1353,13 @@ body {
   padding: 0.75rem;
 }
 
-/* Dynamic-viewport height fallbacks for the SHELL (root <main>).
-   The shell carries a static fallback class *before* its `dvh` class in markup
-   (`min-h-screen min-h-dvh`, `md:h-screen md:h-dvh`) so an engine WITHOUT `dvh`
-   support keeps a valid full-viewport height instead of dropping the invalid `dvh`
-   declaration — without a definite row height on desktop the `.map-pane` child's
-   `height: 100%` would have nothing to resolve against.
+/* Dynamic-viewport height fallbacks for the SHELL.
+   The shell root carries a static fallback class *before* its `dvh` class in markup
+   (`h-screen h-dvh` on the map variant, `min-h-screen min-h-dvh` on the page variant
+   and on <body>) so an engine WITHOUT `dvh` support keeps a valid full-viewport
+   height instead of dropping the invalid `dvh` declaration — without a definite row
+   height the `.map-pane` child's `height: 100%` would have nothing to resolve
+   against.
    Tailwind, however, emits the static utilities AFTER their `dvh` counterparts in
    the generated stylesheet (`.min-h-dvh{…}` then `.min-h-screen{…}`), so where an
    element carries both, the static class — being later, at equal specificity —
@@ -1416,18 +1370,99 @@ body {
      • engines with `dvh` restore the dynamic value (these rules are unlayered and
        more specific than Tailwind's single-class utilities, so they win).
    Markup order stays fallback-first for readability and is asserted by the
-   responsive tests; the actual override happens here. The mobile map-pane height is
-   handled by `.map-pane` above (a dedicated class), NOT here, so no broadly-scoped
-   rule can force the mobile 60dvh value onto the desktop map. */
+   responsive tests; the actual override happens here.
+
+   The height selector is now the unprefixed `.h-screen.h-dvh`. It was
+   `.md\:h-screen.md\:h-dvh` inside a `min-width: 768px` query, because the shell only
+   took a fixed height once it stopped being a phone column; the app no longer renders
+   below 1024 (components/ui/NarrowScreenGate.tsx), so the shell's height is
+   unconditional and so is this override. The map pane's height is handled by
+   `.map-pane` above (a dedicated class), NOT here — that separation is what keeps a
+   broadly-scoped rule from ever forcing a viewport-relative height onto the map. */
 @supports (height: 100dvh) {
   .min-h-screen.min-h-dvh {
     min-height: 100dvh;
   }
-  @media (min-width: 768px) {
-    .md\:h-screen.md\:h-dvh {
-      height: 100dvh;
-    }
+  .h-screen.h-dvh {
+    height: 100dvh;
   }
+}
+
+/* ── Narrow-screen gate (components/ui/NarrowScreenGate.tsx) ─────────────────────
+   What renders BELOW the 1024px desktop floor, in place of the analytical app.
+
+   It must satisfy the same invariants the dashboards do — no horizontal overflow at
+   any width, readable at 320px — while carrying enough 여기다 identity that the
+   reader knows they are in the product and not on an error page. Everything is
+   intrinsically sized: no `vh` height, no fixed widths, nothing that can overflow a
+   narrow viewport. */
+.wep-narrow-gate {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem 1.5rem;
+  background: var(--color-canvas);
+}
+@supports (height: 100dvh) {
+  .wep-narrow-gate {
+    min-height: 100dvh;
+  }
+}
+.wep-narrow-gate-card {
+  display: flex;
+  max-width: 26rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+.wep-narrow-gate-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-brand);
+}
+.wep-narrow-gate-mark > svg {
+  width: 2.375rem;
+  height: 2.375rem;
+}
+.wep-narrow-gate-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wep-narrow-gate-brand-name {
+  color: var(--color-brand);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.wep-narrow-gate-brand-sub {
+  color: var(--color-ink-subtle);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.wep-narrow-gate-title {
+  margin-top: 1rem;
+  color: var(--color-ink);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.wep-narrow-gate-body {
+  color: var(--color-ink-muted);
+  font-size: 0.875rem;
+  /* Korean wraps per character, so a long line needs a comfortable measure rather
+     than a break rule. `word-break: keep-all` keeps eojeol (words) intact. */
+  word-break: keep-all;
+  line-height: 1.6;
 }
 
 /* MapLibre popups keep a white background but inherit the page text color,
@@ -1616,24 +1651,11 @@ body {
   min-height: 0;
   overflow-y: auto;
 }
-/* Phones get the full screen: a centred card with margins wastes the little
-   room a long catalogue has. */
-@media (max-width: 639px) {
-  .wep-dialog-backdrop {
-    padding: 0;
-  }
-  .wep-dialog {
-    max-width: none;
-    max-height: 100vh;
-    height: 100%;
-    border-radius: 0;
-  }
-  @supports (height: 100dvh) {
-    .wep-dialog {
-      max-height: 100dvh;
-    }
-  }
-}
+/* (A `max-width: 639px` block used to give phones the full screen here — a centred
+   card with margins wastes the little room a long catalogue has. The app no longer
+   renders below 1024 (components/ui/NarrowScreenGate.tsx), so no viewport reached it
+   and it is removed rather than kept as an unreachable branch. The dialog is always
+   the centred, bounded card the desktop composition specifies.) */
 
 /* Source-catalogue grid (components/transparency/SourceCatalog.tsx).
 
