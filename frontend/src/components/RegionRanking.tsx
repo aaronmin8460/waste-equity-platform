@@ -211,7 +211,11 @@ export default function RegionRanking({
         {metricLabel} 기준{unit ? ` · 단위 ${unit}` : ""}
         {referencePeriod ? ` · 자료 기준 ${referencePeriod}` : ""}
       </p>
-      <p className="mt-0.5 text-xs text-ink-subtle">지역을 누르면 지도와 요약이 함께 움직입니다.</p>
+      {/* The "지역을 누르면 지도와 요약이 함께 움직입니다" line is gone: Figma's 지표
+          순위 card (74:2025) carries no such line, the rows are visibly buttons, and
+          the sentence is still stated once — in 전체보기, where the list is long
+          enough for the connection to the map to be worth saying. `rank-basis` above
+          stays: it is the ranking's own metric/unit/period, not orientation. */}
 
       <div className="mt-3">
         <ScopeChips scope={scope} setScope={setScope} />
@@ -279,9 +283,20 @@ export default function RegionRanking({
         />
       </div>
 
+      {/* Figma prints only the count ("순위 32개 지역"). The exclusion clause is NOT
+          boilerplate — it is the missing-data indicator this repo requires — so it is
+          kept verbatim, but only when something was actually excluded. With nothing
+          excluded it was a standing sentence reporting 0 of a thing that did not
+          happen, which is the duplication the audit is after; the underlying rule
+          ("값이 없는 지역은 0으로 채우지 않음") is stated in full in 전체보기. */}
       <p className="mt-3 text-[11px] text-ink-subtle" data-testid="rank-excluded">
-        순위 대상 {formatCount(result.rankedCount)}개 지역. 값이 없어 제외한 지역{" "}
-        {formatCount(result.excludedCount)}개(0으로 채우지 않음).
+        순위 대상 {formatCount(result.rankedCount)}개 지역
+        {result.excludedCount > 0 && (
+          <>
+            . 값이 없어 제외한 지역 {formatCount(result.excludedCount)}개(0으로 채우지 않음)
+          </>
+        )}
+        .
       </p>
 
       {/* The way out of the top-N cut. A native button, labelled with the exact
