@@ -8,12 +8,25 @@ import { mockBackend } from "./mockBackend";
  * and drives the real application UI — no backend, tile server, or official data.
  * It asserts only on accessibility structure and behaviour (document language,
  * the skip link, keyboard focus, the map region label, fieldset grouping, live
- * regions), never on data values, at both a mobile and a desktop viewport so the
- * a11y foundation is verified against the merged responsive layout.
+ * regions), never on data values.
+ *
+ * ── Which viewports run which tests ─────────────────────────────────────────────
+ * The dashboard a11y tests below run at DESKTOP widths only, because 여기다 is
+ * desktop-required: below 1024px the shell renders `ui/NarrowScreenGate` instead of
+ * any dashboard, so there is no map region, no metric fieldset, and no mode switch
+ * there to assert on (frontend/RESPONSIVE_LAYOUT.md). This block used to include
+ * `mobile 390×844` and assert the full analytical UI at that width — the retired
+ * contract, when the dashboard stacked itself into a phone column.
+ *
+ * The a11y guarantees that must hold at EVERY width — the document language and the
+ * skip link — are not desktop-scoped: the skip link is asserted in the narrow block
+ * at the bottom of this file as well, because the gate has to keep a valid
+ * `#main-content` target or the WCAG 2.4.1 bypass block breaks on the screens least
+ * able to absorb it.
  */
 
-const VIEWPORTS = [
-  { name: "mobile 390×844", width: 390, height: 844 },
+const DESKTOP_VIEWPORTS = [
+  { name: "desktop floor 1024×768", width: 1024, height: 768 },
   { name: "desktop 1440×900", width: 1440, height: 900 },
 ];
 
@@ -26,7 +39,7 @@ test("declares the document language as Korean", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("lang", "ko");
 });
 
-for (const vp of VIEWPORTS) {
+for (const vp of DESKTOP_VIEWPORTS) {
   test.describe(vp.name, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });
 
@@ -117,9 +130,45 @@ for (const vp of VIEWPORTS) {
 }
 
 /**
+ * Below the desktop floor the application is replaced by `ui/NarrowScreenGate`, but
+ * the a11y foundation the whole document depends on must survive that swap: the skip
+ * link in app/layout.tsx is rendered at every width, so its target has to exist here
+ * too. This is the width at which a broken bypass block would hurt most.
+ */
+test.describe("narrow screen 390×844 (below the desktop floor)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("keeps the skip link working, with one heading and no dashboard", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("narrow-screen-gate")).toBeVisible();
+
+    const skip = page.locator("a.skip-link");
+    await expect(skip).toHaveText("본문으로 바로가기");
+    // Off-screen until focused, then the first Tab reaches it.
+    const before = await skip.boundingBox();
+    expect(before).not.toBeNull();
+    expect(before!.y).toBeLessThan(0);
+    await page.keyboard.press("Tab");
+    await expect(skip).toBeFocused();
+    await expect(skip).toBeInViewport();
+
+    // Activating it moves keyboard focus into the gate's <main>.
+    await skip.press("Enter");
+    const activeId = await page.evaluate(() => document.activeElement?.id);
+    expect(activeId).toBe("main-content");
+
+    // One <h1>, the same rule every dashboard view follows, and no analytical UI
+    // left behind for a screen reader to walk into.
+    await expect(page.locator("h1")).toHaveCount(1);
+    await expect(page.getByTestId("map-container")).toHaveCount(0);
+    await expect(page.getByTestId("mode-switch")).toHaveCount(0);
+  });
+});
+
+/**
  * A pure-keyboard walk from the skip link into the sidebar controls, proving no
- * keyboard trap and reachable native controls. Desktop only (mobile focus order
- * is identical; this avoids duplicate flake surface).
+ * keyboard trap and reachable native controls. Desktop only — it walks into the
+ * sidebar's metric radios, which exist only in the desktop composition.
  */
 test.describe("keyboard navigation", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
