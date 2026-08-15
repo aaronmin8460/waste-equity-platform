@@ -20,6 +20,7 @@
 import type { FacilityCostOptions, SuitabilityPolicy, SuitabilityRun } from "../../lib/api";
 import { formatCount } from "../../lib/metrics";
 import Accordion from "../ui/Accordion";
+import { DATA_HANDLING_NOTE } from "./shared";
 
 export interface TransparencyMethodologyProps {
   policy: SuitabilityPolicy | null;
@@ -53,10 +54,17 @@ export default function TransparencyMethodology({
           <li>
             자료마다 기준 기간과 집계 기준이 다르므로, 서로 다른 기준의 값을 하나로 합치지 않습니다.
           </li>
+          {/* The "this list is not every public dataset" claim is NOT repeated here:
+              `TransparencyNotice` states it in the standing banner at the top of the
+              screen, where a reader meets it before the catalog. What survives is the
+              part that banner does not say — that availability of the ORIGINAL is the
+              publishing agency's to report, not this platform's. */}
           <li>
-            이 목록은 이 서비스가 현재 연계한 자료이며, 같은 주제의 공공자료를 모두 담고 있다는 뜻은
-            아닙니다. 원문의 현재 제공 여부는 각 기관 안내 페이지에서 확인해야 합니다.
+            원문의 현재 제공 여부는 각 기관 안내 페이지에서 확인해야 합니다.
           </li>
+          {/* Relocated from the catalog's search caption, where it described the
+              platform's architecture under a heading about how to search. */}
+          <li>{DATA_HANDLING_NOTE}</li>
         </ul>
       </Accordion>
 

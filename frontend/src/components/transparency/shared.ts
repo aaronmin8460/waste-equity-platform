@@ -31,15 +31,29 @@ export const HEADER_SUMMARY =
 export const OVERVIEW_TITLE = "한눈에 보기";
 export const OVERVIEW_SUMMARY = "모두 등록된 기록의 개수입니다. 완성도 점수나 품질 등급이 아닙니다.";
 /**
- * Figma's two sentences, plus the third the previous copy carried. That third one
- * is the screen's only statement of how the data reaches the reader — the browser
- * never calls a government API and no personal data is stored — and Figma having no
- * place for it is not a reason to delete a true architectural claim.
+ * Figma's two sentences — how to search this list, and where the raw registered names
+ * survive. Nothing else: this is the caption of a search control.
+ *
+ * The architectural claim that used to be appended here (the browser never calls a
+ * government API and no personal data is stored) is NOT deleted. It is a statement
+ * about how the platform is built, not about how to use the search box, so it moved
+ * to `TransparencyMethodology`'s 이 자료로 말할 수 있는 것과 없는 것 — the screen's
+ * standing home for interpretation limits. See `DATA_HANDLING_NOTE`.
  */
 export const CATALOG_SUMMARY =
   "자료명·기관명·분야로 검색할 수 있습니다. 등록된 원문 이름은 각 카드의 " +
-  "‘기술 정보 보기’에 그대로 남아 있습니다. 브라우저에서 정부 API를 직접 호출하거나 " +
-  "개인정보를 저장하지 않습니다.";
+  "‘기술 정보 보기’에 그대로 남아 있습니다.";
+
+/**
+ * How the data reaches the reader. Stated once, on the methodology surface.
+ *
+ * Kept verbatim from the copy that previously sat in {@link CATALOG_SUMMARY}: it is a
+ * true and load-bearing claim (repo AGENTS.md — the frontend never calls Korean
+ * government APIs directly), and relocating it must not weaken it.
+ */
+export const DATA_HANDLING_NOTE =
+  "브라우저에서 정부 API를 직접 호출하거나 개인정보를 저장하지 않습니다. 모든 공식 자료는 " +
+  "이 서비스의 서버가 받아 정리한 뒤 전달합니다.";
 /** The modal's closing line. States the preservation rule the cards implement. */
 export const CATALOG_PRESERVATION_NOTE =
   "등록된 원문 이름과 식별자는 삭제하지 않고 각 카드의 ‘기술 정보 보기’에 보존합니다.";
