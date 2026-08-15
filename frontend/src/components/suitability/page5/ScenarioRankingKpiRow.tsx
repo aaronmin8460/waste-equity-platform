@@ -132,8 +132,10 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
           model.rankingPopulation === null
             ? "A안과 B안 상위 목록 양쪽에 모두 나타난 후보 구역입니다."
             : // The served ranked population, so the reader can see how small the
-              // compared slice is rather than reading the counts above as totals.
-              `현재 분석 실행의 순위 대상 후보 구역 ${model.rankingPopulation.toLocaleString("ko-KR")}개 중 비교된 구역입니다.`
+              // compared slice is rather than reading the counts above as totals. The
+              // scope strip below states the same denominator in full; this tile keeps
+              // only the figure, which is what makes the ratio legible in place.
+              `순위 대상 ${model.rankingPopulation.toLocaleString("ko-KR")}개 중 비교된 구역입니다.`
         }
       />
     </dl>

@@ -334,7 +334,10 @@ function CandidateDetailCard({
       title="선택 후보지 상세 비교"
       testId="scenario-candidate-detail"
       className="wep-figma-card"
-      description="한 후보 구역을 A안과 B안의 가중치로 각각 다시 계산해 평가 요소별 기여도를 비교합니다."
+      // "평가 요소별 기여도" is the <h3> of the table this card contains, so naming it
+      // here too described the same thing twice before the reader saw either. The card
+      // description now says only what the card uniquely offers: one chosen cell.
+      description="한 후보 구역을 골라 A안과 B안의 결과를 나란히 비교합니다."
       headerAside={
         <div className="flex flex-wrap items-center gap-2">
           <label className="sr-only" htmlFor="scenario-candidate-picker">
@@ -530,9 +533,13 @@ function ContributionTable({
   return (
     <div data-testid="scenario-candidate-contribution">
       <h3 className="text-[13px] font-bold text-ink">평가 요소별 기여도 비교</h3>
+      {/* The formula, and the one thing it implies that a reader would not assume: the
+          component scores are the run's and are identical on both sides, so every
+          difference in this table comes from the weights. Stated as one clause rather
+          than the previous two sentences. */}
       <p className="mt-0.5 text-[11px] leading-snug text-ink-muted">
-        가중 기여도 = 요소 점수 × 가중치. 요소 점수는 분석 실행의 값이라 두 안에서 같고, 달라지는 것은
-        가중치뿐입니다.
+        가중 기여도 = 요소 점수 × 가중치. 요소 점수는 두 안에서 같으므로 차이는 모두 가중치에서
+        나옵니다.
       </p>
 
       <div className="mt-2 overflow-x-auto">
@@ -774,7 +781,11 @@ function ScenarioMapCard({
       title="후보 결과 변화 지도"
       testId="scenario-map"
       className="wep-figma-card"
-      description="같은 후보 격자를 A안과 B안의 가중치로 각각 채색합니다. 배제·검토 판정은 두 안에서 동일합니다."
+      // The screening-invariance caveat is NOT repeated here. It is stated under the
+      // map (`scenario-map-note`), where the legend a reader might misread sits, and
+      // once more as the page's standing limit. Three times on one screen is where a
+      // standing caveat stops being read.
+      description="같은 후보 격자를 A안과 B안의 가중치로 각각 채색합니다."
       headerAside={toggle}
     >
       {tileUrl === null ? (
@@ -881,10 +892,15 @@ function ScenarioMapCard({
         </div>
       ) : null}
 
+      {/* The map's own provenance: which weights coloured the tiles now on screen —
+          that changes with the A/B toggle, so it cannot be read off the weight table
+          alone. The screening sentence stays HERE (and only here, among the card's
+          three text slots) because the legend directly above shows 배제/검토 swatches
+          that a reader could otherwise take as moving with the weights. */}
       <p className="mt-2 text-[11px] leading-snug text-ink-subtle" data-testid="scenario-map-note">
-        지도의 색은 해당 시나리오 가중치로 다시 계산한 점수입니다. 적용 가중치 Z/R/E/D{" "}
-        {weightSummary(active.canonicalWeights)}. 배제·검토 판정(스크리닝)은 규칙 기반이며 A안과
-        B안에서 달라지지 않습니다. {SUITABILITY_SCREENING_SHORT_LABEL}.
+        색은 이 시나리오 가중치(Z/R/E/D {weightSummary(active.canonicalWeights)})로 다시 계산한
+        점수입니다. 배제·검토 판정(스크리닝)은 규칙 기반이며 A안과 B안에서 달라지지 않습니다.{" "}
+        {SUITABILITY_SCREENING_SHORT_LABEL}.
       </p>
     </SectionCard>
   );
