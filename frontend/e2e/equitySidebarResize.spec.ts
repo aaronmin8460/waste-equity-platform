@@ -265,7 +265,9 @@ test.describe("mobile 390×844", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("mounts no sidebar and no resizer, even with a stored desktop width", async ({ page }) => {
-    await gotoEquity(page);
+    // NOT `gotoEquity` — that waits for `mode-switch` and `map-container`, which are
+    // dashboard elements and must not exist below the floor.
+    await page.goto("/?v=1&mode=equity");
     await expect(page.getByTestId("narrow-screen-gate")).toBeVisible({ timeout: 15000 });
 
     // Absent, not merely hidden — the gate replaces the dashboard subtree.

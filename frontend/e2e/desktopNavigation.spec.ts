@@ -245,22 +245,53 @@ for (const vp of DESKTOP_VIEWPORTS) {
     test("fills the remaining viewport height with the map — no strip below it", async ({
       page,
     }) => {
+      /**
+       * The two map modes, with the top inset each one is DRAWN with.
+       *
+       * This assertion used to demand `mapBox.y === chromeBottom` for both, and
+       * failed on 후보지 심층 분석 at 1440 (99 observed against 81 allowed). Checked
+       * against the canonical Figma file, the product is right and the assertion was
+       * wrong — the two frames genuinely differ:
+       *
+       *   - 지역 지표 (74:1992): Header h=78, a 1px Divider, then Body at y=79, and
+       *     "Main / Map Area" is a child of Body at y=79 — full-bleed, flush with the
+       *     chrome. Inset 0.
+       *   - 후보지 심층 분석 (136:8684): Header h=78, 1px rule, Body at y=79 — but the
+       *     workspace "Grid" inside it starts at y=99. The map there is a rounded
+       *     surface SET INTO the canvas, not a full-bleed rectangle, so it carries a
+       *     20px top inset. That is exactly `.wep-workspace-map { padding-top: 1.25rem }`
+       *     in globals.css, deliberately scoped to `min-width: 1440px` (the same block
+       *     that sets the 396/376 panel widths) because at 1280 the 20px of lost height
+       *     would push the expanded insight card past its map-dominance bound.
+       *
+       * So the inset is 20 only for the deep-analysis workspace at ≥1440, and 0
+       * everywhere else. Asserting one flush number for both was the stale part.
+       */
+      const MAPS = [
+        { query: "/?v=1&mode=equity", topInset: 0 },
+        {
+          query: "/?v=1&mode=suitability&view=score",
+          topInset: vp.width >= 1440 ? 20 : 0,
+        },
+      ];
+
       // Both map modes: the global header must not break the `.map-pane` height chain.
-      for (const query of ["/?v=1&mode=equity", "/?v=1&mode=suitability&view=score"]) {
+      for (const { query, topInset } of MAPS) {
         await gotoView(page, query);
 
         const map = page.getByTestId("map-container");
         await expect(map).toBeVisible();
         const mapBox = (await map.boundingBox())!;
 
-        // Starts immediately below the shared chrome with no gap. Since the
-        // sub-view bar was retired the nav is the ONLY chrome above the map, in
-        // every area — which is also why the map is taller than it used to be.
+        // Starts immediately below the shared chrome, plus only the inset that frame
+        // is drawn with. Since the sub-view bar was retired the nav is the ONLY chrome
+        // above the map, in every area — which is also why the map is taller than it
+        // used to be.
         await expect(page.getByTestId("suitability-subviews")).toHaveCount(0);
         const chromeBox = await navBox(page);
-        const chromeBottom = chromeBox.y + chromeBox.height;
-        expect(mapBox.y, `${query}: no gap below chrome`).toBeGreaterThanOrEqual(chromeBottom - 2);
-        expect(mapBox.y, `${query}: starts at chrome bottom`).toBeLessThanOrEqual(chromeBottom + 2);
+        const expectedTop = chromeBox.y + chromeBox.height + topInset;
+        expect(mapBox.y, `${query}: no gap below chrome`).toBeGreaterThanOrEqual(expectedTop - 2);
+        expect(mapBox.y, `${query}: starts at chrome bottom`).toBeLessThanOrEqual(expectedTop + 2);
 
         // …and reaches the viewport bottom, leaving no empty/black strip.
         expect(mapBox.y + mapBox.height, `${query}: reaches bottom`).toBeGreaterThanOrEqual(

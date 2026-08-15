@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { mockBackend } from "./mockBackend";
+import { mockBackend, mockReportingStatistics } from "./mockBackend";
 
 /**
  * 비용 살펴보기 dashboard refresh — desktop acceptance for the facility-cost
@@ -67,7 +67,7 @@ const WASTE_STATISTICS = {
 
 test.beforeEach(async ({ page }) => {
   await mockBackend(page);
-  // Registered after mockBackend, so this handler wins for its path.
+  // Registered after mockBackend, so these handlers win for their paths.
   await page.route("**/api/v1/waste-statistics**", (route: Route) =>
     route.fulfill({
       status: 200,
@@ -75,6 +75,11 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify(WASTE_STATISTICS),
     }),
   );
+  // The picker's actual source. `/waste-statistics` above is the pre-reporting
+  // endpoint the cost workflow no longer reads for its region list; without this the
+  // picker has no options and card ① shows its empty state. See
+  // `mockReportingStatistics` in mockBackend.ts for the full account.
+  await mockReportingStatistics(page, PICKER_REGIONS);
 });
 
 async function openCost(page: Page): Promise<void> {

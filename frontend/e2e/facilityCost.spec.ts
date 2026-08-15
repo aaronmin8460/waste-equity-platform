@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { mockBackend } from "./mockBackend";
+import { mockBackend, mockReportingStatistics } from "./mockBackend";
 
 /**
  * Facility cost lens e2e — the setup workflow redesigned in Phase 2 of the desktop
@@ -123,6 +123,10 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify(WASTE_STATISTICS),
     }),
   );
+  // The region picker reads the REPORTING statistics endpoint, not the one above.
+  // Without this it has no options and card ① shows its empty state, so the setup
+  // interaction this spec owns cannot start. See `mockReportingStatistics`.
+  await mockReportingStatistics(page, PICKER_REGIONS);
 });
 
 /**
@@ -210,17 +214,35 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("facility-cost-region-chip")).toHaveCount(0);
       await expect(page.getByTestId("facility-cost-calculate")).toBeDisabled();
 
-      // ── Changing the waste stream clears the selection and re-derives the set ─
+      // ── Changing the waste stream KEEPS what the new stream can still calculate ─
+      //
+      // This block used to expect the stream change to clear the selection outright.
+      // That is the behaviour `FacilityCostDashboard.update` deliberately replaced:
+      // "the old behaviour cleared the whole selection, which threw away work the
+      // data supported". It now INTERSECTS — every still-calculable code is kept and
+      // only the genuinely uncalculable ones are dropped, with the dropped names
+      // named so the change is never silent.
+      //
+      // The stale expectation survived unnoticed because the picker had no options at
+      // all (the specs mocked the pre-reporting endpoint), so this line was never
+      // reached. With the picker populated it is reached, and the real contract is:
+      // 종로구 has a CONSTRUCTION row and survives; 중구 does not and is dropped.
       await page.getByTestId("facility-cost-regions-seoul").click();
       await expect(page.getByTestId("facility-cost-region-chip")).toHaveCount(2);
       await page.getByTestId("facility-cost-waste-stream").selectOption("CONSTRUCTION");
-      await expect(page.getByTestId("facility-cost-region-chip")).toHaveCount(0);
-      await expect(page.getByTestId("facility-cost-calculate")).toBeDisabled();
+      await expect(page.getByTestId("facility-cost-region-chip")).toHaveCount(1);
+      await expect(page.getByTestId("facility-cost-selected-regions")).toContainText("서울 종로구");
+      // The drop is stated, not silent — the reader is told which region left.
+      await expect(page.getByTestId("facility-cost-dropped-regions")).toContainText("서울 중구");
+      // A calculable region is still selected, so the action stays available.
+      await expect(page.getByTestId("facility-cost-calculate")).toBeEnabled();
       await search.click();
       // Only the one CONSTRUCTION region remains offered.
       await expect(page.getByTestId("facility-cost-region-option")).toHaveCount(1);
       await expect(optionByName(page, "서울 종로구")).toBeVisible();
       await page.getByTestId("facility-cost-waste-stream").selectOption("HOUSEHOLD");
+      // Back on 생활계, 종로구 is still calculable, so it is still the selection.
+      await expect(page.getByTestId("facility-cost-region-chip")).toHaveCount(1);
 
       // ── Facility type through the Figma select ────────────────────────────
       // The radio-card grid is retired: the redesign puts the facility type in card

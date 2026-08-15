@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { mockBackend } from "./mockBackend";
+import { mockBackend, mockReportingStatistics } from "./mockBackend";
 
 /**
  * Facility cost RESULTS workflow e2e (desktop redesign Phase 3).
@@ -119,7 +119,7 @@ async function openSection(page: Page, testId: string): Promise<void> {
 
 test.beforeEach(async ({ page }) => {
   await mockBackend(page);
-  // Registered after mockBackend, so this handler wins for its path.
+  // Registered after mockBackend, so these handlers win for their paths.
   await page.route("**/api/v1/waste-statistics**", (route: Route) =>
     route.fulfill({
       status: 200,
@@ -127,6 +127,10 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify(WASTE_STATISTICS),
     }),
   );
+  // The region picker reads the REPORTING statistics endpoint, not the one above.
+  // Without this it has no options and card ① shows its empty state, so every test
+  // here times out waiting to select a region. See `mockReportingStatistics`.
+  await mockReportingStatistics(page, PICKER_REGIONS);
 });
 
 /**

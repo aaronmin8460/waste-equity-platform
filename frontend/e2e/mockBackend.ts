@@ -508,3 +508,85 @@ export async function mockBackend(page: Page): Promise<void> {
   // latency; abort them (MapLibre logs the failed fetch and carries on).
   await page.route("**/tile.openstreetmap.org/**", (route: Route) => route.abort());
 }
+
+/** One municipality the facility-cost region picker can offer. */
+export interface PickerRegion {
+  /** RCIS reporting code — the code space the cost workflow actually joins on. */
+  code: string;
+  name: string;
+  /** e.g. `HOUSEHOLD`; must match the waste type selected in card ②. */
+  stream: string;
+}
+
+/**
+ * Give the facility-cost region picker something to offer.
+ *
+ * WHY THIS EXISTS. The picker's options come from `/api/v1/waste-reporting/statistics`
+ * — `app/page.tsx` builds `facilityCostWasteRegions` from `data.reportingStats.items`,
+ * reading `reporting_region_code` / `reporting_region_name` / `waste_stream`. That is
+ * the RCIS reporting geography, which the cost workflow moved onto when reporting-level
+ * geometry was introduced.
+ *
+ * The cost specs never followed. They mock `/api/v1/waste-statistics` — the ORIGINAL,
+ * pre-reporting endpoint — which nothing in the cost workflow reads any more, while
+ * `mockBackend` continues to serve the reporting endpoint as an empty envelope. The
+ * result is a picker with zero options, so card ① renders its honest empty state
+ * ("이 폐기물 종류로 계산 가능한 지역이 없습니다") and every spec that tries to select a
+ * region waits for `facility-cost-region-search` until it times out.
+ *
+ * That is fixture drift, not a product defect: the dashboard is correctly reporting
+ * that the backend it was given serves no calculable region. It predates this
+ * integration — the same tests fail identically on the base commit — and it had left
+ * the whole setup→calculate→result path with no working browser coverage.
+ *
+ * This is deliberately OPT-IN rather than a change to `mockBackend`'s defaults: the
+ * empty reporting envelope is the right default for the many specs that assert
+ * missing-data and no-data states, and quietly populating it for everyone would turn
+ * those explicit absences into values.
+ *
+ * Register AFTER `mockBackend(page)` so this handler wins for its path.
+ */
+export async function mockReportingStatistics(
+  page: Page,
+  regions: readonly PickerRegion[],
+  referenceYear = 2022,
+): Promise<void> {
+  await page.route("**/api/v1/waste-reporting/statistics**", (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        reference_year: referenceYear,
+        count: regions.length,
+        items: regions.map((r) => ({
+          reporting_region_code: r.code,
+          reporting_region_name: r.name,
+          reporting_geography_type: "NATIVE_SGIS",
+          geometry_kind: "NATIVE",
+          source_reporting_level: "SIGUNGU",
+          waste_stream: r.stream,
+          waste_category_name: "총계",
+          generation_quantity: "10500.000000",
+          recycling_quantity: "0",
+          incineration_quantity: "0",
+          landfill_quantity: "0",
+          other_treatment_quantity: "10500.000000",
+          total_treatment_quantity: "10500.000000",
+          total_treatment_is_derived: true,
+          quantity_unit: "톤/년",
+          accounting_basis: "ORIGIN_BASED_TREATMENT_OUTCOME",
+          source_id: "waste_statistics",
+          source_pid: "NTN007",
+          official_dataset_name: "RCIS 생활계",
+          reference_year: referenceYear,
+          reference_period: String(referenceYear),
+          child_region_codes: null,
+        })),
+        // No region is declared unavailable: these specs are about the calculable
+        // path, and an invented unavailable entry would assert a reason code that
+        // no backend produced.
+        unavailable_regions: [],
+      }),
+    }),
+  );
+}
