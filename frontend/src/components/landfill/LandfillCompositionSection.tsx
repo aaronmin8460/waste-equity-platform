@@ -70,7 +70,12 @@ export default function LandfillCompositionSection({
   return (
     <SectionCard
       title="수도권매립지 반입 폐기물 구성"
-      description={`기준 기간 ${periodLabel} · 비중은 공식 보고값으로 계산했습니다. 순위나 평가가 아닙니다.`}
+      // The served period only. Figma's 반입 폐기물 구성 card (125:5064) carries no
+      // description at all; "비중은 공식 보고값으로 계산했습니다. 순위나 평가가
+      // 아닙니다" was standing methodology, and both halves survive — the 계산값 badge
+      // on the derived roll-up says what was computed, and 근거와 한계 states the
+      // no-ranking rule once for the whole screen.
+      description={`기준 기간 ${periodLabel}`}
       headerAside={<DataStatusBadge status="reported" />}
       testId="landfill-composition"
     >

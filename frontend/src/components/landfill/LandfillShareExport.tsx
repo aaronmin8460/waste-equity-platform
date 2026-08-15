@@ -40,9 +40,13 @@ export default function LandfillShareExport({ summary, trends }: LandfillShareEx
 
   return (
     <SectionCard title="공유 및 내보내기" testId="landfill-export">
+      {/* Tightened, NOT dropped. This is the file's scope, stated where the file is
+          produced, and the second clause is the 반입수수료 ⇄ 계약 지급액 separation —
+          two different accounting bases that must never be read as one number. That
+          guarantee stays on the primary surface deliberately. */}
       <p className="text-xs leading-relaxed text-ink-subtle" data-testid="landfill-export-scope">
-        수도권매립지 공식 반입량과 반입수수료를 출발 지역별·폐기물 종류별·월별로 내려받습니다. 아래
-        시·군·구 수집·운반 계약 지급액은 회계 기준이 다른 별도 자료이므로 이 파일에 포함되지 않습니다.
+        수도권매립지 공식 반입량·반입수수료를 출발 지역별·폐기물 종류별·월별로 내려받습니다. 회계
+        기준이 다른 시·군·구 수집·운반 계약 지급액은 이 파일에 포함되지 않습니다.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <button

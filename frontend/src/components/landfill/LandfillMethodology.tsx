@@ -169,6 +169,15 @@ export default function LandfillMethodology({ summary }: LandfillMethodologyProp
           <p className="mt-1" data-testid="landfill-period-notice">
             {PERIOD_NOTICE}
           </p>
+          {/* Relocated from the 반입 폐기물 구성 card description, which Figma
+              (125:5064) gives no description at all. It is a standing rule about how
+              to read every share and every ordering on the screen — not a fact about
+              the composition specifically — so it belongs with the other standing
+              rules. The card now carries only its served reference period. */}
+          <p className="mt-1" data-testid="landfill-no-ranking-notice">
+            비중과 정렬 순서는 공식 보고값을 그대로 집계한 것입니다. 지역이나 항목에 대한 순위나
+            평가가 아닙니다.
+          </p>
           <ul className="mt-2 list-disc space-y-1 pl-4" data-testid="landfill-caveats">
             {summary.caveats.map((caveat) => (
               <li key={caveat}>{caveat}</li>

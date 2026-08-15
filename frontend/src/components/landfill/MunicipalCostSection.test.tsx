@@ -378,8 +378,18 @@ describe("scope summary", () => {
   it("states how many rows the applied filters returned, separately from the scope", () => {
     renderSection();
     expect(screen.getByTestId("municipal-cost-returned")).toHaveTextContent("4곳");
-    // And says unavailable municipalities are not dropped.
-    expect(screen.getByTestId("municipal-cost-returned")).toHaveTextContent("목록에서 빼지 않고");
+    // The "unavailable municipalities are not dropped" rule is stated ONCE, under the
+    // table it governs (MUNICIPAL_COST_TABLE_FOOTNOTES) rather than a second time in
+    // this summary — and that one statement also carries the "0이 아니다" half.
+    expect(screen.getByTestId("municipal-cost-returned")).not.toHaveTextContent(
+      "목록에서 빼지 않고",
+    );
+    expect(screen.getByTestId("municipal-cost-table-notes")).toHaveTextContent(
+      "목록에서 빼지 않고",
+    );
+    expect(screen.getByTestId("municipal-cost-table-notes")).toHaveTextContent(
+      "0이라는 뜻이 아닙니다",
+    );
   });
 
   it("shows no counts at all before a response — never zeros", () => {
