@@ -161,10 +161,13 @@ export default function EquityMetricSelector({
       className="wep-card wep-figma-card"
       data-testid="equity-metric-selector"
     >
+      {/* No supporting line under the heading. Figma's 지표 선택 card (74:1992) has
+          none, and "지표를 바꾸면 지도와 순위가 모두 같은 값을 따라갑니다" described
+          what the reader observes the moment they touch a radio — orientation copy
+          for a control that demonstrates itself. The three section descriptions
+          below ARE in the design and stay: they say what each family measures,
+          which is not observable from the row labels. */}
       <h2 className="text-xl font-bold leading-6 text-brand">지표 선택</h2>
-      <p className="mt-1.5 text-xs text-ink-subtle">
-        지표를 바꾸면 지도와 순위가 모두 같은 값을 따라갑니다.
-      </p>
 
       <div className="mt-4 flex flex-col gap-4">
         {METRIC_SECTIONS.map((section, index) => {

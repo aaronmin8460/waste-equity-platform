@@ -155,9 +155,12 @@ export default function ShareExportBar({
         )}
       </div>
 
-      <p className="mt-1 text-[11px] text-ink-subtle">
-        현재 지표·지역·순위 설정이 그대로 담깁니다. 보고서 이미지에는 지도가 포함되지 않습니다.
-      </p>
+      {/* No standing caption. Figma's 공유 및 내보내기 card (74:2044) is a heading and
+          three buttons, and both halves of the caption that used to sit here are
+          already stated where they apply: the map-exclusion note is printed in the
+          report itself (`model.mapExclusionNote`, ReportPreview) and repeated in the
+          save confirmation, and "현재 설정이 담깁니다" described the link the button
+          just copied. Neither was dropped from the product. */}
     </section>
   );
 }
