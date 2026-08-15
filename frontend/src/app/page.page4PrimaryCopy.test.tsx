@@ -272,3 +272,41 @@ describe("② 계산 모델 가중치 설정 — what stays primary", () => {
     }
   });
 });
+
+// --------------------------------------------------------------------------- //
+// The numbered workflow the trimmed card sits in
+// --------------------------------------------------------------------------- //
+
+describe("the ① ② → ③ ④ ⑤ workflow stays unbroken", () => {
+  it("reads ① then ② down the controls column", async () => {
+    await enterDeepAnalysis();
+    const left = screen.getByTestId("deep-left-panel");
+    const scope = within(left).getByTestId("suitability-scope");
+    const basis = within(left).getByTestId("scoring-basis");
+    expect(scope.compareDocumentPosition(basis) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("reads ③ then ④ then ⑤ down the results column, with nothing between them", async () => {
+    await enterDeepAnalysis();
+    const right = screen.getByTestId("deep-right-panel");
+    const results = await waitFor(() => within(right).getByTestId("suitability-results"));
+    const save = within(right).getByTestId("scenario-save");
+    const compare = within(right).getByTestId("scenario-compare-picker");
+    // The order the numbering promises…
+    expect(results.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(save.compareDocumentPosition(compare) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // …and no supporting card wedged into it. ③④⑤ are the first three cards of the
+    // column; the unnumbered supporting cards follow ⑤ (Figma 136:8684's right
+    // column is 340×535, 340×230, 340×429 and nothing else). Before the Page 4
+    // integration those cards sat between ③ and ④ and pushed ④⑤ off the fold.
+    const numbered = [results, save, compare];
+    const cards = Array.from(right.querySelectorAll("[data-testid]")).filter((node) =>
+      numbered.includes(node as HTMLElement),
+    );
+    expect(cards).toEqual(numbered);
+    const firstThree = Array.from(right.children).slice(0, 3);
+    for (const node of numbered) {
+      expect(firstThree.some((child) => child === node || child.contains(node))).toBe(true);
+    }
+  });
+});
