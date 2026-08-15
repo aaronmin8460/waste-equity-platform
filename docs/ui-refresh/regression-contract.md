@@ -1,5 +1,13 @@
 # UI refresh — regression contract
 
+> **SUPERSEDED WHERE IT DESCRIBES VIEWPORTS BELOW 1024px.** 여기다 is now a
+> desktop-required product: below 1024px the shell renders
+> `components/ui/NarrowScreenGate.tsx` instead of any dashboard, so no analytical UI
+> exists at 390 / 430 / 768 px and the assertions this document records at those
+> widths no longer describe the shipped app. `frontend/RESPONSIVE_LAYOUT.md` is the
+> single source of truth for viewport behaviour; everything this document says about
+> **1024px and above is unchanged**.
+
 What the visual refresh may **not** change. Every item below is enforced by a test
 that already exists or that this milestone added; the test is named so a future
 phase can find it before "cleaning up" the behavior it protects.

@@ -10,8 +10,12 @@ seven-phase autonomous redesign.
 **Meeting-notes Figma:** <https://www.figma.com/design/bKV5JRRORPJCIliY2tFQrp/8-7-회의록?node-id=0-1>
 **Production:** <https://waste-161-33-2-143.sslip.io/>
 
-> **Figma access.** Both Figma files were unreachable from this environment
-> (HTTP 403 / login wall; no Figma MCP server is connected). Every phase
+> **Figma access.** Both Figma files were unreachable when the phases below were
+> written (HTTP 403 / login wall; no Figma MCP server is connected). The UI-UX
+> file has since been read through the Figma REST API, which confirmed that every
+> full-page frame is 1440px wide and that the file contains no phone composition
+> for any of the six destinations — the evidence behind the desktop-required
+> contract in `frontend/RESPONSIVE_LAYOUT.md`. Every phase
 > therefore implements the APPROVED WRITTEN DECISIONS recorded below, plus the
 > existing repository design documentation
 > (`docs/UI_UX_DESKTOP_REDESIGN_PLAN.md`, `docs/ui-refresh/*`,
@@ -50,7 +54,11 @@ where they describe:
 Changing those strings would rewrite a provenance claim, which
 `AGENTS.md` forbids. Only the *product chrome* is rebranded.
 
-**Mobile.** "여기다" stays visible; the subtitle may be hidden for space.
+**Below 1024px.** The product is desktop-required: the shell renders
+`components/ui/NarrowScreenGate.tsx` instead of any dashboard, and the gate
+carries the mark, "여기다", and the subtitle. The app bar itself therefore never
+renders below 1024px, so its brand block has no narrow variant — the `<640px`
+subtitle hide it used to carry is gone. See `frontend/RESPONSIVE_LAYOUT.md`.
 
 ---
 
@@ -70,7 +78,9 @@ Design rules:
 - a small, meaningful inline SVG icon per destination;
 - a clear active state that is **not** colour-only;
 - all six stay on **one row at 1024px** desktop width — compress spacing and
-  padding rather than wrapping;
+  padding rather than wrapping. 1024px is the desktop floor, i.e. the narrowest
+  width this bar ever renders at (`frontend/RESPONSIVE_LAYOUT.md`), so this is
+  the binding case rather than an edge case;
 - **do not** create a new URL-state version for the six visible destinations.
 
 ### 2.1 Internal routing contract (the projection)
@@ -129,7 +139,8 @@ The brand block is **never** a heading — every view keeps exactly one `<h1>`.
   - keyboard Left/Right
   - Home → minimum, End → maximum
   - double-click the divider → reset to 360px default
-  - mobile has **no** horizontal resize
+  - the handle is present at every width the sidebar renders at; there is no
+    longer a stacked layout in which resizing would be meaningless
 - Preserve ranking / map / metric / share / export / report behaviour.
 - Preserve missing-data semantics.
 - **Reuse the existing MapLibre `ResizeObserver` / `map.resize` mechanism** in
@@ -262,7 +273,8 @@ file/sheet/UI label must say so.
 Dialog accessibility: dialog semantics, accessible title 데이터·출처, focus
 enters and is contained, Escape closes when safe, an explicit close control,
 focus restored to the triggering control, background not keyboard-interactive,
-internal scrolling, mobile usable.
+internal scrolling. It is a desktop dialog: the `<640px` full-screen variant it
+used to carry was removed with the phone layout.
 
 ---
 

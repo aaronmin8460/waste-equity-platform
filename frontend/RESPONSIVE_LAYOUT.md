@@ -1,645 +1,388 @@
-# Responsive layout (Phase 1 — mobile usability)
+# Responsive layout — the desktop contract
 
-> **Phase 2/3 update (floating legends + full-width cost dashboard).** The map
-> legends now float over the map instead of living in the sidebar, and the facility
-> cost lens renders as a full-width dashboard with **no map**. See
-> [Floating map legend](#floating-map-legend-phase-23) and
-> [Full-width facility-cost dashboard](#full-width-facility-cost-dashboard-phase-23)
-> below; the cost dashboard's information architecture and terminology rules live in
-> [`../docs/FACILITY_COST_LENS_UI.md`](../docs/FACILITY_COST_LENS_UI.md). Not deployed.
+> **This file is the single source of truth for viewport behaviour.** Where any other
+> document, comment, or test disagrees with it, this file is right and the other one
+> is stale. It replaces the previous "Phase 1 — mobile usability" contract, under
+> which the whole analytical dashboard stacked itself into a phone column below
+> 768px. That layout was never in Figma and is gone; see
+> [What was retired, and why](#what-was-retired-and-why).
 
+## The contract
 
-Status: **merged into `main` (PR #27). Not deployed** to any environment. A
-follow-up (Phase 1.1) corrects two post-merge review findings: it adds explicit
-static-viewport (`vh`) fallbacks in front of the dynamic-viewport (`dvh`)
-utilities, and it replaces the responsive test's landfill fixture with the
-backend's real "no official data" state (no fabricated official values). This
-phase makes the existing dashboard usable on phones without changing analytical
-logic, the data model, API behavior, map calculations, the cost/scoring model, or
-the visual design beyond what responsive layout requires.
+여기다 is a **desktop-first, desktop-required** analytical platform. There are exactly
+two states:
 
-Phase 2 (accessibility) has **not** been started.
-
-The dashboard was previously a permanently horizontal `flex` row with a fixed
-384 px (`w-96`) sidebar, so on a ~390 px phone the sidebar filled the viewport and
-the map was pushed off-screen. It now adapts to the viewport.
-
-## Map shell, loading, and selection sync (later fix)
-
-A follow-up (`fix/map-shell-loading-and-selection-sync`, **not deployed**)
-corrects three map-shell defects introduced/exposed by the responsive work and
-adds map feedback states, **without changing any backend API contract or
-analytical calculation**:
-
-- **Desktop map height.** The map wrapper's sizing moved from an ambiguous stack
-  of Tailwind utilities (`h-[60vh] h-[60dvh] md:h-auto md:min-h-0 md:flex-1`) to a
-  dedicated `.map-pane` class (see [Map pane sizing](#map-pane-sizing-mobile-60-desktop-fill)).
-  The old `@supports` rule that re-asserted the mobile `60dvh` value used a
-  two-class selector, so it out-specified the single-class `md:h-auto` reset and
-  forced `60dvh` **even at desktop widths** — leaving the map ~60 % tall with a
-  large empty strip below it in the full-height row. `.map-pane` owns the mobile
-  and desktop heights unambiguously, and no broadly-scoped rule can leak the mobile
-  height onto the desktop map.
-- **No black frame.** The app is a single light UI, but a `prefers-color-scheme:
-  dark` override previously flipped only the `<body>` background to near-black,
-  framing the light app in black (most visible in the empty strip above). The dark
-  override is removed and `color-scheme: light` is pinned, so the background is a
-  consistent light color everywhere. A full dark theme remains out of scope.
-- **Selected-region identity.** Page state now stores the selected region **code**
-  (`selectedRegionCode`) and DERIVES the summary (name + label + value + provenance)
-  under the active metric, instead of snapshotting a metric-specific value. See
-  [Selected-region identity](#selected-region-identity-code-not-snapshot).
-- **Popup invalidation + map feedback.** Pinned/hover map popups are invalidated on
-  a metric change so they never show a stale value, and the map now shows loading,
-  candidate tile-refresh, and error states. See
-  [Map popups](#map-popup-invalidation-no-stale-metric-values) and
-  [Map loading states](#map-loading-tile-refresh-and-error-states).
-
-## Breakpoints
-
-A single breakpoint drives the shell: Tailwind's `md` (**≥ 768 px**). Below it the
-app is a mobile-first vertical column; at and above it the original side-by-side
-layout is used. Tablet portrait at exactly 768 px therefore gets the side-by-side
-layout (a 384 px sidebar beside a 384 px map), which is intentional and overflow-free.
-
-## Mobile behavior (< 768 px)
-
-- Root shell is a vertical column (`flex-col`): controls stacked above a
-  full-width map.
-- The sidebar is full width (`w-full`) — no fixed 384 px width, so it never
-  covers the map.
-- The mode switcher uses `flex-wrap`, so all three modes stay on screen at
-  320–430 px (they wrap instead of overflowing); each button has a ≥ 38 px tap
-  target on mobile only.
-- Verbose sidebar control panels collapse into native `<details>` disclosures with
-  clear Korean labels — 출처 및 방법 (Sources & method), 시설 레이어 (Facility layer)
-  — so the map stays reachable with minimal scrolling. Primary controls (mode switch,
-  metric selection) are never collapsed. The map legend is **no longer** a sidebar
-  disclosure: it floats over the map (see
-  [Floating map legend](#floating-map-legend-phase-23)) and is collapsed by default
-  on mobile behind a labelled "범례" summary.
-- The landfill (수도권매립지) dashboard is already single-column responsive; its
-  table scrolls inside its own `overflow-x-auto` container and long ASCII
-  identifiers wrap (`break-words`), so the page never scrolls horizontally. Phase 5
-  kept all of that and re-graded the filter row to `1 / 2 / 4` columns at
-  `base / sm / lg` (see
-  [Landfill dashboard (desktop redesign, Phase 5)](#landfill-dashboard-desktop-redesign-phase-5)).
-- No page-level horizontal overflow at any tested width.
-
-## Desktop / tablet-landscape behavior (≥ 768 px)
-
-- The original side-by-side layout is preserved: a fixed ~384 px sidebar
-  (`md:w-96 md:flex-none`) on the left, the map filling the remaining width
-  (`md:flex-1`).
-- The mobile disclosure summaries are hidden and their bodies are force-expanded
-  by CSS, so the desktop sidebar renders exactly as before — no toggles are added
-  and no analytical option is ever hidden behind one.
-- The shell is a fixed-height column/row (`md:h-dvh`) so the app fits the viewport
-  without unintended document scrolling; the sidebar scrolls internally
-  (`md:overflow-y-auto`).
-
-## Viewport-height strategy
-
-The dynamic viewport unit `dvh` is used everywhere the app fills the screen, so
-the layout accounts for mobile browser chrome (address bar) expanding/collapsing
-and is never cropped by, or leaves a gap under, the browser toolbars:
-
-- Root shell: `min-h-dvh` on mobile, `md:h-dvh` on desktop.
-- Loading / error states and the landfill dashboard: `min-h-dvh`.
-- `<body>`: `min-h-dvh`.
-
-### `vh` fallback before `dvh` (compatibility)
-
-`dvh` is **not** self-falling-back. On an engine that does not support it, the
-*entire* `min-height: 100dvh` / `height: 60dvh` declaration is invalid and is
-dropped at parse time — the element is then left with **no** height rule at all,
-not with a viewport-relative one. So every `dvh` utility is preceded by its
-static `vh` equivalent as an explicit fallback:
-
-| Element | Classes (fallback first) |
+| Viewport | What renders |
 | --- | --- |
-| Root shell | `min-h-screen min-h-dvh … md:h-screen md:h-dvh` |
-| `<body>` | `min-h-screen min-h-dvh` |
-| Loading / error / flow states | `min-h-screen min-h-dvh` |
-| Landfill dashboard root | `min-h-screen min-h-dvh` |
-| Map wrapper | `.map-pane` (dedicated class — see [Map pane sizing](#map-pane-sizing-mobile-60-desktop-fill)) |
+| **≥ 1024 px** | the analytical application, in its one desktop composition |
+| **< 1024 px** | `components/ui/NarrowScreenGate.tsx`, **instead of** the application |
 
-How it resolves:
+Within the desktop range there is one composition at three densities — not three
+layouts:
 
-- **Engine without `dvh`:** it drops the invalid `dvh` declaration and keeps the
-  valid `vh` one, so the element still has a definite full/60 % viewport height —
-  the map never collapses.
-- **Engine with `dvh`:** the dynamic value is applied and the dynamic-viewport
-  behavior is preserved (see the override note below).
+| Width | Intent |
+| --- | --- |
+| **1440 px** | the canonical Figma composition, at the width it was drawn for |
+| **1280 px** | normal desktop |
+| **1024 px** | compressed but **fully functional** desktop — nothing analytical is dropped, hidden behind a toggle, or moved to a second row |
 
-### The Tailwind ordering caveat (and the `@supports` override)
+### Why 1024 is the floor
 
-The markup lists the `vh` class first and the `dvh` class second, but in Tailwind
-v4 that source order does **not** decide the cascade: Tailwind emits the static
-`vh`/`*-screen` utilities *after* their `dvh` counterparts in the generated
-stylesheet (`.h-[60dvh]{…}` then `.h-[60vh]{…}`). Since both classes sit on the
-element at equal specificity, the later rule — the static `vh` one — would win on
-**every** engine, silently reverting the dynamic behavior even where `dvh` is
-supported.
+It is the narrowest width the redesign is specified to work at, and both of the
+load-bearing desktop constraints resolve exactly there:
 
-So the dynamic value is re-asserted for the **shell** in `app/globals.css` under
-`@supports (height: 100dvh)` with a two-class selector (`.min-h-screen.min-h-dvh`
-and a `md`-scoped `.md\:h-screen.md\:h-dvh`). These rules are unlayered and more
-specific than Tailwind's single-class utilities, so:
+- `.wep-nav-track` holds all six destinations on **one row** from 1024 up
+  (`docs/YEOGIDA_UI_REDESIGN_SPEC.md` §2);
+- `.wep-panel`'s 15.5rem columns leave the 후보지 심층 분석 map above 500px at 1024,
+  which is what keeps the floating overlays from colliding with each other and with
+  the columns.
 
-- engines **without** `dvh` fail the `@supports` test, skip the override, and keep
-  the static fallback class; and
-- engines **with** `dvh` apply the override and keep the dynamic-viewport
-  behavior.
+Below it there is no designed composition, so the application stops rather than
+degrades.
 
-This corrects the earlier (incorrect) claim that unsupported engines "fall back to
-viewport-relative behavior" automatically — without the explicit `vh` class they
-fall back to *nothing* — and it is why the fallback lives in both the utility
-classes (for markup readability / the tests) and the `@supports` block (for the
-actual cascade).
+### Why the product is desktop-required
 
-> The map wrapper is **no longer** part of this override. It previously used a
-> `.h-\[60vh\].h-\[60dvh\]` two-class `@supports` rule, but that same two-class
-> specificity out-ranked the single-class `md:h-auto` desktop reset and forced the
-> mobile `60dvh` height onto the desktop map (the empty-strip bug). Its sizing now
-> lives entirely in the dedicated `.map-pane` class below, where the desktop rule is
-> a later same-specificity rule that cleanly wins at `md+`.
+Every full-page frame in the canonical Figma file is **1440 px wide**:
 
-An explicit responsive `viewport` is exported from `app/layout.tsx`
-(`width=device-width, initialScale=1`), with pinch-zoom left enabled for
-accessibility.
-
-## Global navigation and the height chain (desktop redesign, Phase 1)
-
-The four dashboard areas now share one persistent top navigation, rendered exactly
-once by `components/DashboardShell.tsx` above every render branch. Previously the
-mode switch was rendered four separate times — inside the 384 px equity sidebar for
-the two map modes (where its four Korean labels wrapped onto two lines) and as a
-full-width row above each of the three map-free dashboards.
-
-That relocation touches the load-bearing map-height chain, so the ownership moved up
-one level rather than being rewritten:
-
-| Element | Before | After |
+| Frame | Size | Page |
 | --- | --- | --- |
-| Viewport-height owner | `<main>` (`min-h-screen min-h-dvh md:h-screen md:h-dvh`) | the shell root `div[data-testid="app-shell"]`, same classes, same fallback-first order |
-| Full-height flex direction | `<main>` was the row | shell root is the **column**; `<main>` is the row (`md:flex-1 md:min-h-0 md:flex-row`) |
-| Skip-link target | `<main>` in 3 of 6 branches; **absent** in the cost and transparency branches | one `<main id="main-content" tabIndex={-1}>` in the shell, every branch |
-| `.map-pane` | unchanged | **unchanged** |
+| `74:1992` | 1440 × 1753 | 1 — 지역 지표 |
+| `125:5064` | 1440 × 1871 | 2 — 폐기물 처리 현황 |
+| `129:5709` | 1440 × 942 | 3 — 비용 |
+| `136:8684` | 1440 × 1366 | 4 — 후보지 심층 분석 |
+| `167:10554` | 1440 × 1922 | 5 — 후보지 심층 비교 |
+| `156:470` | 1409 × 1720 | 6 — 데이터·출처 |
 
-Why this preserves the fix documented below:
+The file contains **no phone composition** for any of the six destinations. The only
+sub-1024 frames in it are 320 px component *cards*, not page layouts. A phone
+analytical UI would therefore have to be invented rather than implemented, and the
+one that previously existed — sidebar above a 60vh map, and the three-column
+workspace as left panel → map → right panel down a multi-screen scroll — is not a
+usable way to compare candidate sites.
 
-- The shell root keeps a **definite** height at md+ (`md:h-screen md:h-dvh`), so it is
-  still the element the `@supports` two-class overrides in `globals.css`
-  (`.min-h-screen.min-h-dvh`, `.md\:h-screen.md\:h-dvh`) match — the `vh`-before-`dvh`
-  ordering is unchanged and still asserted by `app/responsive.test.tsx`.
-- The header is an ordinary auto-height first child of that column. It is
-  deliberately **not** `position: sticky` or `fixed`: either would take it out of the
-  column's height accounting and re-open the empty-strip bug.
-- `<main>` is `md:flex-1 md:min-h-0`. Its used height is therefore definite, so the
-  `.map-pane` child's `height: 100%` still resolves. **`min-h-0` is load-bearing** —
-  the default `min-height: auto` would let content push the row past the viewport
-  bottom.
-- On mobile `<main>` stays a plain content-sized column, so the stacked
-  sidebar-above-map behaviour and the map's definite `60vh`/`60dvh` are untouched.
+## The narrow-screen gate
 
-`e2e/responsive.spec.ts` still asserts the map reaches the viewport bottom and
-exceeds 80 % of viewport height at 768/1054/1280/1440; its "map starts at the top"
-assertion became "the map starts immediately below the chrome, with no gap", which is
-the invariant that actually matters now. `e2e/desktopNavigation.spec.ts` adds the
-desktop acceptance matrix at 1440×900 and 1280×800: one unwrapped nav row, identical
-nav position across all six views, a bottom indicator plus a weight change on the
-active tab, the sub-view segmented control in one fixed position across 후보지 점수 /
-가중치 바꿔보기 / 비용 살펴보기, no duplicate chrome, and keyboard reach after the skip
-link.
+`components/ui/NarrowScreenGate.tsx`. `DashboardShell` returns it **instead of** its
+children below the floor.
 
-## Map pane sizing (mobile 60%, desktop fill)
+- **Unmounted, not hidden.** No dashboard subtree exists below the floor: no
+  `MapView`, no MapLibre canvas, no WebGL context, no tile requests. A `display:none`
+  fix would leave all of that mounted and merely invisible, which is exactly the
+  half-measure this contract rejects — and it is asserted directly
+  (`e2e/responsive.spec.ts` checks `map-container`, `.maplibregl-canvas`, `app-shell`,
+  `top-navigation` and `mode-switch` all have count 0).
+- **The message**, in Korean and citizen-facing:
+  > 넓은 화면에서 이용해 주세요
+  > 이 분석 화면은 넓은 화면에 최적화되어 있습니다. 1024px 이상의 데스크톱 화면에서
+  > 이용해 주세요.
+  The width is interpolated from `DESKTOP_MIN_WIDTH`, the same constant the shell
+  reads, so the sentence cannot drift from the actual floor.
+- **Branding is retained** (the Figma `logo-target-01` mark, 여기다, and the
+  subtitle) so the reader knows this is the product and not an error page.
+- **Accessibility.** It renders the `<main id="main-content" tabIndex={-1}>` skip-link
+  target — `app/layout.tsx` renders that link at every width, so losing the target
+  would break the WCAG 2.4.1 bypass block on exactly the screens least able to absorb
+  it — and exactly one `<h1>`, the same rule every dashboard view follows. Nothing in
+  it is interactive, so there is no focus trap and no control that silently does
+  nothing.
+- **No horizontal overflow**, asserted at 390, 430, 768 and 1023.
+- **Not a dead end.** The shell subscribes to the media query rather than reading it
+  once on mount, so widening past the floor restores the application without a
+  reload. `DashboardShell` is rendered *by* `app/page.tsx`, so page state, URL state,
+  and the URL-state version are untouched by the swap. The one thing that does reset
+  is the MapLibre viewport (centre/zoom), because the map subtree genuinely unmounts
+  — the intended cost of not keeping a hidden WebGL context alive.
 
-MapLibre's container is `h-full` (100 % of its wrapper). A percentage height needs
-a **definite** parent height, so the map wrapper's height must be explicit — a bare
-`min-h` leaves the height indefinite and the percentage child collapses to zero
-(the "map collapses when the flex direction changes" bug). A single dedicated class,
-`.map-pane` (in `app/globals.css`), owns this responsive sizing unambiguously:
+### How the width is detected
 
-```css
-.map-pane {                 /* mobile: definite 60% viewport height + a minimum */
-  height: 60vh;             /* static fallback (see the dvh note above) */
-  min-height: 360px;
-}
-@supports (height: 100dvh) {
-  .map-pane { height: 60dvh; }   /* dynamic-viewport value where supported */
-}
-@media (min-width: 768px) {      /* md+: fill the fixed-height sidebar row */
-  .map-pane { height: 100%; min-height: 0; flex: 1 1 0%; }
-}
-```
+`useIsDesktopViewport()` (exported from the same file) is a `useSyncExternalStore`
+over `matchMedia("(min-width: 1024px)")`, with `window.innerWidth` as the fallback
+where `matchMedia` is absent and `true` as the server snapshot.
 
-- **Mobile (< 768 px):** a definite `60vh`/`60dvh` (~500 px on an 844 px phone) with
-  a `360px` floor, so the canvas is prominent and never collapses. The `60vh`
-  fallback precedes the `60dvh` value so a `dvh`-less engine keeps a valid definite
+- **Server snapshot `true`** is the safe assumption for a desktop-required product,
+  and there is no hydration mismatch: React uses the same value for the hydration
+  render and only then re-reads the client snapshot. Nothing analytical flashes
+  either way, because `app/page.tsx` fetches in an effect — the prerendered HTML is
+  its loading state, never a populated dashboard.
+- **jsdom** implements no `matchMedia` and defaults to `innerWidth === 1024`, i.e.
+  exactly the floor, so every existing component test keeps rendering the desktop
+  application. Only `app/narrowScreenGate.test.tsx`, which stubs `matchMedia`
+  explicitly, exercises the gate.
+
+### Browser zoom
+
+Zoom is **not** disabled — `app/layout.tsx` leaves `userScalable` on. The honest
+consequence: zooming a desktop window past roughly 150% reduces the CSS-pixel
+viewport below the floor and shows the gate. Any width-based gate behaves this way,
+because CSS pixels cannot distinguish a small screen from a zoomed large one. The
+product decision is deliberate, so this is documented rather than papered over.
+
+## Desktop invariants
+
+### The height chain (the main regression risk)
+
+`.map-pane` sizes the map with `height: 100%`, which needs a **definite** parent
+height. The chain, top to bottom:
+
+| Element | Rule | Why |
+| --- | --- | --- |
+| `<body>` | `min-h-screen min-h-dvh` | fallback-first, see below |
+| shell root `div[data-testid="app-shell"]`, `variant="map"` | `flex h-screen h-dvh flex-col` | the fixed-height flex **column** |
+| `TopNavigation` `<header>` | ordinary auto-height first child | deliberately **not** `sticky`/`fixed` — either would take it out of the column's height accounting and re-open the empty-strip bug |
+| `<main>`, `variant="map"` | `flex min-h-0 flex-1 flex-row` | the row that fills the remaining height. **`min-h-0` is load-bearing** — the default `min-height: auto` would let content push the row past the viewport bottom |
+| `.map-pane` | `height: 100%; min-height: 0; flex: 1 1 0%` | fills both the remaining width and the full row height, so nothing is left below the canvas |
+
+`variant="page"` is the map-free layout: the root is `min-h-screen min-h-dvh` and
+`<main>` is a plain `flex-1`, so those dashboards scroll normally.
+
+### `vh` before `dvh`, and the `@supports` override
+
+`dvh` is **not** self-falling-back. On an engine that does not support it the *entire*
+`height: 100dvh` declaration is invalid and is dropped at parse time — the element is
+left with **no** height rule at all. So every `dvh` utility is preceded by its static
+`vh` equivalent (`h-screen` before `h-dvh`, `min-h-screen` before `min-h-dvh`).
+
+Tailwind v4 emits the static utilities *after* their `dvh` counterparts in the
+generated stylesheet, so at equal specificity the static class would win on **every**
+engine and silently revert the dynamic behaviour. `app/globals.css` therefore
+re-asserts the dynamic value under `@supports (height: 100dvh)` with two-class
+selectors — `.h-screen.h-dvh` and `.min-h-screen.min-h-dvh` — which are unlayered and
+out-specify Tailwind's single-class utilities. Engines without `dvh` fail the
+`@supports` test and keep the static fallback.
+
+> The map wrapper is **not** part of this override, and must never be added to it. It
+> previously used a `.h-\[60vh\].h-\[60dvh\]` two-class rule whose specificity
+> out-ranked the single-class `md:h-auto` desktop reset and forced the mobile `60dvh`
+> height onto the desktop map — the empty-strip bug. `.map-pane` owns the map's height
+> alone, as one unconditional rule, which is what makes that class of accident
+> impossible.
+
+### Navigation
+
+- All six destinations on **one row**, never wrapped: a second row is both ugly and a
+  direct tax on the map's height budget. `.wep-appbar-row` is `flex-wrap: nowrap`
+  unconditionally.
+- `.wep-nav-track` keeps `overflow-x: auto` + `min-width: 0` as the **overflow
+  valve**, not as a phone affordance: if a longer label ever outgrew the width at
+  1024, the overflow stays inside the nav and the page still never gains a horizontal
+  scrollbar.
+- The bar stays within **12% of viewport height** (`e2e/responsive.spec.ts`), which
+  is also what makes a wrapped nav detectable from the outside.
+
+### Columns and the map
+
+- **Sidebar** (`components/ui/ResizableSidebar.tsx`): reader-controlled width
+  (300–520, default 360) carried by `--wep-sidebar-width` on `.wep-sidebar`. The
+  10px drag handle is always present — there is no longer a width at which it is
+  hidden.
+- **`CollapsiblePanel`** (후보지 심층 분석): collapsing a column swaps its width for a
+  3rem rail and hands the freed width to `.map-pane` (`flex: 1 1 0%`). The panel is
+  **always mounted** — collapsing hides the body with CSS — so it can never remount
+  the map or drop a selection, and `MapView`'s container `ResizeObserver` is what
+  resizes the canvas. Widths: 15.5rem from 1024, 21rem from 1280, and the Figma
+  396/376 pair at 1440. The collapsed rail is selected as `.wep-panel.wep-panel-collapsed`
+  (0,2,0) **on purpose** — see the note in `globals.css`; the later 1280/1440 blocks
+  would otherwise out-cascade it.
+- **No page-level horizontal overflow** at any width, gate included:
+  `documentElement.scrollWidth ≤ clientWidth + 1`.
+- **No empty or black strip below the map**: the pane starts within 2px of the chrome
+  bottom and reaches the viewport bottom within 6px, exceeding 80% of viewport
   height.
-- **Desktop (≥ 768 px):** `height: 100%` (of the fixed-height `md:h-dvh` row) plus
-  `flex: 1 1 0%`, so the pane fills **both** the remaining row width and the full
-  row height. Nothing is left below the canvas.
 
-Because `.map-pane` is one class, the mobile `@supports` rule and the desktop
-`@media` rule sit at equal specificity, and the desktop rule — written later — wins
-at `md+`. Crucially, no two-class `@supports` selector can out-specify a desktop
-reset and leak the mobile height onto the desktop map (the previous
-`h-[60vh] h-[60dvh] md:h-auto …` bug). `min-w-0` stays on the wrapper so the flex
-child can shrink and long map content never forces horizontal overflow.
+### MapLibre resize handling
 
-## Selected-region identity (code, not snapshot)
+MapLibre only tracks **window** `resize` events (its built-in `trackResize`). Pure
+container reflows — a panel collapsing, a sidebar drag, device rotation — do not fire
+a window resize, so the canvas would keep its old size. `MapView` adds a
+`ResizeObserver` on the map container that calls `map.resize()`, coalescing bursts
+into one call per animation frame (resizing inside `requestAnimationFrame` rather
+than synchronously in the callback also avoids the "ResizeObserver loop" warning).
+The observer is disconnected and any pending frame cancelled on unmount. It is
+guarded for non-DOM test environments.
+
+**`MapView` is never remounted because a panel width changed.** Collapsing is a CSS
+width change on an always-mounted column; nothing reorders or unmounts the map's
+position in the React tree.
+
+## Disclosures
+
+The repository has three disclosure classes. Two of them lost their conditional
+behaviour with the phone layout; the third never had any.
+
+| Class | Contract now |
+| --- | --- |
+| `.mobile-collapsible` | **always open.** Legacy name, no remaining conditional behaviour, and currently no consumer — 지역 지표 was the last one and both of its disclosures moved to where their subject is. Delete the class once nothing references it. |
+| `.map-legend` | **always open.** The floating legend reads as an expanded card; a legend key is never hidden behind a toggle. Its summary stays in the DOM (hidden by CSS), so the markup contract is unchanged. |
+| `.map-insight` | **still genuinely collapses, at every width it renders at.** This is deliberate and must not be merged into either class above — see `components/equity/EquityMapInsightStrip.tsx` and the note in `globals.css`. |
+
+A short-viewport cap (`@media (max-height: 820px)`) bounds the legend body and
+`.wep-map-overlay-card`, because the map's left gutter carries two overlay stacks
+that grow toward each other. It is scoped by **height only**; the `min-width: 768px`
+half it used to carry existed solely to keep the cap off the phone layout.
+
+## What was retired, and why
+
+Everything below was removed, not merely bypassed. Each was unreachable once the
+floor existed, and leaving unreachable branches in place is what makes a responsive
+contract ambiguous.
+
+| Retired | Where it lived |
+| --- | --- |
+| 390×844 and 430×932 as **primary analytical targets** | `e2e/responsive.spec.ts`, this document |
+| full-dashboard stacking below 768 | `DashboardShell` (`flex-col md:flex-row`), `app/page.tsx` |
+| the mobile **60vh/60dvh analytical map** and its 360px floor | `.map-pane` + its `@supports` companion |
+| the `md`-scoped shell height (`md:h-screen md:h-dvh`) and its `@supports` selector | `DashboardShell`, `globals.css` |
+| the stacked `.wep-panel` phone branch (full-width sections, no rail, no toggle) | `globals.css` |
+| the full-width `.wep-sidebar` and the hidden resize handle | `globals.css` |
+| mobile-collapsed `.mobile-collapsible` and `.map-legend` disclosures | `globals.css` |
+| `flex-wrap` on the app bar; the `<640` brand-subtitle hide | `globals.css` |
+| the `<640` full-screen dialog variant | `globals.css` |
+| the `min-width: 768px` half of the short-viewport overlay caps | `globals.css` |
+| tests and comments demanding Page 4 columns stack on a phone | `CollapsiblePanel`, specs |
+
+The single `md` (768px) breakpoint no longer drives anything in the shell. The only
+widths that mean something now are **1024** (the floor), **1280** and **1440**
+(density steps).
+
+## Tests
+
+| Test | Covers |
+| --- | --- |
+| `e2e/responsive.spec.ts` | the whole contract: the application at 1024×768 / 1280×800 / 1440×900, the gate at 390×844 / 430×932 / 768×1024 / **1023×800**, and a resize crossing the floor in both directions |
+| `e2e/accessibility.spec.ts` | dashboard a11y at 1024 and 1440; skip link, one `<h1>`, and no dashboard at 390 |
+| `app/responsive.test.tsx` | jsdom structural guard — the shell's unconditional classes, fallback-before-`dvh` ordering, `.map-pane` carrying no viewport-relative height |
+| `app/narrowScreenGate.test.tsx` | the gate path, with `matchMedia` stubbed: nothing mounted, skip target kept, one `<h1>`, and the widen-back restore |
+| `e2e/desktopNavigation.spec.ts` | the desktop acceptance matrix at 1440×900 and 1280×800 |
+| `e2e/deepAnalysisPanels.spec.ts` | the collapse rails and the width handed to the map |
+
+`e2e/responsive.spec.ts` intercepts every backend request itself (`e2e/mockBackend.ts`),
+so it needs no backend, tile server, or official data, and it asserts only on layout —
+never on data values.
+
+### The test mock uses an unavailable, non-official state
+
+The mock is a **synthetic layout fixture**, never real or official public data.
+Map-mode requests return genuinely empty collections (`count: 0`, no items), which
+carry no evidence labels. The 수도권매립지 (landfill) endpoints are **not** stubbed with
+an empty-but-"official" summary — the real backend labels every landfill value
+`OFFICIAL_REPORTED_VALUE` / `OFFICIAL_INPUTS_DERIVED_VALUE`, so a synthetic summary of
+zeros would render fabricated quantities and fees under official labels, which the
+repo-root `AGENTS.md` forbids. Instead the mock reproduces the backend's real "no
+official data" response (`404 NO_DATA_AVAILABLE`), so the flow dashboard renders its
+**explicitly-unavailable** state and the spec asserts that no official-evidence label
+ever appears. (`homeApiMock.ts` does the same for the jsdom test.)
+
+### Specs still to migrate
+
+These specs still drive the application at sub-1024 widths and expect a working phone
+dashboard. Under this contract those viewports render the gate, so each needs its
+narrow block either **re-pointed at a desktop width** or **rewritten as a gate
+assertion**. They are feature and regression specs owned by other work streams, so
+the migration is deliberately left to integration rather than done in parallel with
+concurrent edits to the same files:
+
+`correctionPass` · `equitySidebarResize` · `facilityCost` · `finalUiIntegration` ·
+`integration` · `landCoverLayer` · `landfill` · `mapInsightDisclosure` ·
+`phase3CostResults` · `phase4EquityMap` · `phase5LandfillDashboard` ·
+`phase6DataSourcesDashboard` · `phase6Review` · `phase7FinalRegression` ·
+`publicRelease` · `scenario`
+
+Many of their narrow assertions survive unchanged — "no horizontal overflow" and
+"exactly one `<h1>`" both still hold at 390, because the gate satisfies them. What
+fails is anything asserting a *mounted dashboard* (a map container, the mode switch,
+a KPI grid) at a narrow width.
+
+## Non-responsive behaviour documented here
+
+These sections are unaffected by the desktop contract and are kept for reference.
+
+### Selected-region identity (code, not snapshot)
 
 The selected-region summary's persistent identity is the region **code**
 (`selectedRegionCode` in `app/page.tsx`), not a captured metric value. The full
 `RegionSelection` (name, metric label, value, provenance) is **derived** from that
 code under the currently-active metric via `buildRegionSelection`:
 
-- Selecting a region — from a **map click** (`onRegionClick` now passes only the
-  region code) or from the accessible **region `<select>`** — stores the same code.
+- Selecting a region — from a **map click** or from the accessible region `<select>` —
+  stores the same code.
 - **Changing the metric preserves** `selectedRegionCode`; the summary re-derives the
-  new metric's label and value for that same region. If the new metric serves no
-  value for the region, the existing explicit unavailable text is shown — **never a
-  fabricated `0`**.
+  new metric's label and value for that region. If the new metric serves no value,
+  the existing explicit unavailable text is shown — **never a fabricated `0`**.
 - If the active **geography** changes (native SGIS ↔ RCIS reporting) and the stored
-  code is not present in the new boundary collection, the derivation returns `null`
-  and the summary safely clears. Returning to a geography that contains the code
-  restores the selection (the identity was preserved).
+  code is absent from the new boundary collection, the derivation returns `null` and
+  the summary safely clears. Returning to a geography that contains the code restores
+  the selection.
 
-This replaces the earlier behavior where changing the metric cleared the selection
-(its snapshot value belonged to the old metric).
-
-## Map popup invalidation (no stale metric values)
+### Map popup invalidation (no stale metric values)
 
 Both region popups are invalidated when the metric changes, so neither can display a
-previous metric's label/value:
+previous metric's label/value. The **hover tooltip**'s cache is keyed by region code
+and is reset (and any visible tooltip closed) on a metric change. The **pinned popup**
+is retained in a ref; a metric or mode change closes it, each new click removes the
+previous pin, and it is removed on unmount. The sidebar selection is derived from page
+state and stays active independently. Candidate and facility popups are unchanged.
 
-- **Hover tooltip** (desktop): its cache is keyed by region code, so on a metric
-  change the cache is reset **and** any currently-visible tooltip is closed, so the
-  next pointer move rebuilds it from the active metric.
-- **Pinned popup** (click/tap): the single pin is retained in a ref. A metric or
-  mode change closes it, and each new click removes the previous pin before opening
-  a new one (no abandoned popups accumulate). It is also removed on unmount. The
-  sidebar selection is derived from page state and stays active independently — only
-  the on-map pin is dismissed; the next click rebuilds it from the new metric.
+### Map loading, tile-refresh, and error states
 
-Candidate and facility popups are unchanged and keep working.
+`MapView` renders its own accessible overlays inside the map wrapper: an initial
+`role="status"` loading overlay (pointer-events-none, unmounted on `load`), a
+candidate tile-refresh `role="status"`, and a concise non-blocking `role="alert"`
+banner if the map cannot initialise. Transient individual raster tile failures are
+**not** escalated to a fatal state, and the banner makes no claim about
+official-data availability. No fake progress percentages.
 
-## Map loading, tile-refresh, and error states
+### Floating map legend
 
-`MapView` renders its own accessible overlays inside the map wrapper:
+The equity choropleth legend and the suitability status/score legend render as a
+single floating card over the lower-left of the map (`components/MapLegendOverlay.tsx`),
+not in the sidebar.
 
-- **Initial loading** — `role="status"` overlay "지도를 불러오는 중… (Loading map…)"
-  shown until MapLibre fires `load`, then removed. It is `pointer-events-none` and
-  unmounts on load, so it never blocks interaction or traps focus afterwards.
-- **Candidate tile refresh** — `role="status"` "후보지 타일을 갱신하는 중…" shown when
-  entering suitability mode or switching the profile/tile URL, cleared when the
-  candidate vector source finishes loading (`sourcedata`/`isSourceLoaded`) or the
-  map reaches `idle` (so it never sticks when the viewport holds no tiles). No fake
-  progress percentages.
-- **Error** — a concise, non-blocking `role="alert"` banner if the map cannot
-  initialize (e.g. WebGL unavailable) or a source fails. Transient individual raster
-  tile failures are **not** escalated to a fatal full-screen state; the banner makes
-  no claim about official-data availability, and the app-level backend error state
-  and accessible DOM alternatives remain.
-
-## MapLibre resize handling
-
-MapLibre only tracks **window** `resize` events (its built-in `trackResize`). Pure
-container reflows — the flex direction flipping at the `md` breakpoint, device
-rotation, or a mobile collapsible panel above the map opening/closing — do not
-fire a window resize, so the canvas would otherwise keep its old size. `MapView`
-adds a `ResizeObserver` on the map container that calls `map.resize()`, coalescing
-bursts into one call per animation frame (resizing inside `requestAnimationFrame`
-rather than synchronously in the callback also avoids the "ResizeObserver loop"
-warning). The observer is disconnected and any pending frame cancelled on unmount —
-no leaking listeners. It is guarded for non-DOM test environments.
-
-## Tested viewport sizes
-
-`e2e/responsive.spec.ts` exercises the real app (backend intercepted via
-`e2e/mockBackend.ts`, so no backend is required) at:
-
-| Viewport         | Size       | Layout       |
-| ---------------- | ---------- | ------------ |
-| Phone            | 390 × 844  | stacked      |
-| Large phone      | 430 × 932  | stacked      |
-| Tablet portrait  | 768 × 1024 | side-by-side |
-| Narrow desktop   | 1054 × 800 | side-by-side |
-| Desktop          | 1280 × 800 | side-by-side |
-| Desktop          | 1440 × 900 | side-by-side |
-
-Each viewport asserts: the app loads, the map container has meaningful width and
-height and is not pushed off-screen, no page-level horizontal overflow
-(`documentElement.scrollWidth ≤ clientWidth + 1`), the mode switcher is visible and
-every mode is selectable, and the map stays visible across mode switches. **Desktop**
-additionally asserts the map pane reaches the viewport bottom within a small
-rounding tolerance and is taller than 80 % of the viewport (a regression guard for
-the empty-strip bug, where the map was ~60 % tall), and that the panels are
-force-expanded with no toggles, and that the floating equity legend sits within the
-map bounds, anchored to the left edge and above the OpenStreetMap attribution.
-**Mobile** asserts a definite, useful map height (~40–85 % of the viewport, stacked
-below the sidebar), that any visible loading overlay is contained within the map box,
-and that collapsed panels — including the floating "범례" — open/toggle with
-radios reachable. `e2e/facilityCost.spec.ts` and `e2e/integration.spec.ts` additionally
-assert the cost lens mounts **zero** map containers at their viewports. `app/responsive.test.tsx` adds a jsdom structural guard for the
-responsive classes, including that the map wrapper carries the dedicated `.map-pane`
-class (and no longer the ambiguous `h-[60dvh] / md:h-auto / md:flex-1` utilities)
-and that the shell carries its `min-h-screen` / `md:h-screen` fallbacks before the
-matching `dvh` classes.
-
-### The test mock uses an unavailable, non-official state
-
-The mock is a **synthetic layout fixture**, never real or official public data.
-Map-mode requests return genuinely empty collections (`count: 0`, no items), which
-carry no evidence labels. The 수도권매립지 (landfill) endpoints are **not** stubbed
-with an empty-but-"official" summary — the real backend labels every landfill value
-`OFFICIAL_REPORTED_VALUE` / `OFFICIAL_INPUTS_DERIVED_VALUE`, so a synthetic summary
-of zeros would render fabricated quantities and fees under official labels, which
-the repo-root `AGENTS.md` forbids. Instead the mock reproduces the backend's real
-"no official data" response (`404 NO_DATA_AVAILABLE`), so the flow dashboard renders
-its **explicitly-unavailable** state and the spec asserts that no official-evidence
-label ever appears. (`homeApiMock.ts` does the same for the jsdom test by rejecting
-the landfill fetchers with the identical `ApiError`.)
-
-## Floating map legend (Phase 2/3)
-
-The equity choropleth legend and the suitability status/score legend are rendered as
-a single floating card over the lower-left of the map by
-`components/MapLegendOverlay.tsx`, **not** in the sidebar. This removes the sidebar's
-duplicated legend and keeps one legend per map mode.
-
-- **Single source of truth.** `MapLegendOverlay` is a pure presentation component: it
-  never computes color classes, breaks, thresholds, or the no-data color. The page
-  passes it the already-computed rows — equity mode from the same `activeScale`
-  palette/breaks the MapLibre fill uses, suitability mode from
-  `CANDIDATE_SCORE_PALETTE_5` + `CANDIDATE_SCORE_BREAKS` and the shared
-  `CANDIDATE_REVIEW_COLOR` / `CANDIDATE_EXCLUDED_COLOR` constants (now in
-  `lib/metrics.ts`, imported by both the map and the legend). Map colors and legend
-  colors therefore can never silently diverge.
+- **Single source of truth.** It is a pure presentation component: it never computes
+  colour classes, breaks, thresholds, or the no-data colour. The page passes it
+  already-computed rows from the same palettes and constants the MapLibre fill uses,
+  so map colours and legend colours can never silently diverge.
 - **Stability control (policy v2).** When the selected run computed CRITIC/stability,
-  the suitability legend adds an accessible native "안정 후보만 보기" checkbox and a
-  `CANDIDATE_STABLE_OUTLINE_COLOR` outline sample. This `stableOnly` state is
-  **separate** from the canonical `statusVisibility`: it restricts ELIGIBLE cells to
-  `stable_count = 3` while REVIEW/EXCLUDED remain governed by their status
-  checkboxes, and STABLE eligible cells always get a distinct
-  `candidates-stable-outline` layer (the selected-candidate highlight stays on top).
-  The control is hidden for a run without stability data.
-- **Rendered in the page, over the map.** The card is a sibling of `<MapView>` inside
-  the `relative .map-pane` wrapper (not inside `MapView`), so it receives the derived
-  legend data directly and the stubbed-`MapView` unit tests still exercise it. Only
-  the small card overlays the map, so the rest of the map stays interactive — there is
-  no full-container wrapper intercepting pointer events, and wheel/scroll inside the
-  card never reaches the map canvas.
-- **Placement.** `absolute`, anchored bottom-left (`bottom-8 left-2`/`md:left-3`),
-  `z-10`, ~288 px wide (`w-[min(86vw,288px)]`), translucent white with a border,
-  shadow, and backdrop blur. It clears the top-right navigation control and — by
-  sitting a fixed distance above the map's bottom edge — never overlaps the
-  bottom-right OpenStreetMap attribution, even when the map (and thus the legend's
-  share of it) is narrow.
-- **Responsive collapse.** A native `<details>` with its own `.map-legend` class:
-  collapsed by default on mobile behind a labelled "범례" `<summary>` (never
-  icon-only), with the body scrolling internally (`max-h-[40vh] overflow-y-auto`) so
-  it never covers most of the map. At `md+` the summary is hidden and the body is
-  force-expanded — the same `<details>` force-open technique as the sidebar
-  `.mobile-collapsible` (legacy `display:none` children **and** the modern
-  `::details-content` wrapper), but scoped to its own class. Because the card is an
-  absolutely-positioned overlay, opening/closing it never resizes the MapLibre canvas.
+  the suitability legend adds an accessible native 안정 후보만 보기 checkbox. This
+  `stableOnly` state is **separate** from the canonical `statusVisibility`. The
+  control is hidden for a run without stability data.
+- **Placement.** A sibling of `<MapView>` inside the `relative .map-pane` wrapper,
+  absolutely positioned bottom-left, clearing the top-right navigation control and
+  the bottom-right OpenStreetMap attribution.
 - **Suitability status filter.** The three status checkboxes (적합 / 검토 필요 / 제외)
-  moved into the floating legend and still drive the page's canonical
-  `statusVisibility` state via `onToggleStatus` — the exact state MapView filters its
-  candidate layer on. There is no duplicate visibility state in the legend, and a
-  checkbox change updates the MapLibre candidate-layer filter immediately. Status is
-  conveyed by native checkbox labels and swatches (review = amber dashed sample), never
-  by color alone; the eligible score classes (0–100) and the analytical-screening
-  disclaimer are shown alongside.
+  live in the legend and drive the page's canonical `statusVisibility` — the exact
+  state MapView filters its candidate layer on. Status is conveyed by native checkbox
+  labels and swatches, never by colour alone.
 
-## Equity control column and legend (desktop redesign, Phase 4)
+### Map-free dashboards
 
-Phase 4 reduced the density of the 지역 부담 control column and made the active metric
-dominant. **It changed no layout primitive that the height chain depends on.**
+수도권매립지 (매립지 현황), 비용 살펴보기, and 데이터와 출처 are full-width, map-free
+`variant="page"` branches that mount **zero** map containers. The cost dashboard's
+setup half uses `lg:grid-cols-[minmax(0,1fr)_20rem]` with a `lg:sticky` summary
+column — the one sticky element outside the top navigation, confined to a map-free
+branch so it takes nothing out of a height chain `.map-pane` depends on. Their
+information architecture, KPI definitions, and terminology rules live in
+[`../docs/FACILITY_COST_LENS_UI.md`](../docs/FACILITY_COST_LENS_UI.md) and the
+`docs/ui-refresh/*` page documents.
 
-Unchanged, and asserted by `responsive.test.tsx` / `e2e/responsive.spec.ts` /
-`e2e/phase4EquityMap.spec.ts`:
+### Report preview modal
 
-- the shell root still owns the viewport height, with the `vh`-before-`dvh` fallback
-  ordering and the `@supports` overrides intact;
-- `<main>` is still `md:flex-1 md:min-h-0 md:flex-row`;
-- the `<aside>` is still `w-full md:w-96 md:flex-none` — the sidebar **width did not
-  change**; the map gained room from a shorter control column, not a narrower one;
-- the map wrapper is still `.map-pane relative min-w-0`, `.map-pane` is still the sole
-  owner of the map's responsive height in `globals.css`, and `map-container`'s
-  `parentElement` is still that wrapper (no element was inserted between them);
-- exactly one `MapView` is mounted, and the `ResizeObserver` → `map.resize()` handling
-  in `MapView` is untouched;
-- nothing new is `position: sticky` or `fixed`.
+`.wep-modal-panel` owns `max-height: calc(100vh − 4rem)` with the `dvh` value
+re-asserted under `@supports (height: 100dvh)` — the **same technique and the same
+reason** as the shell height above. The panel is a flex column whose body is
+`min-h-0 flex-1 overflow-y-auto`, so long reports scroll inside the modal; `min-h-0`
+is load-bearing. The overlay carries `overscroll-contain`. Print is unaffected: the
+existing `@media print` rules already reset `max-height`/`overflow`.
 
-What did change:
+### Colour scheme
 
-- **The control column is a sunken surface.** The `<aside>` moved to
-  `--color-surface-sunken` with `gap-3` / `p-4`, so each section reads as a distinct
-  `.wep-card` (the Phase 1 §8 "page = sunken, cards = surface" rule). `CollapsibleSection`
-  became a `.wep-card` for the same reason; it kept its `.mobile-collapsible` class, so the
-  desktop force-open CSS still applies, and its body carries `md:pt-4` because at `md+` the
-  summary that otherwise supplies that padding is hidden.
-- **The active metric leads.** A card at the top of the column shows the metric name at
-  `text-base font-semibold`, the unit as muted `text-xs`, and the source + reference period
-  as a caption. It is the existing `role="status"` `selected-metric-summary` live region.
-- **The metric groups are tighter, not fewer.** Still 3 fieldsets and 11 radios sharing
-  `name="metric"`, all visible on desktop; the density came from card spacing and row
-  gaps only.
-- **The initial load is a structural skeleton.** The cold start renders an `aria-hidden`
-  skeleton of the control column beside a skeleton map surface (shared
-  `components/ui/Skeleton.tsx`), with the single `role="status"` `loading` announcement
-  retained. It renders neutral bars only — no numbers or names that could read as data.
-- **The legend heading is Korean-only** (`범례` / `범례 — {unit}`). Its placement, width,
-  mobile disclosure, desktop force-open behaviour, in-map bounds, and attribution
-  clearance are unchanged, as are every class row and the no-data row.
+A full **dark theme** is intentionally out of scope. The app is pinned to a
+consistent light palette (`color-scheme: light`); the previous
+`prefers-color-scheme: dark` `<body>` override — which framed the light app in black,
+most visibly in the empty strip below the map — was removed.
 
-Verified at 390×844, 768×1024, 1054×800, 1280×800, and 1440×900: no horizontal page
-overflow, and no empty or black strip below the map (the desktop map still reaches the
-viewport bottom within rounding tolerance and exceeds 75% of viewport height).
+### Live specs
 
-## Full-width facility-cost dashboard (Phase 2/3)
-
-Selecting 적합성 (Suitability) → 비용 살펴보기 now renders a **full-width dashboard** with
-**no map**, instead of a narrow panel beside a mostly-irrelevant map (the cost model
-does not vary by map cell in V1). `app/page.tsx` early-returns this view — it mounts
-no `MapView`, no map container, and no floating legend, mirroring the 수도권매립지
-(flow) full-width pattern. The main mode switch and the 후보지 점수 / 비용 살펴보기 sub-view
-switch stay reachable above the dashboard, and the selected suitability candidate is
-passed through for the candidate-context card. Full information architecture,
-KPI definitions, permitted/prohibited terminology, funding-breakdown interpretation,
-the per-capita caveat, and the no-regional-allocation rule are documented in
-[`../docs/FACILITY_COST_LENS_UI.md`](../docs/FACILITY_COST_LENS_UI.md).
-`components/FacilityCostDashboard.tsx` replaces the old `FacilityCostPanel.tsx`; it
-reuses the same calculation/validation/staleness logic and the same official
-`/facility-cost/calculate` response, re-laid-out as a header + a compact info banner +
-a collapsed exclusions accordion + the two-column setup workflow (setup steps left,
-sticky scenario summary right, advanced settings in a disclosure) + responsive KPI grid
-+ funding breakdown + official-input region table + missing-components list + candidate
-context + provenance.
-
-Phase 2 of the desktop redesign changed the SETUP half only. Its two-column grid uses
-`lg:grid-cols-[minmax(0,1fr)_20rem]` and stacks below `lg`, and the summary column is
-`lg:sticky lg:top-6 lg:self-start` so the primary action stays on screen. This is the
-one sticky element outside the top navigation, and it is confined to the cost branch:
-that branch is map-free, so unlike the shell header it takes nothing out of a height
-chain `.map-pane` depends on. At stacked widths it returns to normal document flow.
-`e2e/facilityCost.spec.ts` verifies both behaviours, plus no horizontal overflow, at
-1440×900, 1280×800, and 390×844.
-
-## Known limitations
-
-- The **suitability** sidebar panel (provenance, weights, reasons, method) is not
-  collapsed on mobile; it is a long single-column scroll. It is overflow-free and
-  fully usable — collapsing it further is a possible later refinement.
-- The service-region picker in the cost dashboard is a searchable ARIA combobox
-  (`ui/SearchableRegionPicker.tsx`) as of Phase 2; the native multi-select it replaced
-  is gone. Its popup overlays the 서울/인천/경기 bulk buttons beneath it while open —
-  ordinary combobox behaviour, dismissed with Escape or by clicking away.
-- The **live** e2e specs (`map`, `regressions`, `landfill`) still require
-  `E2E_BACKEND_URL` and skip without it; only the self-mocked `responsive.spec.ts`
-  runs unconditionally. In sandboxed environments the OSM basemap and vector tiles
-  are network-blocked, so the map renders blank — the layout assertions measure the
-  map **container**, which is robust to tile/WebGL availability.
-- `dvh`/`svh`/`lvh` require a 2022-or-later browser engine. Older engines do **not**
-  fall back on their own — an unsupported `dvh` value invalidates and drops the whole
-  declaration. The layout therefore ships an explicit static-`vh` fallback before
-  each `dvh` value: the shell via its `min-h-screen`/`md:h-screen` utility classes
-  (see "Viewport-height strategy"), and the map via the `height: 60vh` base rule in
-  `.map-pane` (see "Map pane sizing"), so those engines keep a valid full/60 %
-  viewport height. Safe-area insets are handled by the default `viewport-fit`
-  (content stays within the safe area); `viewport-fit=cover` is not used, so no
-  notch-overlap handling is needed.
-- A full **dark theme** is intentionally out of scope. The app is pinned to a
-  consistent light palette (`color-scheme: light`); the previous `prefers-color-scheme:
-  dark` `<body>` override (which framed the light app in black) was removed.
-
-## Landfill dashboard (desktop redesign, Phase 5)
-
-매립지 현황 stays a full-width, map-free `variant="page"` branch — Phase 5 changed the
-information hierarchy inside it, not the shell.
-
-- **Filter row.** `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`. Previously the fourth
-  column only appeared at `xl` (1280 px), so the secondary desktop target sat one
-  breakpoint below a single row. `lg` (1024 px) puts all four native `<select>`s on one
-  row at 1024, 1280, and 1440, and they still stack cleanly at 768 and 390. The row
-  wraps; it never scrolls sideways.
-- **KPI grid.** Unchanged at `grid-cols-1 sm:grid-cols-2 xl:grid-cols-4` — four cards
-  read comfortably two-up at 1024 and four-up from 1280.
-- **Charts / comparisons.** Unchanged at `lg:grid-cols-2`. The trend `<svg>` now has an
-  explicit `h-20`: it had `preserveAspectRatio="none"` with no height, so its rendered
-  height tracked the card width and the chart ballooned as the viewport widened
-  (Phase 0 defect X5). Bars encode value by height only, so pinning the height rescales
-  bar *width* alone and distorts no value.
-- **Table.** Still `min-w-[36rem]` inside its own `overflow-x-auto`; the proportional
-  rule added under the 반입량 figure is a block inside the existing cell and adds no
-  width.
-- **Verified viewports.** `e2e/phase5LandfillDashboard.spec.ts` asserts no page-level
-  horizontal overflow, a full-width dashboard, and visible/usable filters at 390×844,
-  768×1024, 1024×768, 1280×800, and 1440×900 — and, at the two desktop targets, that
-  the four filters share one row and that the heading, banner, filter row, and KPI
-  values all fit within the first viewport.
-- **Unchanged:** `.map-pane` (this branch mounts no map), the `vh`-before-`dvh`
-  ordering and its `@supports` overrides, the `md:w-96` sidebar width, the single `md`
-  shell breakpoint, and `color-scheme: light`.
-
-## Data-and-sources dashboard (desktop redesign, Phase 6)
-
-데이터와 출처 stays a full-width, map-free `variant="page"` branch. Phase 6 moved the
-`<h1>` and the orientation strip out of `app/page.tsx` and into
-`TransparencyDashboard` (matching the Phase 5 landfill pattern) and replaced the two
-dense tables with a searchable source catalog. The shell is untouched.
-
-- **Page frame.** `w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8` wrapping a
-  `mx-auto max-w-screen-2xl flex-col gap-5` column — the same frame the landfill
-  dashboard uses, so the two map-free pages now measure identically.
-- **Overview.** `grid-cols-2 xl:grid-cols-4`. Two-up on mobile and tablet, four-up
-  from 1280. Four cards read comfortably two-up at 768 and 1024.
-- **Control row.** `flex-col lg:flex-row lg:items-end`: the search field grows
-  (`flex-1`) and the two native `<select>`s sit at the end of the same row from `lg`
-  (1024 px). Below `lg` they stack; the two selects themselves go side-by-side from
-  `sm`. Nothing scrolls sideways.
-- **Source catalog.** `grid-cols-1 md:grid-cols-2 xl:grid-cols-3` — one column on
-  mobile, two from 768, three from 1280. Card metadata is a `<dl>` of
-  `flex gap-2` rows with a `min-w-[4.5rem]` term column, so the labels align without a
-  fixed-width grid that could clip a longer Korean term.
-- **Long identifiers.** Every identifier cell in a card's technical disclosure, and
-  every version identifier in the 기술 정보 accordion, carries `break-all`. (The
-  accordion's 분석 실행 and 후보 구역 수 values are short numerics and deliberately do
-  not.) A `source_id`, endpoint, or version string is unbreakable text and would
-  otherwise set the grid track's minimum width and push the page wider.
-- **Tables.** 자료별 기준 기간과 표시 개수 (`min-w-[560px]`), 시설 종류별 지도 표시
-  현황 (`min-w-[420px]`), and 지도에 표시하지 못한 시설 (`min-w-[680px]`) each sit in
-  their own `overflow-x-auto`, so at 390 the table scrolls and the page body does not.
-- **`transparency-sources` must stay a full-width top-level section.**
-  `e2e/desktopNavigation.spec.ts` asserts its bounding box exceeds 90% of the viewport
-  width in the map-free-pages test. A two-column shell or a sticky `<aside>` rail
-  around it would fail that assertion — and the same spec asserts this view contains
-  **zero** `<aside>` elements.
-- **Verified viewports.** `e2e/phase6DataSourcesDashboard.spec.ts` asserts no
-  page-level horizontal overflow, a full-width dashboard, and a usable catalog at
-  390×844, 430×932, 768×1024, 1024×768, 1280×800, and 1440×900 — and, at the two
-  desktop targets, that the search and both filters share one row, that at least two
-  cards share a row, and that the heading, banner, overview, controls, result count,
-  and the first catalog card all fit within the first viewport.
-- **Unchanged:** `.map-pane` (this branch mounts no map), the `vh`-before-`dvh`
-  ordering and its `@supports` overrides, the `md:w-96` sidebar width, the single `md`
-  shell breakpoint, and `color-scheme: light`.
-
-## Report preview modal (desktop redesign, Phase 7 — defect X7)
-
-The 보고서 미리보기 dialog was capped at `max-w-2xl` (672px) while holding 3- and
-4-column report tables and a two-column `<dl>`. Phase 7 widened it without letting it
-escape the viewport at any size.
-
-- **Width.** `w-full max-w-5xl` (1024px) inside the overlay's `p-4`, so the panel is
-  `min(100vw − 2rem, 1024px)`. Materially wider on desktop; still viewport-safe at
-  390 and 768, and it can never cause page-level horizontal overflow.
-- **Height.** A dedicated `.wep-modal-panel` class in `globals.css` owns
-  `max-height: calc(100vh − 4rem)` with the `dvh` value re-asserted under
-  `@supports (height: 100dvh)`. This is the **same technique and the same reason** as
-  `.map-pane`: a `vh` fallback must precede its `dvh` value, and Tailwind emits the
-  static utility *after* the dynamic one, so two utility classes on the element would
-  let `vh` win on every engine. As one class at equal specificity the `@supports` rule
-  cleanly wins where `dvh` is supported.
-- **Scrolling.** The panel is a flex column; the report body (`.wep-print`) is
-  `min-h-0 flex-1 overflow-y-auto`, so long reports scroll *inside* the modal. `min-h-0`
-  is load-bearing — the default `min-height: auto` would let content push the panel
-  past its max-height instead of scrolling. The overlay carries `overscroll-contain`
-  so that scroll never chains to the page behind it.
-- **Print is unaffected.** The existing `@media print` rules already reset
-  `max-height: none` and `overflow: visible` on `.wep-print`, so the printout is never
-  clipped by the new bounded height.
-- **Unchanged:** report content, ordering, units, values, exports, the `role="dialog"`
-  semantics and accessible name, Escape and backdrop close, the focus trap, and focus
-  return to the trigger.
-- **Verified** at 1440×900, 1280×800, 768×1024, and 390×844 by
-  `e2e/phase7FinalRegression.spec.ts`, which asserts the real bounding box (wider than
-  the old 672px cap, inside the viewport with margins on both sides) rather than a
-  class name — so restoring the narrow cap fails whatever class expresses it.
-
-## Phase 7 final responsive verification
-
-`e2e/phase7FinalRegression.spec.ts` re-verifies the whole product together — all four
-areas plus the three candidate sub-views — at **390×844, 430×932, 768×1024, 1024×768,
-1054×800, 1280×800, and 1440×900**: no page-level horizontal overflow anywhere,
-exactly one `<h1>` per view, exactly one map in map views and zero in map-free views,
-`.map-pane` still the sole height owner, and the desktop map still reaching the
-viewport bottom (>75% of viewport height) with no empty or black strip below it. No
-layout primitive changed in Phase 7 — the shell, `.map-pane`, the `vh`-before-`dvh`
-ordering and its `@supports` overrides, the `md:w-96` sidebar, the single `md`
-breakpoint, and `color-scheme: light` are all untouched.
-
-## 가중치 바꿔보기 (weight scenario lab) sub-view
-
-The scenario lab lives in the suitability sidebar beside the shared MapView (it is
-NOT a full-width early-return like the cost lens — it keeps the map). At `< md` the
-editor stacks above the map; sliders and numeric inputs fit the viewport; preset
-buttons wrap; top-candidate rows and the floating scenario legend stay readable and
-compact; there is no page-level horizontal overflow (verified in
-`e2e/scenario.spec.ts` at 390×844 and by the shared responsive spec). At `md+` the
-lab sidebar and map sit side by side with the sidebar scrolling internally. Cost view
-remains full-width and map-free; landfill is unchanged.
+The **live** e2e specs (`map`, `regressions`, `landfill`) require `E2E_BACKEND_URL`
+and skip without it. In sandboxed environments the OSM basemap and vector tiles are
+network-blocked, so the map renders blank — the layout assertions measure the map
+**container**, which is robust to tile/WebGL availability.

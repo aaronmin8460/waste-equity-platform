@@ -83,15 +83,21 @@ any host other than the backend and the basemap tile service.
 
 ## Responsive layout
 
-The dashboard is mobile-usable: a vertical stacked layout with a full-width map
-and collapsible controls below `md` (768 px), and the original side-by-side
-sidebar/map layout at and above it. The map legends **float over the map** (a single
-source of truth shared with the map fill, collapsed by default on mobile), and the
-facility cost lens (적합성 → 비용 살펴보기) renders as a **full-width dashboard with no
-map**. See [RESPONSIVE_LAYOUT.md](RESPONSIVE_LAYOUT.md) for the breakpoints, the
-floating-legend and full-width-cost-dashboard behavior, the map minimum-height and
-MapLibre resize strategy, the `vh`-before-`dvh` viewport-height fallbacks, and the
-tested viewport sizes, and [../docs/FACILITY_COST_LENS_UI.md](../docs/FACILITY_COST_LENS_UI.md)
+여기다 is **desktop-first and desktop-required**. At **1024 px and above** it renders
+one composition at three densities — 1440 canonical, 1280 normal, 1024 compressed but
+fully functional. **Below 1024 px** the shell renders
+`components/ui/NarrowScreenGate.tsx` **instead of** the dashboards: they are not
+mounted at all, so there is no map, no WebGL context, and no tile request. Every
+full-page frame in the canonical Figma file is 1440 px wide and the file contains no
+phone composition, so there is no designed phone analytical UI to implement.
+
+The map legends **float over the map** (a single source of truth shared with the map
+fill), and the facility cost lens (적합성 → 비용 살펴보기) renders as a **full-width
+dashboard with no map**. See [RESPONSIVE_LAYOUT.md](RESPONSIVE_LAYOUT.md) — the single
+source of truth for viewport behaviour — for the floor and the gate, the height chain
+and the `vh`-before-`dvh` fallbacks, the desktop invariants, the full list of what the
+phone layout retired, and the tested viewport sizes; and
+[../docs/FACILITY_COST_LENS_UI.md](../docs/FACILITY_COST_LENS_UI.md)
 for the cost dashboard's information architecture and terminology rules. The responsive e2e coverage
 (`e2e/responsive.spec.ts`) intercepts the backend itself (`e2e/mockBackend.ts`) —
 serving genuinely empty collections and the backend's real "no official data"
@@ -102,10 +108,11 @@ landfill response, never a synthetic value shown as official — so it runs with
 npx playwright test responsive.spec.ts
 ```
 
-Phase 1 (responsive/mobile layout) is **merged into `main`** (PR #27); a Phase 1.1
-follow-up corrects two post-merge review findings (the `vh`/`dvh` fallback ordering
-and the test's non-official landfill fixture). It is **not deployed** to any
-environment, and Phase 2 (accessibility) has **not** been started.
+The earlier Phase 1 "responsive/mobile layout" (PR #27), which made the whole
+dashboard stack into a phone column below 768 px, has been **retired** — see
+[RESPONSIVE_LAYOUT.md](RESPONSIVE_LAYOUT.md) for the complete list of what it left
+behind and where. Its two durable corrections are kept: the `vh`-before-`dvh`
+fallback ordering, and the test's non-official landfill fixture.
 
 ## Suitability sub-views: 후보지 점수 · 가중치 바꿔보기 · 비용 살펴보기
 
