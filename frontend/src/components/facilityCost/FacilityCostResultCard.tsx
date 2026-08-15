@@ -190,7 +190,10 @@ export default function FacilityCostResultCard({
         {!calculating && !errorCurrent && result === null && (
           <EmptyState
             title="아직 계산한 결과가 없습니다."
-            description="지역을 선택하고 “비용 계산하기”를 누르면 결과가 여기에 표시됩니다."
+            // No description. The status line directly above this already says what
+            // is missing, in the same words and for the live state ("처리할 지역을 한
+            // 곳 이상 선택하면 계산할 수 있습니다."), so the description repeated the
+            // instruction two lines below itself.
             testId="facility-cost-no-result"
           />
         )}
