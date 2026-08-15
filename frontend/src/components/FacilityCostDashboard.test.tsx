@@ -1130,15 +1130,20 @@ describe("results — the five Figma figures", () => {
   it("keeps the per-capita's not-a-bill caveat and never relabels it as a charge", async () => {
     await renderPanel();
     await calculateToResults();
+    // Card ③ carries the footnote and nothing else (Figma note 221:3443), so the
+    // served caveat is NOT on the primary surface any more.
+    expect(screen.queryByTestId("facility-cost-per-capita-caveat")).toBeNull();
+    await openDetails();
+    openSection("facility-cost-exact-values");
+    // The SERVED caveat, verbatim and alone, beside the exact per-capita value it
+    // qualifies: it already carries both the derivation and the not-a-bill claim,
+    // so the static duplicate that used to precede it in bold is still gone.
+    // `PER_CAPITA_NON_CLAIM` itself is unchanged and listed in 계산 방법과 한계
+    // (asserted below).
     const caveat = screen.getByTestId("facility-cost-per-capita-caveat").textContent ?? "";
-    // The SERVED caveat, alone: it already carries both the derivation and the
-    // not-a-bill claim, so the static duplicate that used to precede it in bold
-    // is gone. `PER_CAPITA_NON_CLAIM` itself is unchanged and still listed in
-    // 계산 방법과 한계 (asserted below).
     expect(caveat).toContain("개인의 실제 세금 청구액이 아닙니다");
     expect(caveat).toContain("동일 연도의 공식 인구로 나눈 환산값");
     expect(caveat).not.toContain("개인에게 실제로 청구되는 세금이나 부담금이 아닙니다");
-    await openDetails();
     expect(screen.getByTestId("facility-cost-completeness").textContent).toContain(
       "주민 개인의 실제 세금 청구액이 아님",
     );

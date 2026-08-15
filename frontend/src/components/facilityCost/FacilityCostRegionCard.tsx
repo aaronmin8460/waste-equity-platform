@@ -83,10 +83,11 @@ export default function FacilityCostRegionCard({
         <>
           <SearchableRegionPicker
             label="지역 이름 검색"
-            // The merge behaviour still has to be stated — a reader who expects
-            // 광역시·도 buttons to REPLACE the selection would misread the result —
-            // but it fits on one line.
-            hint="이름 검색 또는 아래 버튼으로 선택합니다. 버튼은 기존 선택에 더해집니다."
+            // Only the non-obvious half survives. That a search box searches and a
+            // button selects is visible from the controls; that the 광역시·도 buttons
+            // MERGE into the selection rather than replacing it is not, and a reader
+            // who assumes otherwise misreads the result.
+            hint="광역시·도 버튼은 기존 선택에 더해집니다."
             regions={regionOptions}
             selectedCodes={selectedCodes}
             onChange={onChangeRegions}

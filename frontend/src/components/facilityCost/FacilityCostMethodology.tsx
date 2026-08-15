@@ -198,6 +198,18 @@ export function FacilityCostExactValues({ result }: { result: FacilityCostCalcul
         </div>
       </dl>
 
+      {/* The SERVED per-capita caveat. It used to sit under the figures in card ③;
+          the Figma technical note (221:3443) asks for every 문구 in ③ except the
+          footnote to go, so it moved to the per-capita's home in the detail surface
+          rather than being deleted. It is still the backend's own string, rendered
+          verbatim — both the derivation ("동일 연도의 공식 인구로 나눈 환산값") and
+          the non-claim ("개인의 실제 세금 청구액이 아닙니다") — and the non-claim is
+          additionally listed in 이 계산의 범위 (`NON_CLAIM_NOTICES`). */}
+      <p className="mt-2 text-xs text-ink-subtle" data-testid="facility-cost-per-capita-caveat">
+        <span className="font-medium text-ink">{per_capita.term_ko}: </span>
+        {per_capita.caveat}
+      </p>
+
       <details className="mt-3" data-diagnostic="true" data-testid="facility-cost-diagnostics">
         <summary className="cursor-pointer text-xs text-ink-subtle">기술 정보 자세히 보기</summary>
         <ul className="mt-1 flex flex-col gap-0.5 break-words text-xs text-ink-subtle">

@@ -110,10 +110,14 @@ export default function FacilityCostResultSummary({ result }: { result: Facility
             }
             valueTestId="fc-service-population"
           />
+          {/* No captions on the tiles. Figma's ③ (129:5709) draws label + value and
+              nothing else, and both captions restated a condition the screen already
+              shows: 처리 비율 is a row of ③'s own condition summary, and 연간 가동일수
+              is stated in ②'s 고급 설정 summary line. Both are also in
+              계산 방법과 한계 → 계산 가정, on the served values. */}
           <ResultTile
             label="연간 처리 대상량"
             value={`${formatQuantity(capacity.annual_service_quantity_ton)} 톤/년`}
-            caption={`처리 비율 ${result.scenario.processing_share_percent}% 적용`}
             valueTestId="fc-annual-quantity"
           />
           <ResultTile
@@ -123,7 +127,6 @@ export default function FacilityCostResultSummary({ result }: { result: Facility
               capacity.facility_capacity_ton_per_day,
               capacity.capacity_unit,
             )}
-            caption={`연간 가동일수 ${capacity.operating_days_per_year}일 기준`}
             valueTestId="fc-capacity"
           />
           <ResultTile
@@ -147,25 +150,16 @@ export default function FacilityCostResultSummary({ result }: { result: Facility
         </div>
       </dl>
 
-      {/* The ONE caveat that stays adjacent to a specific figure: the per-capita
-          tile is the single number a citizen is most likely to misread as a bill,
-          so its non-claim travels with it rather than being generalised away.
-          The standard-cost footnote is card ③'s, stated once there; the population
-          and waste provenance lines moved to 계산 방법과 한계 → 출처와 계산 방법,
-          which states both in full (source id, definition, dataset, period).
+      {/* NO caveat paragraph here. The Figma technical note (221:3443) asks for
+          every 문구 in card ③ except the footnote to be removed, and the frame's own
+          ③ is exactly the hero, the four tiles, and that one footnote.
 
-          The SERVED caveat is used alone. It already carries both halves — the
-          derivation ("동일 연도의 공식 인구로 나눈 환산값") and the non-claim
-          ("개인의 실제 세금 청구액이 아닙니다") — so the static `PER_CAPITA_NON_CLAIM`
-          that used to precede it was the same claim written twice, in bold, on the
-          one screen the redesign is meant to keep quiet. That constant is
-          unchanged and still stated in 계산 방법과 한계 (`NON_CLAIM_NOTICES`). */}
-      <p className="text-[0.6875rem] text-ink-subtle" data-testid="facility-cost-per-capita-caveat">
-        {/* A short pointer, not the served term: repeating `term_ko` here would
-            put the tile's own label on the screen twice. */}
-        <span className="font-medium text-ink-secondary">1인당 참고치 —</span>{" "}
-        {per_capita.caveat}
-      </p>
+          Nothing was deleted from the product. The served `per_capita.caveat` is
+          rendered verbatim in 계산 방법과 한계 → 정밀값과 계산 기준, beside the exact
+          per-capita value it qualifies, and the not-a-bill claim it carries is also
+          listed in 이 계산의 범위 (`NON_CLAIM_NOTICES`). The per-capita tile itself is
+          unchanged: still `per_capita.term_ko`, still never relabelled 주민 부담
+          청구액 / 실제 세금 / 개인 부담금. */}
     </div>
   );
 }
