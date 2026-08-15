@@ -1,5 +1,13 @@
 # Desktop UI/UX Redesign — Phase 0 Baseline and Phased Plan
 
+> **SUPERSEDED WHERE IT DESCRIBES VIEWPORTS BELOW 1024px.** 여기다 is now a
+> desktop-required product: below 1024px the shell renders
+> `components/ui/NarrowScreenGate.tsx` instead of any dashboard, so no analytical UI
+> exists at 390 / 430 / 768 px and the assertions this document records at those
+> widths no longer describe the shipped app. `frontend/RESPONSIVE_LAYOUT.md` is the
+> single source of truth for viewport behaviour; everything this document says about
+> **1024px and above is unchanged**.
+
 **Status:** Phases 0–7 complete. Phase 0 was audit + plan only; Phases 1–6 shipped
 (global foundation, facility-cost setup, facility-cost results, regional burden map,
 landfill dashboard, data-and-sources dashboard) and **Phase 7 shipped** the final

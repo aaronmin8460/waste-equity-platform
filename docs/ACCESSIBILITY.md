@@ -1,5 +1,13 @@
 # Accessibility behaviour (Phase 2 foundation)
 
+> **SUPERSEDED WHERE IT DESCRIBES VIEWPORTS BELOW 1024px.** 여기다 is now a
+> desktop-required product: below 1024px the shell renders
+> `components/ui/NarrowScreenGate.tsx` instead of any dashboard, so no analytical UI
+> exists at 390 / 430 / 768 px and the assertions this document records at those
+> widths no longer describe the shipped app. `frontend/RESPONSIVE_LAYOUT.md` is the
+> single source of truth for viewport behaviour; everything this document says about
+> **1024px and above is unchanged**.
+
 This documents the accessibility foundation the dashboard ships with. It is a
 foundation, not a full WCAG audit: it establishes document semantics, keyboard
 operability, status announcements, and accessible alternatives for the
