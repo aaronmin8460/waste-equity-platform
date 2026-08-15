@@ -260,7 +260,10 @@ test.describe("suitability dashboard behaviour at 1440×900", () => {
     await expect(page.getByTestId("active-basis-name")).toHaveText("기본 기준");
     await page.getByTestId("profile-radio-critic").check();
     await expect(page.getByTestId("active-basis-name")).toHaveText("데이터 분포 기준");
-    await expect(page.getByTestId("active-basis-explanation")).toContainText(
+    // The method sentence moved into the 가중치 계산 방법 disclosure — open it, then
+    // assert it followed the radio. It is one keystroke away, not gone.
+    await page.getByTestId("scoring-basis-method").locator("summary").click();
+    await expect(page.getByTestId("active-basis-method-detail")).toContainText(
       "항목의 중요도 판단이 아닙니다",
     );
     await expect(page.getByTestId("suitability-insight-basis")).toContainText("데이터 분포 기준");
