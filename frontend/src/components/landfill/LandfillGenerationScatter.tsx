@@ -290,6 +290,11 @@ function SelectedPointDetail({
 }) {
   if (!point) {
     return (
+      // KEPT. It reads like a duplicate of the card footer, but it is the empty
+      // state of the detail slot rather than standing orientation: it reserves the
+      // slot's height so selecting a point does not shift the chart, and
+      // LandfillGenerationScatter.test.tsx contracts it as the proof that pressing a
+      // selected point CLEARS the selection instead of trapping the reader in it.
       <p
         className="mt-2 rounded-card border border-hairline bg-surface-muted p-3 text-xs text-ink-subtle"
         data-testid="landfill-scatter-selection"

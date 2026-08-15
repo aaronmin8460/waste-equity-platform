@@ -278,9 +278,15 @@ function MunicipalCostScopeSummary({
           <p className="mt-2 text-xs text-ink-subtle" data-testid="municipal-cost-returned">
             {/* The chip counts describe the selected 지역 before the 자료 상태 filter;
                 this line says how many rows the applied filters actually returned, so
-                the two can differ without either being wrong. */}
-            현재 표시 중인 지자체 {returnedCount ?? meta.returned_count}곳. 값이 없는 지자체도
-            목록에서 빼지 않고 그대로 표시합니다.
+                the two can differ without either being wrong.
+
+                The "값이 없는 지자체도 목록에서 빼지 않습니다" clause that used to close
+                this line is NOT gone from the screen — it is the first of
+                MUNICIPAL_COST_TABLE_FOOTNOTES, rendered visibly under the table it
+                describes, together with the "지급액이 0이라는 뜻이 아닙니다" half this
+                line never carried. Saying it here as well was the same rule printed
+                twice inside one section. */}
+            현재 표시 중인 지자체 {returnedCount ?? meta.returned_count}곳.
           </p>
           {/* Said out loud whenever a scope is applied — including the released
               default — so a narrowed comparison never reads as the whole picture. */}

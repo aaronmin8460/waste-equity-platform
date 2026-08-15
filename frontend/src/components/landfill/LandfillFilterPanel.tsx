@@ -92,7 +92,10 @@ export default function LandfillFilterPanel({
   return (
     <SectionCard
       title="조회 조건"
-      description="네 가지 조건이 아래 모든 값을 함께 결정합니다."
+      // No description. Figma's 조회 조건 card (125:5064) carries none, and "네 가지
+      // 조건이 아래 모든 값을 함께 결정합니다" restated what a filter panel is. The
+      // 현재 선택 line below still names every applied condition, which is the part a
+      // reader who has scrolled past the controls actually needs.
       testId="landfill-filters"
     >
       {/* One desktop row from lg up (the four controls fit comfortably at 1280 and
@@ -294,10 +297,11 @@ function LandfillSelectionOutcomeText({ outcome }: { outcome: LandfillSelectionO
       return (
         <>
           <DataStatusBadge status="reported" testId="landfill-selection-badge" />
-          <span>
-            기준 기간 {outcome.periodLabel}의 공식 반입 자료를 표시합니다. 계산으로 얻은 값은 카드마다
-            따로 표시합니다.
-          </span>
+          {/* The SERVED period only. The second sentence — "계산으로 얻은 값은 카드마다
+              따로 표시합니다" — described the 계산값 badge scheme in general, on a screen
+              where every derived figure already wears that badge beside its own value.
+              The scheme itself is defined once, in 근거와 한계. */}
+          <span>기준 기간 {outcome.periodLabel}의 공식 반입 자료를 표시합니다.</span>
         </>
       );
     case "no-data":
