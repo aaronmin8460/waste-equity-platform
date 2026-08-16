@@ -304,7 +304,7 @@ describe("distinction from the official landfill dataset", () => {
     expect(screen.getByTestId("municipal-cost-distinction-served")).toHaveTextContent(
       DIFFERENCE_SENTENCE,
     );
-    expect(banner).toHaveTextContent("회계 기준·제공기관·공간 단위가 모두 달라");
+    expect(banner).toHaveTextContent("회계 기준·제공기관·공간 단위가 달라");
   });
 
   it("states the distinction in words, never as a colour or a severity chip", () => {
@@ -771,13 +771,13 @@ describe("geographic terminology", () => {
     ).toHaveTextContent("경기도 · 시·군");
   });
 
-  it("carries the same caption in the mobile cards", () => {
+  it("carries the caption exactly once per municipality", () => {
     renderSection();
-    const card = within(screen.getByTestId("municipal-cost-cards"))
-      .getAllByTestId("municipal-cost-card")
-      .find((element) => element.getAttribute("data-municipality") === "부평구")!;
-    expect(within(card).getByTestId("municipal-cost-scope-caption")).toHaveTextContent(
-      "인천광역시 · 군·구",
+    // It used to be asserted twice — once on the table row, once on the phone card
+    // list that shipped beside it. That duplicate is gone (see the responsive
+    // describe below), so the caption now has one home per row and cannot drift.
+    expect(screen.getAllByTestId("municipal-cost-scope-caption")).toHaveLength(
+      screen.getAllByTestId("municipal-cost-row").length,
     );
   });
 
@@ -1010,44 +1010,42 @@ describe("methodology and transparency", () => {
 // --------------------------------------------------------------------------- //
 
 describe("responsive presentation", () => {
-  it("renders a desktop table and a mobile card list, one hidden at each width", () => {
+  it("renders ONE form of the comparison — the unreachable phone duplicate is gone", () => {
     renderSection();
-    const table = screen.getByTestId("municipal-cost-table");
-    const cards = screen.getByTestId("municipal-cost-cards");
-    // `hidden`/`md:hidden` is `display: none`, which removes the inactive subtree
-    // from the accessibility tree — so exactly one is ever announced.
-    expect(table.closest("div.hidden")).not.toBeNull();
-    expect(cards.parentElement?.className).toContain("md:hidden");
+    // The comparison used to ship twice: `hidden md:block` for the table and a
+    // `md:hidden` <ul> of cards beside it. That second tree could never be seen —
+    // `DashboardShell` returns `NarrowScreenGate` INSTEAD OF its children below
+    // DESKTOP_MIN_WIDTH (1024), while `md:hidden` only reveals cards under 768 — so
+    // it was 66 duplicate rows of markup no viewport could reach, and every rule
+    // below had to be implemented and asserted twice to stay true of both.
+    expect(screen.getByTestId("municipal-cost-table")).toBeInTheDocument();
+    expect(screen.queryByTestId("municipal-cost-cards")).toBeNull();
+    expect(screen.queryAllByTestId("municipal-cost-card")).toHaveLength(0);
+    // And the surviving table is no longer gated behind a breakpoint of its own.
+    expect(screen.getByTestId("municipal-cost-table").closest("div.hidden")).toBeNull();
   });
 
-  it("preserves every primary field in the mobile cards", () => {
+  it("preserves every primary field on a row", () => {
     renderSection();
-    const cards = screen.getByTestId("municipal-cost-cards");
-    const card = within(cards)
-      .getAllByTestId("municipal-cost-card")
-      .find((element) => element.getAttribute("data-municipality") === "부평구");
-    expect(card).toBeDefined();
-    // 지자체 / 상태 / 1인당 / 총액 / 한계 all survive at phone width.
-    expect(card).toHaveTextContent("부평구");
-    expect(within(card!).getByTestId("municipal-cost-card-status-badge")).toHaveTextContent(
-      "일부 제한",
-    );
-    expect(card).toHaveTextContent("19,863원/인");
-    expect(card).toHaveTextContent("96.5억원");
-    expect(within(card!).getByTestId("municipal-cost-card-limitation")).toHaveTextContent(
+    // The fields the removed card list carried — 지자체 / 상태 / 1인당 / 총액 / 한계 —
+    // asserted where they actually render.
+    const row = tableRow("부평구");
+    expect(row).toHaveTextContent("부평구");
+    expect(within(row).getByTestId("municipal-cost-status-badge")).toHaveTextContent("일부 제한");
+    expect(row).toHaveTextContent("19,863원/인");
+    expect(row).toHaveTextContent("96.5억원");
+    expect(within(row).getByTestId("municipal-cost-row-limitation")).toHaveTextContent(
       "일부 품목만 포함합니다",
     );
   });
 
-  it("shows 자료 없음 rather than a zero in a mobile card too", () => {
+  it("shows 자료 없음 rather than a zero for an unavailable municipality", () => {
     renderSection();
-    const card = within(screen.getByTestId("municipal-cost-cards"))
-      .getAllByTestId("municipal-cost-card")
-      .find((element) => element.getAttribute("data-municipality") === "강남구")!;
-    expect(
-      within(card).getByTestId("municipal-cost-card-per-capita-unavailable"),
-    ).toHaveTextContent(MUNICIPAL_COST_UNAVAILABLE_LABEL);
-    expect(card.textContent ?? "").not.toContain("0원/인");
+    const row = tableRow("강남구");
+    expect(within(row).getByTestId("municipal-cost-per-capita-unavailable")).toHaveTextContent(
+      MUNICIPAL_COST_UNAVAILABLE_LABEL,
+    );
+    expect(row.textContent ?? "").not.toContain("0원/인");
   });
 
   it("keeps the table's own horizontal scrolling off the page body", () => {

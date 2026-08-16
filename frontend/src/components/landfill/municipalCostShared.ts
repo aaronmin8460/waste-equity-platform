@@ -15,7 +15,26 @@ export const MUNICIPAL_COST_SECTION_TITLE =
   "시·군·구별 생활폐기물 수집·운반 계약 지급액 — 2024년";
 
 export const MUNICIPAL_COST_SECTION_DESCRIPTION =
-  "각 기초지자체가 공개한 2024년 생활폐기물 수집·운반 대행 계약의 지급액을 같은 행정구역의 2024년 인구로 나눈 분석값입니다.";
+  "각 기초지자체가 공개한 생활폐기물 수집·운반 대행 계약 지급액을 같은 행정구역의 인구로 나눈 분석값입니다.";
+
+/**
+ * The compact card that summarises this dataset beside the KPI region
+ * (`MunicipalCostSummary.tsx`).
+ *
+ * Shorter than {@link MUNICIPAL_COST_SECTION_TITLE} because the served reference year
+ * rides beside it as a chip, but it still names the DATASET rather than a generic
+ * "관리비용" — the repo forbids 처리비 / 폐기물 총관리비 wording for exactly this figure.
+ */
+export const MUNICIPAL_COST_SUMMARY_TITLE = "시·군·구 생활폐기물 수집·운반 계약 지급액";
+
+/** The Figma affordance from the KPI region to the detail section (125:5064). */
+export const MUNICIPAL_COST_DETAIL_LINK_LABEL = "시·군·구별 상세 보기 →";
+
+/**
+ * The id the affordance targets: the detail section's own heading, which carries
+ * `tabIndex={-1}` so the browser moves focus there and not just the viewport.
+ */
+export const MUNICIPAL_COST_DETAIL_TARGET_ID = "municipal-cost-heading";
 
 /**
  * The standing distinction banner's headline. The BODY is the backend's served
@@ -34,9 +53,8 @@ export const MUNICIPAL_COST_DISTINCTION_TITLE = "위 수도권매립지 반입�
  * bill I pay", which is the single most damaging misreading of this dataset.
  */
 export const MUNICIPAL_COST_DISTINCTION_NOTE =
-  "이 지표는 개별 지자체가 생활폐기물 수집·운반 계약에 지급한 금액을 주민수로 나눈 환산값이며, " +
-  "주민이 직접 낸 요금도 수도권매립지 공식 반입수수료도 아닙니다. " +
-  "회계 기준·제공기관·공간 단위가 모두 달라 두 값을 더하거나 같은 비용으로 비교할 수 없습니다.";
+  "지자체가 수집·운반 계약에 지급한 금액 ÷ 주민수이며, 주민이 낸 요금도 공식 반입수수료도 아닙니다. " +
+  "회계 기준·제공기관·공간 단위가 달라 두 값을 더하거나 같은 비용으로 비교할 수 없습니다.";
 
 /**
  * The one reference year this release publishes, as a citizen-facing chip.
@@ -56,11 +74,15 @@ export const MUNICIPAL_COST_YEAR_NOTE =
 /** Suffix for the served reference year, so the chip and the tests word it once. */
 export const MUNICIPAL_COST_YEAR_CHIP_SUFFIX = "년 자료";
 
-/** The filter card's heading. Names what the controls scope — not the page's filters. */
+/**
+ * The filter card's heading. Names what the controls scope — not the page's filters.
+ *
+ * It carries no description, for the same reason 조회 조건 above it carries none:
+ * "세 가지 조건이 아래 비교표를 함께 결정합니다. 모두 서버에 그대로 전달됩니다." restated
+ * what a filter panel is, and its second half was an implementation note. The 현재
+ * 선택 조건 summary inside the card still names every applied condition.
+ */
 export const MUNICIPAL_COST_FILTER_TITLE = "지자체 비교 조건";
-
-export const MUNICIPAL_COST_FILTER_DESCRIPTION =
-  "세 가지 조건이 아래 비교표를 함께 결정합니다. 모두 서버에 그대로 전달됩니다.";
 
 /** The comparison card's heading and its unit line, mirroring the Page 2 table card. */
 export const MUNICIPAL_COST_TABLE_TITLE = "지자체별 상세 비교";

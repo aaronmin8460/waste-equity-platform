@@ -149,7 +149,10 @@ describe("LandfillGenerationScatter", () => {
     const caveat = screen.getByTestId("landfill-scatter-caveat");
     expect(caveat.textContent).toContain("발생지 기준");
     expect(caveat.textContent).toContain("시설 소재지 기준");
-    expect(caveat.textContent).toContain("처리 부족분이나 잉여로 읽을 수 없습니다");
+    // The chart-specific SHORT form. The full statement of the rule — 발생량과 시설
+    // 처리량을 서로 나누거나 뺄 수 없다 — is made once under the KPI row; this sentence
+    // names the axes and rules out the one misreading a scatter invites.
+    expect(caveat.textContent).toContain("처리 부족분이나 잉여가 아닙니다");
     // It must not be behind a <details> a reader can leave closed.
     expect(caveat.closest("details")).toBeNull();
   });

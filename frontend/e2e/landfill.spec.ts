@@ -67,8 +67,13 @@ test("landfill dashboard: renders full-width with no map and official values", a
   await expect(page.getByTestId("landfill-limitation-details")).toContainText(
     "시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다",
   );
-  // The official fee caveat is retained.
-  await expect(page.getByTestId("landfill-fee-caveat")).toContainText("순수 운송비");
+  // The official fee caveat is retained, and now carries the provenance the fee
+  // card's own 기준 기간 line used to hold (the period is stated once in the strip
+  // above, for this card and the 반입량 card together).
+  await expect(page.getByTestId("landfill-fee-caveat")).toContainText("공식 보고값");
+  await expect(page.getByTestId("landfill-fee-caveat")).toContainText(
+    "전체 폐기물 관리비가 아닙니다",
+  );
 
   // Four filters.
   await expect(page.getByTestId("landfill-year-select")).toBeVisible();

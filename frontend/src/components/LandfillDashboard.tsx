@@ -95,7 +95,8 @@ import { LandfillError, LandfillLoading, LandfillNoData } from "./landfill/Landf
 import LandfillTrendSection from "./landfill/LandfillTrendSection";
 import type { MunicipalCostSectionProps } from "./landfill/MunicipalCostSection";
 import MunicipalCostSection from "./landfill/MunicipalCostSection";
-import { HEADER_SUMMARY, periodLabelOf } from "./landfill/shared";
+import MunicipalCostSummary from "./landfill/MunicipalCostSummary";
+import { periodLabelOf } from "./landfill/shared";
 import PageHeader from "./ui/PageHeader";
 
 export interface LandfillDashboardData {
@@ -185,8 +186,7 @@ export interface LandfillDashboardProps {
    * The view's single `<h1>`, supplied by the page so it always equals the visible
    * navigation destination name (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.2). It was the
    * literal "수도권매립지 반입 현황", which no longer matches the destination this
-   * dashboard renders for. That narrower scope statement is not lost — it stays in
-   * `HEADER_SUMMARY`, directly below the title.
+   * dashboard renders for.
    */
   title: string;
   /**
@@ -289,13 +289,19 @@ export default function LandfillDashboard({
       data-testid="landfill-dashboard"
     >
       <div className="landfill-compact-stack mx-auto flex w-full max-w-screen-2xl flex-col gap-4">
-        {/* The mode selector is rendered by the page above this component. */}
-        <PageHeader title={title} description={HEADER_SUMMARY}>
-          {orientation}
-        </PageHeader>
+        {/* The mode selector is rendered by the page above this component.
 
-        {/* No standing notice panel here — see the file header. The scope sentence
-            it carried is in the page header's own description, beside the <h1>. */}
+            NO `description`. The area's orientation strip renders directly below the
+            <h1> and already says what this screen is for; the header description was
+            a second sentence in the same voice, one line apart, restating it with
+            more words ("서울 · 인천 · 경기에서 수도권매립지로 반입된 공식 반입량과
+            반입수수료를 선택한 기간과 조건으로 보여줍니다"). The three facts it added
+            beyond the orientation are all still on the screen as VALUES rather than
+            prose: the origins are the 출발 지역 filter and the three table rows, the
+            fee is its own KPI, and the period is the 조회 조건 selection. */}
+        <PageHeader title={title}>{orientation}</PageHeader>
+
+        {/* No standing notice panel here — see the file header. */}
 
         <LandfillFilterPanel
           availableYears={availableYears}
@@ -322,14 +328,49 @@ export default function LandfillDashboard({
         {data === null && unavailable === null && <LandfillLoading />}
 
         {data && (
+          <>
+            {/* Screen-reader status announced when a filter change loads new official
+                values (the period + total-quantity text changes). Concise, so
+                switching filters does not produce a verbose read-out. It sits
+                OUTSIDE every accordion: a collapsed <details> is hidden from the
+                accessibility tree and must not be the only home for a live region
+                (redesign plan §5 rule 9). */}
+            <p role="status" className="sr-only" data-testid="landfill-live">
+              {periodLabelOf(data.summary.period)} 반입 자료를 표시합니다. 총 반입량{" "}
+              {formatTons(data.summary.total_quantity_kg)}.
+            </p>
+
+            <LandfillHeadlineResults
+              summary={data.summary}
+              periodLabel={periodLabelOf(data.summary.period)}
+              priorSummary={priorSummary}
+              priorSettled={priorSettled}
+              priorPeriodLabel={priorPeriodLabelOf(data.summary)}
+              capitalRegion={capitalRegion}
+              tierNoun={tierNoun}
+            />
+          </>
+        )}
+
+        {/* The municipal contract-payment dataset, summarised in the KPI region —
+            the position the Figma frame gives it, with its own
+            `시·군·구별 상세 보기 →` into the section at the foot of the screen.
+
+            Rendered here, BETWEEN the KPI row and the official body, and deliberately
+            OUTSIDE the `{data && …}` branch that surrounds both: the two datasets are
+            fetched independently and must fail independently. An official 404 — what
+            a fresh database returns — leaves this card and its section fully
+            operable, and a municipal failure blanks neither the KPI row above nor
+            anything below. It summarises SCOPE only; see the component for why a
+            총 지급액 총계 is refused. */}
+        <MunicipalCostSummary data={municipalCostAll} error={municipalCost.error} />
+
+        {data && (
           <LandfillBody
             data={data}
-            priorSummary={priorSummary}
-            priorSettled={priorSettled}
             reportingPerCapita={reportingPerCapita}
             facilityBurden={facilityBurden}
             capitalRegion={capitalRegion}
-            tierNoun={tierNoun}
             contractReferenceYear={municipalCostAll?.meta.reference_year ?? null}
             contractDistinction={
               municipalCostAll?.meta.difference_from_official_landfill_fee ?? null
@@ -337,13 +378,11 @@ export default function LandfillDashboard({
           />
         )}
 
-        {/* The 2024 municipal contract-payment comparison — a DIFFERENT dataset,
-            rendered OUTSIDE the official-data branch above on purpose. The two are
-            fetched independently and fail independently: an official 404 (which is
-            what a fresh database returns) must not take this section down with it,
-            and a failure here must not blank the official values. Its own banner
-            states the distinction, and its heading names the unit and the year so
-            the boundary between the two is visible without reading either. */}
+        {/* The full municipal contract-payment comparison — a DIFFERENT dataset,
+            rendered OUTSIDE the official-data branch above for the same reason as
+            its summary. It keeps every filter, every row, its own methodology, its
+            own missing states, and its own failure alert: the summary above
+            abbreviates nothing away, it only points here. */}
         <MunicipalCostSection {...municipalCost} />
       </div>
     </div>
@@ -351,35 +390,32 @@ export default function LandfillDashboard({
 }
 
 /**
- * The values, in the Figma reading order: what the totals are → how the generation
- * and processing of each region compare and what the inbound is made of → how it
- * moved through the year → the exact figures → how to take them away → where they
- * came from and what they do not mean.
+ * The values below the KPI region, in the Figma reading order: how the generation and
+ * processing of each region compare and what the inbound is made of → how it moved
+ * through the year → the exact figures → how to take them away → where they came from
+ * and what they do not mean.
+ *
+ * The KPI row and its live region are rendered by the parent, so the municipal-cost
+ * summary can sit between them and this block without either being conditional on the
+ * other's dataset.
  */
 function LandfillBody({
   data,
-  priorSummary,
-  priorSettled,
   reportingPerCapita,
   facilityBurden,
   capitalRegion,
-  tierNoun,
   contractReferenceYear,
   contractDistinction,
 }: {
   data: LandfillDashboardData;
-  priorSummary: LandfillSummary | null;
-  priorSettled: boolean;
   reportingPerCapita: ReportingPerCapitaEnvelope | null;
   facilityBurden: FacilityBurdenEnvelope | null;
   capitalRegion: CapitalRegionWaste;
-  tierNoun: string;
   contractReferenceYear: number | null;
   contractDistinction: string | null;
 }) {
   const { summary, trends } = data;
   const periodLabel = periodLabelOf(summary.period);
-  const priorPeriodLabel = priorPeriodLabelOf(summary);
 
   // Bar proportions only. `Number()` is permitted here because the result scales a
   // CSS width and NEVER reconstructs a displayed value (redesign plan §5 rule 10) —
@@ -388,36 +424,13 @@ function LandfillBody({
 
   return (
     <>
-      {/* Screen-reader status announced when a filter change loads new official
-          values (the period + total-quantity text changes). Concise, so switching
-          filters does not produce a verbose read-out. It sits OUTSIDE every
-          accordion: a collapsed <details> is hidden from the accessibility tree and
-          must not be the only home for a live region (redesign plan §5 rule 9). */}
-      <p role="status" className="sr-only" data-testid="landfill-live">
-        {periodLabel} 반입 자료를 표시합니다. 총 반입량 {formatTons(summary.total_quantity_kg)}.
-      </p>
-
-      <LandfillHeadlineResults
-        summary={summary}
-        periodLabel={periodLabel}
-        priorSummary={priorSummary}
-        priorSettled={priorSettled}
-        priorPeriodLabel={priorPeriodLabel}
-        capitalRegion={capitalRegion}
-        tierNoun={tierNoun}
-      />
-
       {/* Figma Row2 — the comparison and the inbound structure side by side. */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
         <div className="xl:col-span-7">
           <LandfillGenerationScatter perCapita={reportingPerCapita} burden={facilityBurden} />
         </div>
         <div className="xl:col-span-5">
-          <LandfillFlowStructure
-            summary={summary}
-            periodLabel={periodLabel}
-            originMax={originMax}
-          />
+          <LandfillFlowStructure summary={summary} originMax={originMax} />
         </div>
       </div>
 
@@ -435,6 +448,7 @@ function LandfillBody({
         summary={summary}
         originMax={originMax}
         periodLabel={periodLabel}
+        trends={trends}
         capitalRegion={capitalRegion}
         municipalReferenceYear={capitalRegion.generation.referenceYear}
         contractReferenceYear={contractReferenceYear}

@@ -26,6 +26,7 @@ import { useState } from "react";
 import type { LandfillSummary, LandfillTrends } from "../../lib/api";
 import { downloadLandfillCsv, downloadLandfillWorkbook } from "../../lib/landfillExport";
 import SectionCard from "../ui/SectionCard";
+import { PAGE2_CARD_CLASS } from "./shared";
 
 export interface LandfillShareExportProps {
   summary: LandfillSummary;
@@ -39,7 +40,7 @@ export default function LandfillShareExport({ summary, trends }: LandfillShareEx
   const failed = () => setError("파일을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.");
 
   return (
-    <SectionCard title="공유 및 내보내기" testId="landfill-export">
+    <SectionCard title="공유 및 내보내기" className={PAGE2_CARD_CLASS} testId="landfill-export">
       {/* Tightened, NOT dropped. This is the file's scope, stated where the file is
           produced, and the second clause is the 반입수수료 ⇄ 계약 지급액 separation —
           two different accounting bases that must never be read as one number. That

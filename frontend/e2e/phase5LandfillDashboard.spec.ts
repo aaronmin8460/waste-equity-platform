@@ -286,8 +286,12 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(partial).toBeVisible();
     await expect(partial).toContainText("2026-05");
     await expect(partial).toContainText("연간 합계가 아닙니다");
-    // Gaps stay gaps: only the five served months are drawn, never twelve.
-    await expect(page.getByTestId("landfill-trend-chart").locator("rect")).toHaveCount(5);
+    // Gaps stay gaps: only the five served months are drawn, never twelve. Counted
+    // by the BAR test id: each month also carries a transparent hit target for the
+    // hover/focus readout, which is a second <rect> that paints nothing.
+    await expect(
+      page.getByTestId("landfill-trend-chart").getByTestId("landfill-trend-bar"),
+    ).toHaveCount(5);
 
     // A month selection narrows the period label.
     await page.getByTestId("landfill-month-select").selectOption("3");
@@ -307,7 +311,11 @@ test.describe("desktop 1440×900 — states and interaction", () => {
       await expect(comparison).toContainText(name);
     }
     await expect(comparison).toContainText("t");
-    await expect(comparison).toContainText("기준 기간");
+    // The landfill 기준 기간 is stated ONCE, in the KPI strip above, instead of being
+    // repeated on every card between that strip and the table below. It is still on
+    // the screen with this card — just not on it.
+    await expect(comparison).not.toContainText("기준 기간");
+    await expect(page.getByTestId("landfill-headline")).toContainText("수도권매립지 기준 기간");
 
     // The bars are proportional to the displayed set and ordered as served.
     const widths = await comparison
@@ -563,8 +571,11 @@ test.describe("desktop 1440×900 — states and interaction", () => {
   test("clears the previous filter's values before the new ones arrive", async ({ page }) => {
     await mockLandfillBackend(page);
     await gotoLandfill(page);
-    // The complete-year fixture reports twelve trend months.
-    await expect(page.getByTestId("landfill-trend-chart").locator("rect")).toHaveCount(12);
+    // The complete-year fixture reports twelve trend months (bars, not the readout
+    // hit targets that sit transparently over them).
+    await expect(
+      page.getByTestId("landfill-trend-chart").getByTestId("landfill-trend-bar"),
+    ).toHaveCount(12);
     await expect(page.getByTestId("landfill-dashboard")).toContainText("2024년");
 
     // Hold the next summary open so the transition itself is observable.

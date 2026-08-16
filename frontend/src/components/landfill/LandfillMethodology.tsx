@@ -23,6 +23,7 @@ import {
   EFFECTIVE_FEE_LABEL,
   LIMITATION_NOTICE,
   MOIS_SOURCE_ID,
+  PAGE2_CARD_CLASS,
   PER_CAPITA_LABEL,
   PERIOD_NOTICE,
 } from "./shared";
@@ -36,7 +37,8 @@ export default function LandfillMethodology({ summary }: LandfillMethodologyProp
   return (
     <SectionCard
       title="근거와 한계"
-      description="화면의 모든 값이 어느 자료의 어느 기간에서 왔는지, 무엇을 계산한 값인지, 무엇을 뜻하지 않는지."
+      description="어느 자료의 어느 기간에서 왔는지, 무엇을 계산한 값인지, 무엇을 뜻하지 않는지."
+      className={PAGE2_CARD_CLASS}
       testId="landfill-evidence"
     >
       <div className="flex flex-col gap-2 text-xs text-ink-muted">

@@ -11,14 +11,32 @@
  */
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 
 import LandfillRegionTable from "./LandfillRegionTable";
-import type { LandfillFeePerCapita, LandfillOriginShare, LandfillSummary } from "../../lib/api";
+import type {
+  LandfillFeePerCapita,
+  LandfillOriginShare,
+  LandfillSummary,
+  LandfillTrends,
+} from "../../lib/api";
 import type { CapitalRegionWaste, MunicipalityRow } from "../../lib/capitalRegionWaste";
+import { downloadLandfillWorkbook } from "../../lib/landfillExport";
 
-afterEach(cleanup);
+/**
+ * The local 엑셀 다운로드 must reuse the ONE workbook builder. Mocking the module is
+ * how that is asserted: a second, table-local export with rules of its own would not
+ * go through this function, and the test would see no call.
+ */
+vi.mock("../../lib/landfillExport", () => ({
+  downloadLandfillWorkbook: vi.fn(() => Promise.resolve("파일.xlsx")),
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.mocked(downloadLandfillWorkbook).mockClear();
+});
 
 function perCapita(overrides: Partial<LandfillFeePerCapita> = {}): LandfillFeePerCapita {
   return {
@@ -213,12 +231,37 @@ function capitalRegion(overrides: Partial<CapitalRegionWaste> = {}): CapitalRegi
   };
 }
 
+function trends(): LandfillTrends {
+  return {
+    destination_region_code: "KR-SGIS-28245",
+    destination_name: "수도권매립지",
+    origin_filter: null,
+    waste_filter: null,
+    accounting_basis: "INBOUND_AT_DESTINATION",
+    start_month: "2025-01",
+    end_month: "2025-02",
+    derivation_version: "landfill-trends-v1",
+    caveats: [],
+    points: [
+      {
+        reference_month: "2025-01",
+        reference_year: 2025,
+        quantity_kg: "90000000",
+        quantity_tons: "90000.000000",
+        inbound_fee_krw: "9000000000.00",
+        effective_fee_per_ton: "100000.00",
+      },
+    ],
+  } as unknown as LandfillTrends;
+}
+
 function renderTable(overrides: Partial<Parameters<typeof LandfillRegionTable>[0]> = {}) {
   return render(
     <LandfillRegionTable
       summary={summary()}
       originMax={420404.15}
       periodLabel="2025년 연간"
+      trends={trends()}
       capitalRegion={capitalRegion()}
       municipalReferenceYear={2024}
       contractReferenceYear={2024}
@@ -270,6 +313,49 @@ describe("LandfillRegionTable — metropolitan grain", () => {
     renderTable();
     expect(screen.getByTestId("landfill-region-contract-distinction")).toHaveTextContent(
       "다른 회계 기준입니다",
+    );
+  });
+});
+
+/**
+ * 엑셀 다운로드 — the local export the Figma detail frame (376:582) puts on this
+ * table's own header.
+ */
+describe("LandfillRegionTable — local Excel action", () => {
+  it("produces the SHARED workbook rather than an export of its own", () => {
+    renderTable();
+    fireEvent.click(screen.getByTestId("landfill-region-export-xlsx"));
+    // One call, into `lib/landfillExport` — the same builder 공유 및 내보내기 calls.
+    // A table-local file with its own columns, filename, or null-handling would not
+    // appear here at all, which is exactly what this asserts against.
+    expect(downloadLandfillWorkbook).toHaveBeenCalledTimes(1);
+    // The served summary and the served trend series, not a re-derived copy.
+    const [passedSummary, passedTrends] = vi.mocked(downloadLandfillWorkbook).mock.calls[0];
+    expect(passedSummary.total_quantity_kg).toBe(summary().total_quantity_kg);
+    expect(passedTrends?.points).toHaveLength(1);
+  });
+
+  it("states that the file excludes the contract-payment columns beside it", () => {
+    renderTable();
+    // The workbook holds the official-fee dataset only, by design. Two of this
+    // table's columns are NOT in it, so the scope is stated where the button is.
+    expect(screen.getByTestId("landfill-region-export-scope")).toHaveTextContent(
+      "계약 지급액은 포함되지 않습니다",
+    );
+    // The accessible name carries it too — "엑셀 다운로드" alone names no dataset.
+    expect(screen.getByTestId("landfill-region-export-xlsx")).toHaveAttribute(
+      "aria-label",
+      "공식 반입 자료 엑셀(.xlsx) 다운로드",
+    );
+  });
+
+  it("reports a failure instead of leaving the button looking successful", async () => {
+    vi.mocked(downloadLandfillWorkbook).mockRejectedValueOnce(new Error("boom"));
+    renderTable();
+    fireEvent.click(screen.getByTestId("landfill-region-export-xlsx"));
+    expect(await screen.findByTestId("landfill-region-export-error")).toHaveAttribute(
+      "role",
+      "alert",
     );
   });
 });

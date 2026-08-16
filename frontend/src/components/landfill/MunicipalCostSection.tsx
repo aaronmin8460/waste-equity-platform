@@ -52,6 +52,8 @@
  * must not take this section down with it, and vice versa.
  */
 
+import { useRef } from "react";
+
 import type {
   MunicipalCostResponse,
   MunicipalCostSido,
@@ -69,11 +71,13 @@ import {
 } from "./MunicipalCostStates";
 import MunicipalCostTable from "./MunicipalCostTable";
 import {
+  MUNICIPAL_COST_DETAIL_TARGET_ID,
   MUNICIPAL_COST_DISTINCTION_NOTE,
   MUNICIPAL_COST_DISTINCTION_TITLE,
   MUNICIPAL_COST_SECTION_DESCRIPTION,
   MUNICIPAL_COST_SECTION_TITLE,
 } from "./municipalCostShared";
+import { PAGE2_CARD_CLASS } from "./shared";
 
 export interface MunicipalCostSectionProps {
   /** The served response, or null while loading / after a failure. */
@@ -100,10 +104,20 @@ export default function MunicipalCostSection({
 }: MunicipalCostSectionProps) {
   const meta = data?.meta ?? null;
   const rows = data?.municipalities ?? null;
+  /**
+   * Held only to make the heading a programmatic focus target: `SectionCard` gives a
+   * heading `tabIndex={-1}` when it is handed a ref, which is what lets the KPI-region
+   * `시·군·구별 상세 보기 →` link move FOCUS here and not merely the viewport. Nothing
+   * in this component calls `.focus()` — the browser does, on following the anchor.
+   */
+  const headingRef = useRef<HTMLHeadingElement>(null);
   return (
     <SectionCard
       title={MUNICIPAL_COST_SECTION_TITLE}
+      headingId={MUNICIPAL_COST_DETAIL_TARGET_ID}
+      headingRef={headingRef}
       description={MUNICIPAL_COST_SECTION_DESCRIPTION}
+      className={PAGE2_CARD_CLASS}
       testId="municipal-cost-section"
     >
       <div className="flex flex-col gap-3">

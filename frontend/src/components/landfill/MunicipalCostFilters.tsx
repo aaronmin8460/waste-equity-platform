@@ -50,7 +50,6 @@ import {
 } from "../../lib/municipalCost";
 import SectionCard from "../ui/SectionCard";
 import {
-  MUNICIPAL_COST_FILTER_DESCRIPTION,
   MUNICIPAL_COST_FILTER_TITLE,
   MUNICIPAL_COST_YEAR_CHIP_SUFFIX,
   MUNICIPAL_COST_YEAR_NOTE,
@@ -87,7 +86,6 @@ export default function MunicipalCostFilters({
     <SectionCard
       title={MUNICIPAL_COST_FILTER_TITLE}
       headingLevel={3}
-      description={MUNICIPAL_COST_FILTER_DESCRIPTION}
       // The reference year sits in the card header, beside the controls it qualifies,
       // rather than only in the section title far above the filter row.
       headerAside={<ReferenceYearChip meta={meta} />}

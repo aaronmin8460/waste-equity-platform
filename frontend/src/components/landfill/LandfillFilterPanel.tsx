@@ -28,7 +28,7 @@ import { useState } from "react";
 import type { LandfillOrigin } from "../../lib/api";
 import DataStatusBadge from "../ui/DataStatusBadge";
 import SectionCard from "../ui/SectionCard";
-import { monthOptions, ORIGIN_OPTIONS, originLabel, yearOptions } from "./shared";
+import { monthOptions, ORIGIN_OPTIONS, originLabel, PAGE2_CARD_CLASS, yearOptions } from "./shared";
 
 /**
  * What the dashboard currently holds for the selected filters. Passed in rather
@@ -96,6 +96,7 @@ export default function LandfillFilterPanel({
       // 조건이 아래 모든 값을 함께 결정합니다" restated what a filter panel is. The
       // 현재 선택 line below still names every applied condition, which is the part a
       // reader who has scrolled past the controls actually needs.
+      className={PAGE2_CARD_CLASS}
       testId="landfill-filters"
     >
       {/* One desktop row from lg up (the four controls fit comfortably at 1280 and
@@ -204,9 +205,8 @@ export default function LandfillFilterPanel({
           className="mt-2 rounded-control border border-warn-border bg-warn-surface px-3 py-2 text-xs text-warn"
           data-testid="landfill-period-reset"
         >
-          연도를 {periodReset.year}(으)로 바꾸면서 기간을 <strong>연간</strong>으로 되돌렸습니다.
-          이전에 선택한 {periodReset.month}월이 이 연도에도 있는지 확인되지 않았기 때문입니다.
-          필요하면 기간을 다시 선택해 주세요.
+          기간을 <strong>연간</strong>으로 되돌렸습니다 — {periodReset.year}에 {periodReset.month}
+          월이 있는지 확인되지 않았습니다.
         </p>
       )}
 
