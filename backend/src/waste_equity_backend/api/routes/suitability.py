@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Res
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ...analysis.suitability import policy
+from ...analysis.suitability import component_model, policy
 from ...db import get_session
 from ...schemas import (
     CandidateDetailOut,
@@ -146,7 +146,24 @@ TILE_CACHE_CONTROL = "public, max-age=31536000, immutable"
 # ``score`` is emitted only for ELIGIBLE cells, a ``provisional_score`` only for
 # REVIEW_REQUIRED cells, and ``rank`` is the selected profile's stored rank.
 # Every user-controlled value (run, profile, z, x, y) is a bound parameter.
-_TILE_SQL = f"""
+def _tile_sql(component_model_version: str) -> str:
+    """The MVT query for a run of this component model.
+
+    Everything except the component properties is identical across models. For the
+    historical model the component fragment is the four legacy columns under their
+    existing property names, so a historical tile is **byte-identical** to what the
+    map already caches; any other model expands its ``component_scores`` map into
+    properties named after its own components, so a legacy property name can never
+    carry a successor meaning.
+
+    Safe to vary per run: the tile URL already embeds an immutable run, and a run
+    belongs to exactly one component model, so cache semantics are unchanged. The
+    map styles only on ``score`` / ``status`` / ``stable_count`` /
+    ``sigungu_region_code``, never on a component score, so component properties are
+    inspection payload and adding model-specific ones cannot change rendering.
+    """
+
+    return f"""
 WITH tile AS (
     SELECT
         ST_AsMVTGeom(
@@ -162,10 +179,7 @@ WITH tile AS (
              THEN (c.profile_totals ->> :profile)::double precision END AS score,
         CASE WHEN c.status = 'REVIEW_REQUIRED'
              THEN (c.profile_totals ->> :profile)::double precision END AS provisional_score,
-        c.zoning_score::double precision AS zoning_score,
-        c.road_score::double precision AS road_score,
-        c.equity_score::double precision AS equity_score,
-        c.demand_score::double precision AS demand_score,
+{component_model.tile_component_columns_sql(component_model_version)},
         c.stable_count AS stable_count,
         c.stability_class AS stability_class,
         c.sigungu_region_code AS sigungu_region_code,
@@ -178,6 +192,11 @@ SELECT ST_AsMVT(tile.*, '{TILE_SOURCE_LAYER}', 4096, 'geom')
 FROM tile
 WHERE tile.geom IS NOT NULL
 """
+
+
+# The historical tile query, kept as a module constant so its byte-identity with the
+# pre-component-model contract is pinned by test.
+_TILE_SQL = _tile_sql(component_model.COMPONENT_MODEL_HISTORICAL)
 
 ASSUMPTIONS = [
     "Regional 500 m screening grid (EPSG:5179 origin); not parcel-level.",
@@ -194,34 +213,279 @@ def _not_found(error: str, detail: str) -> HTTPException:
     return HTTPException(status_code=404, detail={"error": error, "detail": detail})
 
 
-def _resolve_run_id(session: Session, run_id: int | None) -> int:
+# --- Component-model awareness ------------------------------------------------
+# Every run-scoped response reports the *stored run's own* component model, never
+# the running code's constants. An optional ``component_model`` selector lets a
+# caller scope a request to one model explicitly; omitting it preserves today's
+# behaviour exactly (see component_model.DEFAULT_COMPONENT_MODEL).
+
+ComponentModelQuery = Annotated[
+    str | None,
+    Query(
+        description=(
+            "Component-model selector. Omit for the default model, which preserves "
+            "existing behaviour. When a run_id is also given, the run must belong to "
+            "this model or the request fails with COMPONENT_MODEL_MISMATCH."
+        )
+    ),
+]
+
+
+def _component_model_error(exc: Exception) -> HTTPException:
+    """Map a component-model domain error to its structured 422 envelope."""
+
+    envelope = exc.as_envelope()  # type: ignore[attr-defined]
+    return HTTPException(status_code=422, detail=envelope)
+
+
+def _run_model_identity(row: Any) -> tuple[str, list[str]]:
+    """The stored run's validated ``(component_model_version, component_order)``.
+
+    A stored row whose identity is internally inconsistent — an unknown model, or a
+    component order that is not that model's — is a data-integrity failure, not a
+    caller error, and fails visibly (500) rather than being served under whatever
+    label happens to look plausible. This is the same discipline the route already
+    applies to a candidate row with no geometry.
+    """
+
+    try:
+        return component_model.run_model_identity(row)
+    except (
+        component_model.UnknownComponentModelError,
+        component_model.ComponentModelMismatchError,
+    ) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": component_model.COMPONENT_MODEL_INCONSISTENT_RUN,
+                "detail": exc.detail,
+                "fields": exc.fields,
+            },
+        ) from exc
+
+
+def _resolve_run_id(
+    session: Session, run_id: int | None, requested_model: str | None = None
+) -> int:
+    """Resolve the run a request applies to, scoped by component model.
+
+    An explicitly pinned ``run_id`` resolves to that run whatever model it belongs
+    to, so any stored run stays inspectable; naming a ``component_model`` as well
+    asserts which model the caller believes it is, and a disagreement is refused
+    rather than silently served.
+
+    An **unpinned** request resolves to the latest succeeded run *of one component
+    model* — by default the historical one. Before this scoping existed the query
+    took the latest succeeded run regardless of model, so the first successful run
+    of a second model would silently redefine every default view and every un-pinned
+    shared link. Scoping keeps today's answer identical while making the switchover
+    an explicit, reviewable decision rather than a consequence of ORDER BY.
+    """
+
     if run_id is not None:
-        found = session.execute(
-            text(
-                "SELECT id FROM suitability_analysis_runs WHERE id = :id AND status = 'SUCCEEDED'"
-            ),
-            {"id": run_id},
-        ).scalar()
+        found = (
+            session.execute(
+                text(
+                    "SELECT id, component_model_version FROM suitability_analysis_runs "
+                    "WHERE id = :id AND status = 'SUCCEEDED'"
+                ),
+                {"id": run_id},
+            )
+            .mappings()
+            .first()
+        )
         if found is None:
             raise _not_found("RUN_NOT_FOUND", f"No succeeded suitability run with id {run_id}.")
-        return int(found)
+        if requested_model is not None:
+            try:
+                requested = component_model.resolve_requested_component_model(requested_model)
+            except component_model.UnknownComponentModelError as exc:
+                raise _component_model_error(exc) from exc
+            if found["component_model_version"] != requested:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": component_model.COMPONENT_MODEL_MISMATCH,
+                        "detail": (
+                            f"Suitability run {run_id} was produced by component model "
+                            f"{found['component_model_version']!r}, not the requested "
+                            f"{requested!r}."
+                        ),
+                        "fields": {
+                            "run_id": run_id,
+                            "run_component_model_version": found["component_model_version"],
+                            "requested_component_model_version": requested,
+                        },
+                    },
+                )
+        return int(found["id"])
+    try:
+        model = component_model.resolve_requested_component_model(requested_model)
+    except component_model.UnknownComponentModelError as exc:
+        raise _component_model_error(exc) from exc
     latest = session.execute(
         text(
             "SELECT id FROM suitability_analysis_runs WHERE status = 'SUCCEEDED' "
+            "AND component_model_version = :component_model "
             "ORDER BY completed_at DESC NULLS LAST, id DESC LIMIT 1"
-        )
+        ),
+        {"component_model": model},
     ).scalar()
     if latest is None:
-        raise _not_found("NO_ANALYSIS_AVAILABLE", "No succeeded suitability analysis run exists.")
+        raise _not_found(
+            "NO_ANALYSIS_AVAILABLE",
+            f"No succeeded suitability analysis run exists for component model {model}.",
+        )
     return int(latest)
 
 
+def _integrity_error(exc: Any, run_id: int | None = None) -> HTTPException:
+    """A stored run whose model-scoped artifacts disagree fails visibly (500).
+
+    This is not a caller error and must never be repaired on read: quietly serving a
+    CRITIC vector or stability definition derived over one component matrix beside
+    scores computed over another would present one model's finding as another's,
+    which is exactly what the model boundary exists to prevent.
+    """
+
+    fields = dict(exc.fields)
+    if run_id is not None:
+        fields.setdefault("run_id", run_id)
+    return HTTPException(
+        status_code=500,
+        detail={
+            "error": component_model.COMPONENT_MODEL_INCONSISTENT_RUN,
+            "detail": exc.detail,
+            "fields": fields,
+        },
+    )
+
+
+def _assert_run_weight_vector(model_version: str, weights: Any, context: str) -> None:
+    """Refuse to serve a weight vector whose components are not the run's."""
+
+    try:
+        component_model.assert_weight_vector_matches_model(
+            model_version, weights, context=context
+        )
+    except component_model.ComponentModelMismatchError as exc:
+        raise _integrity_error(exc) from exc
+
+
+def _assert_static_profile_fallback_allowed(model_version: str, run_id: int) -> None:
+    """Refuse the ``policy.STATIC_WEIGHT_PROFILES`` fallback for a foreign model.
+
+    The fallback exists for pre-CRITIC runs whose ``weight_profiles`` were never
+    populated — historical runs of the model the policy module implements. For a run
+    of any other component model there is no stored vector and no policy constant
+    that describes its components, and inventing one would attach a weighting
+    justified for one set of quantities to a different set.
+    """
+
+    if model_version != component_model.COMPONENT_MODEL_HISTORICAL:
+        raise _integrity_error(
+            component_model.ComponentModelMismatchError(
+                f"Run {run_id} was produced by component model {model_version!r} but "
+                "stores no weight vector; the historical policy profiles cannot stand "
+                "in for it.",
+                {"run_component_model_version": model_version},
+            ),
+            run_id,
+        )
+
+
+def _assert_stability_definition_model(
+    model_version: str, stability_definition: Any, run_id: int
+) -> None:
+    """Refuse a stability definition that describes a different component model.
+
+    A stability class is top-fraction membership across ranks computed from a
+    particular component vector, so a definition stamped with another model's
+    identity cannot describe this run's classifications. Definitions written before
+    the stamp existed carry no identity and are accepted unchanged — an unstamped
+    historical definition is not a mismatch, it is a definition from before the
+    field was added.
+    """
+
+    stamped = (
+        stability_definition.get("component_model_version")
+        if isinstance(stability_definition, dict)
+        else None
+    )
+    if stamped is not None and stamped != model_version:
+        raise _integrity_error(
+            component_model.ComponentModelMismatchError(
+                f"Run {run_id} stability definition describes component model "
+                f"{stamped!r}, but the run was produced by {model_version!r}.",
+                {
+                    "stability_component_model_version": stamped,
+                    "run_component_model": model_version,
+                },
+            ),
+            run_id,
+        )
+
+
+# Component-score columns every summary top-candidate query selects. Both storage
+# representations are selected unconditionally and the *run's* model decides which
+# one is authoritative — selecting one extra always-empty column is cheaper than
+# branching the SQL, and it keeps the historical query text otherwise unchanged.
+_SUMMARY_SCORE_COLUMNS = (
+    "zoning_score, road_score, equity_score, demand_score, component_scores"
+)
+
+
+def _summary_candidate(row: Any, model_version: str) -> dict[str, Any]:
+    """One summary top-candidate entry, in this run's component-model shape.
+
+    Legacy keys are populated for a historical run and explicitly ``None`` for any
+    other model; ``component_scores`` is the mirror image. Neither is ever derived
+    from the other.
+    """
+
+    entry: dict[str, Any] = {
+        "rank": row["rank"],
+        "candidate_id": row["id"],
+        "candidate_key": row["candidate_key"],
+        "sigungu": row["sigungu_region_name"],
+        "total_score": row["total"],
+        "stable_count": row["stable_count"],
+        "stability_class": row["stability_class"],
+        "stability_membership": row["stability_membership"] or {},
+    }
+    entry.update(component_model.legacy_score_fields(model_version, row))
+    entry["component_scores"] = component_model.component_scores_field(model_version, row)
+    entry["centroid_lon"] = (
+        round(row["centroid_lon"], 6) if row["centroid_lon"] is not None else None
+    )
+    entry["centroid_lat"] = (
+        round(row["centroid_lat"], 6) if row["centroid_lat"] is not None else None
+    )
+    return entry
+
+
+def _json_field(value: Any, empty: Any) -> Any:
+    """A run row's JSON column, decoded consistently across dialects.
+
+    These are read through ``text()``, which carries no type information: psycopg
+    hands back decoded ``jsonb`` on PostgreSQL, while the generic ``JSON`` variant
+    on SQLite comes back as raw text. Decoding here keeps the response identical on
+    both supported test tiers rather than only on the production dialect.
+    """
+
+    decoded = component_model.decode_json_value(value)
+    return empty if decoded is None else decoded
+
+
 def _run_out(row: Any) -> SuitabilityRunOut:
+    model_version, order = _run_model_identity(row)
     return SuitabilityRunOut(
         id=row["id"],
         derivation_version=row["derivation_version"],
         policy_version=row["policy_version"],
         candidate_grid_version=row["candidate_grid_version"],
+        component_model_version=model_version,
+        component_order=order,
         reference_year=row["reference_year"],
         boundary_vintage=row["boundary_vintage"],
         weight_profile=row["weight_profile"],
@@ -231,11 +495,11 @@ def _run_out(row: Any) -> SuitabilityRunOut:
         candidate_count_eligible=row["candidate_count_eligible"],
         candidate_count_review=row["candidate_count_review"],
         candidate_count_excluded=row["candidate_count_excluded"],
-        input_dataset_version_ids=row["input_dataset_version_ids"] or [],
-        input_provenance=row["input_provenance"] or {},
-        weight_profiles=row["weight_profiles"] or {},
-        weight_derivation=row["weight_derivation"] or {},
-        stability_definition=row["stability_definition"] or {},
+        input_dataset_version_ids=_json_field(row["input_dataset_version_ids"], []),
+        input_provenance=_json_field(row["input_provenance"], {}),
+        weight_profiles=_json_field(row["weight_profiles"], {}),
+        weight_derivation=_json_field(row["weight_derivation"], {}),
+        stability_definition=_json_field(row["stability_definition"], {}),
         started_at=row["started_at"],
         completed_at=row["completed_at"],
         created_at=row["created_at"],
@@ -243,7 +507,8 @@ def _run_out(row: Any) -> SuitabilityRunOut:
 
 
 _RUN_COLUMNS = (
-    "id, derivation_version, policy_version, candidate_grid_version, reference_year, "
+    "id, derivation_version, policy_version, candidate_grid_version, "
+    "component_model_version, component_order, reference_year, "
     "boundary_vintage, weight_profile, analysis_signature, status, candidate_count_total, "
     "candidate_count_eligible, candidate_count_review, candidate_count_excluded, "
     "input_dataset_version_ids, input_provenance, weight_profiles, weight_derivation, "
@@ -260,6 +525,10 @@ def get_policy() -> SuitabilityPolicyOut:
         candidate_grid_version=snap["candidate_grid_version"],
         critic_method_version=snap["critic_method_version"],
         stability_method_version=snap["stability_method_version"],
+        # /policies describes the currently implemented policy, not a stored run, so
+        # unlike every run-scoped endpoint these ARE the module's own constants.
+        component_model_version=component_model.COMPONENT_MODEL_HISTORICAL,
+        component_order=list(component_model.COMPONENT_ORDER_HISTORICAL),
         statuses=[policy.STATUS_ELIGIBLE, policy.STATUS_REVIEW, policy.STATUS_EXCLUDED],
         weight_profiles=snap["weight_profiles"],
         static_weight_profiles=snap["static_weight_profiles"],
@@ -283,14 +552,32 @@ def get_policy() -> SuitabilityPolicyOut:
 def list_runs(
     session: SessionDep,
     limit: int = Query(default=50, ge=1, le=500),
+    component_model_version: ComponentModelQuery = None,
 ) -> SuitabilityRunListEnvelope:
+    """List stored runs, each labelled with its OWN component model.
+
+    Unfiltered by default, so a mixed-model list is visible rather than hidden —
+    the run list is exactly where two coexisting models should be apparent. The
+    optional filter scopes it to one model.
+    """
+
+    params: dict[str, Any] = {"limit": limit}
+    where = ""
+    if component_model_version is not None:
+        try:
+            params["component_model"] = component_model.resolve_requested_component_model(
+                component_model_version
+            )
+        except component_model.UnknownComponentModelError as exc:
+            raise _component_model_error(exc) from exc
+        where = "WHERE component_model_version = :component_model "
     rows = (
         session.execute(
             text(
                 f"SELECT {_RUN_COLUMNS} FROM suitability_analysis_runs "
-                f"ORDER BY id DESC LIMIT :limit"
+                f"{where}ORDER BY id DESC LIMIT :limit"
             ),
-            {"limit": limit},
+            params,
         )
         .mappings()
         .all()
@@ -299,8 +586,10 @@ def list_runs(
 
 
 @router.get("/runs/latest", response_model=SuitabilityRunOut)
-def latest_run(session: SessionDep) -> SuitabilityRunOut:
-    run_id = _resolve_run_id(session, None)
+def latest_run(
+    session: SessionDep, component_model_version: ComponentModelQuery = None
+) -> SuitabilityRunOut:
+    run_id = _resolve_run_id(session, None, component_model_version)
     row = (
         session.execute(
             text(f"SELECT {_RUN_COLUMNS} FROM suitability_analysis_runs WHERE id = :id"),
@@ -318,8 +607,9 @@ def summary(
     session: SessionDep,
     run_id: int | None = None,
     profile: Profile = "baseline",
+    component_model_version: ComponentModelQuery = None,
 ) -> SuitabilitySummaryOut:
-    resolved = _resolve_run_id(session, run_id)
+    resolved = _resolve_run_id(session, run_id, component_model_version)
     run = (
         session.execute(
             text(f"SELECT {_RUN_COLUMNS} FROM suitability_analysis_runs WHERE id = :id"),
@@ -329,7 +619,8 @@ def summary(
         .first()
     )
     assert run is not None
-    run_weight_profiles = run["weight_profiles"] or {}
+    run_model_version, run_component_order = _run_model_identity(run)
+    run_weight_profiles = _json_field(run["weight_profiles"], {})
     _ensure_profile_available(run_weight_profiles, profile, resolved)
 
     exclusion_counts: dict[str, int] = {}
@@ -369,30 +660,11 @@ def summary(
     # concrete location distinction and move the map to it, without deduplicating or
     # altering any score.
     top = [
-        {
-            "rank": r["rank"],
-            "candidate_id": r["id"],
-            "candidate_key": r["candidate_key"],
-            "sigungu": r["sigungu_region_name"],
-            "total_score": r["total"],
-            "stable_count": r["stable_count"],
-            "stability_class": r["stability_class"],
-            "stability_membership": r["stability_membership"] or {},
-            "zoning_score": (str(r["zoning_score"]) if r["zoning_score"] is not None else None),
-            "road_score": (str(r["road_score"]) if r["road_score"] is not None else None),
-            "equity_score": (str(r["equity_score"]) if r["equity_score"] is not None else None),
-            "demand_score": (str(r["demand_score"]) if r["demand_score"] is not None else None),
-            "centroid_lon": (
-                round(r["centroid_lon"], 6) if r["centroid_lon"] is not None else None
-            ),
-            "centroid_lat": (
-                round(r["centroid_lat"], 6) if r["centroid_lat"] is not None else None
-            ),
-        }
+        _summary_candidate(r, run_model_version)
         for r in session.execute(
             text(
-                "SELECT id, candidate_key, sigungu_region_name, zoning_score, road_score, "
-                "equity_score, demand_score, stable_count, stability_class, stability_membership, "
+                f"SELECT id, candidate_key, sigungu_region_name, {_SUMMARY_SCORE_COLUMNS}, "
+                "stable_count, stability_class, stability_membership, "
                 "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
                 "(profile_ranks->>:profile)::int AS rank, profile_totals->>:profile AS total "
                 "FROM suitability_candidates "
@@ -428,30 +700,11 @@ def summary(
     # Top stable candidates: ELIGIBLE with stable_count = 3, ordered by the requested
     # profile rank then candidate_key (deterministic tie-break).
     top_stable = [
-        {
-            "rank": r["rank"],
-            "candidate_id": r["id"],
-            "candidate_key": r["candidate_key"],
-            "sigungu": r["sigungu_region_name"],
-            "total_score": r["total"],
-            "stable_count": r["stable_count"],
-            "stability_class": r["stability_class"],
-            "stability_membership": r["stability_membership"] or {},
-            "zoning_score": (str(r["zoning_score"]) if r["zoning_score"] is not None else None),
-            "road_score": (str(r["road_score"]) if r["road_score"] is not None else None),
-            "equity_score": (str(r["equity_score"]) if r["equity_score"] is not None else None),
-            "demand_score": (str(r["demand_score"]) if r["demand_score"] is not None else None),
-            "centroid_lon": (
-                round(r["centroid_lon"], 6) if r["centroid_lon"] is not None else None
-            ),
-            "centroid_lat": (
-                round(r["centroid_lat"], 6) if r["centroid_lat"] is not None else None
-            ),
-        }
+        _summary_candidate(r, run_model_version)
         for r in session.execute(
             text(
-                "SELECT id, candidate_key, sigungu_region_name, zoning_score, road_score, "
-                "equity_score, demand_score, stable_count, stability_class, stability_membership, "
+                f"SELECT id, candidate_key, sigungu_region_name, {_SUMMARY_SCORE_COLUMNS}, "
+                "stable_count, stability_class, stability_membership, "
                 "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
                 "(profile_ranks->>:profile)::int AS rank, profile_totals->>:profile AS total "
                 "FROM suitability_candidates "
@@ -469,6 +722,15 @@ def summary(
         if isinstance(critic_weights_raw, dict)
         else None
     )
+    if critic_weights is not None:
+        # A CRITIC vector describes the variance and correlation of *this run's*
+        # criteria. Serving one whose components are not this run's components would
+        # present one component model's data-derived weighting as another's.
+        _assert_run_weight_vector(
+            run_model_version, critic_weights, f"run {resolved} CRITIC weights"
+        )
+    if stability_available:
+        _assert_stability_definition_model(run_model_version, stability_definition, resolved)
 
     return SuitabilitySummaryOut(
         run_id=resolved,
@@ -476,6 +738,8 @@ def summary(
         policy_version=run["policy_version"],
         derivation_version=run["derivation_version"],
         candidate_grid_version=run["candidate_grid_version"],
+        component_model_version=run_model_version,
+        component_order=run_component_order,
         weight_profile=profile,
         candidate_count_total=run["candidate_count_total"],
         candidate_count_eligible=run["candidate_count_eligible"],
@@ -571,8 +835,9 @@ def list_candidates(
             )
         ),
     ] = DEFAULT_CANDIDATE_SORT,
+    component_model_version: ComponentModelQuery = None,
 ) -> SuitabilityCandidateCollection:
-    resolved = _resolve_run_id(session, run_id)
+    resolved = _resolve_run_id(session, run_id, component_model_version)
     run = (
         session.execute(
             text(
@@ -583,7 +848,8 @@ def list_candidates(
                 # coexist. Every sibling endpoint (/summary, /candidates/{id}, /runs)
                 # already reads these from the run row; this one now matches.
                 "SELECT reference_year, weight_profiles, policy_version, "
-                "derivation_version, candidate_grid_version "
+                "derivation_version, candidate_grid_version, "
+                "component_model_version, component_order "
                 "FROM suitability_analysis_runs WHERE id = :id"
             ),
             {"id": resolved},
@@ -592,7 +858,8 @@ def list_candidates(
         .first()
     )
     assert run is not None
-    _ensure_profile_available(run["weight_profiles"] or {}, profile, resolved)
+    run_model_version, run_component_order = _run_model_identity(run)
+    _ensure_profile_available(_json_field(run["weight_profiles"], {}), profile, resolved)
     box = _parse_bbox(bbox)
 
     conditions = ["analysis_run_id = :id"]
@@ -670,6 +937,7 @@ def list_candidates(
                        (profile_ranks->>:profile)::int AS profile_rank,
                        profile_totals->>:profile AS profile_total,
                        zoning_score, road_score, equity_score, demand_score,
+                       component_scores,
                        stable_count, stability_class, stability_membership,
                        sido_region_code, sido_region_name, sigungu_region_code, sigungu_region_name,
                        nearest_road_distance_m, exclusion_reasons, review_reasons,
@@ -712,15 +980,9 @@ def list_candidates(
                     rank=r["profile_rank"],
                     total_score=total,
                     provisional_score=provisional,
-                    zoning_score=(
-                        str(r["zoning_score"]) if r["zoning_score"] is not None else None
-                    ),
-                    road_score=(str(r["road_score"]) if r["road_score"] is not None else None),
-                    equity_score=(
-                        str(r["equity_score"]) if r["equity_score"] is not None else None
-                    ),
-                    demand_score=(
-                        str(r["demand_score"]) if r["demand_score"] is not None else None
+                    **component_model.legacy_score_fields(run_model_version, r),
+                    component_scores=component_model.component_scores_field(
+                        run_model_version, r
                     ),
                     sido_region_code=r["sido_region_code"],
                     sido_region_name=r["sido_region_name"],
@@ -745,6 +1007,8 @@ def list_candidates(
         derivation_version=run["derivation_version"],
         policy_version=run["policy_version"],
         candidate_grid_version=run["candidate_grid_version"],
+        component_model_version=run_model_version,
+        component_order=run_component_order,
         weight_profile=profile,
         reference_year=run["reference_year"],
         run_id=resolved,
@@ -796,11 +1060,20 @@ def candidate_tile(
     # A data-derived profile (critic) the run never computed -> structured 4xx, so
     # an old run without CRITIC data returns PROFILE_NOT_AVAILABLE_FOR_RUN rather
     # than an empty tile that would silently imply "no candidates here".
-    run_weight_profiles = session.execute(
-        text("SELECT weight_profiles FROM suitability_analysis_runs WHERE id = :id"),
-        {"id": resolved},
-    ).scalar()
-    _ensure_profile_available(run_weight_profiles or {}, profile, resolved)
+    run = (
+        session.execute(
+            text(
+                "SELECT weight_profiles, component_model_version, component_order "
+                "FROM suitability_analysis_runs WHERE id = :id"
+            ),
+            {"id": resolved},
+        )
+        .mappings()
+        .first()
+    )
+    assert run is not None
+    run_model_version, _ = _run_model_identity(run)
+    _ensure_profile_available(_json_field(run["weight_profiles"], {}), profile, resolved)
 
     # Content-independent, immutable ETag: the (run, profile, z, x, y) tuple fully
     # determines the tile bytes because a run is never mutated in place, so we can
@@ -811,7 +1084,7 @@ def candidate_tile(
         return Response(status_code=304, headers=cache_headers)
 
     raw = session.execute(
-        text(_TILE_SQL),
+        text(_tile_sql(run_model_version)),
         {"run_id": resolved, "profile": profile, "z": z, "x": x, "y": y},
     ).scalar()
     # ST_AsMVT over zero matched rows returns NULL: a tile outside the project
@@ -831,7 +1104,8 @@ def candidate_detail(
             text(
                 """
                 SELECT c.*, r.reference_year, r.policy_version, r.derivation_version,
-                       r.candidate_grid_version, r.weight_profiles AS run_weight_profiles,
+                       r.candidate_grid_version, r.component_model_version,
+                       r.component_order, r.weight_profiles AS run_weight_profiles,
                        ST_AsGeoJSON(c.geometry) AS geojson
                 FROM suitability_candidates c
                 JOIN suitability_analysis_runs r ON r.id = c.analysis_run_id
@@ -853,7 +1127,8 @@ def candidate_detail(
                 "detail": f"candidate {candidate_id} has no geometry",
             },
         )
-    run_weight_profiles = row["run_weight_profiles"] or {}
+    run_model_version, run_component_order = _run_model_identity(row)
+    run_weight_profiles = _json_field(row["run_weight_profiles"], {})
     _ensure_profile_available(run_weight_profiles, profile, row["analysis_run_id"])
     is_excluded = row["status"] == "EXCLUDED"
     is_review = row["status"] == "REVIEW_REQUIRED"
@@ -870,9 +1145,20 @@ def candidate_detail(
     if isinstance(run_weights, dict):
         weights = {c: str(w) for c, w in run_weights.items()}
     elif profile in _STATIC_PROFILE_NAMES:
+        # The policy constant is only a legitimate fallback for a run of the model
+        # that constant describes. Falling back across models would serve one
+        # model's weights beside another model's scores.
+        _assert_static_profile_fallback_allowed(run_model_version, row["analysis_run_id"])
         weights = {c: str(w) for c, w in policy.STATIC_WEIGHT_PROFILES[profile].items()}
     else:  # pragma: no cover - unreachable: critic availability already enforced
         weights = {}
+    if weights:
+        _assert_run_weight_vector(
+            run_model_version,
+            weights,
+            f"run {row['analysis_run_id']} profile {profile!r} weights",
+        )
+    legacy_scores = component_model.legacy_score_fields(run_model_version, row)
     return CandidateDetailOut(
         candidate_id=row["id"],
         run_id=row["analysis_run_id"],
@@ -883,10 +1169,11 @@ def candidate_detail(
         rank=(int(profile_ranks[profile]) if profile_ranks.get(profile) is not None else None),
         total_score=total,
         provisional_score=provisional,
-        zoning_score=row["zoning_score"],
-        road_score=row["road_score"],
-        equity_score=row["equity_score"],
-        demand_score=row["demand_score"],
+        zoning_score=legacy_scores["zoning_score"],
+        road_score=legacy_scores["road_score"],
+        equity_score=legacy_scores["equity_score"],
+        demand_score=legacy_scores["demand_score"],
+        component_scores=component_model.component_scores_field(run_model_version, row),
         profile_totals=profile_totals,
         profile_ranks=profile_ranks,
         stable_count=row["stable_count"],
@@ -911,6 +1198,8 @@ def candidate_detail(
         policy_version=row["policy_version"],
         derivation_version=row["derivation_version"],
         candidate_grid_version=row["candidate_grid_version"],
+        component_model_version=run_model_version,
+        component_order=run_component_order,
         weights=weights,
         disclaimer=SCREENING_DISCLAIMER,
     )

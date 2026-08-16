@@ -3,6 +3,20 @@
 Every response labels the output as analytical screening only and never emits a
 legal-eligibility boolean. Scores are served as exact decimal strings; geometry
 is GeoJSON (EPSG:4326). See ``docs/SUITABILITY_POLICY_V1.md``.
+
+**Component-model contract.** Every run-scoped and candidate-bearing response
+carries the run's own ``component_model_version`` and ``component_order``, so a
+client can never render one model's numbers under another model's labels held in
+its own glossary. The per-candidate score representation mirrors storage exactly:
+
+* historical (``suitability-components-zred-v1``) runs populate the four legacy
+  ``zoning_score`` / ``road_score`` / ``equity_score`` / ``demand_score`` fields
+  exactly as they always have, and emit ``component_scores`` as ``{}``;
+* any other component model emits its scores in ``component_scores`` and the four
+  legacy fields as explicit ``null`` — present, never omitted, never reused.
+
+Nothing is dual-emitted: a second copy of an authoritative analytical value can
+drift from the first. See ``docs/SUITABILITY_COMPONENT_MODEL_CONTRACT.md``.
 """
 
 from __future__ import annotations
@@ -28,6 +42,12 @@ class SuitabilityPolicyOut(BaseModel):
     candidate_grid_version: str
     critic_method_version: str
     stability_method_version: str
+    # Which component model the *currently implemented* policy describes, and the
+    # order its components are enumerated in. /policies describes live policy, not
+    # a stored run, so these are the module's own identity — unlike every run-scoped
+    # endpoint, which reports the stored run's own identity.
+    component_model_version: str
+    component_order: list[str]
     statuses: list[str]
     # Policy-assumption profiles with fixed weights (``critic`` is intentionally
     # absent — it is data-derived per run, never a policy constant).
@@ -54,6 +74,10 @@ class SuitabilityRunOut(BaseModel):
     derivation_version: str
     policy_version: str
     candidate_grid_version: str
+    # This run's OWN component-model identity, read from the run row — never the
+    # running code's constants.
+    component_model_version: str
+    component_order: list[str]
     reference_year: int
     boundary_vintage: str
     weight_profile: str
@@ -88,6 +112,8 @@ class SuitabilitySummaryOut(BaseModel):
     policy_version: str
     derivation_version: str
     candidate_grid_version: str
+    component_model_version: str
+    component_order: list[str]
     weight_profile: str
     candidate_count_total: int
     candidate_count_eligible: int
@@ -122,10 +148,16 @@ class CandidateProperties(BaseModel):
     rank: int | None
     total_score: str | None
     provisional_score: str | None
+    # Legacy (zred-v1) component scores: populated for historical runs, explicit
+    # null for every other component model. Never reused to carry another quantity.
     zoning_score: str | None
     road_score: str | None
     equity_score: str | None
     demand_score: str | None
+    # Version-aware component scores keyed by the run's own component names: the
+    # authoritative representation for non-historical models, {} for historical
+    # runs (whose scores are the four fields above).
+    component_scores: dict[str, str | None] = Field(default_factory=dict)
     sido_region_code: str | None
     sido_region_name: str | None
     sigungu_region_code: str | None
@@ -151,6 +183,8 @@ class SuitabilityCandidateCollection(BaseModel):
     derivation_version: str
     policy_version: str
     candidate_grid_version: str
+    component_model_version: str
+    component_order: list[str]
     weight_profile: str
     reference_year: int
     run_id: int
@@ -183,10 +217,15 @@ class CandidateDetailOut(BaseModel):
     rank: int | None
     total_score: str | None
     provisional_score: str | None
+    # Legacy (zred-v1) component scores: populated for historical runs, explicit
+    # null for every other component model.
     zoning_score: Decimal | None
     road_score: Decimal | None
     equity_score: Decimal | None
     demand_score: Decimal | None
+    # Version-aware component scores keyed by the run's own component names ({} for
+    # historical runs).
+    component_scores: dict[str, str | None] = Field(default_factory=dict)
     profile_totals: dict[str, Any]
     profile_ranks: dict[str, Any]
     # Weight-sensitivity stability (ELIGIBLE only; null/{} otherwise).
@@ -212,5 +251,7 @@ class CandidateDetailOut(BaseModel):
     policy_version: str
     derivation_version: str
     candidate_grid_version: str
+    component_model_version: str
+    component_order: list[str]
     weights: dict[str, str]
     disclaimer: str

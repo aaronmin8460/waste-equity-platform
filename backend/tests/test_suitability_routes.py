@@ -7,13 +7,14 @@ Data-bearing candidate paths use PostGIS geometry and live in
 from __future__ import annotations
 
 import datetime
+import json
 from typing import Any
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from waste_equity_backend.analysis.suitability import policy
+from waste_equity_backend.analysis.suitability import component_model, policy
 from waste_equity_backend.api.routes import suitability as suitability_routes
 from waste_equity_backend.models import SuitabilityAnalysisRun
 
@@ -293,3 +294,214 @@ def test_tile_non_integer_coordinate_is_422(client: TestClient, session: Session
     assert non_int.status_code == 422
     bad = client.get(f"/api/v1/suitability/tiles/{run.id}/baseline/9/4%3B36/201.mvt")
     assert bad.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Component-model identity and model-scoped default-run resolution
+# --------------------------------------------------------------------------- #
+#
+# Run-level model awareness is fully exercisable here: ``suitability_analysis_runs``
+# is non-spatial. The candidate-bearing half of the contract (component_scores,
+# explicit-null legacy fields, successor tiles) needs PostGIS geometry and lives in
+# ``test_suitability_routes_integration.py``.
+
+
+def _seed_successor_shaped_run(session: Session, *, run_id: int = 900) -> int:
+    """A synthetic run labelled with the SUCCESSOR component model.
+
+    Deliberately a *fixture*, not a produced run: no successor analysis is built,
+    scored, or persisted by this branch, and none can be — the successor model is
+    not activated. This row exists only so the version-aware boundary can be
+    exercised from both sides.
+    """
+
+    now = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    session.execute(
+        text(
+            """
+            INSERT INTO suitability_analysis_runs (
+                id, derivation_version, policy_version, candidate_grid_version,
+                component_model_version, component_order, reference_year,
+                boundary_vintage, weight_profile, analysis_signature, status,
+                candidate_count_total, candidate_count_eligible, candidate_count_review,
+                candidate_count_excluded, input_dataset_version_ids, input_provenance,
+                policy_snapshot, weight_profiles, weight_derivation, stability_definition,
+                started_at, completed_at, created_at
+            ) VALUES (
+                :id, 'synthetic-successor-derivation', 'synthetic-successor-policy',
+                'capital-grid-500m-v1', :component_model, :component_order, 2026,
+                '2024', 'baseline', :signature, 'SUCCEEDED',
+                0, 0, 0, 0, '[]', '{}', '{}', '{}', '{}', '{}',
+                :now, :now, :now
+            )
+            """
+        ),
+        {
+            "id": run_id,
+            "component_model": component_model.COMPONENT_MODEL_SUCCESSOR,
+            "component_order": json.dumps(list(component_model.COMPONENT_ORDER_SUCCESSOR)),
+            "signature": f"synthetic-successor-{run_id}",
+            "now": now,
+        },
+    )
+    session.commit()
+    return run_id
+
+
+def test_policies_reports_the_implemented_component_model(client: TestClient) -> None:
+    body = client.get("/api/v1/suitability/policies").json()
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+    assert body["component_order"] == ["zoning", "road", "equity", "demand"]
+
+
+def test_a_stored_run_reports_its_own_component_model(
+    client: TestClient, session: Session
+) -> None:
+    _seed_run(session)
+    body = client.get("/api/v1/suitability/runs/latest").json()
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+    assert body["component_order"] == ["zoning", "road", "equity", "demand"]
+
+
+def test_the_run_list_labels_each_run_with_its_own_component_model(
+    client: TestClient, session: Session
+) -> None:
+    """The §1-finding-2 regression, at the run level: never label a stored row with
+    whatever constants the currently running code happens to use."""
+
+    historical = _seed_run(session)
+    successor = _seed_successor_shaped_run(session)
+    runs = {r["id"]: r for r in client.get("/api/v1/suitability/runs").json()["runs"]}
+    assert runs[historical.id]["component_model_version"] == "suitability-components-zred-v1"
+    assert runs[historical.id]["component_order"] == ["zoning", "road", "equity", "demand"]
+    assert runs[successor]["component_model_version"] == "suitability-components-successor-v1"
+    assert runs[successor]["component_order"] == [
+        "existing_burden",
+        "air_impact_proxy",
+        "resident_impact",
+        "land_conversion",
+    ]
+
+
+def test_the_run_list_can_be_scoped_to_one_component_model(
+    client: TestClient, session: Session
+) -> None:
+    historical = _seed_run(session)
+    successor = _seed_successor_shaped_run(session)
+    scoped = client.get(
+        "/api/v1/suitability/runs"
+        "?component_model_version=suitability-components-successor-v1"
+    ).json()
+    assert [r["id"] for r in scoped["runs"]] == [successor]
+    assert scoped["count"] == 1
+    both = client.get("/api/v1/suitability/runs").json()
+    assert {r["id"] for r in both["runs"]} == {historical.id, successor}
+
+
+def test_an_unpinned_request_stays_on_the_historical_model(
+    client: TestClient, session: Session
+) -> None:
+    """The rollout guard: a newer successor run must NOT redefine the default.
+
+    The successor run is seeded second and has the later completed_at, so the
+    pre-scoping ``ORDER BY completed_at DESC`` would have picked it — silently
+    switching every default view and every un-pinned shared link to a different
+    analytical model.
+    """
+
+    historical = _seed_run(session)
+    _seed_successor_shaped_run(session)
+    body = client.get("/api/v1/suitability/runs/latest").json()
+    assert body["id"] == historical.id
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+
+
+def test_an_explicit_selector_resolves_deterministically(
+    client: TestClient, session: Session
+) -> None:
+    historical = _seed_run(session)
+    successor = _seed_successor_shaped_run(session)
+    for _ in range(3):
+        assert (
+            client.get(
+                "/api/v1/suitability/runs/latest"
+                "?component_model_version=suitability-components-successor-v1"
+            ).json()["id"]
+            == successor
+        )
+        assert (
+            client.get(
+                "/api/v1/suitability/runs/latest"
+                "?component_model_version=suitability-components-zred-v1"
+            ).json()["id"]
+            == historical.id
+        )
+
+
+def test_a_pinned_run_of_the_wrong_model_fails_clearly(
+    client: TestClient, session: Session
+) -> None:
+    run = _seed_run(session)
+    response = client.get(
+        f"/api/v1/suitability/candidates?run_id={run.id}"
+        "&component_model_version=suitability-components-successor-v1"
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["error"] == "COMPONENT_MODEL_MISMATCH"
+    assert detail["fields"]["run_component_model_version"] == "suitability-components-zred-v1"
+    assert (
+        detail["fields"]["requested_component_model_version"]
+        == "suitability-components-successor-v1"
+    )
+
+
+def test_an_unknown_component_model_is_refused_not_silently_defaulted(
+    client: TestClient, session: Session
+) -> None:
+    _seed_run(session)
+    response = client.get("/api/v1/suitability/runs/latest?component_model_version=zred")
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "UNKNOWN_COMPONENT_MODEL"
+
+
+def test_no_run_of_the_requested_model_is_a_structured_404(
+    client: TestClient, session: Session
+) -> None:
+    _seed_run(session)
+    response = client.get(
+        "/api/v1/suitability/runs/latest"
+        "?component_model_version=suitability-components-successor-v1"
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["error"] == "NO_ANALYSIS_AVAILABLE"
+    assert "suitability-components-successor-v1" in response.json()["detail"]["detail"]
+
+
+def test_the_historical_tile_query_is_byte_identical_to_the_pre_change_contract() -> None:
+    """The map already caches historical tiles; their bytes must not move.
+
+    Pinned as the exact query text rather than "contains the four columns", because
+    a whitespace or ordering change would still be a change to a cached artifact's
+    generator.
+    """
+
+    assert suitability_routes._tile_sql(
+        component_model.COMPONENT_MODEL_HISTORICAL
+    ) == suitability_routes._TILE_SQL
+    assert (
+        "        c.zoning_score::double precision AS zoning_score,\n"
+        "        c.road_score::double precision AS road_score,\n"
+        "        c.equity_score::double precision AS equity_score,\n"
+        "        c.demand_score::double precision AS demand_score,\n"
+        "        c.stable_count AS stable_count,"
+    ) in suitability_routes._TILE_SQL
+    assert "component_scores" not in suitability_routes._TILE_SQL
+
+
+def test_a_successor_run_tile_query_reads_the_version_aware_map() -> None:
+    sql = suitability_routes._tile_sql(component_model.COMPONENT_MODEL_SUCCESSOR)
+    assert "(c.component_scores ->> 'existing_burden')::double precision" in sql
+    # A legacy tile property must never carry a successor meaning.
+    for legacy in ("zoning_score", "road_score", "equity_score", "demand_score"):
+        assert legacy not in sql

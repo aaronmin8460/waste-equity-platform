@@ -21,7 +21,7 @@ from geoalchemy2 import WKTElement
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from waste_equity_backend.analysis.suitability import policy
+from waste_equity_backend.analysis.suitability import component_model, policy
 from waste_equity_backend.api.app import create_app
 from waste_equity_backend.db import get_session
 from waste_equity_backend.models import SuitabilityAnalysisRun, SuitabilityCandidate
@@ -778,3 +778,303 @@ def test_tile_encodes_stability_properties(pg_client: TestClient, seeded: dict[s
     # excluded/review cells (no stability) omit the null attributes
     assert "stable_count" not in by_status["EXCLUDED"]
     assert "stability_class" not in by_status["REVIEW_REQUIRED"]
+
+
+# --------------------------------------------------------------------------- #
+# Component-model contract — candidate-bearing surfaces
+# --------------------------------------------------------------------------- #
+#
+# The run-level half of this contract is exercised on SQLite in
+# ``test_suitability_routes.py``; everything below needs real candidate geometry.
+
+
+SUCCESSOR_MODEL = component_model.COMPONENT_MODEL_SUCCESSOR
+SUCCESSOR_ORDER = list(component_model.COMPONENT_ORDER_SUCCESSOR)
+SUCCESSOR_SCORES = {
+    "existing_burden": "61.2500",
+    "air_impact_proxy": "44.0000",
+    "resident_impact": "12.5000",
+    "land_conversion": "88.7500",
+}
+# A fabricated vector for a fabricated run. NOT an approved successor weight
+# profile: no successor weight vector exists or may be derived here
+# (SUCCESSOR_WEIGHT_VECTOR_UNAPPROVED). It exists only so a serializer that reads a
+# run's stored weights has something model-consistent to read.
+SYNTHETIC_SUCCESSOR_WEIGHTS = {"baseline": dict.fromkeys(SUCCESSOR_ORDER, "0.25000000")}
+
+
+@pytest.fixture
+def seeded_successor_shaped(pg_session: Session) -> dict[str, int]:
+    """A synthetic run+candidate stored in the SUCCESSOR component-model shape.
+
+    A **fixture**, never a produced run: no successor analysis is built or scored by
+    this branch, and none can be — the successor model is not activated. This row
+    exists only so the version-aware serialization can be exercised from both sides.
+    Its legacy score columns are NULL and its scores live in ``component_scores``,
+    which is exactly the write rule a real successor writer would follow.
+    """
+
+    run = SuitabilityAnalysisRun(
+        derivation_version="synthetic-successor-derivation",
+        policy_version="synthetic-successor-policy",
+        candidate_grid_version="capital-grid-500m-v1",
+        component_model_version=SUCCESSOR_MODEL,
+        component_order=SUCCESSOR_ORDER,
+        reference_year=1999,
+        boundary_vintage="1999",
+        weight_profile="baseline",
+        analysis_signature="integration-successor-shaped-sig",
+        status="SUCCEEDED",
+        candidate_count_total=1,
+        candidate_count_eligible=1,
+        candidate_count_review=0,
+        candidate_count_excluded=0,
+        input_dataset_version_ids=[],
+        input_provenance={},
+        policy_snapshot={},
+        weight_profiles=SYNTHETIC_SUCCESSOR_WEIGHTS,
+        weight_derivation={},
+        stability_definition={},
+        started_at=NOW,
+        completed_at=NOW,
+        created_at=NOW,
+    )
+    pg_session.add(run)
+    pg_session.flush()
+    candidate = _candidate(
+        run.id,
+        "capital-grid-500m-v1:9_9",
+        20.9,
+        status="ELIGIBLE",
+        rank=1,
+        total_score=Decimal("51.6250"),
+        component_scores=SUCCESSOR_SCORES,
+        profile_totals={"baseline": "51.6250"},
+        profile_ranks={"baseline": 1},
+    )
+    pg_session.add(candidate)
+    pg_session.flush()
+    return {"run": run.id, "candidate": candidate.id}
+
+
+def test_historical_candidates_keep_their_legacy_scores_and_add_no_duplicate(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    body = pg_client.get(
+        f"/api/v1/suitability/candidates?run_id={seeded['run']}&status=ELIGIBLE"
+    ).json()
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+    assert body["component_order"] == ["zoning", "road", "equity", "demand"]
+    props = body["features"][0]["properties"]
+    assert props["zoning_score"] == "55.0000"
+    assert props["road_score"] == "100.0000"
+    assert props["equity_score"] == "100.0000"
+    assert props["demand_score"] == "50.0000"
+    # Storage is mirrored, not duplicated: the legacy columns stay the single
+    # authoritative representation for this run.
+    assert props["component_scores"] == {}
+
+
+def test_a_successor_shaped_run_serves_component_scores_and_null_legacy_fields(
+    pg_client: TestClient, seeded_successor_shaped: dict[str, int]
+) -> None:
+    run = seeded_successor_shaped["run"]
+    body = pg_client.get(f"/api/v1/suitability/candidates?run_id={run}").json()
+    assert body["component_model_version"] == SUCCESSOR_MODEL
+    assert body["component_order"] == SUCCESSOR_ORDER
+    props = body["features"][0]["properties"]
+    assert props["component_scores"] == SUCCESSOR_SCORES
+    # Present and explicitly null — never omitted, never carrying a successor value.
+    for legacy in ("zoning_score", "road_score", "equity_score", "demand_score"):
+        assert legacy in props
+        assert props[legacy] is None
+
+
+def test_a_successor_shaped_candidate_detail_keeps_the_two_shapes_apart(
+    pg_client: TestClient, seeded_successor_shaped: dict[str, int]
+) -> None:
+    body = pg_client.get(
+        f"/api/v1/suitability/candidates/{seeded_successor_shaped['candidate']}"
+    ).json()
+    assert body["component_model_version"] == SUCCESSOR_MODEL
+    assert body["component_order"] == SUCCESSOR_ORDER
+    assert body["component_scores"] == SUCCESSOR_SCORES
+    assert body["zoning_score"] is None
+    assert body["demand_score"] is None
+    # The served weights are the run's own, over the run's own components.
+    assert set(body["weights"]) == set(SUCCESSOR_ORDER)
+
+
+def test_historical_candidate_detail_reports_its_own_model(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    body = pg_client.get(f"/api/v1/suitability/candidates/{seeded['c1']}").json()
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+    assert body["component_order"] == ["zoning", "road", "equity", "demand"]
+    assert body["component_scores"] == {}
+    assert body["zoning_score"] == "55.0000"
+
+
+def test_the_summary_reports_the_runs_component_model_and_score_shape(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    body = pg_client.get(f"/api/v1/suitability/summary?run_id={seeded['run']}").json()
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+    assert body["component_order"] == ["zoning", "road", "equity", "demand"]
+    top = body["top_candidates"][0]
+    assert top["zoning_score"] == "55.0000"
+    assert top["component_scores"] == {}
+
+
+def test_every_run_scoped_endpoint_agrees_on_one_runs_model(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """One run, one component-model identity, whichever endpoint is asked.
+
+    The sibling of the version-mislabeling regression: a stored run must never be
+    described differently depending on which route the client happened to call.
+    """
+
+    run = seeded["run"]
+    collection = pg_client.get(f"/api/v1/suitability/candidates?run_id={run}").json()
+    summary = pg_client.get(f"/api/v1/suitability/summary?run_id={run}").json()
+    detail = pg_client.get(f"/api/v1/suitability/candidates/{seeded['c1']}").json()
+    latest = pg_client.get("/api/v1/suitability/runs/latest").json()
+    identities = {
+        (b["component_model_version"], tuple(b["component_order"]))
+        for b in (collection, summary, detail, latest)
+    }
+    assert identities == {
+        ("suitability-components-zred-v1", ("zoning", "road", "equity", "demand"))
+    }
+
+
+def test_a_successor_shaped_tile_carries_its_own_component_properties(
+    pg_client: TestClient, seeded_successor_shaped: dict[str, int]
+) -> None:
+    mvt = pytest.importorskip("mapbox_vector_tile")
+    z = 3
+    x, y = _deg2tile(20.95, 20.05, z)
+    resp = pg_client.get(
+        f"/api/v1/suitability/tiles/{seeded_successor_shaped['run']}/baseline/{z}/{x}/{y}.mvt"
+    )
+    assert resp.status_code == 200
+    props = mvt.decode(resp.content)["candidates"]["features"][0]["properties"]
+    assert props["existing_burden"] == pytest.approx(61.25)
+    # A legacy tile property must never carry a successor meaning; the legacy
+    # columns are NULL for this run, and MVT omits null attributes entirely.
+    for legacy in ("zoning_score", "road_score", "equity_score", "demand_score"):
+        assert legacy not in props
+
+
+def test_a_historical_tile_carries_only_the_legacy_component_properties(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    mvt = pytest.importorskip("mapbox_vector_tile")
+    z = 3
+    x, y = _deg2tile(_CLUSTER_LON, _CLUSTER_LAT, z)
+    resp = pg_client.get(f"/api/v1/suitability/tiles/{seeded['run']}/baseline/{z}/{x}/{y}.mvt")
+    feats = mvt.decode(resp.content)["candidates"]["features"]
+    props = {f["properties"]["status"]: f["properties"] for f in feats}["ELIGIBLE"]
+    assert props["zoning_score"] == pytest.approx(55.0)
+    for successor_component in SUCCESSOR_ORDER:
+        assert successor_component not in props
+
+
+def test_the_default_run_stays_historical_when_a_successor_shaped_run_is_newer(
+    pg_client: TestClient, seeded: dict[str, int], seeded_successor_shaped: dict[str, int]
+) -> None:
+    """The rollout guard, end to end on the candidate path."""
+
+    body = pg_client.get("/api/v1/suitability/candidates").json()
+    assert body["run_id"] == seeded["run"]
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+
+
+def test_a_model_scoped_request_reaches_the_successor_shaped_run(
+    pg_client: TestClient, seeded: dict[str, int], seeded_successor_shaped: dict[str, int]
+) -> None:
+    body = pg_client.get(
+        f"/api/v1/suitability/candidates?component_model_version={SUCCESSOR_MODEL}"
+    ).json()
+    assert body["run_id"] == seeded_successor_shaped["run"]
+    assert body["component_model_version"] == SUCCESSOR_MODEL
+
+
+# --------------------------------------------------------------------------- #
+# CRITIC / stability cross-model isolation
+# --------------------------------------------------------------------------- #
+
+
+def test_the_stored_critic_vector_is_served_only_beside_its_own_model(
+    pg_client: TestClient, seeded: dict[str, int]
+) -> None:
+    body = pg_client.get(f"/api/v1/suitability/summary?run_id={seeded['run']}").json()
+    assert set(body["critic_weights"]) == {"zoning", "road", "equity", "demand"}
+    assert set(body["critic_weights"]) == set(body["component_order"])
+
+
+def test_a_critic_vector_from_another_model_is_refused_rather_than_served(
+    pg_client: TestClient, pg_session: Session, seeded: dict[str, int]
+) -> None:
+    """A CRITIC vector describes the variance and correlation of *these* criteria in
+    *this* run's population. Serving one derived over different criteria beside this
+    run's scores would present one model's finding as another's, so an inconsistent
+    stored row fails visibly instead."""
+
+    pg_session.execute(
+        text(
+            "UPDATE suitability_analysis_runs SET weight_profiles = :profiles WHERE id = :id"
+        ),
+        {
+            "profiles": json.dumps(
+                {**RUN_WEIGHT_PROFILES, "critic": dict.fromkeys(SUCCESSOR_ORDER, "0.25")}
+            ),
+            "id": seeded["run"],
+        },
+    )
+    pg_session.flush()
+    response = pg_client.get(f"/api/v1/suitability/summary?run_id={seeded['run']}")
+    assert response.status_code == 500
+    assert response.json()["detail"]["error"] == "COMPONENT_MODEL_INCONSISTENT_RUN"
+
+
+def test_a_stability_definition_from_another_model_is_refused(
+    pg_client: TestClient, pg_session: Session, seeded: dict[str, int]
+) -> None:
+    pg_session.execute(
+        text(
+            "UPDATE suitability_analysis_runs SET stability_definition = :definition "
+            "WHERE id = :id"
+        ),
+        {
+            "definition": json.dumps(
+                {**STABILITY_DEFINITION, "component_model_version": SUCCESSOR_MODEL}
+            ),
+            "id": seeded["run"],
+        },
+    )
+    pg_session.flush()
+    response = pg_client.get(f"/api/v1/suitability/summary?run_id={seeded['run']}")
+    assert response.status_code == 500
+    assert response.json()["detail"]["error"] == "COMPONENT_MODEL_INCONSISTENT_RUN"
+
+
+def test_a_successor_shaped_run_never_borrows_the_historical_policy_weights(
+    pg_client: TestClient, pg_session: Session, seeded_successor_shaped: dict[str, int]
+) -> None:
+    """The static-profile fallback exists for pre-CRITIC runs of the model the policy
+    module implements. Falling back across models would attach a weighting justified
+    for one set of quantities to a different set, so a run of another model that
+    stores no weights is refused rather than given the historical constants."""
+
+    pg_session.execute(
+        text("UPDATE suitability_analysis_runs SET weight_profiles = '{}' WHERE id = :id"),
+        {"id": seeded_successor_shaped["run"]},
+    )
+    pg_session.flush()
+    response = pg_client.get(
+        f"/api/v1/suitability/candidates/{seeded_successor_shaped['candidate']}"
+    )
+    assert response.status_code == 500
+    assert response.json()["detail"]["error"] == "COMPONENT_MODEL_INCONSISTENT_RUN"
