@@ -59,7 +59,7 @@ test("landfill dashboard: renders full-width with no map and official values", a
   // than in a standing panel above the dashboard: the 지역별 상세 현황 note carries
   // the 시·도-grain consequence beside the rows it governs, and the verbatim
   // sentence remains in 근거와 한계.
-  await expect(page.getByRole("heading", { name: "폐기물 처리 현황" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "지역별 폐기물 처리 현황" })).toBeVisible();
   await expect(page.getByTestId("landfill-limitation")).toHaveCount(0);
   await expect(page.getByTestId("landfill-region-grain-note")).toContainText(
     "광역지자체(시·도) 단위로만 보고",

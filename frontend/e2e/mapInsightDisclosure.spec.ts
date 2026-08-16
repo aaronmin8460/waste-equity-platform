@@ -377,7 +377,7 @@ for (const c of CASES) {
       // Navigate genuinely AWAY. This used to hop through 데이터·출처, which is a
       // dialog now: opening an overlay does not unmount the view beneath it, so
       // the strip legitimately keeps its state and the round trip tested nothing.
-      // 폐기물 처리 현황 is a real destination change, which is what the contract —
+      // 지역별 폐기물 처리 현황 is a real destination change, which is what the contract —
       // "returns to the collapsed default after navigating away" — is about.
       await page.getByTestId("mode-flow").click();
       await expect(page.getByTestId(c.strip)).toHaveCount(0);

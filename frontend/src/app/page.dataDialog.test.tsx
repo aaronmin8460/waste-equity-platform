@@ -100,7 +100,7 @@ describe("the legacy transparency URL", () => {
 });
 
 describe("closing returns to the prior destination", () => {
-  it("returns to 폐기물 처리 현황 when that is where the reader was", async () => {
+  it("returns to 지역별 폐기물 처리 현황 when that is where the reader was", async () => {
     await renderLoaded();
     fireEvent.click(screen.getByTestId("mode-flow"));
     await waitFor(() => expect(screen.getByTestId("landfill-dashboard")).toBeDefined());

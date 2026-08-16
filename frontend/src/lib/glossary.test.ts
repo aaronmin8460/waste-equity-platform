@@ -67,7 +67,13 @@ describe("glossary — plain-Korean primary labels", () => {
     // The SIX visible destinations, in nav order (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2).
     expect(NAV_DESTINATIONS.map((d) => d.label)).toEqual([
       "지역 지표",
-      "폐기물 처리 현황",
+      // Renamed by the Figma forensic audit — the frame names it 지역별 폐기물 처리
+      // 현황 and the screen is a per-region breakdown, not a nationwide total. The
+      // label is also this view's <h1>, so the tab and the page title moved together.
+      "지역별 폐기물 처리 현황",
+      // Deliberately NOT renamed: the Figma file names this destination 후보지 분석
+      // in the nav and 시설 비용 살펴보기 in the frame title. The shipped contract
+      // stands until the owner resolves that conflict (see lib/glossary.ts).
       "후보지 분석",
       "후보지 심층 분석",
       "후보지 심층 비교",
@@ -76,7 +82,8 @@ describe("glossary — plain-Korean primary labels", () => {
     // The area-level vocabulary behind them.
     expect(MODE_LABELS.equity).toBe("지역 지표");
     expect(MODE_LABELS.suitability).toBe("후보지 분석");
-    expect(MODE_LABELS.flow).toBe("폐기물 처리 현황");
+    // `flow` is a 1:1 area↔destination match, so the area name tracks the rename.
+    expect(MODE_LABELS.flow).toBe("지역별 폐기물 처리 현황");
     expect(MODE_LABELS.transparency).toBe("데이터·출처");
     // Sub-view names now equal the destination they were promoted to, so the two
     // registries can never print two different names for one screen.
@@ -103,7 +110,7 @@ describe("glossary — plain-Korean primary labels", () => {
 
   it("resolves an analytical state to exactly one destination", () => {
     expect(destinationFor("equity", "score").label).toBe("지역 지표");
-    expect(destinationFor("flow", "scenario").label).toBe("폐기물 처리 현황");
+    expect(destinationFor("flow", "scenario").label).toBe("지역별 폐기물 처리 현황");
     expect(destinationFor("transparency", "cost").label).toBe("데이터·출처");
     // A stale sub-view carried by a NON-suitability mode never selects a
     // suitability destination — `view` is only consulted for that mode.

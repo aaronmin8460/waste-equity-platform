@@ -32,7 +32,7 @@ const DESTINATIONS = [
     body: "map-container",
   },
   {
-    label: "폐기물 처리 현황",
+    label: "지역별 폐기물 처리 현황",
     url: "/?v=1&mode=flow",
     tab: "mode-flow",
     body: "landfill-dashboard",

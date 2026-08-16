@@ -20,8 +20,14 @@ import type {
 import type { LandfillUnavailableState } from "../lib/landfill";
 import { FORBIDDEN_PRIMARY_TOKENS } from "../lib/glossary";
 
-/** The <h1>, supplied by the page as the visible destination name (spec §2.2). */
-const TITLE = "폐기물 처리 현황";
+/**
+ * The <h1>, supplied by the page as the visible destination name (spec §2.2).
+ *
+ * `page.tsx` passes `destination.label`, so this must stay equal to the `flow`
+ * entry of `NAV_DESTINATIONS` — renamed to 지역별 폐기물 처리 현황 by the six-page
+ * Figma forensic audit.
+ */
+const TITLE = "지역별 폐기물 처리 현황";
 
 afterEach(cleanup);
 

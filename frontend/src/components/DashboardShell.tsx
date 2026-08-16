@@ -66,6 +66,7 @@ import type { ReactNode } from "react";
 
 import type { NavDestination } from "../lib/glossary";
 import NarrowScreenGate, { useIsDesktopViewport } from "./ui/NarrowScreenGate";
+import NavigationOnboarding from "./ui/NavigationOnboarding";
 import TopNavigation from "./ui/TopNavigation";
 
 export interface DashboardShellProps {
@@ -109,6 +110,21 @@ export default function DashboardShell({
       }
     >
       <TopNavigation active={destination} onNavigate={onNavigate} />
+
+      {/* The first-visit guide to the six destinations.
+
+          A SIBLING of the navigation, never a child of it: `TopNavigation` is
+          presentational — props in, six buttons out — and folding a stateful
+          overlay that reads `localStorage` into it would give the destinations a
+          reason to re-render and would put storage inside the one component every
+          terminology/accessibility assertion renders.
+
+          It sits INSIDE the desktop branch, after the `isDesktop` return above, so
+          it can never mount over `NarrowScreenGate`; it renders itself only on a
+          positive `matchMedia` confirmation of the same floor, and only once per
+          browser. It renders no heading above h2 and no `<main>`, so the "one h1
+          per view" and single-skip-target contracts are untouched. */}
+      <NavigationOnboarding />
 
       {/* The single skip-link target for every view. `tabIndex={-1}` is
           load-bearing: activating the skip link must move focus here

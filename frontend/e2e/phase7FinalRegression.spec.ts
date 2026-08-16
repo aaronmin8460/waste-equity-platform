@@ -38,7 +38,7 @@ import { mockTransparencyBackend } from "./phase6Fixtures";
 const MODE_LABELS = {
   equity: "지역 지표",
   suitability: "후보지 심층 분석",
-  flow: "폐기물 처리 현황",
+  flow: "지역별 폐기물 처리 현황",
   transparency: "데이터·출처",
 } as const;
 
@@ -520,7 +520,7 @@ test.describe("primary surfaces stay in plain Korean", () => {
       ["/?v=1&mode=equity", "지역 지표"],
       ["/?v=1&mode=suitability&view=score", "후보지 심층 분석"],
       ["/?v=1&mode=suitability&view=cost", "후보지 분석"],
-      ["/?v=1&mode=flow", "폐기물 처리 현황"],
+      ["/?v=1&mode=flow", "지역별 폐기물 처리 현황"],
       ["/?v=1&mode=transparency", "데이터·출처"],
     ] as const) {
       await page.goto(url);
@@ -576,7 +576,7 @@ test.describe("responsive smoke", () => {
         ["/?v=1&mode=equity", "지역 지표"],
         ["/?v=1&mode=suitability&view=score", "후보지 심층 분석"],
         ["/?v=1&mode=suitability&view=cost", "후보지 분석"],
-        ["/?v=1&mode=flow", "폐기물 처리 현황"],
+        ["/?v=1&mode=flow", "지역별 폐기물 처리 현황"],
         ["/?v=1&mode=transparency", "데이터·출처"],
       ] as const) {
         await page.goto(url);

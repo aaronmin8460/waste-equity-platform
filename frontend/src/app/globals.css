@@ -120,6 +120,15 @@
      row of pills. */
   --radius-card: 1.25rem; /* 20px — cards, panels, banners */
   --radius-control: 0.625rem; /* 10px — buttons, inputs */
+  /* `rounded-input`, an ALIAS of the control radius rather than a fifth value.
+     The six-page Figma forensic audit found `rounded-input` on three number/select
+     inputs with no `--radius-input` behind it — in Tailwind v4 a utility whose
+     theme key does not exist is simply never generated, so those inputs rendered
+     with square corners while every other control in the app was 10px, and nothing
+     failed to say so. Defining it via `var(--radius-control)` fixes all three at
+     once without editing files another lane owns, and keeps ONE number: change the
+     control radius and inputs follow. */
+  --radius-input: var(--radius-control);
   --radius-pill: 9999px; /* chips and the segmented-control track only */
   /* Shadows mean "floating above the page", not "this is a card". `.wep-card` has
      none; -card is for the one raised segment / popovers, -float for overlays.
@@ -211,11 +220,25 @@
  * `.wep-card` and the modifier disappears. Padding moves 16 -> 18 to match.
  *
  * The border is kept at 1px transparent (not removed) so the box model is identical
- * with and without the modifier — a card cannot shift by 2px when it gains one. */
+ * with and without the modifier — a card cannot shift by 2px when it gains one.
+ *
+ * ── The measured elevation (six-page Figma forensic audit) ───────────────────────
+ * The shadow was `0 6px 20px rgb(17 26 86 / 0.06)`, tinted with the brand navy on
+ * the reasoning that elevation should read as part of the palette. The audit
+ * measured the frames and the file draws a NEUTRAL shadow: `0 5px 20px
+ * rgb(0 0 0 / 0.05)`. On the near-white canvas the navy tint reads as a faint blue
+ * halo rather than as depth, so this converges on the measured value. Radius (20px,
+ * from `--radius-card`) and padding (18px) already matched and are unchanged.
+ *
+ * The MAP OVERLAYS are deliberately NOT folded in with this. They use
+ * `shadow-float` because they float above a LIVE MAP, not on the page canvas — the
+ * same 0.05 card shadow disappears against satellite/vector tiles, and flattening a
+ * legend into the map is a legibility regression, not a unification. Two elevations
+ * for two grounds is the correct model (see @theme). */
 .wep-figma-card {
   border-color: transparent;
   padding: 18px;
-  box-shadow: 0 6px 20px rgb(17 26 86 / 0.06);
+  box-shadow: 0 5px 20px rgb(0 0 0 / 0.05);
 }
 
 /* The FIVE NUMBERED cards of 후보지 심층 분석 (Figma 136:8684 ①②③④⑤).
@@ -304,9 +327,37 @@
    below the map that `.map-pane` exists to prevent. Revisit stickiness only with
    the full map-height e2e matrix green (see docs/UI_UX_DESKTOP_REDESIGN_PLAN.md
    §12 O4). */
+/* HEADER HIERARCHY (six-page Figma forensic audit).
+ *
+ * The written Figma request asks for a stronger separation under the application
+ * header. It was a single #E6E7EE hairline, which on the #F9F9F9 canvas is a ~1.06:1
+ * edge — technically present, visually absent — so the bar read as part of the page
+ * rather than as chrome above it.
+ *
+ * Three things make the shadow actually work, and each is load-bearing:
+ *
+ *   - The hairline STAYS. A shadow is decoration the platform is free to drop:
+ *     forced-colors mode removes it outright, and a printed page has no elevation.
+ *     The 1px border is what guarantees the boundary survives those, so this is
+ *     border + shadow, never shadow instead of border.
+ *   - `position: relative; z-index: 1`. Box-shadows paint in tree order among
+ *     in-flow block backgrounds, so `<main>`'s own opaque children (the sidebar
+ *     surface, the map pane) would paint straight over a shadow cast by an earlier
+ *     sibling. Lifting the bar into its own stacking context is what makes the
+ *     shadow land ON the content below instead of under it.
+ *   - It is still NOT sticky and NOT fixed. `position: relative` leaves the header
+ *     exactly where it was in the fixed-height flex column, so `.map-pane`'s
+ *     `height: 100%` chain is untouched — the reason the docblock above forbids
+ *     `sticky`/`fixed` does not apply to `relative`.
+ *
+ * The value is the card family's shadow tightened for a full-bleed bar: shorter
+ * blur, so the edge is legible without a grey band creeping down over the map. */
 .wep-appbar {
+  position: relative;
+  z-index: 1;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-hairline);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.06);
 }
 /* The app-bar content row: [brand] … [primary navigation].
  *
@@ -1465,6 +1516,226 @@ body {
   line-height: 1.6;
 }
 
+/* ── First-visit navigation guide (components/ui/NavigationOnboarding.tsx) ───────
+   The overlay the written Figma request asks for on a reader's first visit.
+
+   NOTHING here carries a coordinate. Every `top`/`left`/`width`/`height` that
+   positions the spotlight, the six markers, and the card is written as an inline
+   style by the component from `getBoundingClientRect()` on the REAL navigation, so
+   the guide follows the bar through its two metric sets (compact below 1280, the
+   Figma geometry above), through the Korean face arriving after first paint, and
+   through any future rename. This file owns only the look. */
+.wep-nav-onboarding {
+  position: fixed;
+  inset: 0;
+  /* Above the app bar's new `z-index: 1` and below `.wep-dialog-backdrop` (100):
+     an onboarding guide must never cover a dialog the reader deliberately opened. */
+  z-index: 60;
+}
+
+/* The scrim AND the cut-out, in one element.
+
+   The box is the HOLE — it is sized to the navigation track — and the 200vmax
+   spread paints the translucent sheet over everything else. That is why the six
+   destinations stay fully legible while the rest of the application recedes: they
+   are never behind the scrim, they are inside the gap in it. `pointer-events: none`
+   keeps the click contract on the root, which dismisses. */
+.wep-nav-onboarding-spotlight {
+  position: fixed;
+  border-radius: var(--figma-nav-track-radius);
+  box-shadow:
+    0 0 0 200vmax rgb(17 26 86 / 0.45),
+    0 0 0 2px rgb(255 255 255 / 0.9);
+  pointer-events: none;
+}
+/* No geometry to cut out (the nav could not be measured): a plain translucent
+   sheet, so the reader still gets an unambiguous modal rather than a card floating
+   over a live application. */
+.wep-nav-onboarding-spotlight--flat {
+  inset: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: rgb(17 26 86 / 0.45);
+}
+
+/* One marker per REAL destination button, at that button's measured box. */
+.wep-nav-onboarding-marker {
+  position: fixed;
+  display: block;
+  border-radius: var(--figma-nav-tab-radius);
+  box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.55);
+  pointer-events: none;
+}
+/* The number, centred under its own button. It is the same number the card's list
+   shows beside that destination, which is what ties the list to the bar. */
+.wep-nav-onboarding-marker-badge {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 0.375rem;
+  transform: translateX(-50%);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-brand);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* The pointer from the card up to the bar. A CSS triangle, so it needs no asset. */
+.wep-nav-onboarding-pointer {
+  position: fixed;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-right: 9px solid transparent;
+  border-bottom: 10px solid var(--color-surface);
+  border-left: 9px solid transparent;
+  pointer-events: none;
+}
+
+/* The guidance card. `width` is mirrored by CARD_WIDTH in the component, which is
+   what lets it clamp the card inside the viewport before the browser paints it. */
+.wep-nav-onboarding-card {
+  position: fixed;
+  display: flex;
+  width: 380px;
+  max-width: calc(100vw - 2rem);
+  flex-direction: column;
+  gap: 0.75rem;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+  padding: 18px;
+  overflow-y: auto;
+  animation: wep-nav-onboarding-in 180ms ease-out both;
+}
+@keyframes wep-nav-onboarding-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+/* The entrance is decoration; the guide must arrive without motion for a reader who
+   asked for none. The card's POSITION is an inline style, so dropping the animation
+   here cannot move it. */
+@media (prefers-reduced-motion: reduce) {
+  .wep-nav-onboarding-card {
+    animation: none;
+  }
+}
+.wep-nav-onboarding-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.wep-nav-onboarding-title {
+  color: var(--color-ink);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.4;
+  word-break: keep-all;
+}
+.wep-nav-onboarding-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-control);
+  color: var(--color-ink-subtle);
+  cursor: pointer;
+}
+.wep-nav-onboarding-close:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-ink);
+}
+.wep-nav-onboarding-body {
+  color: var(--color-ink-muted);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  /* Korean wraps per character; `keep-all` keeps eojeol intact. */
+  word-break: keep-all;
+}
+.wep-nav-onboarding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.wep-nav-onboarding-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.wep-nav-onboarding-item-number {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 1px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  color: var(--color-brand);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.wep-nav-onboarding-item-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.wep-nav-onboarding-item-label {
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: keep-all;
+}
+.wep-nav-onboarding-item-orientation {
+  color: var(--color-ink-subtle);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.wep-nav-onboarding-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid var(--figma-rule);
+  padding-top: 0.75rem;
+}
+.wep-nav-onboarding-hint {
+  color: var(--color-ink-subtle);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.wep-nav-onboarding-confirm {
+  flex: none;
+  border-radius: var(--radius-control);
+  background: var(--color-primary);
+  color: var(--color-primary-ink);
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.wep-nav-onboarding-confirm:hover {
+  background: var(--color-primary-hover);
+}
+
 /* MapLibre popups keep a white background but inherit the page text color,
    which is near-white in dark mode; pin readable colors explicitly. */
 .maplibregl-popup-content {
@@ -1673,7 +1944,7 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
 }
 
-/* Page 2 (폐기물 처리 현황): the short-desktop fold budget.
+/* Page 2 (지역별 폐기물 처리 현황): the short-desktop fold budget.
    ────────────────────────────────────────────────────────────────────────────
    The dashboard's vertical rhythm is width-independent, so the KPI row lands at
    the same y at every desktop width: it ends ~866px below the viewport top. That

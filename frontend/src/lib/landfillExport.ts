@@ -1,5 +1,5 @@
 /**
- * 폐기물 처리 현황 — the inbound workbook.
+ * 지역별 폐기물 처리 현황 — the inbound workbook.
  *
  * ── The one rule this file exists to enforce ─────────────────────────────────────
  * Two different money figures live on this page and they are NOT the same

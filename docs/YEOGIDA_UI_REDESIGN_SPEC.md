@@ -32,7 +32,7 @@ seven-phase autonomous redesign.
 | Item | Value |
 | --- | --- |
 | Citizen-facing product name | **여기다** |
-| Subtitle | **쓰레기 매립지 입지 추천 플랫폼** |
+| Subtitle | **폐기물 처리시설 입지 추천 플랫폼** (was 쓰레기 매립지 입지 추천 플랫폼 — see the note below) |
 | Visual motif | target / crosshair symbol |
 | Key colour (primary) | `#111A56` |
 | Application canvas | ≈ `#F9F9F9` |
@@ -40,6 +40,13 @@ seven-phase autonomous redesign.
 | Muted text | `#848A95`, only where contrast remains appropriate |
 | Small body / supporting text | ≈ `#646676` (darker accessible gray) |
 | Korean UI font | Noto Sans KR |
+
+**Subtitle correction (six-page Figma forensic audit).** The original subtitle named
+**매립지** — one disposal route — while the six destinations analyse 소각·재활용·매립
+facilities alike, so the wording claimed a narrower product than the one that
+shipped. **폐기물 처리시설** is the term that covers what the screens actually do. The
+string lives once, in `lib/glossary.BRAND_SUBTITLE`, and is rendered by the app bar,
+`ui/NarrowScreenGate`, and `app/layout.tsx`'s document title — the three cannot drift.
 
 **Renaming boundary — deliberate and narrow.** Citizen-facing branding becomes
 여기다. References to *"Waste Equity Platform"* are **NOT** globally replaced
@@ -67,7 +74,7 @@ subtitle hide it used to carry is gone. See `frontend/RESPONSIVE_LAYOUT.md`.
 | # | Visible name | Icon direction |
 | --- | --- | --- |
 | 1 | 지역 지표 | chart / bar-metric |
-| 2 | 폐기물 처리 현황 | flow / arrow-into-container |
+| 2 | 지역별 폐기물 처리 현황 | flow / arrow-into-container |
 | 3 | 후보지 분석 | crosshair + currency (siting + cost) |
 | 4 | 후보지 심층 분석 | layered map / magnifier |
 | 5 | 후보지 심층 비교 | two-column balance / compare |
@@ -92,7 +99,7 @@ existing `(mode, suitabilityView)` state. No new backend mode is introduced and
 | Destination | `mode` | `view` | Canonical URL |
 | --- | --- | --- | --- |
 | 지역 지표 | `equity` | — | `?v=1&mode=equity` |
-| 폐기물 처리 현황 | `flow` | — | `?v=1&mode=flow` |
+| 지역별 폐기물 처리 현황 | `flow` | — | `?v=1&mode=flow` |
 | 후보지 분석 | `suitability` | `cost` | `?v=1&mode=suitability&view=cost` |
 | 후보지 심층 분석 | `suitability` | `score` | `?v=1&mode=suitability&view=score` |
 | 후보지 심층 비교 | `suitability` | `scenario` | `?v=1&mode=suitability&view=scenario` |
@@ -119,7 +126,7 @@ Detailed scope belongs in the subtitle / supporting copy under the `<h1>`.
 | Destination | `<h1>` |
 | --- | --- |
 | 지역 지표 | 지역 지표 |
-| 폐기물 처리 현황 | 폐기물 처리 현황 |
+| 지역별 폐기물 처리 현황 | 지역별 폐기물 처리 현황 |
 | 후보지 분석 | 후보지 분석 |
 | 후보지 심층 분석 | 후보지 심층 분석 |
 | 후보지 심층 비교 | 후보지 심층 비교 |
@@ -149,9 +156,9 @@ The brand block is **never** a heading — every view keeps exactly one `<h1>`.
 
 ---
 
-## 4. Page 2 — 폐기물 처리 현황
+## 4. Page 2 — 지역별 폐기물 처리 현황
 
-- Use the Figma 폐기물 처리 현황 information architecture.
+- Use the Figma 지역별 폐기물 처리 현황 information architecture.
 - Include the actually-supported waste-generation / treatment / landfill /
   composition / trend / regional / cost information.
 - **The official Sudokwon Landfill inbound fee and the municipal
