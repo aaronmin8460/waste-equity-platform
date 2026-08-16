@@ -1831,7 +1831,7 @@ export default function MapView({
           aria-live="polite"
         >
           <span className="rounded bg-slate-800/90 px-3 py-1 text-xs font-medium text-white shadow">
-            후보지 타일을 갱신하는 중… (Refreshing candidate tiles…)
+            후보지 타일을 갱신하는 중…
           </span>
         </div>
       )}
