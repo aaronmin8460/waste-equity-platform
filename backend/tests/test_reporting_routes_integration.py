@@ -95,7 +95,12 @@ def _region(code: str, name: str, wkt: str) -> Region:
     )
 
 
-def _population(region_id: int, code: str, pop: int) -> RegionalPopulation:
+def _population(region_id: int, run_id: int, code: str, pop: int) -> RegionalPopulation:
+    # ``run_id`` is threaded in from the fixture's own IngestionRun, like every other
+    # seeded row here. It used to be hard-coded to 1, which only resolved while the
+    # ingestion_runs sequence happened to still be at 1 — so this fixture raised a
+    # ForeignKeyViolation on any database where a run had ever been inserted, and
+    # even on a virgin one it survived exactly the first test of the run.
     return RegionalPopulation(
         region_id=region_id,
         reference_year=YEAR,
@@ -108,7 +113,7 @@ def _population(region_id: int, code: str, pop: int) -> RegionalPopulation:
         source_geographic_level="SIGUNGU",
         retrieved_at=NOW,
         transformation_version="test-v1",
-        ingestion_run_id=1,
+        ingestion_run_id=run_id,
         created_at=NOW,
         updated_at=NOW,
     )
@@ -214,10 +219,10 @@ def seeded(pg_session: Session) -> dict[str, int]:
 
     pg_session.add_all(
         [
-            _population(a.id, "TESTRGA", 100000),
-            _population(b.id, "TESTRGB", 200000),
-            _population(c1.id, "TESTRGC1", 300000),
-            _population(c2.id, "TESTRGC2", 500000),
+            _population(a.id, run.run_id, "TESTRGA", 100000),
+            _population(b.id, run.run_id, "TESTRGB", 200000),
+            _population(c1.id, run.run_id, "TESTRGC1", 300000),
+            _population(c2.id, run.run_id, "TESTRGC2", 500000),
         ]
     )
     # Native waste: A has both streams, B has HOUSEHOLD only (missing NTN018).

@@ -5,7 +5,8 @@ run, region, and a handful of waste-treatment facilities in a rolled-back outer
 transaction (remote synthetic geometry), so no real data is touched. Verifies the
 coverage counts, the GROUP BY breakdowns, the paginated un-mapped list, and that a
 missing map location surfaces the operator-recorded ``geocode_note`` only when
-present (and None otherwise). Also asserts the migration head is unchanged at 0016.
+present (and None otherwise). Also asserts the migration graph is unforked, the
+test database is fully migrated, and revision 0016 is still in the chain.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import datetime
 import os
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -342,6 +344,50 @@ def test_read_only_no_write(
     assert before == after
 
 
-def test_migration_head_is_0016(pg_session: Session) -> None:
-    head = pg_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert head == "0016"
+def _script_directory() -> Any:
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    # ``script_location`` in alembic.ini is ``%(here)s``-anchored, so this resolves
+    # from any working directory and needs no database URL.
+    backend_dir = Path(__file__).resolve().parents[1]
+    return ScriptDirectory.from_config(Config(str(backend_dir / "alembic.ini")))
+
+
+def test_db_is_at_the_single_script_head_and_0016_is_still_in_the_chain(
+    pg_session: Session,
+) -> None:
+    """The chain is unforked, the DB is at its head, and 0016 is still reachable.
+
+    This asserted ``version_num == "0016"`` — the head at the time the
+    mapping-transparency endpoints were written. That pins a value which every
+    legitimate additive migration moves, so it started failing on the next release
+    (0017 … 0023) rather than on a defect, and could only be noticed once a PostGIS
+    database was available to run this tier. It is the same anti-pattern
+    ``docs/PRE_DEPLOYMENT_QA.md`` records being corrected before.
+
+    Three things are asserted in its place, none of which a later migration can
+    falsify:
+
+    * the chain has exactly **one** head — a fork is what actually breaks a
+      deployment, and pinning the head's value never detected one;
+    * the database is at that head, so every other assertion in this file is made
+      against the fully-migrated schema rather than a stale one;
+    * ``0016`` is still reachable — these endpoints read the schema as of 0016, and
+      that dependency is an immutable historical fact.
+
+    The claim that this feature *added* nothing is not made by freezing the head; it
+    is made directly, by ``test_read_only_no_write``.
+    """
+
+    script = _script_directory()
+    heads = script.get_heads()
+    assert len(heads) == 1, f"forked migration chain: {heads}"
+
+    db_head = pg_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    assert db_head == heads[0], (
+        f"test database is at {db_head}, not at the script head {heads[0]} — "
+        "run `alembic upgrade head` against TEST_DATABASE_URL"
+    )
+
+    assert "0016" in {revision.revision for revision in script.walk_revisions()}

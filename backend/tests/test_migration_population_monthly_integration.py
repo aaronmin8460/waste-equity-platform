@@ -1,14 +1,31 @@
 """PostGIS migration tests for monthly population support (0014).
 
-Requires TEST_DATABASE_URL. Runs the real Alembic upgrade/downgrade against a
-throwaway schema and asserts that the additive change admits a monthly series
-without weakening the legacy annual guarantee or touching existing rows.
+Requires TEST_DATABASE_URL pointing at a database migrated to head. Asserts that
+the additive change admits a monthly series without weakening the legacy annual
+guarantee or touching existing rows.
+
+Data prerequisites
+------------------
+Everything here runs on a **schema-only** database. The constraint tests supply
+their own foreign-key parents through the ``fk_parents`` fixture rather than
+borrowing whatever rows happen to be present, so they are deterministic and never
+depend on ambient ingested data.
+
+The single exception is
+``test_the_ingested_sgis_series_survived_the_upgrade``, which asserts that a real
+pre-0014 SGIS series came through the upgrade intact. That claim is about data
+which existed *before* the migration ran and cannot be reconstructed by seeding
+rows afterwards, so it skips with a precise reason when no SGIS series is loaded —
+the same convention ``test_migration_municipal_cost_integration.py`` uses for its
+registry count. The part of that claim which *is* checkable everywhere — that no
+SGIS row was ever given a monthly grain — is asserted unconditionally, next to it.
 """
 
 from __future__ import annotations
 
 import datetime
 import os
+from collections.abc import Iterator
 
 import pytest
 from alembic.config import Config
@@ -38,37 +55,66 @@ def engine() -> Engine:
     return create_engine(TEST_DATABASE_URL)
 
 
-def _seed_annual_row(connection: object, *, region_id: int, year: int, population: int) -> None:
-    connection.execute(  # type: ignore[attr-defined]
-        text(
-            "INSERT INTO regional_population (region_id, reference_year, reference_period, "
-            "population, unit, population_definition, population_temporal_granularity, "
-            "source_id, source_administrative_code, source_geographic_level, retrieved_at, "
-            "transformation_version, ingestion_run_id, created_at, updated_at) "
-            "VALUES (:rid, :year, :period, :pop, 'persons', 'SGIS_TOTAL_POPULATION', 'ANNUAL', "
-            "'sgis', '11', 'SIDO', :now, 'sgis-v1', :run, :now, :now)"
-        ),
-        {
-            "rid": region_id,
-            "year": year,
-            "period": str(year),
-            "pop": population,
-            "now": NOW,
-            "run": _any_run_id(connection),
-        },
-    )
+# Deliberately un-ingestable identifiers: no official SGIS boundary uses them, so
+# these rows cannot collide with real data even on a fully loaded database.
+SYNTHETIC_REGION_CODE = "MIG0014TESTRG"
+# 'sgis' is seeded into data_sources by migration 0001, so the ingestion_runs FK
+# resolves without this fixture having to invent a data source too.
+SYNTHETIC_RUN_SOURCE = "sgis"
 
 
-def _any_run_id(connection: object) -> int:
-    run = connection.execute(text("SELECT run_id FROM ingestion_runs LIMIT 1")).scalar()  # type: ignore[attr-defined]
-    assert run is not None, "an ingestion_runs row is required by the FK"
-    return int(run)
+@pytest.fixture
+def fk_parents(engine: Engine) -> Iterator[tuple[int, int]]:
+    """A synthetic ``(region_id, run_id)`` pair for the FK columns these tests fill.
 
+    What the tests below actually exercise is *constraint* behaviour — the two
+    granularity-scoped partial unique indexes and the granularity/month check. That
+    behaviour is indifferent to which region or ingestion run a row points at; the
+    foreign keys merely have to resolve.
 
-def _any_region_id(connection: object) -> int:
-    region = connection.execute(text("SELECT id FROM regions LIMIT 1")).scalar()  # type: ignore[attr-defined]
-    assert region is not None, "a regions row is required by the FK"
-    return int(region)
+    These used to be resolved with ``SELECT id FROM regions LIMIT 1``, which made
+    five tests fail outright on a schema-only database ("a regions row is required
+    by the FK") — reported as a product regression when nothing was wrong — and,
+    when rows *were* present, quietly bound the assertions to an arbitrary piece of
+    ambient ingested data. Creating the parents here fixes both.
+
+    Only the NOT NULL columns are populated: a region needs a code, a name, a level
+    and a validity start; ``geometry`` is nullable and no spatial behaviour is under
+    test here.
+    """
+
+    with engine.begin() as connection:
+        region_id = connection.execute(
+            text(
+                "INSERT INTO regions (region_code, region_name, region_level, valid_from) "
+                "VALUES (:code, '0014 마이그레이션 시험구', 'SIGUNGU', :valid_from) "
+                "RETURNING id"
+            ),
+            {"code": SYNTHETIC_REGION_CODE, "valid_from": datetime.date(1999, 1, 1)},
+        ).scalar_one()
+        run_id = connection.execute(
+            text(
+                "INSERT INTO ingestion_runs (source_id, started_at, completed_at, status, "
+                "rows_received, rows_inserted, rows_updated, rows_rejected) "
+                "VALUES (:source, :now, :now, 'SUCCEEDED', 0, 0, 0, 0) RETURNING run_id"
+            ),
+            {"source": SYNTHETIC_RUN_SOURCE, "now": NOW},
+        ).scalar_one()
+
+    try:
+        yield int(region_id), int(run_id)
+    finally:
+        # Ordered by dependency, and unconditional: a test that fails part-way
+        # through must not leave rows behind for the next file in the run.
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM regional_population WHERE region_id = :rid"),
+                {"rid": region_id},
+            )
+            connection.execute(text("DELETE FROM regions WHERE id = :rid"), {"rid": region_id})
+            connection.execute(
+                text("DELETE FROM ingestion_runs WHERE run_id = :run"), {"run": run_id}
+            )
 
 
 def test_head_matches_the_alembic_script_head(engine: Engine) -> None:
@@ -87,18 +133,57 @@ def test_head_matches_the_alembic_script_head(engine: Engine) -> None:
     assert "0014" in revisions
 
 
-def test_existing_annual_sgis_rows_survived_the_upgrade(engine: Engine) -> None:
+def test_no_sgis_row_was_given_a_monthly_grain(engine: Engine) -> None:
+    """The annual SGIS series is never labelled MONTHLY and never carries a month.
+
+    This is the half of the 0014 backfill guarantee that is checkable on any
+    database, loaded or not, so it is asserted unconditionally. It is also the half
+    that carries the analytical weight: a SGIS row that acquired a
+    ``reference_month`` would be readable as a monthly observation, which is exactly
+    the blurring of grains that migration 0014's check constraint exists to prevent.
+
+    On a schema-only database this is vacuously true over zero rows — honest, and
+    not a claim that anything was verified. The companion test below is the one that
+    asserts a real series is present, and it says so by skipping when it is not.
+    """
+
     with engine.connect() as connection:
-        rows = connection.execute(
+        offending = connection.execute(
+            text(
+                "SELECT count(*) FROM regional_population "
+                "WHERE source_id = 'sgis' "
+                "AND (reference_month IS NOT NULL "
+                "OR population_temporal_granularity <> 'ANNUAL')"
+            )
+        ).scalar_one()
+    assert offending == 0, f"{offending} SGIS rows carry a month or a non-ANNUAL grain"
+
+
+def test_the_ingested_sgis_series_survived_the_upgrade(engine: Engine) -> None:
+    """Skips cleanly before the first ingestion; asserts the series once loaded.
+
+    Unlike every other test in this file, this one cannot construct its own subject.
+    It asserts that rows which existed *before* migration 0014 ran came through the
+    upgrade intact and were backfilled to ANNUAL — seeding rows now would produce
+    post-upgrade rows and prove nothing about the backfill. So the prerequisite is
+    stated explicitly instead of being assumed: on a schema-only database this skips
+    with a reason naming what is missing, rather than failing as though the
+    application had regressed.
+    """
+
+    with engine.connect() as connection:
+        total, with_month = connection.execute(
             text(
                 "SELECT count(*), count(reference_month) FROM regional_population "
                 "WHERE source_id = 'sgis'"
             )
         ).one()
+    if not total:
+        pytest.skip("no SGIS population series has been ingested into the test database")
+
     # Every SGIS row is still present, was backfilled to ANNUAL, and carries no
     # month (a monthly grain was never fabricated for it).
-    assert rows[0] > 0
-    assert rows[1] == 0
+    assert with_month == 0
     with engine.connect() as connection:
         grains = (
             connection.execute(
@@ -146,10 +231,11 @@ def test_new_columns_and_indexes_exist(engine: Engine) -> None:
     assert "uq_regional_population_region_id" not in indexes
 
 
-def test_twelve_monthly_rows_in_one_year_are_accepted(engine: Engine) -> None:
+def test_twelve_monthly_rows_in_one_year_are_accepted(
+    engine: Engine, fk_parents: tuple[int, int]
+) -> None:
+    region_id, run_id = fk_parents
     with engine.begin() as connection:
-        region_id = _any_region_id(connection)
-        run_id = _any_run_id(connection)
         for month in range(1, 13):
             connection.execute(
                 text(
@@ -178,12 +264,13 @@ def test_twelve_monthly_rows_in_one_year_are_accepted(engine: Engine) -> None:
         )
 
 
-def test_duplicate_region_month_source_definition_is_rejected(engine: Engine) -> None:
+def test_duplicate_region_month_source_definition_is_rejected(
+    engine: Engine, fk_parents: tuple[int, int]
+) -> None:
     from sqlalchemy.exc import IntegrityError
 
+    region_id, run_id = fk_parents
     with engine.begin() as connection:
-        region_id = _any_region_id(connection)
-        run_id = _any_run_id(connection)
         insert = text(
             "INSERT INTO regional_population (region_id, reference_year, reference_month, "
             "reference_period, population, unit, population_definition, "
@@ -206,12 +293,11 @@ def test_duplicate_region_month_source_definition_is_rejected(engine: Engine) ->
         )
 
 
-def test_annual_legacy_uniqueness_still_holds(engine: Engine) -> None:
+def test_annual_legacy_uniqueness_still_holds(engine: Engine, fk_parents: tuple[int, int]) -> None:
     from sqlalchemy.exc import IntegrityError
 
+    region_id, run_id = fk_parents
     with engine.begin() as connection:
-        region_id = _any_region_id(connection)
-        run_id = _any_run_id(connection)
         insert = text(
             "INSERT INTO regional_population (region_id, reference_year, reference_period, "
             "population, unit, population_definition, population_temporal_granularity, "
@@ -238,7 +324,7 @@ def test_annual_legacy_uniqueness_still_holds(engine: Engine) -> None:
     [("MONTHLY", None), ("ANNUAL", "1999-01")],
 )
 def test_granularity_and_month_must_agree(
-    engine: Engine, granularity: str, month: str | None
+    engine: Engine, fk_parents: tuple[int, int], granularity: str, month: str | None
 ) -> None:
     """A MONTHLY row must name its month and an ANNUAL row must not.
 
@@ -247,11 +333,9 @@ def test_granularity_and_month_must_agree(
     """
     from sqlalchemy.exc import IntegrityError
 
-    # Each case gets its own transaction: a failed statement poisons the current
-    # one, so they cannot share.
-    with engine.begin() as connection:
-        region_id = _any_region_id(connection)
-        run_id = _any_run_id(connection)
+    region_id, run_id = fk_parents
+    # The insert gets its own transaction: a failed statement poisons the current
+    # one, so it cannot share with the fixture's.
     with pytest.raises(IntegrityError), engine.begin() as connection:
         connection.execute(
             text(

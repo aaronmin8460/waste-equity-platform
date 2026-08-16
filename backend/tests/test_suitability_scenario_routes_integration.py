@@ -4,8 +4,8 @@ Runs only when TEST_DATABASE_URL is set. Seeds a synthetic run + candidates in a
 rolled-back outer transaction (remote-ocean geometry), so no real analysis data is
 touched. Verifies preview ranking/scoring/rank-deltas, candidate scenario detail
 (eligible/review/excluded/mismatch/missing), custom MVT scoring + hash gating +
-cache/ETag semantics, cross-path scoring consistency, and that stored profiles /
-migration head are unchanged.
+cache/ETag semantics, cross-path scoring consistency, and that stored profiles are
+unchanged and this feature added no schema of its own.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import math
 import os
 from collections.abc import Iterator
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -639,9 +640,54 @@ def test_stored_profile_summary_unchanged(pg_client: TestClient, seeded: dict[st
     assert body["top_candidates"][0]["total_score"] == "80.0000"
 
 
-def test_migration_head_is_0016_and_no_new_migration(pg_session: Session) -> None:
-    head = pg_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert head == "0016"
+def _script_directory() -> Any:
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    # ``script_location`` in alembic.ini is ``%(here)s``-anchored, so this resolves
+    # from any working directory and needs no database URL.
+    backend_dir = Path(__file__).resolve().parents[1]
+    return ScriptDirectory.from_config(Config(str(backend_dir / "alembic.ini")))
+
+
+def test_db_is_at_the_single_script_head_and_0016_is_still_in_the_chain(
+    pg_session: Session,
+) -> None:
+    """The chain is unforked, the DB is at its head, and 0016 is still reachable.
+
+    This asserted ``version_num == "0016"`` under the name
+    ``..._and_no_new_migration``. The scenario API genuinely adds no schema — but
+    "no migration exists after 0016" is not the way to say so, because it is a
+    statement about the whole repository rather than about this feature, and every
+    unrelated additive migration (0017 … 0023) falsifies it. It began failing on a
+    release rather than on a defect, and could only be noticed once a PostGIS
+    database was available to run this tier.
+
+    Three things are asserted in its place, none of which a later migration can
+    falsify:
+
+    * the chain has exactly **one** head — a fork is what actually breaks a
+      deployment, and pinning the head's value never detected one;
+    * the database is at that head, so every other assertion in this file is made
+      against the fully-migrated schema rather than a stale one;
+    * ``0016`` is still reachable — the scenario API scores against the schema as of
+      0016, and that dependency is an immutable historical fact.
+
+    The "added no schema" claim itself is kept, and is asserted where it belongs and
+    scoped to this feature: ``test_no_scenario_tables_added``, directly below.
+    """
+
+    script = _script_directory()
+    heads = script.get_heads()
+    assert len(heads) == 1, f"forked migration chain: {heads}"
+
+    db_head = pg_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    assert db_head == heads[0], (
+        f"test database is at {db_head}, not at the script head {heads[0]} — "
+        "run `alembic upgrade head` against TEST_DATABASE_URL"
+    )
+
+    assert "0016" in {revision.revision for revision in script.walk_revisions()}
 
 
 def test_no_scenario_tables_added(pg_session: Session) -> None:
