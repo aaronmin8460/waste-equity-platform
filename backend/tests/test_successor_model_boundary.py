@@ -80,9 +80,14 @@ def test_the_open_research_dependencies_are_all_recorded() -> None:
         "RESIDENT_IMPACT_DISTANCE_FLOOR_UNAPPROVED",
         "LAND_COVER_DEVELOPED_CLASS_REGISTRY_UNAVAILABLE",
         "SUCCESSOR_WEIGHT_VECTOR_UNAPPROVED",
-        "MISSING_COMPONENT_ELIGIBILITY_POLICY_UNDECIDED",
+        "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING",
         "SUCCESSOR_DEFAULT_RUN_RESOLUTION_UNDECIDED",
     } <= ids
+    # Phase 4 answered the eligibility question against measured data, so its
+    # blocker is gone rather than restated — a closed question must not keep
+    # blocking, and an open one must not disappear.
+    assert "MISSING_COMPONENT_ELIGIBILITY_POLICY_UNDECIDED" not in ids
+    assert "SUCCESSOR_ELIGIBLE_POPULATION_NOT_MEASURED" not in ids
     for blocker in policy.activation_blockers():
         assert blocker.summary and blocker.blocks and blocker.resolution_owner
 
@@ -96,9 +101,85 @@ def test_no_successor_weight_profile_is_registered() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_the_missing_component_policy_is_undecided() -> None:
-    assert policy.SELECTED_MISSING_COMPONENT_POLICY is None
+def test_the_missing_component_policy_is_strict_and_admits_nothing_optional() -> None:
+    # Decided in Phase 4 against the measured post-correction population: the units
+    # each renormalized variant would admit are not exchangeable with the complete
+    # cases, so a three-component composite is not comparable with a four-component
+    # one. Strict is the only policy that keeps one ranking meaning one thing.
+    assert policy.SELECTED_MISSING_COMPONENT_POLICY == policy.MISSING_POLICY_STRICT
     assert policy.OPTIONAL_COMPONENTS == ()
+    assert policy.MISSING_POLICY_ZERO_FILL in policy.FORBIDDEN_MISSING_COMPONENT_POLICIES
+
+
+def test_deciding_the_missing_component_policy_did_not_activate_anything() -> None:
+    # A decided policy is not an activated model. This is the distinction the whole
+    # gate rests on.
+    assert policy.is_activated() is False
+    assert policy.SUCCESSOR_POLICY_VERSION is None
+    assert policy.SUCCESSOR_DERIVATION_VERSION is None
+    assert policy.SUCCESSOR_WEIGHT_PROFILES == {}
+
+
+def test_every_phase4_question_carries_an_explicit_status() -> None:
+    # No blocker may disappear silently: every decision is enumerated with one of
+    # four statuses, and the ones that could not be answered say so.
+    statuses = {
+        policy.DECISION_DECIDED,
+        policy.DECISION_RESOLVED,
+        policy.DECISION_DEFERRED,
+        policy.DECISION_OPEN,
+    }
+    decisions = policy.phase4_decisions()
+    assert decisions
+    for decision in decisions:
+        assert decision.status in statuses, decision.decision_id
+        assert decision.summary and decision.evidence, decision.decision_id
+    assert len({d.decision_id for d in decisions}) == len(decisions)
+
+
+def test_the_open_decisions_are_the_ones_that_block_phase_five() -> None:
+    open_ids = {d.decision_id for d in policy.open_phase4_decisions()}
+    assert {
+        "FINAL_WEIGHT_VECTOR",
+        "RESIDENT_DISTANCE_FLOOR",
+        "LAND_COVER_CLASS_REGISTRY",
+        "AMBIGUOUS_LAND_CLASSES",
+    } <= open_ids
+    # An open question and an activated model are mutually exclusive.
+    assert not (open_ids and policy.is_activated())
+
+
+def test_critic_is_diagnostic_only_for_the_successor_model() -> None:
+    decision = next(d for d in policy.phase4_decisions() if d.decision_id == "CRITIC_SUITABILITY")
+    assert decision.status == policy.DECISION_DECIDED
+    assert "DIAGNOSTIC ONLY" in decision.summary
+    assert "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING" in {
+        b.blocker_id for b in policy.activation_blockers()
+    }
+
+
+def test_the_stability_contract_is_defined_but_has_no_thresholds() -> None:
+    design = policy.STABILITY_CONTRACT_DESIGN
+    assert design["status"] == "DEFINED_NOT_SATISFIABLE"
+    assert design["inherited_from_historical"] is False
+    assert set(design["perturbation_axes"]) == {
+        "weights",
+        "resident_distance_floor",
+        "normalization",
+        "missingness_and_eligibility",
+    }
+    assert design["acceptance_criteria"].startswith("UNSET")
+
+
+def test_the_runtime_design_is_designed_not_activated() -> None:
+    design = policy.SUCCESSOR_RUNTIME_DESIGN
+    assert design["status"] == "DESIGNED_NOT_ACTIVATED"
+    assert "UNMINTED" in design["model_version"]["policy_version"]
+    # The switchover ordering is the load-bearing part: making default-run
+    # resolution model-aware must precede the first successor write, not accompany
+    # it, or the write itself moves every default view.
+    assert "BEFORE the first" in design["default_run_resolution"]["required_change"]
+    assert design["coexistence"]["historical_guarantee"]
 
 
 def test_zero_filling_a_missing_component_is_permanently_forbidden() -> None:
@@ -279,7 +360,8 @@ def test_the_snapshot_is_json_serializable_and_states_it_is_not_activated() -> N
     assert snapshot["policy_version"] is None
     assert snapshot["derivation_version"] is None
     assert snapshot["weight_profiles"] == {}
-    assert snapshot["missing_component_policy"]["selected"] is None
+    assert snapshot["missing_component_policy"]["selected"] == policy.MISSING_POLICY_STRICT
+    assert snapshot["open_phase4_decisions"]
     assert snapshot["component_model_version"] == policy.COMPONENT_MODEL_VERSION_SUCCESSOR
     assert snapshot["component_order"] == list(policy.COMPONENT_ORDER_SUCCESSOR)
 

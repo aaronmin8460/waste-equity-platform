@@ -32,6 +32,15 @@ marked **unavailable** (``ALL_LOCATED_THROUGHPUT_MISSING``) instead of scoring a
 best-possible zero burden. A region with genuinely *no* located facility rows is a
 different case: zero located throughput is then an observed fact, so the
 observation stays available and records ``no_located_facility_rows``.
+
+That distinction only holds while "no rows" really means "no facilities". When the
+source *does* hold facility evidence for a region but it could not be attributed
+to that region's geography, the aggregate zero is a mapping artifact wearing the
+costume of an observation — and zero is the *best possible* value on this scale.
+The caller states such evidence explicitly with :class:`UnmappedFacilityEvidence`;
+a region with unmapped evidence and nothing located of its own is **unavailable**
+(``UNMAPPED_FACILITY_EVIDENCE``), while a region that has both stays available and
+is flagged as a documented undercount.
 """
 
 from __future__ import annotations
@@ -76,6 +85,62 @@ METHOD_NOTE = (
 
 
 @dataclass(frozen=True)
+class UnmappedFacilityEvidence:
+    """Facility rows the source holds for a region that could not be attributed to it.
+
+    A facility whose geography cannot be resolved to a SIGUNGU disappears from
+    every region's located total. Where that region then has no facility of its
+    own, its located throughput aggregates to **zero — the best possible value on
+    a LOWER_RAW_IS_BETTER scale** — produced entirely by the mapping gap. Left
+    unmodelled, the component would systematically reward exactly the regions
+    whose burden is least known.
+
+    This type is how the caller states "the source does hold facility evidence
+    here, I just cannot place it". It is *evidence of an undercount*, never a
+    numerator: ``throughput_tons_per_year`` records the magnitude of what is
+    missing for the reader, and is never added to the region's burden.
+
+    Establishing which region a set of unmapped rows covers is the **caller's**
+    responsibility and an explicit geography contract, not an inference this
+    module makes. ``reason`` and ``coverage_basis`` record how the caller decided,
+    so the resulting unavailability is auditable back to its rule.
+    """
+
+    facility_count: int
+    reason: str
+    coverage_basis: str
+    throughput_tons_per_year: Decimal | None = None
+    source_reporting_unit: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.facility_count <= 0:
+            raise ValueError(
+                "unmapped facility evidence must describe at least one row; "
+                "pass None when there is no unmapped evidence"
+            )
+        if not self.reason.strip():
+            raise ValueError("unmapped facility evidence requires an explicit reason")
+        if not self.coverage_basis.strip():
+            raise ValueError(
+                "unmapped facility evidence requires an explicit coverage_basis "
+                "(how the caller decided these rows cover this region)"
+            )
+
+    def sanitized_summary(self) -> dict[str, Any]:
+        return {
+            "facility_count": self.facility_count,
+            "reason": self.reason,
+            "coverage_basis": self.coverage_basis,
+            "throughput_tons_per_year": (
+                format(self.throughput_tons_per_year, "f")
+                if self.throughput_tons_per_year is not None
+                else None
+            ),
+            "source_reporting_unit": self.source_reporting_unit,
+        }
+
+
+@dataclass(frozen=True)
 class ExistingBurdenInput:
     """The source facts for one region's existing-burden observation.
 
@@ -89,6 +154,7 @@ class ExistingBurdenInput:
     region_code: str
     population: int | None
     facilities: tuple[FacilityThroughput, ...] = ()
+    unmapped_facility_evidence: UnmappedFacilityEvidence | None = None
     facility_source_id: str | None = None
     facility_reference_period: str | None = None
     population_source_id: str | None = None
@@ -142,6 +208,11 @@ def observe(inp: ExistingBurdenInput) -> ComponentObservation:
         "no_located_facility_rows": aggregate.facility_count == 0,
         "accounting_basis": ACCOUNTING_BASIS_FACILITY_THROUGHPUT,
         "source_geographic_level": inp.source_geographic_level,
+        "unmapped_facility_evidence": (
+            inp.unmapped_facility_evidence.sanitized_summary()
+            if inp.unmapped_facility_evidence is not None
+            else None
+        ),
     }
     provenance = _provenance(inp)
 
@@ -159,6 +230,13 @@ def observe(inp: ExistingBurdenInput) -> ComponentObservation:
         and aggregate.missing_throughput_count == aggregate.facility_count
     ):
         reasons.append(contract.REASON_ALL_LOCATED_THROUGHPUT_MISSING)
+    # The source holds facility evidence covering this region that could not be
+    # attributed to it, and the region has nothing located of its own: the total
+    # is not "zero burden observed", it is "burden unknown". Scoring it zero would
+    # hand the best possible value to the least-evidenced region.
+    unmapped = inp.unmapped_facility_evidence
+    if unmapped is not None and aggregate.facility_count == 0:
+        reasons.append(contract.REASON_UNMAPPED_FACILITY_EVIDENCE)
 
     if reasons:
         return ComponentObservation(
@@ -195,16 +273,23 @@ def observe(inp: ExistingBurdenInput) -> ComponentObservation:
         )
 
     inputs["located_burden_kg_per_capita"] = format(burden, "f")
-    partial_reasons = (
-        (contract.PARTIAL_MISSING_FACILITY_THROUGHPUT,) if aggregate.is_partial else ()
-    )
+    partial: list[str] = []
+    if aggregate.is_partial:
+        partial.append(contract.PARTIAL_MISSING_FACILITY_THROUGHPUT)
+    # The region does have located facilities, so the burden is measurable — but
+    # unmapped evidence means the measurement is a known undercount. It stays
+    # available (a real observation) and says so, rather than being silently
+    # reported as if it were complete.
+    if unmapped is not None:
+        partial.append(contract.PARTIAL_UNMAPPED_FACILITY_EVIDENCE)
+
     return ComponentObservation(
         component=COMPONENT,
         unit_key=inp.region_code,
         raw_value=burden,
         raw_unit=RAW_UNIT,
-        is_partial=aggregate.is_partial,
-        partial_reasons=partial_reasons,
+        is_partial=bool(partial),
+        partial_reasons=contract.sorted_unique(partial),
         inputs=inputs,
         provenance=provenance,
     )

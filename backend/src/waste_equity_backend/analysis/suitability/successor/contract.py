@@ -145,6 +145,11 @@ REASON_INCOMPATIBLE_GEOGRAPHIC_GRAIN = "INCOMPATIBLE_GEOGRAPHIC_GRAIN"
 
 # existing_burden
 REASON_ALL_LOCATED_THROUGHPUT_MISSING = "ALL_LOCATED_THROUGHPUT_MISSING"
+# Facility evidence exists in the source for a reporting unit covering this region
+# but could not be attributed to this region's geography, and the region has no
+# located facility of its own. The resulting zero would be the *best possible*
+# score on a LOWER_RAW_IS_BETTER scale, produced entirely by a mapping gap.
+REASON_UNMAPPED_FACILITY_EVIDENCE = "UNMAPPED_FACILITY_EVIDENCE"
 
 # air_impact_proxy
 REASON_MISSING_WASTE_STREAM = "MISSING_WASTE_STREAM"
@@ -170,6 +175,10 @@ REASON_CLASS_AREA_EXCEEDS_DENOMINATOR = "CLASS_AREA_EXCEEDS_DENOMINATOR"
 # measured over an incomplete input).
 PARTIAL_MISSING_FACILITY_THROUGHPUT = "MISSING_FACILITY_THROUGHPUT"
 PARTIAL_LAND_COVER_COVERAGE = "PARTIAL_LAND_COVER_COVERAGE"
+# The region has its own located facilities *and* the source holds further facility
+# evidence that could not be attributed to it: the burden is a documented
+# undercount of a known-but-unquantified size, not an unmeasurable one.
+PARTIAL_UNMAPPED_FACILITY_EVIDENCE = "UNMAPPED_FACILITY_EVIDENCE_UNDERCOUNT"
 
 
 class SuccessorContractError(ValueError):

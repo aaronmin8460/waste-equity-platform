@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from waste_equity_backend.analysis.facility_burden import FacilityThroughput
 from waste_equity_backend.analysis.per_capita import (
     EXPECTED_QUANTITY_UNIT,
@@ -16,6 +18,7 @@ from waste_equity_backend.analysis.per_capita import (
 from waste_equity_backend.analysis.suitability.successor import contract, existing_burden
 from waste_equity_backend.analysis.suitability.successor.existing_burden import (
     ExistingBurdenInput,
+    UnmappedFacilityEvidence,
 )
 
 
@@ -222,3 +225,147 @@ def test_component_metadata_is_stable() -> None:
     assert series.method_version == "successor-existing-burden-v1"
     assert series.direction == contract.LOWER_RAW_IS_BETTER
     assert series.raw_unit == "kg/인/년"
+
+
+# --------------------------------------------------------------------------- #
+# B17 — unmapped facility evidence must never read as zero burden
+#
+# A facility whose geography cannot be resolved to a SIGUNGU vanishes from every
+# region's located total. Where the region then has nothing of its own, the
+# aggregate is zero — the *best possible* value on a LOWER_RAW_IS_BETTER scale —
+# produced entirely by the mapping gap. Reproduced from the real dataset, where
+# 99 REQUIRES_GEOCODE rows carrying 1,907,717.3 t/yr are attributed by the source
+# to seven CITY-grain Gyeonggi reporting units whose 20 child districts hold no
+# facility rows at all.
+# --------------------------------------------------------------------------- #
+
+
+def _unmapped(count: int = 46, tons: str | None = "350662.7") -> UnmappedFacilityEvidence:
+    return UnmappedFacilityEvidence(
+        facility_count=count,
+        reason="REQUIRES_GEOCODE",
+        coverage_basis="source reports this facility at CITY grain; region is a child district",
+        throughput_tons_per_year=(Decimal(tons) if tons is not None else None),
+        source_reporting_unit="경기 용인시",
+    )
+
+
+def test_no_facility_rows_without_unmapped_evidence_is_an_observed_zero() -> None:
+    # The control case: a genuinely facility-free district. Zero is a fact here and
+    # must stay available, or the fix would erase real observations.
+    observation = existing_burden.observe(_region("R", 100_000))
+
+    assert observation.available
+    assert observation.raw_value == Decimal("0")
+    assert observation.inputs["no_located_facility_rows"] is True
+    assert observation.inputs["unmapped_facility_evidence"] is None
+
+
+def test_unmapped_evidence_with_no_located_rows_is_unavailable_not_zero() -> None:
+    observation = existing_burden.observe(
+        ExistingBurdenInput(
+            region_code="KR-SGIS-31191",
+            population=270_000,
+            facilities=(),
+            unmapped_facility_evidence=_unmapped(),
+        )
+    )
+
+    assert not observation.available
+    assert observation.raw_value is None
+    assert contract.REASON_UNMAPPED_FACILITY_EVIDENCE in observation.unavailable_reasons
+
+
+def test_the_unmapped_throughput_is_recorded_as_evidence_never_as_burden() -> None:
+    observation = existing_burden.observe(
+        ExistingBurdenInput(
+            region_code="KR-SGIS-31191",
+            population=270_000,
+            facilities=(),
+            unmapped_facility_evidence=_unmapped(),
+        )
+    )
+
+    evidence = observation.inputs["unmapped_facility_evidence"]
+    assert evidence["facility_count"] == 46
+    assert evidence["throughput_tons_per_year"] == "350662.7"
+    assert evidence["reason"] == "REQUIRES_GEOCODE"
+    assert evidence["source_reporting_unit"] == "경기 용인시"
+    # Evidence of an undercount is not a numerator: the located total stays zero
+    # and the observation stays unavailable rather than absorbing the tonnage.
+    assert observation.inputs["located_throughput_tons_per_year"] == "0"
+    assert observation.raw_value is None
+
+
+def test_unmapped_evidence_alongside_located_rows_is_a_flagged_undercount() -> None:
+    observation = existing_burden.observe(
+        ExistingBurdenInput(
+            region_code="R",
+            population=100_000,
+            facilities=(_facility("1000"),),
+            unmapped_facility_evidence=_unmapped(count=3, tons="500"),
+        )
+    )
+
+    # Measurable, so it stays available — but the reader is told it is short.
+    assert observation.available
+    assert observation.raw_value == per_capita_kg_per_year(
+        Decimal("1000"), EXPECTED_QUANTITY_UNIT, 100_000
+    )
+    assert observation.is_partial
+    assert contract.PARTIAL_UNMAPPED_FACILITY_EVIDENCE in observation.partial_reasons
+
+
+def test_unmapped_evidence_and_missing_throughput_are_both_reported() -> None:
+    observation = existing_burden.observe(
+        ExistingBurdenInput(
+            region_code="R",
+            population=100_000,
+            facilities=(_facility("1000"), FacilityThroughput(None, None)),
+            unmapped_facility_evidence=_unmapped(count=3, tons=None),
+        )
+    )
+
+    assert observation.available
+    assert observation.partial_reasons == (
+        contract.PARTIAL_MISSING_FACILITY_THROUGHPUT,
+        contract.PARTIAL_UNMAPPED_FACILITY_EVIDENCE,
+    )
+
+
+def test_an_unavailable_region_is_absent_from_the_scores_never_scored_best() -> None:
+    # The whole point: the unmapped region must not appear in the ranking at all.
+    # Before the fix it would have scored 100 — the best possible avoidance score.
+    scores = existing_burden.normalized_scores(
+        [
+            _region("HIGH", 100_000, _facility("5000")),
+            _region("LOW", 100_000, _facility("100")),
+            ExistingBurdenInput(
+                region_code="UNMAPPED",
+                population=100_000,
+                facilities=(),
+                unmapped_facility_evidence=_unmapped(),
+            ),
+        ]
+    )
+
+    assert "UNMAPPED" not in scores
+    assert set(scores) == {"HIGH", "LOW"}
+
+
+def test_unmapped_evidence_requires_an_explicit_coverage_basis_and_reason() -> None:
+    # The module never infers which region unmapped rows cover; the caller must say
+    # how it decided, so the resulting unavailability stays auditable.
+    for kwargs in (
+        {"facility_count": 0},
+        {"reason": "  "},
+        {"coverage_basis": ""},
+    ):
+        base = {
+            "facility_count": 1,
+            "reason": "REQUIRES_GEOCODE",
+            "coverage_basis": "CITY-grain source row",
+        }
+        base.update(kwargs)
+        with pytest.raises(ValueError):
+            UnmappedFacilityEvidence(**base)  # type: ignore[arg-type]

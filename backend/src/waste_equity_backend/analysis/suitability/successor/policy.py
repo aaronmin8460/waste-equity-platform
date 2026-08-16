@@ -185,12 +185,32 @@ MISSING_COMPONENT_POLICIES: dict[str, str] = {
 # Permanently rejected; listed above only so the rejection is explicit and testable.
 FORBIDDEN_MISSING_COMPONENT_POLICIES: frozenset[str] = frozenset({MISSING_POLICY_ZERO_FILL})
 
-# Intentionally unset. A successor run cannot be scored until this is decided, and
-# the decision requires measuring the post-activation eligible population.
-SELECTED_MISSING_COMPONENT_POLICY: str | None = None
+# DECIDED in Phase 4 against the measured post-correction population, not inherited.
+#
+# The renormalized option was rejected on evidence, not on principle. Phase 4
+# measured whether the units that lose a component are exchangeable with the
+# complete cases — the property a shared ranking silently assumes — and they are
+# not. On the corrected run-47 population (33,980 complete cases):
+#
+#   making air_impact_proxy optional admits 758 further units whose mean
+#   resident_impact score is 81.10 against the complete cases' 49.79 (+31.31);
+#
+#   making land_conversion optional admits 4,612 further units whose mean
+#   existing_burden score is 56.68 against the complete cases' 33.29 (+23.39).
+#
+# Those groups are systematically different on the components they *do* have, so a
+# renormalized three-component composite and a four-component one are not measuring
+# comparable things, and ranking them together would promote the less-evidenced
+# group for reasons unrelated to siting. Making existing_burden optional was
+# measured too and admits exactly zero further units — its unavailability is a
+# strict subset of air_impact_proxy's — so that variant buys nothing at any price.
+#
+# Strict keeps the eligible set honest at a measured cost of 29.05% of candidates
+# and 24.13% of residents. That cost is real and is carried forward as an explicit
+# limitation, not as a solved problem.
+SELECTED_MISSING_COMPONENT_POLICY: str | None = MISSING_POLICY_STRICT
 
-# Which components would be optional under the renormalized policy. Empty because
-# the policy itself is undecided; declaring a set now would pre-empt the decision.
+# Empty under STRICT by definition: no component is optional.
 OPTIONAL_COMPONENTS: tuple[str, ...] = ()
 
 
@@ -260,12 +280,33 @@ ACTIVATION_BLOCKERS: tuple[ActivationBlocker, ...] = (
         blocker_id="SUCCESSOR_WEIGHT_VECTOR_UNAPPROVED",
         summary=(
             "No approved weight vector exists over the successor components, and the "
-            "historical vectors describe a different component matrix. Weights must be "
-            "approved as an explicit, documented analytical assumption before any composite "
-            "successor score is produced."
+            "historical vectors describe a different component matrix. Phase 4 closed the "
+            "data-derived route: CRITIC is unsuitable as a successor weighting method (see "
+            "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING), so no weight vector can be derived "
+            "from the data and any vector is an explicit analytical-policy assertion. The "
+            "ranking head is also not uniformly weight-sensitive: on the corrected population "
+            "moving 0.15 of weight onto resident_impact retains 1 of the top 50, while the "
+            "same shift onto any other component retains 44-49. A weight vector is therefore "
+            "acceptable only with an argued interpretation, never because it scored well."
         ),
         blocks="successor composite scoring and profile registration",
         resolution_owner="analytical-policy owner",
+    ),
+    ActivationBlocker(
+        blocker_id="SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING",
+        summary=(
+            "Phase 4 established that CRITIC cannot weight the successor components. Its "
+            "standard-deviation term measures normalization and analytical grain rather than "
+            "information: the four components reach a candidate-level distribution by three "
+            "different mechanisms (candidate-grain percentile rank, region-grain percentile "
+            "rank projected onto candidates, and bounded ratio), and on run 47 the two "
+            "strategies applied to the same component are rank-equivalent (Spearman "
+            "0.9999988, top-50 overlap 50/50) while differing in standard deviation by 11.9% "
+            "— so the choice moves the derived weight without moving the ranking. CRITIC "
+            "remains usable as a diagnostic. No replacement weighting method is approved."
+        ),
+        blocks="any data-derived successor weight vector",
+        resolution_owner="analytical-method research lane",
     ),
     ActivationBlocker(
         blocker_id="LAND_CONVERSION_DIRECTION_UNAPPROVED",
@@ -302,29 +343,23 @@ ACTIVATION_BLOCKERS: tuple[ActivationBlocker, ...] = (
         resolution_owner="backend owner",
     ),
     ActivationBlocker(
-        blocker_id="MISSING_COMPONENT_ELIGIBILITY_POLICY_UNDECIDED",
-        summary=(
-            "Whether an unavailable successor component demotes a candidate out of the "
-            "eligible set, or only removes that component from its composite, is undecided. "
-            "Under the historical strict rule every successor component shrinks the eligible "
-            "population rather than re-ranking it, so this decision determines whether the "
-            "successor model is viable at all. It must be made against a measured "
-            "post-activation eligible count, never inherited by default."
-        ),
-        blocks="every successor component's effect on candidate status",
-        resolution_owner="analytical-policy owner",
-    ),
-    ActivationBlocker(
         blocker_id="AIR_IMPACT_PROXY_GRAIN_AND_COVERAGE_UNRESOLVED",
         summary=(
-            "The four canonical streams are not complete for every capital-region SIGUNGU, "
-            "so at the native grain some regions lose the component entirely. Which grain "
-            "the component is computed at — and what happens to the incomplete regions — is "
-            "unresolved. The numerator basis (total generation vs origin-based incinerated "
-            "tonnage) is a second open choice on the same component."
+            "Phase 4 decided the scoring-time behaviour — strict SIGUNGU, no projection — and "
+            "rejected the CITY-grain projection as a remedy on arithmetic: projecting the "
+            "seven Gyeonggi cities' per-capita rates onto their 20 child districts recovers "
+            "the component for 5,536 candidates but *zero eligible candidates*, because those "
+            "same 20 districts independently lose existing_burden to the identical reporting-"
+            "grain gap and facility throughput cannot be projected (a facility sits in one "
+            "district, not spread per capita). The root cause is one ingestion-level defect "
+            "affecting two components and it is unfixed: 22 regions and 6,349,306 residents "
+            "(24.13%) stay outside the model. The numerator basis (total generation vs "
+            "origin-based incinerated tonnage) is a second open choice on the same component."
         ),
-        blocks="air_impact_proxy production activation",
-        resolution_owner="analytical-policy owner",
+        blocks="air_impact_proxy production activation and the excluded 24.13% of residents",
+        resolution_owner=(
+            "ingestion lane (geocoding / district-grain source), then analytical-policy owner"
+        ),
     ),
     ActivationBlocker(
         blocker_id="SUCCESSOR_NORMALIZATION_STRATEGY_UNAPPROVED",
@@ -349,18 +384,6 @@ ACTIVATION_BLOCKERS: tuple[ActivationBlocker, ...] = (
             "representative point rather than against anything on the ground."
         ),
         blocks="resident_impact production activation",
-        resolution_owner="analytical-method research lane",
-    ),
-    ActivationBlocker(
-        blocker_id="SUCCESSOR_ELIGIBLE_POPULATION_NOT_MEASURED",
-        summary=(
-            "No successor component's effect on the eligible population, per-component "
-            "variance, or rank distribution has been measured against live data. A "
-            "sufficiently collapsed eligible set can drive a component to zero variance and "
-            "a CRITIC derivation to undefined, failing the build. This must be measured "
-            "before activation, not discovered in production."
-        ),
-        blocks="successor CRITIC weights, stability classification, and rollout",
         resolution_owner="analytical-method research lane",
     ),
     ActivationBlocker(
@@ -641,9 +664,7 @@ def critic_preflight(
     for row in rows:
         assert_successor_component_set(row.keys())
 
-    distinct_counts = {
-        component: len({row[component] for row in rows}) for component in COMPONENTS
-    }
+    distinct_counts = {component: len({row[component] for row in rows}) for component in COMPONENTS}
     constant = sorted(c for c, count in distinct_counts.items() if count < 2)
     if constant:
         raise SuccessorCriticPreflightError(
@@ -691,8 +712,7 @@ PERSISTENCE_DESIGN: dict[str, Any] = {
                 f"String(50) NOT NULL, server_default '{COMPONENT_MODEL_VERSION_HISTORICAL}'"
             ),
             "component_order": (
-                "JsonVariant NOT NULL, server_default "
-                f"'{list(COMPONENT_ORDER_HISTORICAL)}'"
+                f"JsonVariant NOT NULL, server_default '{list(COMPONENT_ORDER_HISTORICAL)}'"
             ),
         },
         "rationale": (
@@ -737,6 +757,417 @@ PERSISTENCE_DESIGN: dict[str, Any] = {
 }
 
 
+# --------------------------------------------------------------------------- #
+# Phase-4 stability contract (defined, not yet satisfiable)
+# --------------------------------------------------------------------------- #
+
+# The historical stability contract classifies a candidate by how often it stays
+# in the eligible set across the historical weight profiles. It is NOT inherited:
+# it is defined over a different component matrix and a different profile
+# registry, and the successor has no profile registry at all. What "stable" means
+# for the successor is defined here from successor-specific evidence, and cannot
+# be *evaluated* until a weight vector exists — which is the point.
+#
+# The perturbation axes are the four things Phase 4 showed actually move the
+# result, with the measured run-47 behaviour of each recorded beside it.
+STABILITY_CONTRACT_DESIGN: dict[str, Any] = {
+    "status": "DEFINED_NOT_SATISFIABLE",
+    "reason": (
+        "Every axis below is measurable, but a stability *classification* needs an approved "
+        "reference weight vector to perturb around, and none exists."
+    ),
+    "inherited_from_historical": False,
+    "inheritance_note": (
+        "The historical stability class is defined over zoning/road/equity/demand and the "
+        "historical weight-profile registry. Reusing it would assert that a successor "
+        "candidate's robustness had been tested against profiles that do not exist."
+    ),
+    "metrics": [
+        "Spearman rank correlation over the complete-case population",
+        "top-10 overlap",
+        "top-50 overlap",
+        "regional concentration of the top 50 (candidates per SIGUNGU)",
+        "eligible-population delta",
+    ],
+    "perturbation_axes": {
+        "weights": {
+            "definition": "move 0.05 and 0.15 of weight onto each component in turn",
+            "measured_run_47": (
+                "asymmetric: +0.15 onto resident_impact retains 1/50 of the top 50 "
+                "(Spearman 0.852); the same shift onto existing_burden retains 49/50, onto "
+                "air_impact_proxy 44/50, onto land_conversion 44/50"
+            ),
+        },
+        "resident_distance_floor": {
+            "definition": "recompute resident_impact at 500 m / 1 km / 2 km / 5 km",
+            "measured_run_47": (
+                "scale-dependent: on the component alone 500 m vs 5 km retains 33/50 of the "
+                "top 50 (Spearman 0.9956, max move 20,979 ranks); inside an equal-weighted "
+                "four-component composite the same change retains 49/50 (Spearman 0.9982). "
+                "The floor's importance is therefore a function of resident_impact's weight "
+                "and cannot be settled before it."
+            ),
+        },
+        "normalization": {
+            "definition": "bounded ratio vs percentile rank per component",
+            "measured_run_47": (
+                "rank-neutral, weight-decisive: on land_conversion the two strategies agree "
+                "at Spearman 0.9999988 with a 50/50 top-50 overlap, while the standard "
+                "deviation moves 24.92 -> 27.87 (+11.9%)"
+            ),
+        },
+        "missingness_and_eligibility": {
+            "definition": "strict complete case vs each single-optional-component variant",
+            "measured_run_47": (
+                "strict 33,980 (70.95%); optional air_impact_proxy +758, optional "
+                "land_conversion +4,612, optional existing_burden +0. The admitted groups are "
+                "not exchangeable with the complete cases (see "
+                "SELECTED_MISSING_COMPONENT_POLICY)."
+            ),
+        },
+    },
+    "acceptance_criteria": (
+        "UNSET. Thresholds must be argued against an approved weight vector and an approved "
+        "floor; setting them now would fix the target to whatever the current data happens to "
+        "produce."
+    ),
+}
+
+
+# --------------------------------------------------------------------------- #
+# Phase-4D runtime / version behaviour (designed, NOT activated)
+# --------------------------------------------------------------------------- #
+
+# Everything here is a design record. No value in it is read by a runtime path, no
+# successor version identifier is minted, and no default-run behaviour changes.
+SUCCESSOR_RUNTIME_DESIGN: dict[str, Any] = {
+    "status": "DESIGNED_NOT_ACTIVATED",
+    "model_version": {
+        "component_model_version": COMPONENT_MODEL_VERSION_SUCCESSOR,
+        "policy_version": (
+            "UNMINTED. A successor policy_version may only be minted when every activation "
+            "blocker is closed; until then SUCCESSOR_POLICY_VERSION is None so no run row can "
+            "carry a plausible-looking successor identity by accident."
+        ),
+        "derivation_version": "UNMINTED, same rule.",
+        "identity_rule": (
+            "component_model_version answers 'which components produced this run?' and is "
+            "independent of policy_version and derivation_version, both of which have already "
+            "moved for unrelated reasons. It must be part of the signed analysis signature."
+        ),
+    },
+    "scenario_versions": {
+        "rule": (
+            "A saved scenario stores weights against a component namespace. A historical "
+            "scenario's four weights are meaningless over the successor components and must "
+            "never be positionally re-read as successor weights — translate_weights_by_position "
+            "exists to refuse exactly that, not to enable it."
+        ),
+        "behaviour": (
+            "Successor user-weight scenarios stay refused while no successor weight vector is "
+            "approved. A stored scenario must record the component_model_version it was "
+            "authored against; one authored under a different model is surfaced as "
+            "incompatible rather than silently recombined."
+        ),
+    },
+    "coexistence": {
+        "rule": (
+            "Historical and successor runs coexist as peers in one table, distinguished by "
+            "component_model_version. Historical runs keep the four legacy *_score columns as "
+            "their sole authoritative storage; successor runs write component_scores and leave "
+            "the legacy columns NULL. Neither reads the other's storage."
+        ),
+        "historical_guarantee": (
+            "Every stored historical run stays byte-identical and fully interpretable. No "
+            "historical score, weight, profile, rank, CRITIC vector, or stability class is "
+            "recomputed, relabelled, or reinterpreted by successor activation."
+        ),
+        "verified": (
+            "The component namespaces are asserted disjoint at import time and the historical "
+            "CRITIC criterion order is asserted unchanged (validate_successor_policy)."
+        ),
+    },
+    "default_run_resolution": {
+        "current_behaviour": (
+            "Default-run resolution selects the latest succeeded run regardless of component "
+            "model. The first successful successor run would therefore silently switch every "
+            "default view and every un-pinned shared link to a different model."
+        ),
+        "required_change": (
+            "Default-run resolution must become component-model-aware: the default resolves "
+            "within an explicitly configured component model, so writing a successor run "
+            "cannot move the default as a side effect. This must ship BEFORE the first "
+            "successor run is written, not with it."
+        ),
+        "open": "Which model is the configured default, and who flips it, is a product decision.",
+    },
+    "switchover": {
+        "sequence": [
+            "1. component-model-aware default-run resolution ships while the default stays "
+            "pinned to the historical model",
+            "2. a successor run is written and is reachable only by explicit run id",
+            "3. the successor result is reviewed against the historical one on the same grid",
+            "4. the default is moved by an explicit configuration change, reversible without "
+            "a data migration",
+        ],
+        "rollback": (
+            "Reverting the default is a configuration change: historical runs are untouched "
+            "throughout, so rollback never needs to restore or recompute anything."
+        ),
+        "irreversibility_note": (
+            "Dropping candidate-level component_scores stops being safe once the first "
+            "successor run exists, because those rows' legacy columns are NULL by design."
+        ),
+    },
+    "api_exposure": {
+        "rule": (
+            "A successor result must be labelled with its component model wherever it is "
+            "served, and a derived or coarser-geography input must be labelled as derived "
+            "rather than presented as an official observation of that unit."
+        ),
+        "not_implemented_here": (
+            "Phase 4 changes no frontend and no API wording. This records the requirement "
+            "that any later exposure work must satisfy."
+        ),
+    },
+}
+
+
+# --------------------------------------------------------------------------- #
+# Phase-4 decision register
+# --------------------------------------------------------------------------- #
+
+DECISION_DECIDED = "POLICY_DECIDED"
+DECISION_RESOLVED = "RESOLVED"
+DECISION_DEFERRED = "DEFERRED"
+DECISION_OPEN = "OPEN"
+
+
+@dataclass(frozen=True)
+class PolicyDecision:
+    """One Phase-4 gate decision, its status, and the evidence behind it."""
+
+    decision_id: str
+    status: str
+    summary: str
+    evidence: str
+
+    def sanitized_summary(self) -> dict[str, Any]:
+        return {
+            "decision_id": self.decision_id,
+            "status": self.status,
+            "summary": self.summary,
+            "evidence": self.evidence,
+        }
+
+
+# Every Phase-4 question, with an explicit status. A question that could not be
+# answered on evidence is recorded OPEN rather than answered anyway.
+PHASE4_DECISIONS: tuple[PolicyDecision, ...] = (
+    PolicyDecision(
+        decision_id="LAND_CONVERSION_AREA_RECONCILIATION",
+        status=DECISION_RESOLVED,
+        summary=(
+            "A dimensionless relative tolerance (1e-9 of the denominator area, m²) separates "
+            "float↔Decimal representation disagreement from a materially invalid class sum. "
+            "Shares inside the tolerance are clamped into [0,1] and the clamp is recorded."
+        ),
+        evidence=(
+            "run 47: worst excess anywhere 7.33e-6 m² / 2.93e-11 relative across 40,427 "
+            "covered cells; no cell exceeds its denominator by even 1e-4 m². Recovered 11,653 "
+            "candidates (28,853 -> 40,506 available)."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="EXISTING_BURDEN_UNMAPPED_FACILITY_EVIDENCE",
+        status=DECISION_RESOLVED,
+        summary=(
+            "Facility evidence the source holds for a region but cannot attribute to it is "
+            "declared explicitly. A region with such evidence and nothing located of its own "
+            "is unavailable, not zero; a region with both is available and flagged as an "
+            "undercount."
+        ),
+        evidence=(
+            "run 47: 99 REQUIRES_GEOCODE rows carrying 1,907,717.3 t/yr (21.7% of all located "
+            "throughput) were silently dropped, leaving 20 districts reading zero burden — the "
+            "best possible score. 79 -> 59 available regions; the 5 genuinely facility-free "
+            "districts correctly keep their observed zero."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="PERCENTILE_RANK_COMPLEXITY",
+        status=DECISION_RESOLVED,
+        summary=(
+            "policy.percentile_ranks counts strictly-lesser values by bisection over the "
+            "sorted values instead of rescanning per key. The definition is unchanged and the "
+            "output is byte-identical."
+        ),
+        evidence=(
+            "n=47,893: 267.450 s -> 0.117 s (2,285x), identical key-for-key. Pinned in "
+            "test_suitability_policy.py against the original body kept verbatim as an oracle."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="CANDIDATE_REGION_MAPPING",
+        status=DECISION_RESOLVED,
+        summary=(
+            "The 553 candidates without a SIGUNGU code are expected geography, not a defect to "
+            "repair. No code is fabricated and none is dropped silently."
+        ),
+        evidence=(
+            "All 553 centroids fall inside their SIDO polygon and outside every SIGUNGU "
+            "polygon — the two layers do not coincide (gap: Seoul 19.63 km², Incheon 48.80 "
+            "km², Gyeonggi 106.07 km²). Median distance to the nearest SIGUNGU is 130-162 m "
+            "and 366 are within 250 m. The historical engine already flags all 455 "
+            "REVIEW_REQUIRED ones as AMBIGUOUS_OR_MISSING_SIGUNGU; none of the 553 is "
+            "ELIGIBLE, so the eligible-population consequence is zero."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="MISSING_COMPONENT_POLICY",
+        status=DECISION_DECIDED,
+        summary="STRICT_ALL_COMPONENTS_REQUIRED. See SELECTED_MISSING_COMPONENT_POLICY.",
+        evidence=(
+            "The groups admitted by each renormalized variant are not exchangeable with the "
+            "complete cases (+31.31 mean resident_impact, +23.39 mean existing_burden). Cost: "
+            "33,980 eligible (70.95%), 57 of 79 regions, 19,958,650 of 26,307,956 residents."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="AIR_IMPACT_GRAIN",
+        status=DECISION_DECIDED,
+        summary=(
+            "Scoring time: strict SIGUNGU, option A. The CITY-grain projection (option B) is "
+            "rejected for production. The root-cause remedy is DEFERRED to the ingestion lane."
+        ),
+        evidence=(
+            "Projection would recover the component for 20 regions / 5,536 candidates but zero "
+            "*eligible* candidates, because those same districts independently lose "
+            "existing_burden and facility throughput cannot be projected per capita. The "
+            "within-city uniformity assumption is also untestable here: no city in the dataset "
+            "is reported at both grains."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="NORMALIZATION_STRATEGY",
+        status=DECISION_DECIDED,
+        summary=(
+            "BOUNDED_RATIO wherever the raw value is a bounded ratio (land_conversion only); "
+            "percentile rank elsewhere because the other three raws are unbounded rates. The "
+            "consequence — a mixed-strategy component set — is precisely why CRITIC is "
+            "unusable, and is recorded as such rather than worked around."
+        ),
+        evidence=(
+            "On land_conversion the two strategies are rank-equivalent (Spearman 0.9999988, "
+            "top-50 overlap 50/50) but differ in standard deviation by 11.9% (24.92 vs 27.87, "
+            "the latter 96.5% of the theoretical uniform maximum). Percentile ranking buys no "
+            "ranking change and inflates the derived weight."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="CRITIC_SUITABILITY",
+        status=DECISION_DECIDED,
+        summary=(
+            "CRITIC is DIAGNOSTIC ONLY and is not a successor weighting method. No CRITIC "
+            "vector may be persisted, served, or used to score a successor run."
+        ),
+        evidence=(
+            "Its σ term measures normalization and grain, not information: the four components "
+            "reach their candidate-level distributions by three different mechanisms. The "
+            "research CRITIC also moved between Phase 3 and Phase 4 on the same run purely "
+            "because the data was corrected (resident_impact 0.361 -> 0.35246), confirming it "
+            "tracks the data's shape rather than a siting judgement."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="FINAL_WEIGHT_VECTOR",
+        status=DECISION_OPEN,
+        summary=(
+            "No weight vector is approved. Equal weights are used in this phase strictly as a "
+            "neutral reference for perturbation, never as a proposal or default."
+        ),
+        evidence=(
+            "The data-derived route is closed (CRITIC_SUITABILITY) and the ranking head is "
+            "asymmetrically weight-determined: +0.15 onto resident_impact retains 1/50 of the "
+            "top 50 while the same shift onto any other component retains 44-49/50. A vector "
+            "chosen now would be choosing a ranking."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="RESIDENT_DISTANCE_FLOOR",
+        status=DECISION_OPEN,
+        summary="No floor is approved. 2 km remains explicitly not a default.",
+        evidence=(
+            "The floor's importance depends on the unapproved weight: decisive on the "
+            "component alone (500 m vs 5 km retains 33/50, max move 20,979 ranks), nearly "
+            "inert inside an equal-weighted composite (49/50). Underneath sits an unresolved "
+            "defect — one population value per region at a single representative point, with "
+            "every proposed floor smaller than the average region's equivalent-circle radius — "
+            "so no floor is calibrated against anything on the ground."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="LAND_COVER_CLASS_REGISTRY",
+        status=DECISION_OPEN,
+        summary=(
+            "PRODUCTION_REGISTRY stays None. The Phase-3 L2 registry remains research-only and "
+            "must not produce, rank, or publish any candidate result."
+        ),
+        evidence=(
+            "92.87% of measurable cells touch at least one class whose developed/not-developed "
+            "assignment is contested. 620 인공나지 alone affects 24,411 cells and is arguably "
+            "the most developed non-1xx class while being classified not-developed."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="AMBIGUOUS_LAND_CLASSES",
+        status=DECISION_OPEN,
+        summary="Unresolved: 230, 420, 620, 710, 720 all remain contested.",
+        evidence=(
+            "Exposure is near-total (92.87%), so the ambiguity is a primary driver of the "
+            "component's values rather than a rounding detail."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="STABILITY_CONTRACT",
+        status=DECISION_DEFERRED,
+        summary=(
+            "Metrics and perturbation axes are DEFINED (STABILITY_CONTRACT_DESIGN) and each "
+            "axis is measured on run 47. Acceptance thresholds are deliberately unset."
+        ),
+        evidence=(
+            "A classification needs a reference weight vector to perturb around; setting "
+            "thresholds now would fix the target to whatever the current data produces."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="RUNTIME_AND_VERSION_BEHAVIOUR",
+        status=DECISION_DEFERRED,
+        summary=(
+            "Designed in SUCCESSOR_RUNTIME_DESIGN and not activated. Component-model-aware "
+            "default-run resolution must ship before the first successor run is written."
+        ),
+        evidence=(
+            "Default-run resolution currently picks the latest succeeded run regardless of "
+            "component model, so a successor write would silently switch every default view "
+            "and un-pinned shared link."
+        ),
+    ),
+)
+
+
+def phase4_decisions() -> tuple[PolicyDecision, ...]:
+    """The Phase-4 gate decisions and their statuses."""
+
+    return PHASE4_DECISIONS
+
+
+def open_phase4_decisions() -> tuple[PolicyDecision, ...]:
+    """Decisions that are still OPEN — the ones that block Phase 5."""
+
+    return tuple(d for d in PHASE4_DECISIONS if d.status == DECISION_OPEN)
+
+
 def validate_successor_policy() -> None:
     """Fail fast if the successor registry violates its own invariants."""
 
@@ -769,6 +1200,29 @@ def validate_successor_policy() -> None:
             "components cannot be declared optional before a missing-component policy is chosen",
             {"optional_components": list(OPTIONAL_COMPONENTS)},
         )
+    if SELECTED_MISSING_COMPONENT_POLICY == MISSING_POLICY_STRICT and OPTIONAL_COMPONENTS:
+        raise CrossModelReuseError(
+            "the strict policy admits no optional component",
+            {"optional_components": list(OPTIONAL_COMPONENTS)},
+        )
+    # An OPEN Phase-4 decision and an activated model are mutually exclusive: the
+    # gate exists precisely so an unanswered question cannot be shipped as an answer.
+    if open_phase4_decisions() and is_activated():  # pragma: no cover - defensive
+        raise CrossModelReuseError(
+            "the successor model cannot be activated while Phase-4 decisions remain open",
+            {"open_decisions": [d.decision_id for d in open_phase4_decisions()]},
+        )
+    for decision in PHASE4_DECISIONS:
+        if decision.status not in {
+            DECISION_DECIDED,
+            DECISION_RESOLVED,
+            DECISION_DEFERRED,
+            DECISION_OPEN,
+        }:
+            raise CrossModelReuseError(
+                f"Phase-4 decision {decision.decision_id!r} has an unknown status",
+                {"status": decision.status},
+            )
     if is_activated():  # pragma: no cover - defensive; blockers are non-empty
         raise CrossModelReuseError(
             "successor activation requires an explicit, reviewed policy change",
@@ -809,6 +1263,10 @@ def successor_snapshot() -> dict[str, Any]:
             "forbidden": sorted(FORBIDDEN_MISSING_COMPONENT_POLICIES),
         },
         "persistence_design": PERSISTENCE_DESIGN,
+        "stability_contract_design": STABILITY_CONTRACT_DESIGN,
+        "runtime_design": SUCCESSOR_RUNTIME_DESIGN,
+        "phase4_decisions": [d.sanitized_summary() for d in PHASE4_DECISIONS],
+        "open_phase4_decisions": [d.decision_id for d in open_phase4_decisions()],
         "activated": is_activated(),
         "activation_blockers": [b.sanitized_summary() for b in ACTIVATION_BLOCKERS],
         "historical_model": {

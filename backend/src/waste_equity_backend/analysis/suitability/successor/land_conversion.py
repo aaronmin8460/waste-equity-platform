@@ -32,6 +32,13 @@ Missing is never zero, at three separate points:
   being quietly counted as non-developed;
 * a ``PARTIAL`` cell stays available but is flagged ``is_partial`` with its
   coverage ratio, so the smaller denominator is visible rather than implied.
+
+Conversely, *present* is never turned into missing by an arithmetic artifact. The
+stored areas are ``double precision`` while this module does exact ``Decimal``
+arithmetic, so a class sum can exceed its own denominator by a few units in the
+last place. That is a representation-level disagreement, not a structurally
+impossible cell, and it is separated from a real overlay defect by the explicit
+:data:`AREA_RECONCILIATION_RELATIVE_TOLERANCE`.
 """
 
 from __future__ import annotations
@@ -82,6 +89,41 @@ DENOMINATORS: frozenset[str] = frozenset(
 _WORKING_PRECISION = 60
 _RAW_QUANT = Decimal("0.0000000001")  # 10 dp
 _AREA_QUANT = Decimal("0.01")  # m², matching the stored area precision
+
+# --------------------------------------------------------------------------- #
+# Area-reconciliation tolerance (the float ↔ exact-Decimal boundary)
+# --------------------------------------------------------------------------- #
+
+# ``evaluated_area_m2`` and every ``class_area_m2`` are stored ``double precision``
+# and read into exact ``Decimal``. The stored total and the exact sum of the stored
+# parts are therefore two different float64 computations of the same quantity and
+# disagree in their last units in the last place — the class sum can come out a
+# hair *above* its own denominator without anything being structurally wrong.
+#
+# The tolerance is expressed as a **dimensionless fraction of the denominator
+# area**, not as an absolute area, because that is the shape the defect actually
+# has: float representation error is proportional to magnitude. Measured on the
+# real capital-region dataset (run 47, 40,427 covered cells, EPSG:5186, areas in
+# m²), the largest excess anywhere is
+#
+#     absolute  7.33 × 10⁻⁶ m²   (7.3 square micrometres)
+#     relative  2.93 × 10⁻¹¹     of the cell's own denominator
+#
+# and the relative bound holds across four orders of magnitude of denominator
+# (0.5 m² slivers through whole 250,000 m² cells), which an absolute tolerance
+# would not. 1 × 10⁻⁹ leaves ~34× headroom over the worst observed artifact while
+# staying nine orders of magnitude below anything an overlay defect could produce:
+# not one cell in the dataset exceeds its denominator by even 10⁻⁴ m².
+#
+# This tolerates *representation-level* disagreement only. A materially invalid
+# class sum — a double-counted overlay, a mismatched denominator — is still
+# reported as ``CLASS_AREA_EXCEEDS_DENOMINATOR`` and is never clamped into a
+# plausible-looking share.
+AREA_RECONCILIATION_RELATIVE_TOLERANCE = Decimal("1e-9")
+
+# Unit of every area quantity in this module, recorded so the tolerance above is
+# never read as an absolute figure in some other unit.
+AREA_UNIT = "m2"
 
 # The raw value is already a bounded [0,1] areal share, so it maps straight to a
 # [0,100] score without reference to any other cell. That is preferred here over a
@@ -274,6 +316,21 @@ def _provenance(
     return provenance
 
 
+def _clamp_to_unit_interval(share: Decimal) -> tuple[Decimal, bool]:
+    """Clamp a share into ``[0,1]``, reporting whether the clamp bit.
+
+    Only reachable for an excess already proven to be within
+    :data:`AREA_RECONCILIATION_RELATIVE_TOLERANCE`; a materially over-unity share
+    is rejected before this point.
+    """
+
+    if share > 1:
+        return Decimal("1"), True
+    if share < 0:
+        return Decimal("0"), True
+    return share, False
+
+
 def _select_denominator(
     inp: LandConversionInput, denominator: str, excluded_area: Decimal
 ) -> Decimal | None:
@@ -413,10 +470,28 @@ def observe(
     # so a downstream reader can see which policy calls the number rests on.
     inputs["ambiguous_class_codes_observed"] = contract.sorted_unique(ambiguous_codes)
 
-    # A class-area sum larger than its own denominator is a structural
-    # impossibility (double-counted overlay or mismatched denominator), reported
-    # rather than clamped into a plausible-looking share.
-    if class_area_sum > denominator_area:
+    # A class-area sum larger than its own denominator is either (a) a structural
+    # impossibility — a double-counted overlay or a mismatched denominator — or
+    # (b) the float ↔ exact-Decimal boundary described at
+    # :data:`AREA_RECONCILIATION_RELATIVE_TOLERANCE`. The two are separated by an
+    # explicit tolerance rather than conflated: (a) is still reported and never
+    # clamped, (b) is measured, recorded, and allowed through.
+    with localcontext() as ctx:
+        ctx.prec = _WORKING_PRECISION
+        area_excess = class_area_sum - denominator_area
+        excess_tolerance = denominator_area * AREA_RECONCILIATION_RELATIVE_TOLERANCE
+
+    inputs["class_area_excess_m2"] = format(area_excess, "f")
+    inputs["area_reconciliation_tolerance_m2"] = format(excess_tolerance, "f")
+    inputs["area_reconciliation_relative_tolerance"] = format(
+        AREA_RECONCILIATION_RELATIVE_TOLERANCE, "f"
+    )
+    inputs["area_unit"] = AREA_UNIT
+    inputs["class_area_within_reconciliation_tolerance"] = bool(
+        Decimal("0") < area_excess <= excess_tolerance
+    )
+
+    if area_excess > excess_tolerance:
         return ComponentObservation(
             component=COMPONENT,
             unit_key=inp.candidate_key,
@@ -431,6 +506,14 @@ def observe(
         ctx.prec = _WORKING_PRECISION
         conversion_share = non_developed_area / denominator_area
         developed_share = developed_area / denominator_area
+
+    # Within the tolerance a share can land a hair above 1. Clamping is only ever
+    # applied to that proven representation-level excess — anything larger has
+    # already been rejected above — and it is recorded rather than silent, because
+    # a bounded-ratio score must sit in [0,1] by contract.
+    conversion_share, conversion_clamped = _clamp_to_unit_interval(conversion_share)
+    developed_share, developed_clamped = _clamp_to_unit_interval(developed_share)
+    inputs["share_clamped_to_unit_interval"] = conversion_clamped or developed_clamped
 
     inputs["developed_share"] = format(
         developed_share.quantize(_RAW_QUANT, rounding=ROUND_HALF_EVEN), "f"

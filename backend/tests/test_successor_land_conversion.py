@@ -536,3 +536,148 @@ def test_provenance_records_the_registry_and_the_source_derivation() -> None:
     assert observation.provenance["land_cover_derivation_version"] == "land-cover-cell-stats-v1"
     assert observation.provenance["area_crs"] == "EPSG:5186"
     assert observation.provenance["source_reference_period"] == "2025"
+
+
+# --------------------------------------------------------------------------- #
+# B16 — the float ↔ exact-Decimal area-reconciliation boundary
+#
+# The stored areas are `double precision`; this module does exact Decimal
+# arithmetic. The exact sum of the per-class doubles and the separately-stored
+# total double are two float64 computations of the same quantity, so the sum can
+# land a few units in the last place above its own denominator. That must not be
+# reported as a structurally impossible cell — but a materially invalid class sum
+# still must be. These tests pin both sides of that line, and the line itself.
+#
+# Denominator 250,000 m² ⇒ tolerance = 250,000 × 1e-9 = 2.5 × 10⁻⁴ m².
+# --------------------------------------------------------------------------- #
+
+_TOLERANCE_AT_250K = Decimal("250000") * land_conversion.AREA_RECONCILIATION_RELATIVE_TOLERANCE
+
+
+def _split_cell(key: str, total: str) -> LandConversionInput:
+    """One developed + one non-developed class summing to ``total`` over 250,000 m²."""
+
+    half = (Decimal(total) / 2).quantize(Decimal("0.0000000000001"))
+    remainder = Decimal(total) - half
+    return _cell(key, _area("TESTDEV1", str(half)), _area("TESTNAT1", str(remainder)))
+
+
+def test_the_reconciliation_tolerance_is_relative_and_in_square_metres() -> None:
+    # The tolerance is a dimensionless fraction of the denominator, not an area:
+    # the defect it absorbs is float representation error, which scales with
+    # magnitude. Recorded in the observation so a reader never has to guess units.
+    assert land_conversion.AREA_RECONCILIATION_RELATIVE_TOLERANCE == Decimal("1e-9")
+    assert land_conversion.AREA_UNIT == "m2"
+
+    observation = land_conversion.observe(_split_cell("C", "250000"), SYNTHETIC_REGISTRY)
+    assert observation.inputs["area_unit"] == "m2"
+    assert Decimal(observation.inputs["area_reconciliation_tolerance_m2"]) == _TOLERANCE_AT_250K
+
+
+def test_class_areas_exactly_equal_to_the_denominator_are_available() -> None:
+    observation = land_conversion.observe(_split_cell("C", "250000"), SYNTHETIC_REGISTRY)
+
+    assert observation.available
+    assert Decimal(observation.inputs["class_area_excess_m2"]) == 0
+    # Exact equality is not "within tolerance" — there is nothing to tolerate.
+    assert observation.inputs["class_area_within_reconciliation_tolerance"] is False
+    assert observation.inputs["share_clamped_to_unit_interval"] is False
+
+
+def test_a_class_sum_inside_the_tolerance_stays_available() -> None:
+    inside = Decimal("250000") + (_TOLERANCE_AT_250K / 2)
+    observation = land_conversion.observe(_split_cell("C", str(inside)), SYNTHETIC_REGISTRY)
+
+    assert observation.available
+    assert observation.inputs["class_area_within_reconciliation_tolerance"] is True
+    assert Decimal(observation.inputs["class_area_excess_m2"]) == _TOLERANCE_AT_250K / 2
+
+
+def test_a_class_sum_exactly_at_the_tolerance_stays_available() -> None:
+    at_limit = Decimal("250000") + _TOLERANCE_AT_250K
+    observation = land_conversion.observe(_split_cell("C", str(at_limit)), SYNTHETIC_REGISTRY)
+
+    assert observation.available
+    assert observation.inputs["class_area_within_reconciliation_tolerance"] is True
+
+
+def test_a_class_sum_just_outside_the_tolerance_is_rejected() -> None:
+    # One ULP of the tolerance past the limit — the smallest possible step over the
+    # line — must already be a rejection, or the boundary is not a boundary.
+    just_outside = Decimal("250000") + _TOLERANCE_AT_250K + Decimal("1e-13")
+    observation = land_conversion.observe(_split_cell("C", str(just_outside)), SYNTHETIC_REGISTRY)
+
+    assert not observation.available
+    assert observation.unavailable_reasons == (contract.REASON_CLASS_AREA_EXCEEDS_DENOMINATOR,)
+    assert observation.inputs["class_area_within_reconciliation_tolerance"] is False
+    # The rejected cell still carries the measured excess, so the reader can see
+    # how far outside it fell rather than only that it failed.
+    assert Decimal(observation.inputs["class_area_excess_m2"]) > _TOLERANCE_AT_250K
+
+
+def test_a_materially_invalid_class_sum_is_still_rejected() -> None:
+    # A double-counted overlay is exactly what this reason code exists for and the
+    # tolerance must not weaken it.
+    observation = land_conversion.observe(
+        _cell("C", _area("TESTDEV1", "200000"), _area("TESTNAT1", "200000")),
+        SYNTHETIC_REGISTRY,
+    )
+    assert not observation.available
+    assert observation.unavailable_reasons == (contract.REASON_CLASS_AREA_EXCEEDS_DENOMINATOR,)
+
+
+def test_a_one_square_metre_excess_is_material_and_rejected() -> None:
+    # 1 m² over a 250,000 m² cell is 4 × 10⁻⁶ relative — four thousand times the
+    # tolerance. No observed cell in the real dataset comes close to this.
+    observation = land_conversion.observe(_split_cell("C", "250001"), SYNTHETIC_REGISTRY)
+
+    assert not observation.available
+    assert observation.unavailable_reasons == (contract.REASON_CLASS_AREA_EXCEEDS_DENOMINATOR,)
+
+
+def test_the_worst_real_data_artifact_is_inside_the_tolerance() -> None:
+    # The largest excess measured anywhere in the real capital-region dataset
+    # (run 47, 40,427 covered cells): 7.3292501e-6 m² against a full 250,000 m²
+    # cell — 2.93e-11 relative. This is the cell the defect was found on.
+    worst = Decimal("250000") + Decimal("0.0000073292501")
+    observation = land_conversion.observe(_split_cell("C", str(worst)), SYNTHETIC_REGISTRY)
+
+    assert observation.available
+    assert observation.inputs["class_area_within_reconciliation_tolerance"] is True
+
+
+def test_an_over_unity_share_inside_the_tolerance_is_clamped_and_recorded() -> None:
+    # A wholly non-developed cell whose class sum exceeds the denominator would
+    # produce a share above 1, which bounded-ratio normalization rejects outright.
+    # Within the tolerance it is clamped to exactly 1 — and says so.
+    over = Decimal("250000") + (_TOLERANCE_AT_250K / 2)
+    observation = land_conversion.observe(
+        _cell("C", _area("TESTNAT1", str(over))), SYNTHETIC_REGISTRY
+    )
+
+    assert observation.available
+    assert observation.raw_value == Decimal("1.0000000000")
+    assert observation.inputs["share_clamped_to_unit_interval"] is True
+    # The clamped share must survive bounded-ratio normalization rather than raise.
+    assert contract.score_from_bounded_ratio(
+        observation.raw_value, land_conversion.DIRECTION
+    ) == Decimal("0.0000")
+
+
+def test_the_tolerance_scales_with_the_denominator() -> None:
+    # A sliver PARTIAL cell gets a proportionally smaller tolerance: an excess that
+    # is representation-level against 250,000 m² is material against 0.5 m².
+    excess = Decimal("0.0000073292501")
+    sliver = land_conversion.observe(
+        _cell(
+            "C",
+            _area("TESTNAT1", str(Decimal("0.5") + excess)),
+            evaluated="0.5",
+            cell="250000",
+            coverage_status=land_conversion.COVERAGE_PARTIAL,
+            coverage_ratio="0.000002",
+        ),
+        SYNTHETIC_REGISTRY,
+    )
+    assert not sliver.available
+    assert sliver.unavailable_reasons == (contract.REASON_CLASS_AREA_EXCEEDS_DENOMINATOR,)

@@ -13,6 +13,7 @@ not a statutory prohibition; a road-distance score never proves truck access.
 
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Any
@@ -316,6 +317,20 @@ def percentile_ranks(values: dict[str, Decimal]) -> dict[str, Decimal]:
     value maps to 0 and the maximum to 1. Ties share the same rank. With a single
     value the rank is 0.5 (neutral). This is a documented, reproducible robust
     normalization; keys with no value are simply absent (never zero-filled).
+
+    **The definition above is unchanged.** What changed is only how the count of
+    strictly-lesser values is obtained. The original body re-scanned every value
+    for every key, which is O(n²): fine for the 79 SIGUNGU this function ranks in
+    the historical engine, but 267 seconds per call at the 47,893-candidate scale
+    a candidate-level component needs. On the sorted values, "how many values are
+    strictly less than v" is exactly ``bisect_left`` — the same integer, in
+    O(n log n). Ranks are then cached per distinct value, since the rank is a
+    function of the value alone.
+
+    This is a speed equivalence, not a second definition: the output is identical
+    key-for-key and byte-for-byte, including on ties, duplicates, negatives, and
+    mixed Decimal exponents, and ``test_suitability_policy.py`` pins that against
+    the original implementation directly.
     """
 
     n = len(values)
@@ -324,11 +339,16 @@ def percentile_ranks(values: dict[str, Decimal]) -> dict[str, Decimal]:
     if n == 1:
         return {k: Decimal("0.5") for k in values}
     ordered = sorted(values.values())
-    ranks: dict[str, Decimal] = {}
     denom = Decimal(n - 1)
+    cache: dict[Decimal, Decimal] = {}
+    ranks: dict[str, Decimal] = {}
     for key, v in values.items():
-        less = sum(1 for other in ordered if other < v)
-        ranks[key] = (Decimal(less) / denom).quantize(Decimal("0.000001"), rounding=ROUND_HALF_EVEN)
+        rank = cache.get(v)
+        if rank is None:
+            less = bisect.bisect_left(ordered, v)
+            rank = (Decimal(less) / denom).quantize(Decimal("0.000001"), rounding=ROUND_HALF_EVEN)
+            cache[v] = rank
+        ranks[key] = rank
     return ranks
 
 
