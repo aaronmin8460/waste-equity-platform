@@ -32,6 +32,7 @@
 
 import Dialog from "./ui/Dialog";
 import { formatCount } from "../lib/metrics";
+import { unitLabel } from "../lib/units";
 import {
   RANKING_FULL_VIEW_LABEL,
   RANK_DIRECTION_LABELS,
@@ -86,7 +87,7 @@ export default function FullRankingDialog({
     modeLabel,
     SCOPE_LABELS[scope],
     RANK_DIRECTION_LABELS[direction],
-    unit ? `단위 ${unit}` : null,
+    unit ? `단위 ${unitLabel(unit)}` : null,
     referencePeriod ? `자료 기준 ${referencePeriod}` : null,
   ]
     .filter(Boolean)
@@ -141,7 +142,7 @@ export default function FullRankingDialog({
                       so it carries an empty header rather than inventing a name. */}
                   <th scope="col" aria-hidden className="hidden w-[45%] sm:table-cell" />
                   <th scope="col" className="py-2 text-right font-semibold">
-                    값{unit ? ` (${unit})` : ""}
+                    값{unit ? ` (${unitLabel(unit)})` : ""}
                   </th>
                 </tr>
               </thead>

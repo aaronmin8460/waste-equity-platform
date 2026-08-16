@@ -242,7 +242,11 @@ describe("current-region summary", () => {
     // The metric KPI names what is being measured and in what unit.
     expect(summary.textContent).toContain("현재 지표");
     expect(summary.textContent).toContain("인구");
-    expect(summary.textContent).toContain("단위 persons");
+    // The PRINTED unit: /api/v1/population serves the English `persons`, and every
+    // Korean surface — this KPI, the value above it, the legend, the ranking basis —
+    // now prints 명 through lib/units.ts.
+    expect(summary.textContent).toContain("단위 명");
+    expect(summary.textContent).not.toContain("persons");
     // Provenance is stated as TEXT, never by color alone.
     expect(screen.getByTestId("equity-summary-status").textContent).toBeTruthy();
   });
@@ -251,7 +255,7 @@ describe("current-region summary", () => {
     await renderLoaded();
     fireEvent.change(screen.getByTestId("region-select"), { target: { value: "KR-SGIS-11680" } });
     expect(screen.getByTestId("selected-region-name").textContent).toBe("강남구");
-    expect(screen.getByTestId("selected-region-value").textContent).toContain("561,000 persons");
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("561,000명");
     // The boundary provenance joins the metric provenance for the displayed value.
     expect(screen.getByTestId("selected-region-summary").textContent).toContain("경계 출처");
   });
@@ -327,6 +331,39 @@ describe("metric selection", () => {
     expect(screen.getByTestId("metric-section-facility")).toBeDefined();
   });
 
+  it("rules every group off the one above it, including 1인당 시설 처리 수준", async () => {
+    await renderLoaded();
+    // The grey separation Figma draws BETWEEN consecutive metric groups. The last
+    // group used to float on the column gap alone and read as trailing content of
+    // 폐기물 발생량 rather than as a peer of it. Asserted on the section elements
+    // themselves so this cannot be satisfied by an F0-owned globals.css rule.
+    const first = screen.getByTestId("metric-section-population").getAttribute("class") ?? "";
+    const generation = screen.getByTestId("metric-section-generation").getAttribute("class") ?? "";
+    const facility = screen.getByTestId("metric-section-facility").getAttribute("class") ?? "";
+    expect(generation).toContain("border-t");
+    expect(facility).toContain("border-t");
+    // Same rule token for both boundaries, so they cannot diverge visually.
+    expect(generation).toContain("border-[var(--figma-rule)]");
+    expect(facility).toContain("border-[var(--figma-rule)]");
+    // The first group has nothing above it, so it draws no rule.
+    expect(first).not.toContain("border-t");
+  });
+
+  it("drops the two standing group descriptions but keeps every row distinction", async () => {
+    const { container } = await renderLoaded();
+    const text = container.textContent ?? "";
+    // Sentences that restated their own headings (page-1 기술요청 copy-density pass).
+    expect(text).not.toContain("선택 지역에서 발생하는 폐기물의 양을 확인합니다.");
+    expect(text).not.toContain("선택 지역의 폐기물 처리시설 처리량을 확인합니다.");
+    // The headings they restated are still there…
+    expect(text).toContain("폐기물 발생량");
+    expect(text).toContain("1인당 시설 처리 수준");
+    // …and the ROW descriptions — which carry a real distinction the labels do not —
+    // are untouched, including the one that separates the two facility measures.
+    expect(text).toContain("선택 지역 내 시설의 처리량");
+    expect(text).toContain("선택 지역 5km 이내 시설의 처리량");
+  });
+
   it("reaches all eleven served metrics — four via the 총량/1인당 switch", async () => {
     await renderLoaded();
     // Selecting a waste category shows its switch; the switch swaps the SERVED key.
@@ -392,7 +429,7 @@ describe("metric selection", () => {
     expect(screen.getByTestId("metric-row-population").getAttribute("data-selected")).toBe("true");
   });
 
-  it("drives the map, the summary, and the strip from one metric change", async () => {
+  it("drives the map, the summary, and the ranking from one metric change", async () => {
     await renderLoaded();
     fireEvent.click(screen.getByRole("radio", { name: "생활계 폐기물 발생량" }));
     await waitFor(() =>
@@ -400,10 +437,8 @@ describe("metric selection", () => {
         "생활계 폐기물 발생량",
       ),
     );
-    expect(screen.getByTestId("insight-interpretation").textContent).toContain(
-      "생활계 폐기물 발생량",
-    );
     expect(screen.getByTestId("legend-metric-label").textContent).toContain("생활계 폐기물 발생량");
+    expect(screen.getByTestId("rank-basis").textContent).toContain("생활계 폐기물 발생량");
   });
 });
 
@@ -435,7 +470,8 @@ describe("ranking and comparison interaction", () => {
     await renderLoaded();
     const basis = screen.getByTestId("rank-basis").textContent ?? "";
     expect(basis).toContain("인구");
-    expect(basis).toContain("persons");
+    expect(basis).toContain("단위 명");
+    expect(basis).not.toContain("persons");
     expect(basis).toContain("2024");
   });
 
@@ -458,59 +494,63 @@ describe("ranking and comparison interaction", () => {
 });
 
 // --------------------------------------------------------------------------- //
-// Map workspace and the insight strip
+// Map workspace
 // --------------------------------------------------------------------------- //
 
 describe("map workspace", () => {
-  it("mounts exactly one map, one legend, and one insight strip", async () => {
+  it("mounts exactly one map and one legend", async () => {
     const { container } = await renderLoaded();
     expect(container.querySelectorAll('[data-testid="map-container"]')).toHaveLength(1);
     expect(container.querySelectorAll("details.map-legend")).toHaveLength(1);
-    expect(container.querySelectorAll('[data-testid="equity-insight-strip"]')).toHaveLength(1);
     // The map is still the direct child of the .map-pane wrapper.
     const wrapper = screen.getByTestId("map-container").parentElement;
     expect((wrapper?.getAttribute("class") ?? "").split(/\s+/)).toContain("map-pane");
   });
 
-  it("mounts the insight as ONE disclosure, collapsed, so the map starts unobstructed", async () => {
+  /**
+   * 해석 · 주의 · 출처 보기 and 내륙습지 목록 are OFF Page 1 (page-1 기술요청).
+   *
+   * These assert their ABSENCE from this page and, in the same breath, that
+   * removing them removed no disclosure: every fact the strip carried is still
+   * reachable here. `components/equity/EquityMapInsightStrip.test.tsx` still owns
+   * the strip's own content, and `components/WetlandLayerControl.test.tsx` still
+   * owns the wetland control's — neither component was deleted.
+   */
+  it("does not mount the 해석 · 주의 · 출처 보기 overlay", async () => {
     const { container } = await renderLoaded();
-    const strip = screen.getByTestId("equity-insight-strip") as HTMLDetailsElement;
-    expect(strip.tagName).toBe("DETAILS");
-    expect(strip.open).toBe(false);
-    // The compact bar prints exactly the frozen label, and there is no second
-    // disclosure or leftover always-expanded copy of the panel over the map.
-    expect(screen.getByTestId("equity-insight-summary").textContent).toContain(
-      "해석 · 주의 · 출처 보기",
+    expect(container.querySelectorAll('[data-testid="equity-insight-strip"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-testid="equity-insight-strip-wrapper"]')).toHaveLength(
+      0,
     );
-    expect(container.querySelectorAll("details.map-insight")).toHaveLength(1);
-    // …and the legend keeps its own, separate disclosure class (it force-opens at
-    // md+; this one must never share that behaviour).
-    expect(container.querySelectorAll("details.map-legend.map-insight")).toHaveLength(0);
+    expect(container.querySelectorAll("details.map-insight")).toHaveLength(0);
+    expect(container.textContent).not.toContain("해석 · 주의 · 출처 보기");
   });
 
-  it("carries a neutral interpretation, a standing caution, and the served provenance", async () => {
-    await renderLoaded();
-    const strip = screen.getByTestId("equity-insight-strip");
-    // Opened the way a reader opens it — the content below is what the disclosure
-    // reveals, unchanged from when the card was permanently expanded.
-    fireEvent.click(screen.getByTestId("equity-insight-summary"));
-    expect((strip as HTMLDetailsElement).open).toBe(true);
-    expect(strip.textContent).toContain("해석");
-    expect(strip.textContent).toContain("주의");
-    expect(strip.textContent).toContain("자료 기준·출처");
-    // Neutral wording — no environmental-justice, siting, safety, or blame claim.
-    expect(screen.getByTestId("insight-interpretation").textContent).toContain("상대적 차이");
-    expect(screen.getByTestId("insight-caution").textContent).toContain("0이 아니");
-    expect(screen.getByTestId("insight-reference-period").textContent).toContain("2024");
-    expect(screen.getByTestId("insight-provenance").textContent).toContain("지표 출처");
-    // Standing explanatory content is never role="alert".
-    expect(strip.querySelectorAll('[role="alert"]')).toHaveLength(0);
+  it("does not mount the 내륙습지 목록 control", async () => {
+    const { container } = await renderLoaded();
+    expect(container.querySelectorAll('[data-testid="wetland-layer-summary"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-testid="wetland-layer-toggle"]')).toHaveLength(0);
+    expect(container.textContent).not.toContain("내륙습지 목록");
   });
 
-  it("routes to the existing 데이터·출처 area from the source block", async () => {
+  it("still states the provenance and the missing-data rule the strip used to carry", async () => {
     await renderLoaded();
-    fireEvent.click(screen.getByTestId("equity-insight-summary"));
-    fireEvent.click(screen.getByTestId("insight-open-sources"));
+    // Source + reference period for the ACTIVE metric, in the card whose value they
+    // justify, plus its 출처와 계산 방법 disclosure.
+    const summary = screen.getByTestId("selected-region-summary");
+    expect(summary.textContent).toContain("지표 출처");
+    expect(summary.textContent).toContain("2024");
+    expect(summary.textContent).toContain("출처와 계산 방법");
+    // "자료 없음은 0이 아니다" still has an explicit home: the legend's own no-data
+    // class, which is never folded into the lowest class.
+    expect(screen.getByTestId("choropleth-legend-nodata").textContent).toContain("데이터 없음");
+    // …and the classification method still prints inside the 범례 disclosure.
+    expect(screen.getByTestId("choropleth-scale-method").textContent).toBeTruthy();
+  });
+
+  it("keeps 데이터·출처 reachable from the navigation now the strip's link is gone", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId("mode-transparency"));
     await waitFor(() =>
       expect(screen.getByTestId("mode-transparency").getAttribute("aria-pressed")).toBe("true"),
     );

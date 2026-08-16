@@ -35,8 +35,24 @@ export const SCOPE_LABELS: Record<ScopeSelection, string> = {
 
 export const SCOPE_ORDER: readonly ScopeSelection[] = ["all", "11", "23", "31"];
 
-/** Top-N choices offered by the ranking UI. */
-export const TOP_N_OPTIONS: readonly number[] = [5, 10, 20];
+/**
+ * Top-N choices offered by the COMPACT ranking card.
+ *
+ * Capped at 10. The card is a 320px sidebar panel whose job is the shape of the
+ * distribution at a glance; at 20 rows it stopped being a summary and became a
+ * scrolling table that pushed the rest of the column below the fold while still
+ * showing only a quarter of the regions. The escape from any cut is 전체보기, which
+ * shows EVERY ranked region with no top-N at all — so removing 20 removes a middle
+ * setting, never access to a region.
+ *
+ * `rankRegions(…, topN)` is unchanged and still honours any N it is given; this is
+ * the list of values the UI offers, and `lib/urlState.ts` validates `?top=` against
+ * this same array so a link cannot restore a size the card no longer offers.
+ */
+export const TOP_N_OPTIONS: readonly number[] = [5, 10];
+
+/** The card's default cut, and the value `?top=` omits as canonical. */
+export const DEFAULT_TOP_N = 10;
 
 /**
  * Which end of the ranking a surface is showing. It selects between the two lists

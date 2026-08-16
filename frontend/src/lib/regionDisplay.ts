@@ -11,15 +11,22 @@
  */
 
 import { regionScope, SCOPE_LABELS, type RegionScope } from "./ranking";
+import { formatWithUnit } from "./units";
 
 // Precise availability reasons the reporting endpoints attach to a region with no
 // value for a stream, so nothing ever shows a bare "no data".
+//
+// EVERY REASON IS KEPT. Only the English restatement in each parenthesis is gone:
+// it translated the Korean immediately to its left and told a Korean reader nothing
+// the Korean did not. The served REASON CODE is still what selects the line, so a
+// region with no value still explains itself instead of showing a bare 데이터 없음 —
+// and never a fabricated 0.
 export const REGION_UNAVAILABLE_REASON_LABELS: Record<string, string> = {
-  SOURCE_NOT_REPORTED: "출처에서 해당 지역·항목을 보고하지 않음 (source did not report)",
-  COARSER_REPORTING_GEOGRAPHY: "상위 보고 단위로 보고됨 (reported at a coarser geography)",
-  SOURCE_ROW_REJECTED: "출처 행이 검증에서 제외됨 (source row rejected)",
-  UNMATCHED_REGION_LABEL: "지역 라벨 미매칭 (unmatched region label)",
-  AMBIGUOUS_REGION_LABEL: "지역 라벨 모호 (ambiguous region label)",
+  SOURCE_NOT_REPORTED: "출처에서 해당 지역·항목을 보고하지 않음",
+  COARSER_REPORTING_GEOGRAPHY: "상위 보고 단위로 보고됨",
+  SOURCE_ROW_REJECTED: "출처 행이 검증에서 제외됨",
+  UNMATCHED_REGION_LABEL: "지역 라벨 미매칭",
+  AMBIGUOUS_REGION_LABEL: "지역 라벨 모호",
 };
 
 export function regionUnavailableReasonLabel(reason: string | null | undefined): string {
@@ -31,15 +38,22 @@ export function regionUnavailableReasonLabel(reason: string | null | undefined):
  * The display string for a region's metric value: the served value with its unit,
  * or the availability text for a region with no served value. Never returns a
  * fabricated zero.
+ *
+ * The unit goes through `lib/units.ts` so this string and the map legend print the
+ * same population unit (`142,000명`, not `142,000 persons`). The served unit is
+ * unchanged — only its rendering is.
  */
 export function formatRegionMetricDisplay(
   display: string | undefined,
   unit: string,
   reason: string | null | undefined,
 ): string {
-  if (display !== undefined) return unit ? `${display} ${unit}` : display;
+  if (display !== undefined) return formatWithUnit(display, unit);
   const label = regionUnavailableReasonLabel(reason);
-  return label ? `데이터 없음 — ${label}` : "데이터 없음 (no served value)";
+  // With a served reason the reason IS the disclosure; with none, the bare
+  // 데이터 없음 stands alone. The old `(no served value)` gloss said the same thing
+  // in English for a Korean-only surface.
+  return label ? `데이터 없음 — ${label}` : "데이터 없음";
 }
 
 // --------------------------------------------------------------------------- //

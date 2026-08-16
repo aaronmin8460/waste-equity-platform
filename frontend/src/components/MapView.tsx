@@ -55,9 +55,11 @@ import {
   CANDIDATE_SCORE_PALETTE_5,
   CANDIDATE_STABLE_OUTLINE_COLOR,
   FACILITY_CATEGORY_COLORS,
+  FACILITY_CATEGORY_GLYPHS,
   FACILITY_CATEGORY_LABELS,
   NO_DATA_COLOR,
   formatQuantity,
+  markerGlyphInk,
 } from "../lib/metrics";
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import { geometryBounds, isDegenerateBounds, stabilityBadgeLabel } from "../lib/suitability";
@@ -157,6 +159,146 @@ const BASE_STYLE: maplibregl.StyleSpecification = {
   },
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 };
+
+// --------------------------------------------------------------------------- //
+// Facility markers — a colour-coded disc carrying its category's Korean initial
+// --------------------------------------------------------------------------- //
+
+/**
+ * The marker used to be a flat 4.5px circle at every zoom: too small to carry any
+ * information beyond its colour, and identical whether the reader was looking at
+ * the whole capital region or one 동. Figma frame 222:439 draws glyph-bearing
+ * markers (소 · 매 · 기 · 재), which is what this builds.
+ *
+ * ── THE DISC AND THE GLYPH ARE TWO LAYERS, ON PURPOSE ────────────────────────────
+ * `facilities-points` stays a CIRCLE layer and keeps its id, so the map-level click
+ * priority handler, the hover-cursor suppression, and the land-cover `before:`
+ * anchor all keep addressing exactly what they addressed before. The glyph is a
+ * SEPARATE symbol layer painted over it from runtime-generated images.
+ *
+ * That split is what makes the glyph a progressive enhancement rather than a
+ * dependency. MapLibre can only draw `text-field` from a glyph server, and this
+ * style is a bare OSM raster with no `glyphs` URL — adding one would put a
+ * third-party font CDN in the request path of every map load for a decorative
+ * character. Canvas-rendered `addImage` icons need no font server at all, and where
+ * a 2D canvas context is unavailable (SSR, jsdom) `ensureFacilityMarkerImages`
+ * reports failure, the symbol layer is simply never added, and the markers degrade
+ * to the discs — never to nothing.
+ *
+ * ── LEGIBILITY ACROSS ZOOM ───────────────────────────────────────────────────────
+ * The disc radius now ramps with zoom, so the mark is a readable target when zoomed
+ * in without burying the choropleth at a capital-region view. The glyph layer is
+ * gated at `FACILITY_GLYPH_MIN_ZOOM`, below which a disc is physically too small to
+ * hold a Hangul syllable at a readable size: printing one there would be decoration
+ * pretending to be information. From that zoom up the glyph scales with the disc and
+ * stays legible. MapLibre's own collision detection thins the glyphs in a dense
+ * cluster (the discs are all still drawn), so the layer never becomes a solid mat of
+ * overlapping characters.
+ *
+ * Colour remains the primary carrier and the popup names the category in words, so
+ * a thinned or absent glyph never removes the only signal.
+ */
+const FACILITY_ICON_PREFIX = "facility-glyph-";
+
+/** Below this zoom the disc cannot hold a readable Hangul syllable. */
+const FACILITY_GLYPH_MIN_ZOOM = 9.5;
+
+/** Rendered at 2× so the glyph stays crisp on a HiDPI display. */
+const FACILITY_ICON_PIXEL_RATIO = 2;
+/** CSS-pixel box of one glyph image; the character is drawn centred inside it. */
+const FACILITY_ICON_BOX = 20;
+
+/** Disc radius by zoom: readable when zoomed in, unobtrusive at region scale. */
+const FACILITY_CIRCLE_RADIUS: maplibregl.ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  7,
+  5,
+  9.5,
+  7.5,
+  12,
+  10.5,
+  15,
+  13,
+];
+
+/** Glyph size, tracking the disc so the character always sits inside its mark. */
+const FACILITY_ICON_SIZE: maplibregl.ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  9.5,
+  0.62,
+  12,
+  0.88,
+  15,
+  1.1,
+];
+
+/**
+ * One category's glyph as an `addImage`-ready bitmap, or null when this environment
+ * has no 2D canvas (SSR, jsdom) — callers fall back to the plain disc.
+ */
+function facilityGlyphImage(
+  glyph: string,
+  ink: string,
+): { width: number; height: number; data: Uint8ClampedArray } | null {
+  if (typeof document === "undefined") return null;
+  const size = FACILITY_ICON_BOX * FACILITY_ICON_PIXEL_RATIO;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = ink;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `700 ${13 * FACILITY_ICON_PIXEL_RATIO}px "Noto Sans KR", "Malgun Gothic", sans-serif`;
+  ctx.fillText(glyph, size / 2, size / 2 + FACILITY_ICON_PIXEL_RATIO);
+  try {
+    const image = ctx.getImageData(0, 0, size, size);
+    return { width: size, height: size, data: image.data };
+  } catch {
+    // A tainted or unsupported canvas: fall back to discs rather than throwing
+    // inside the map's data effect.
+    return null;
+  }
+}
+
+/**
+ * Latched once the environment has proved it cannot rasterise a glyph, so an
+ * environment without a 2D canvas is asked exactly once instead of on every map
+ * instance and every data refresh.
+ */
+let facilityGlyphsUnavailable = false;
+
+/**
+ * Register one glyph image per REAL served category. Returns false if any could not
+ * be produced, in which case the caller skips the symbol layer entirely rather than
+ * drawing a partial alphabet where some categories have a character and others do
+ * not.
+ */
+function ensureFacilityMarkerImages(map: maplibregl.Map): boolean {
+  if (facilityGlyphsUnavailable) return false;
+  for (const [category, glyph] of Object.entries(FACILITY_CATEGORY_GLYPHS)) {
+    const id = `${FACILITY_ICON_PREFIX}${category}`;
+    if (map.hasImage?.(id)) continue;
+    const image = facilityGlyphImage(glyph, markerGlyphInk(FACILITY_CATEGORY_COLORS[category]));
+    if (!image) {
+      facilityGlyphsUnavailable = true;
+      return false;
+    }
+    map.addImage(id, image, { pixelRatio: FACILITY_ICON_PIXEL_RATIO });
+  }
+  return true;
+}
+
+/** Test seam: lets a spec re-probe the canvas after installing/removing a stub. */
+export function __resetFacilityGlyphProbe(): void {
+  facilityGlyphsUnavailable = false;
+}
 
 // Seoul + Incheon + Gyeonggi-do extent.
 const SMA_BOUNDS: [[number, number], [number, number]] = [
@@ -605,7 +747,10 @@ export function regionPopupHtml(
       children = "";
     }
     reportingLines =
-      metaRow("통계 보고 단위", "시 (city) · 수치 출처: RCIS") +
+      // The RCIS derived-city caveat, intact: the reporting unit, the source, the
+      // constituent 구, and the "no per-구 official value" note all stay. Only the
+      // English `(city)` gloss on 시 is gone.
+      metaRow("통계 보고 단위", "시 · 수치 출처: RCIS") +
       (children ? metaRow("포함 구", `SGIS ${children} 경계의 파생 합집합`) : "") +
       `<div class="wep-popup-line wep-popup-note">구별 공식 폐기물 값은 제공되지 않습니다.</div>`;
   }
@@ -763,7 +908,7 @@ export default function MapView({
       // Deferred out of the synchronous effect body (queueMicrotask) so it reads as
       // reacting to an external failure rather than a cascading in-effect setState.
       queueMicrotask(() => {
-        setMapError("지도를 초기화할 수 없습니다 (map could not be initialized).");
+        setMapError("지도를 초기화할 수 없습니다.");
         setMapLoading(false);
       });
       return;
@@ -902,7 +1047,7 @@ export default function MapView({
       const e = (event ?? {}) as { sourceId?: string };
       if (e.sourceId === "candidates") setCandidateLoading(false);
       if (!loadedRef.current && !e.sourceId) {
-        setMapError("지도를 불러오지 못했습니다 (some map resources failed to load).");
+        setMapError("지도를 불러오지 못했습니다.");
         // The map never became usable; stop the loading overlay so the error is not
         // shown behind a permanent spinner.
         setMapLoading(false);
@@ -1010,6 +1155,12 @@ export default function MapView({
               category_label:
                 FACILITY_CATEGORY_LABELS[facility.facility_category] ?? facility.facility_category,
               color: FACILITY_CATEGORY_COLORS[facility.facility_category] ?? "#333333",
+              // The glyph image for this category, or "" for a served category the
+              // platform does not recognise — an unknown category still gets its
+              // (fallback-coloured) disc, and simply carries no invented initial.
+              glyph_icon: FACILITY_CATEGORY_GLYPHS[facility.facility_category]
+                ? `${FACILITY_ICON_PREFIX}${facility.facility_category}`
+                : "",
               throughput:
                 facility.throughput_quantity !== null
                   ? `${formatQuantity(facility.throughput_quantity)} ${facility.throughput_unit ?? ""}`
@@ -1185,7 +1336,16 @@ export default function MapView({
         const filter = wetlandFilter(wetlandTypeVisibility, wetlandDesignationOnly);
         map.setFilter("wetlands-fill", filter);
         map.setFilter("wetlands-outline", filter);
-        const wetlandVisibility = showWetlands ? "visible" : "none";
+        // Gated on the SUITABILITY map, exactly like the land-cover layer below and
+        // for the same reason: `WetlandLayerControl` now mounts only there (page-1
+        // 기술요청 takes 내륙습지 목록 off Page 1's primary UI), so a reader who
+        // enables the layer and then switches to 지역 지표 would otherwise be left
+        // with wetland polygons and their click popups on a page carrying no control
+        // to turn them off. Leaving the mode hides the layer WITHOUT discarding the
+        // type filter, the designation-only setting, or the on/off state, so coming
+        // back behaves exactly as it was left. Nothing about the source, the tiles,
+        // or the served attributes changes.
+        const wetlandVisibility = mode === "suitability" && showWetlands ? "visible" : "none";
         map.setLayoutProperty("wetlands-fill", "visibility", wetlandVisibility);
         map.setLayoutProperty("wetlands-outline", "visibility", wetlandVisibility);
       }
@@ -1287,15 +1447,38 @@ export default function MapView({
           type: "circle",
           source: "facilities",
           paint: {
-            "circle-radius": 4.5,
+            // Zoom-ramped so the mark is a real target when zoomed in without
+            // covering the choropleth at a capital-region view.
+            "circle-radius": FACILITY_CIRCLE_RADIUS,
             "circle-color": ["get", "color"],
             "circle-stroke-color": "#ffffff",
-            "circle-stroke-width": 1,
+            "circle-stroke-width": 1.5,
           },
         });
-        // NO click handler is bound to this layer. Facility clicks are answered by
+        // The Korean initial, over the disc. Added only when every category's image
+        // could be built (see ensureFacilityMarkerImages) so the map never shows a
+        // half-lettered legend; without it the discs alone are exactly the previous
+        // behaviour. `icon-allow-overlap` is left at its default so MapLibre thins
+        // the glyphs in a dense cluster — every disc is still drawn underneath.
+        if (ensureFacilityMarkerImages(map)) {
+          map.addLayer({
+            id: "facilities-glyphs",
+            type: "symbol",
+            source: "facilities",
+            minzoom: FACILITY_GLYPH_MIN_ZOOM,
+            filter: ["!=", ["get", "glyph_icon"], ""],
+            layout: {
+              "icon-image": ["get", "glyph_icon"],
+              "icon-size": FACILITY_ICON_SIZE,
+              "icon-anchor": "center",
+            },
+          });
+        }
+        // NO click handler is bound to either layer. Facility clicks are answered by
         // the map-level priority handler beside the region layers above — a second
-        // handler here is exactly what produced the overlapping-popup defect.
+        // handler here is exactly what produced the overlapping-popup defect. The
+        // glyph layer is decorative on top of the disc that IS the hit target, so it
+        // needs no handler and no separate hit test.
       }
 
       // --- Land-cover candidate-cell statistics (Phase 1B-LC5B) as PostGIS tiles ---
@@ -1481,11 +1664,15 @@ export default function MapView({
       for (const id of LAND_COVER_LAYER_IDS) {
         if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", landCoverVisibility);
       }
-      map.setLayoutProperty(
-        "facilities-points",
-        "visibility",
-        showFacilities ? "visible" : "none",
-      );
+      // The disc and its glyph are one mark drawn as two layers, so they are shown
+      // and hidden together — a glyph left visible over a hidden disc would be a
+      // floating character with no facility under it. `facilities-glyphs` is guarded
+      // because it is only added where marker images could be built.
+      const facilityVisibility = showFacilities ? "visible" : "none";
+      map.setLayoutProperty("facilities-points", "visibility", facilityVisibility);
+      if (map.getLayer("facilities-glyphs")) {
+        map.setLayoutProperty("facilities-glyphs", "visibility", facilityVisibility);
+      }
     };
 
     if (loadedRef.current) {
@@ -1627,7 +1814,7 @@ export default function MapView({
           aria-live="polite"
         >
           <span className="rounded bg-slate-800/90 px-3 py-1.5 text-sm font-medium text-white shadow">
-            지도를 불러오는 중… (Loading map…)
+            지도를 불러오는 중…
           </span>
         </div>
       )}

@@ -218,10 +218,13 @@ describe("active-metric summary", () => {
     const summary = screen.getByTestId("selected-metric-summary");
     expect(summary.getAttribute("role")).toBe("status");
     expect(summary.textContent).toContain("인구");
-    expect(summary.textContent).toContain("persons");
-    // Plain Korean only — no raw API identifier or English metric name.
+    // The unit is stated, in the form a Korean reader reads: /api/v1/population
+    // serves `persons` and every surface prints 명 (lib/units.ts).
+    expect(summary.textContent).toContain("단위 명");
+    // Plain Korean only — no raw API identifier, English metric name, or English unit.
     expect(summary.textContent).not.toContain("(Population)");
     expect(summary.textContent).not.toContain("population");
+    expect(summary.textContent).not.toContain("persons");
   });
 
   it("gives the metric name stronger typography than the unit", async () => {
@@ -280,7 +283,8 @@ describe("selected region stays one canonical state", () => {
       target: { value: "KR-SGIS-11110" },
     });
     expect(screen.getByTestId("selected-region-name").textContent).toBe("종로구");
-    expect(screen.getByTestId("selected-region-value").textContent).toContain("persons");
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("명");
+    expect(screen.getByTestId("selected-region-value").textContent).not.toContain("persons");
     // The displayed analytical value still carries its metric source + period.
     const sources = screen
       .getAllByTestId("selected-region-metric-source")

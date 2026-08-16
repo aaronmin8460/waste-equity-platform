@@ -106,7 +106,9 @@ import type {
 } from "../components/MapView";
 import { formatRegionMetricDisplay } from "../lib/regionDisplay";
 import EquityFacilityLayerCard from "../components/equity/EquityFacilityLayerCard";
-import EquityMapInsightStrip from "../components/equity/EquityMapInsightStrip";
+// `equity/EquityMapInsightStrip` is intentionally NOT imported: the 해석·주의·출처
+// 보기 overlay is off Page 1 (see the map's bottom overlay stack below). The
+// component and its tests are kept for the 데이터·출처 lane that owns its content.
 import EquityMetricSelector from "../components/equity/EquityMetricSelector";
 import EquityRegionPicker from "../components/equity/EquityRegionPicker";
 import EquityRegionSummary from "../components/equity/EquityRegionSummary";
@@ -174,6 +176,7 @@ import ReportPreview from "../components/ReportPreview";
 import PageHeader from "../components/ui/PageHeader";
 import Skeleton from "../components/ui/Skeleton";
 import {
+  DEFAULT_TOP_N,
   rankRegions,
   type RankableRegion,
   type RankDirection,
@@ -532,7 +535,10 @@ export default function Home() {
   const savedScenariosLoaded = useRef(false);
 
   const [scope, setScope] = useState<ScopeSelection>("all");
-  const [topN, setTopN] = useState(10);
+  // The card's own default, held by reference: `encodeUrlState` omits `?top=` at
+  // exactly this value, so a literal here could drift out of step with the
+  // encoder and make a shared link restore a size it never carried.
+  const [topN, setTopN] = useState<number>(DEFAULT_TOP_N);
   /**
    * Which end of the ranking 지역 순위 shows (Figma frame 74:2025's ↑/↓ toggle). It
    * chooses between the two lists `rankRegions` already returns, so it changes no
@@ -2400,8 +2406,11 @@ export default function Home() {
                 The `page-1 기술요청` annotation states the rules behind it —
                 "좌측 패널 순서 조정: 지역 선택 > 선택한 지역" (the picker precedes the
                 summary it fills) and the removal of the 지표 출처 / 해석·주의·출처 보기 /
-                내륙습지 목록 entries from the panel. None of those three is deleted;
-                each note below says where it went. */}
+                내륙습지 목록 entries. All three are now off Page 1's primary UI, and
+                none is deleted from the platform: 지표 출처 is the 출처와 계산 방법
+                disclosure inside 선택한 지역 (the card whose value it justifies),
+                해석·주의·출처 보기 and 내륙습지 목록 are noted at their former mount
+                points on the map below. */}
 
             {/* 지표 선택 — three SUBJECT sections (인구 · 발생량 · 시설 처리 수준) of
                 selectable rows, with a 총량/1인당 switch on the rows that have both.
@@ -2635,16 +2644,30 @@ export default function Home() {
             layer exists in. `min-w-0` keeps long Korean class names from forcing
             horizontal overflow in the narrow mobile card. */}
         <div className="pointer-events-none absolute left-2 top-2 z-10 flex w-[min(86vw,272px)] min-w-0 flex-col gap-2 md:left-3 md:top-3">
-          <div className="pointer-events-auto min-w-0">
-            <WetlandLayerControl
-              show={showWetlands}
-              onToggleShow={toggleWetlands}
-              typeVisibility={wetlandTypeVisibility}
-              onToggleType={toggleWetlandType}
-              designationOnly={wetlandDesignationOnly}
-              onToggleDesignationOnly={toggleWetlandDesignationOnly}
-            />
-          </div>
+          {/* 내륙습지 목록 — SUITABILITY ONLY as of the Page-1 fidelity pass.
+              The `page-1 기술요청` annotation asks for it off Page 1's primary UI, and
+              it is an environmental SCREENING layer: it exists to qualify candidate
+              sites, which is the suitability map's question, not "how much waste does
+              my 구 generate". It is not deleted anywhere:
+                - the control, its type filter, its disclaimers and its full source
+                  block are the same component, still mounted on the suitability map;
+                - the tiles, `lib/wetland.ts`, the MapView layer and every served
+                  attribute are untouched;
+                - the provenance/exposure disclosure (`WetlandSourceNote`) still sits
+                  on 데이터·출처, which is where Page 6 carries it.
+              Only Page 1's mount is gone. */}
+          {viewMode === "suitability" ? (
+            <div className="pointer-events-auto min-w-0">
+              <WetlandLayerControl
+                show={showWetlands}
+                onToggleShow={toggleWetlands}
+                typeVisibility={wetlandTypeVisibility}
+                onToggleType={toggleWetlandType}
+                designationOnly={wetlandDesignationOnly}
+                onToggleDesignationOnly={toggleWetlandDesignationOnly}
+              />
+            </div>
+          ) : null}
           {viewMode === "suitability" ? (
             <div className="pointer-events-auto min-w-0">
               <LandCoverLayerControl
@@ -2669,8 +2692,10 @@ export default function Home() {
           ) : null}
         </div>
         {/* THE MAP'S BOTTOM OVERLAY STACK — one bottom-anchored, left-aligned flex
-            column holding the floating legend and, in 지역 부담 only, the 해석·주의·
-            자료 기준·출처 insight strip beneath it.
+            column holding the floating legend, the 폐기물 처리시설 card in 지역 지표,
+            and the suitability insight strip in the suitability map. (Page 1's own
+            insight strip is no longer part of the stack — see the note below where
+            it used to be mounted.)
 
             Why a column instead of two absolutely-positioned cards: both belong in
             the same bottom band, and hand-tuned `bottom-*` offsets would overlap the
@@ -2769,16 +2794,25 @@ export default function Home() {
               />
             </div>
           ) : null}
-          {viewMode === "equity" ? (
-            <EquityMapInsightStrip
-              metricLabel={metric.label}
-              unit={unit}
-              metricStatus={metricDataStatus}
-              referencePeriod={metricReferencePeriod}
-              metricProvenance={metricProvenance}
-              onOpenSources={() => changeMode("transparency")}
-            />
-          ) : null}
+          {/* 해석 · 주의 · 출처 보기 IS NOT MOUNTED ON PAGE 1.
+              The `page-1 기술요청` annotation asks for it off the primary UI, and the
+              methodology it carried has one canonical home on 데이터·출처 (Page 6)
+              rather than a floating copy over every map.
+
+              NOTHING IT DISCLOSED IS LOST FROM PAGE 1:
+                - the served source + reference period for the active metric still
+                  print in 선택한 지역 (`selected-region-metric-source`), and its
+                  출처와 계산 방법 disclosure still carries the derivation, the
+                  numerator/denominator sources, the boundary provenance and the
+                  metric caveat;
+                - "자료 없음은 0이 아니다" is still enforced and still stated where it
+                  applies — the legend's own 데이터 없음 row, the ranking's exclusion
+                  clause, and 전체보기's unranked list;
+                - the classification method still prints in the 범례 disclosure.
+              `components/equity/EquityMapInsightStrip.tsx` is deliberately KEPT (with
+              its tests) rather than deleted: the Page-6 lane owns the canonical
+              destination for this content, and Page 4 keeps its own
+              `SuitabilityMapInsightStrip` below, which is a different component. */}
           {/* The suitability counterpart. It joins the SAME bottom overlay column,
               so it can never collide with the legend above it, and it renders only
               once the run/policy are loaded — there is no version string, run id, or

@@ -13,7 +13,7 @@
  */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CandidateDetail, RegionBoundaryCollection } from "../lib/api";
 import type { ClassLevel } from "../lib/landCover";
@@ -47,6 +47,7 @@ interface FakeMapLike {
   getSource: (id: string) => unknown;
   getLayer: (id: string) => (Record<string, unknown> & { id: string; source: string }) | undefined;
   getCanvas: () => { style: { cursor: string } };
+  addedImages: Record<string, { pixelRatio?: number }>;
   flyToCalls: unknown[][];
   fitBoundsCalls: unknown[][];
   sourceFeatures: Record<string, { properties?: Record<string, unknown> | null }[]>;
@@ -165,6 +166,15 @@ vi.mock("maplibre-gl", () => {
     querySourceFeatures(sourceId: string) {
       return this.sourceFeatures[sourceId] ?? [];
     }
+    // Sprite images registered at runtime (the facility category glyphs). Real
+    // MapLibre rejects a duplicate id, so `hasImage` is what MapView checks first.
+    addedImages: Record<string, { pixelRatio?: number }> = {};
+    hasImage(id: string) {
+      return id in this.addedImages;
+    }
+    addImage(id: string, _image: unknown, options?: { pixelRatio?: number }) {
+      this.addedImages[id] = options ?? {};
+    }
     flyToCalls: unknown[][] = [];
     fitBoundsCalls: unknown[][] = [];
     flyTo(...args: unknown[]) {
@@ -202,7 +212,16 @@ vi.mock("maplibre-gl", () => {
 });
 
 // Import AFTER the mock is registered.
-import MapView, { regionPopupHtml, wetlandPopupHtml } from "./MapView";
+import MapView, {
+  __resetFacilityGlyphProbe,
+  regionPopupHtml,
+  wetlandPopupHtml,
+} from "./MapView";
+import {
+  FACILITY_CATEGORY_COLORS,
+  FACILITY_CATEGORY_GLYPHS,
+  markerGlyphInk,
+} from "../lib/metrics";
 
 const EMPTY_BOUNDARIES: RegionBoundaryCollection = {
   type: "FeatureCollection",
@@ -339,6 +358,15 @@ function renderAndLoad(props: React.ComponentProps<typeof MapView>) {
   act(() => map.fire("load"));
   return { ...utils, map };
 }
+
+// jsdom has no canvas implementation and logs a "Not implemented" error every time
+// one is asked for. MapView probes for a 2D context to rasterise the facility marker
+// glyphs, so returning null here is exactly what a canvas-less environment yields,
+// minus the noise — and it makes the fallback path the deterministic default. The
+// tests that exercise the enhanced path install a working stub over this one.
+beforeEach(() => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+});
 
 afterEach(() => {
   cleanup();
@@ -523,7 +551,7 @@ describe("MapView accessibility", () => {
             region_code: "KR-SGIS-11110",
             region_name: "종로구",
             metric_label: "인구 (Population)",
-            metric_display: "142,000 persons",
+            metric_display: "142,000명",
             has_value: "true",
             geometry_kind: "NATIVE",
             child_region_names: "[]",
@@ -573,7 +601,7 @@ const SERVED_REGION_PROPS = {
   region_code: "KR-SGIS-11110",
   region_name: "종로구",
   metric_label: "인구 (Population)",
-  metric_display: "142,000 persons",
+  metric_display: "142,000명",
   has_value: "true",
   metric_reference_period: "2024",
   source_id: "sgis",
@@ -586,7 +614,7 @@ describe("region tooltip content (Phase 3)", () => {
     const html = regionPopupHtml(SERVED_REGION_PROPS);
     expect(html).toContain("종로구");
     expect(html).toContain("인구 (Population)");
-    expect(html).toContain("142,000 persons");
+    expect(html).toContain("142,000명");
     // Since Phase 1 provenance renders as a labelled ROW (two spans), so the old
     // "label: value" text run no longer exists. Both halves must still be present.
     expect(html).toContain("지표 기준 기간");
@@ -610,9 +638,13 @@ describe("region tooltip content (Phase 3)", () => {
     });
     // metric_display already conveys the no-data availability (never a 0).
     expect(html).toContain("데이터 없음 — 출처에서 해당 지역·항목을 보고하지 않음");
+    // The RCIS derived-city caveat, in Korean only: the reporting unit, the source,
+    // and the constituent 구 are all still stated — only the `(city)` gloss is gone.
     expect(html).toContain("통계 보고 단위");
-    expect(html).toContain("시 (city)");
+    expect(html).toContain("시 · 수치 출처: RCIS");
+    expect(html).not.toContain("(city)");
     expect(html).toContain("덕양구·일산동구");
+    expect(html).toContain("구별 공식 폐기물 값은 제공되지 않습니다");
   });
 });
 
@@ -787,6 +819,124 @@ describe("candidate + facility interactions still work", () => {
   const facilityProps = () =>
     baseProps({ mode: "equity", candidateTileUrl: null, showFacilities: true, facilities: [FACILITY] });
 
+  /**
+   * The glyph markers.
+   *
+   * jsdom has no 2D canvas, which is exactly the environment the fallback is for:
+   * without one, MapView must still draw the discs and simply skip the glyph layer.
+   * The second block installs a minimal canvas stub to exercise the enhanced path.
+   */
+  describe("facility markers carry their category's Korean initial", () => {
+    /** A 2D context stub good enough to rasterise a glyph into an ImageData-alike. */
+    function stubCanvas() {
+      const size = 40;
+      const ctx = {
+        clearRect: vi.fn(),
+        fillText: vi.fn(),
+        getImageData: () => ({ data: new Uint8ClampedArray(size * size * 4) }),
+        fillStyle: "",
+        font: "",
+        textAlign: "",
+        textBaseline: "",
+      };
+      const spy = vi
+        .spyOn(HTMLCanvasElement.prototype, "getContext")
+        .mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+      return { ctx, spy };
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      __resetFacilityGlyphProbe();
+    });
+
+    it("scales the disc with zoom instead of drawing a flat 4.5px dot", () => {
+      __resetFacilityGlyphProbe();
+      const { map } = renderAndLoad(facilityProps());
+      const layer = map.getLayer("facilities-points") as unknown as {
+        type: string;
+        paint: Record<string, unknown>;
+      };
+      expect(layer.type).toBe("circle");
+      const radius = layer.paint["circle-radius"] as unknown[];
+      // An expression, not the old literal: ["interpolate", ["linear"], ["zoom"], …]
+      expect(Array.isArray(radius)).toBe(true);
+      expect(radius[0]).toBe("interpolate");
+      expect(radius[2]).toEqual(["zoom"]);
+      const stops = radius.slice(3).filter((_, i) => i % 2 === 1) as number[];
+      // Monotonically larger as the reader zooms in, and never back to 4.5.
+      expect(stops).toEqual([...stops].sort((a, b) => a - b));
+      expect(Math.min(...stops)).toBeGreaterThan(4.5);
+    });
+
+    it("falls back to plain discs where no 2D canvas exists, never to nothing", () => {
+      __resetFacilityGlyphProbe();
+      const { map } = renderAndLoad(facilityProps());
+      expect(map.getLayer("facilities-points")).toBeDefined();
+      expect(map.getLayer("facilities-glyphs")).toBeUndefined();
+      expect(map.addedImages).toEqual({});
+    });
+
+    it("registers one glyph image per served category and draws them over the discs", () => {
+      stubCanvas();
+      __resetFacilityGlyphProbe();
+      const { map } = renderAndLoad(facilityProps());
+
+      // SIX images — one per real served category, none merged away.
+      expect(Object.keys(map.addedImages).sort()).toEqual(
+        Object.keys(FACILITY_CATEGORY_GLYPHS)
+          .map((c) => `facility-glyph-${c}`)
+          .sort(),
+      );
+      expect(Object.keys(map.addedImages)).toHaveLength(6);
+      for (const options of Object.values(map.addedImages)) {
+        expect(options.pixelRatio).toBe(2);
+      }
+
+      const glyphs = map.getLayer("facilities-glyphs") as unknown as {
+        type: string;
+        source: string;
+        minzoom: number;
+        filter: unknown;
+        layout: Record<string, unknown>;
+      };
+      expect(glyphs.type).toBe("symbol");
+      // Same source as the discs, so a glyph can never drift from its facility.
+      expect(glyphs.source).toBe("facilities");
+      expect(glyphs.layout["icon-image"]).toEqual(["get", "glyph_icon"]);
+      // Gated where a disc is too small to hold a readable Hangul syllable.
+      expect(glyphs.minzoom).toBeGreaterThan(0);
+      // A category the platform does not recognise gets its disc but no invented glyph.
+      expect(glyphs.filter).toEqual(["!=", ["get", "glyph_icon"], ""]);
+      // Painted above the discs.
+      expect(map.layers.indexOf("facilities-glyphs")).toBeGreaterThan(
+        map.layers.indexOf("facilities-points"),
+      );
+    });
+
+    it("shows and hides the glyph with the disc it belongs to", () => {
+      stubCanvas();
+      __resetFacilityGlyphProbe();
+      const { map, rerender } = renderAndLoad(facilityProps());
+      expect(map.layout["facilities-glyphs"]?.visibility).toBe("visible");
+      rerender(<MapView {...facilityProps()} showFacilities={false} />);
+      expect(map.layout["facilities-points"]?.visibility).toBe("none");
+      expect(map.layout["facilities-glyphs"]?.visibility).toBe("none");
+    });
+
+    it("keeps a distinct, legible glyph for each of the six categories", () => {
+      // The guard against Figma's four-mark legend quietly collapsing two of the
+      // six served categories into one mark.
+      const categories = Object.keys(FACILITY_CATEGORY_GLYPHS);
+      expect(categories).toHaveLength(6);
+      expect(new Set(Object.values(FACILITY_CATEGORY_GLYPHS)).size).toBe(6);
+      for (const category of categories) {
+        expect(FACILITY_CATEGORY_GLYPHS[category]).toMatch(/^[가-힣]$/);
+        expect(markerGlyphInk(FACILITY_CATEGORY_COLORS[category])).toMatch(/^#(000000|ffffff)$/);
+      }
+    });
+  });
+
   it("opens a facility popup when a facility point is clicked", () => {
     const { map } = renderAndLoad(facilityProps());
     clickMap(map, { "facilities-points": [FACILITY_HIT] });
@@ -828,7 +978,7 @@ describe("candidate + facility interactions still work", () => {
       // …and it is the COMBINED popup the design specifies: the region's active
       // indicator value AND the facility's own details, in one card.
       expect(opened[0].html).toContain("종로구");
-      expect(opened[0].html).toContain("142,000 persons");
+      expect(opened[0].html).toContain("142,000명");
       expect(opened[0].html).toContain("종로 소각장");
       expect(opened[0].html).toContain("공공 소각시설");
     });
@@ -916,6 +1066,28 @@ describe("MapView inland-wetland layer", () => {
     rerender(<MapView {...baseProps({ showWetlands: true })} />);
     expect(map.layout["wetlands-fill"].visibility).toBe("visible");
     expect(map.layout["wetlands-outline"].visibility).toBe("visible");
+  });
+
+  it("stays hidden on the 지역 지표 map, which carries no wetland control", () => {
+    // 내륙습지 목록 is off Page 1's primary UI (page-1 기술요청), so its control mounts
+    // only on the suitability map. A reader who enables the layer there and then
+    // switches to 지역 지표 must NOT be left with wetland polygons — and their click
+    // popups — on a page with no way to turn them off. The land-cover layer is gated
+    // the same way, for the same reason.
+    const { map, rerender } = renderAndLoad(
+      baseProps({ mode: "suitability", showWetlands: true }),
+    );
+    expect(map.layout["wetlands-fill"].visibility).toBe("visible");
+
+    rerender(<MapView {...baseProps({ mode: "equity", showWetlands: true })} />);
+    expect(map.layout["wetlands-fill"].visibility).toBe("none");
+    expect(map.layout["wetlands-outline"].visibility).toBe("none");
+
+    // The user's setting is HIDDEN, never discarded: returning restores it, and the
+    // source and its served tiles were never touched.
+    rerender(<MapView {...baseProps({ mode: "suitability", showWetlands: true })} />);
+    expect(map.layout["wetlands-fill"].visibility).toBe("visible");
+    expect(map.getSource("wetlands")).toBeDefined();
   });
 
   it("filters by wetland type (a disabled type is dropped from the filter)", () => {

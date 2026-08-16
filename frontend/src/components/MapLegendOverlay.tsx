@@ -26,6 +26,7 @@
  */
 
 import type { SuitabilityStatus } from "../lib/api";
+import { unitDisplay } from "../lib/units";
 import type { StatusVisibility } from "./MapView";
 
 export type MapLegendMode = "equity" | "suitability";
@@ -152,26 +153,14 @@ export default function MapLegendOverlay(props: MapLegendOverlayProps) {
 }
 
 /**
- * A served unit → how the legend prints it.
- *
- * `/api/v1/population` serves the English unit `persons`; this legend is
- * Korean-only (G3), so it prints `명`. This is a DISPLAY label only — the served
- * unit, the numeric values, the quantile breaks, the map fill and every export
- * still carry the API's own unit string untouched.
- *
- * `separator` is per-unit because Korean typography attaches a counter word
- * directly to the numeral (`151,306명`) but keeps a space before a compound
- * symbol unit (`12.3 kg/인/년`, the unit the per-capita metrics serve). Units
- * with no entry keep the pre-existing spaced rendering.
+ * The served-unit → printed-unit map used to live here as a component-private
+ * constant, which is exactly why every OTHER Page-1 surface printed the raw English
+ * `persons` while this legend printed `명`. It now lives in `lib/units.ts` and is
+ * shared by the legend, the selected-region value, the map popup, the ranking basis
+ * and the full-ranking header, so the same metric cannot be labelled two ways on one
+ * screen. It is still a DISPLAY label only: values, breaks, the map fill and every
+ * export carry the API's own unit string untouched.
  */
-const UNIT_DISPLAY: Record<string, { label: string; separator: string }> = {
-  persons: { label: "명", separator: "" },
-};
-
-function unitDisplay(unit: string): { label: string; separator: string } {
-  return UNIT_DISPLAY[unit] ?? { label: unit, separator: " " };
-}
-
 function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: EquityLegendProps) {
   const { label: unitLabel, separator: unitSeparator } = unitDisplay(unit);
   return (
@@ -214,9 +203,10 @@ function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: Equi
             </span>
           </li>
         ))}
-        {/* Explicit no-data category (never rendered as a 0 class). The parenthetical
-            here is the analytical no-data WORDING, not an English duplicate of the
-            heading, and is deliberately preserved. */}
+        {/* Explicit no-data category, and still never rendered as a 0 class: the row
+            exists precisely so an absent value has its own swatch instead of falling
+            into the lowest class. Only the `(no served value)` gloss is gone — it
+            restated 데이터 없음 in English on a Korean-only surface. */}
         <li
           className="flex items-center gap-2.5 text-[13px] text-ink-secondary"
           data-testid="choropleth-legend-nodata"
@@ -226,7 +216,7 @@ function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: Equi
             style={{ backgroundColor: noDataColor }}
           />
           <span className="w-6 shrink-0 text-brand">—</span>
-          <span>데이터 없음 (no served value)</span>
+          <span>데이터 없음</span>
         </li>
       </ul>
     </section>

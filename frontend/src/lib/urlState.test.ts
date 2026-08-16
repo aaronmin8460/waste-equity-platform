@@ -52,12 +52,12 @@ describe("decodeUrlState — version gate", () => {
 describe("decodeUrlState — whitelisting and bounds", () => {
   it("accepts valid enums and bounded numbers", () => {
     const { state, warnings } = decodeUrlState(
-      "?v=1&mode=suitability&metric=HOUSEHOLD&scope=31&top=20&view=scenario&profile=critic",
+      "?v=1&mode=suitability&metric=HOUSEHOLD&scope=31&top=5&view=scenario&profile=critic",
     );
     expect(state.mode).toBe("suitability");
     expect(state.metric).toBe("HOUSEHOLD");
     expect(state.scope).toBe("31");
-    expect(state.top).toBe(20);
+    expect(state.top).toBe(5);
     expect(state.view).toBe("scenario");
     expect(state.profile).toBe("critic");
     expect(warnings).toEqual([]);
@@ -75,6 +75,16 @@ describe("decodeUrlState — whitelisting and bounds", () => {
     const { state, warnings } = decodeUrlState("?v=1&top=13");
     expect(state.top).toBeUndefined();
     expect(warnings.length).toBe(1);
+  });
+
+  it("rejects top=20, which the compact ranking card no longer offers", () => {
+    // A link saved before the card was capped at 10 must not restore a size the
+    // control cannot show; it is dropped with a warning and the default stands.
+    // 전체보기 is still the way to every region, so nothing becomes unreachable.
+    const { state, warnings } = decodeUrlState("?v=1&mode=equity&top=20");
+    expect(state.top).toBeUndefined();
+    expect(warnings.length).toBe(1);
+    expect(state.mode).toBe("equity");
   });
 
   it("format-screens region codes and rejects arbitrary text", () => {
@@ -168,7 +178,7 @@ describe("encode → decode round trip", () => {
       region: "KR-SGIS-31011",
       cmp: ["KR-SGIS-11110", "KR-SGIS-23510"],
       scope: "31",
-      top: 20,
+      top: 5,
       view: "scenario",
       profile: "critic",
       statusOn: ["ELIGIBLE", "EXCLUDED"],
@@ -195,7 +205,7 @@ describe("encode → decode round trip", () => {
     expect(state.region).toBe("KR-SGIS-31011");
     expect(state.cmp).toEqual(["KR-SGIS-11110", "KR-SGIS-23510"]);
     expect(state.scope).toBe("31");
-    expect(state.top).toBe(20);
+    expect(state.top).toBe(5);
     expect(state.view).toBe("scenario");
     expect(state.profile).toBe("critic");
     expect(state.statusOn).toEqual(["ELIGIBLE", "EXCLUDED"]);
@@ -546,9 +556,9 @@ describe("후보지 심층 분석 ① 분석 범위 / ③ 순위 방향 in the U
 
   it("does not change Page-1 scope/top semantics", () => {
     // The 지역 부담 ranking keeps its own keys and its own bare vocabulary.
-    const { state } = decodeUrlState("?v=1&mode=equity&scope=31&top=20");
+    const { state } = decodeUrlState("?v=1&mode=equity&scope=31&top=5");
     expect(state.scope).toBe("31");
-    expect(state.top).toBe(20);
+    expect(state.top).toBe(5);
     expect(state.suitScope).toBeUndefined();
   });
 
@@ -723,12 +733,12 @@ describe("decode/encode — cmpA / cmpB (Page 4D)", () => {
 
   it("leaves Page 1/2/3 semantics untouched", () => {
     const { state } = decodeUrlState(
-      "?v=1&mode=equity&metric=population&region=KR-SGIS-11&scope=31&top=20&cmpA=a1",
+      "?v=1&mode=equity&metric=population&region=KR-SGIS-11&scope=31&top=5&cmpA=a1",
     );
     expect(state.metric).toBe("population");
     expect(state.region).toBe("KR-SGIS-11");
     expect(state.scope).toBe("31");
-    expect(state.top).toBe(20);
+    expect(state.top).toBe(5);
     // Decoding is mode-agnostic (the mode may itself be restored from the link);
     // the ENCODER is what confines the pair to 후보지 분석.
     expect(state.cmpA).toBe("a1");
