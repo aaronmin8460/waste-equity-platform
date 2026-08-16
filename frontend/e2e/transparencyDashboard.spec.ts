@@ -15,9 +15,9 @@ import {
  * `phase6DataSourcesDashboard.spec.ts` owns the Phase 6 contracts (the catalog's
  * search/filter behaviour, the five outcomes, the control row's geometry, keyboard
  * reach) and still runs unmodified. This file owns what the REFRESHED screen newly
- * promises at the four desktop targets — the five titled regions reachable by
+ * promises at the four desktop targets — the six titled regions reachable by
  * ordinary document scrolling, the 현재 조건 summary reporting what is filtered, the
- * provenance badges, the three kinds of gap, table semantics, and the cross-view map
+ * provenance badges, the four kinds of gap, table semantics, and the cross-view map
  * contract surviving a round trip.
  *
  * The registry payloads come from `phase6Fixtures.ts` and are SYNTHETIC LAYOUT
@@ -41,10 +41,13 @@ const VIEWPORTS = [
   { name: "1920×1080", width: 1920, height: 1080 },
 ];
 
-/** The five titled card regions, in reading order. */
+/** The six titled card regions, in reading order. */
 const SECTIONS = [
   "transparency-sources",
   "transparency-datasets",
+  // 공통 해석 기준 — the one home for every rule that is true of more than one
+  // screen, so Pages 1–3 can drop the repeated copies from their primary surfaces.
+  "transparency-definitions",
   "transparency-gaps",
   "transparency-facility-mapping",
   "transparency-methodology",
@@ -88,7 +91,7 @@ for (const vp of VIEWPORTS) {
   test.describe(vp.name, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });
 
-    test("renders one map-free workspace with five titled, named regions", async ({ page }) => {
+    test("renders one map-free workspace with six titled, named regions", async ({ page }) => {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
 
@@ -330,7 +333,7 @@ for (const vp of VIEWPORTS) {
       await expectNoHorizontalOverflow(page, "freshness failure");
     });
 
-    test("separates the three kinds of gap, and none of them is an error", async ({ page }) => {
+    test("separates the four kinds of gap, and none of them is an error", async ({ page }) => {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
 
@@ -339,6 +342,10 @@ for (const vp of VIEWPORTS) {
       await expect(gaps.getByTestId("transparency-cost")).toBeVisible();
       await expect(gaps.getByTestId("transparency-gap-unmapped")).toBeVisible();
       await expect(gaps.getByTestId("transparency-gap-period")).toBeVisible();
+      // The fourth gap is the one the analysis itself cannot see. It is rendered from
+      // the same shared component the suitability screens use, so this screen can
+      // never list a different set of unevaluated factors.
+      await expect(gaps.getByTestId("transparency-gap-unmodeled")).toBeVisible();
       await expect(gaps.locator("[role='alert']")).toHaveCount(0);
 
       // The unmapped gap and the mapping panel report the SAME served count.

@@ -17,7 +17,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { FORBIDDEN_PRIMARY_TOKENS } from "../lib/glossary";
+import {
+  FORBIDDEN_PRIMARY_TOKENS,
+  UNMODELED_SUITABILITY_FACTORS,
+  UNMODELED_SUITABILITY_NOTE,
+} from "../lib/glossary";
 import type { LoadedData } from "../app/page";
 
 const mapping = vi.hoisted(() => ({
@@ -800,7 +804,16 @@ describe("unavailable data", () => {
     expect(gaps.textContent).toContain("실제 운송비 (실 경로·계약 단가 미확보)");
     expect(gaps.textContent).toContain("토지·보상비 (필지별 비용 미확보)");
     expect(gaps.textContent).toContain("잔여 매립비용 (시설 물질수지 미확립)");
-    expect(gaps.textContent).toContain("실제 총사업비가 아닙니다");
+    // What this particular gap is: components with no official source to read.
+    expect(gaps.textContent).toContain("공식 자료를 확보하지 못해");
+    // "an installation cost is not a total project cost" is a GLOBAL rule, and it was
+    // written out here, in the methodology disclosure, and on the cost dashboard at
+    // the same time. It now has one home on this screen, and the assertion follows
+    // it rather than pinning a duplicate in place.
+    expect(gaps.textContent).not.toContain("실제 총사업비가 아닙니다");
+    expect(screen.getByTestId("transparency-def-analysis").textContent).toContain(
+      "실제 총사업비가 아닙니다",
+    );
   });
 
   it("states the unmapped facility count without implying the facilities are absent", async () => {
@@ -1125,6 +1138,7 @@ describe("refresh: sections, headings, and shared primitives", () => {
   const SECTIONS = [
     "transparency-sources",
     "transparency-datasets",
+    "transparency-definitions",
     "transparency-gaps",
     "transparency-facility-mapping",
     "transparency-methodology",
@@ -1429,5 +1443,176 @@ describe("refresh: table semantics and bounded overflow", () => {
     expect(previous.tagName).toBe("BUTTON");
     expect((previous as HTMLButtonElement).disabled).toBe(true);
     expect((next as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// 공통 해석 기준 — the canonical home for every cross-screen rule.
+//
+// Page 6 is where a rule that is true of MORE THAN ONE screen is defined, so Pages
+// 1–3 can stop repeating it on their primary surfaces. Two things have to hold, and
+// both are asserted here rather than left to review:
+//
+//   1. EVERY listed concept is present — a relocation that quietly loses a caveat is
+//      worse than the duplication it replaced.
+//   2. Each one is present ONCE. The audit found six of them written out three or
+//      four times on this single screen, and a permanent caveat repeated five times
+//      stops being read. The counting assertion is what keeps them from creeping
+//      back in one edit at a time.
+// --------------------------------------------------------------------------- //
+
+describe("global definitions have exactly one home", () => {
+  /**
+   * Count the SECTIONS of the screen whose text carries a phrase.
+   *
+   * Sections, not nodes: a definition legitimately spans a `<dt>` and its `<dd>`, and
+   * a stateful badge legitimately repeats a word inside the section that owns the
+   * state. What must not happen is the same rule being spelled out in the banner AND
+   * the overview AND a gap block AND the methodology disclosure.
+   */
+  function sectionsMentioning(phrase: string): string[] {
+    const root = document.querySelector("[data-testid='transparency-dashboard']")!;
+    const areas = [
+      "transparency-notice",
+      "transparency-overview",
+      "transparency-sources",
+      "transparency-datasets",
+      "transparency-definitions",
+      "transparency-gaps",
+      "transparency-facility-mapping",
+      "transparency-methodology",
+    ];
+    return areas.filter((testId) => {
+      const node = root.querySelector(`[data-testid='${testId}']`);
+      return node !== null && (node.textContent ?? "").includes(phrase);
+    });
+  }
+
+  /**
+   * The twelve concepts this screen is the canonical home for, and one phrase that
+   * can only come from the canonical statement of each.
+   *
+   * The phrases are deliberately the DISTINCTIVE half of each rule ("0으로 채워 순위를"
+   * rather than "순위"), so a section that merely uses the vocabulary does not count
+   * as a second definition of it.
+   */
+  const CANONICAL: readonly { concept: string; phrase: string; home: string }[] = [
+    {
+      concept: "missing is not zero",
+      phrase: "값이 0이라는 뜻이 아니며",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "reported vs derived",
+      phrase: "기관이 발표한 공식 통계가",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "failed lookup vs absent reference period",
+      phrase: "요청 자체가 실패한 경우입니다",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "per-capita is an analytical conversion",
+      phrase: "개인이 내는 금액이 아닙니다",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "reference periods differ between datasets",
+      phrase: "같은 시점의 값처럼 비교하거나",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "accounting bases are not interchangeable",
+      phrase: "더하거나 빼거나 나누지 않습니다",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "screening is not a siting decision",
+      phrase: "실제 입지 결정·허가·법적 적격성을",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "ranking population / denominator",
+      phrase: "0으로 채워 순위를 매기지 않습니다",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "scenario weights do not change eligibility",
+      phrase: "제외 판정 자체는 바뀌지 않습니다",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "map classes are relative",
+      phrase: "절대 기준이나 합격선이 아닙니다",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "cost is not a total project cost",
+      phrase: "실제 총사업비가 아닙니다",
+      home: "transparency-definitions",
+    },
+    {
+      concept: "unmodelled suitability factors",
+      phrase: "현재 분석에 포함되지 않은 항목",
+      home: "transparency-gaps",
+    },
+  ];
+
+  it("states each cross-screen rule, in the section that owns it", async () => {
+    await renderDashboard();
+    for (const { concept, phrase, home } of CANONICAL) {
+      expect(sectionsMentioning(phrase), `${concept} is stated`).toContain(home);
+    }
+  });
+
+  it("states none of them twice", async () => {
+    await renderDashboard();
+    for (const { concept, phrase } of CANONICAL) {
+      expect(sectionsMentioning(phrase), `${concept} has one home`).toHaveLength(1);
+    }
+  });
+
+  it("keeps the wetland provenance disclosure on the source catalog", async () => {
+    await renderDashboard();
+    const note = await screen.findByTestId("wetland-source-note");
+    // Still inside the catalog section, and still stating the distinction from the
+    // statutory protection area rather than only the dataset name.
+    expect(screen.getByTestId("transparency-sources").contains(note)).toBe(true);
+    expect(note.textContent).toContain("법정 습지보호지역");
+  });
+
+  it("lists the unmodelled factors from the shared glossary, not a Page-6 copy", async () => {
+    await renderDashboard();
+    const list = screen.getByTestId("transparency-unmodeled-factors-list");
+    for (const factor of UNMODELED_SUITABILITY_FACTORS) {
+      expect(list.textContent, factor).toContain(factor);
+    }
+    // And the note that an unevaluated factor is NOT a safe or zero-scored one.
+    expect(screen.getByTestId("transparency-unmodeled-factors").textContent).toContain(
+      UNMODELED_SUITABILITY_NOTE,
+    );
+  });
+
+  it("reserves a successor-methodology slot without inventing a policy", async () => {
+    await renderDashboard();
+    const slot = screen.getByTestId("transparency-def-successor");
+    // It says the next methodology is NOT settled…
+    expect(slot.textContent).toContain("아직 확정되지 않았습니다");
+    // …and it publishes no weight, threshold, distance, or rule of its own. A
+    // percentage or a metre figure here would be a decision nobody has made.
+    expect(slot.textContent).not.toMatch(/\d\s*%/);
+    expect(slot.textContent).not.toMatch(/\d\s*(m|km|미터|킬로미터)\b/);
+    expect(slot.textContent).not.toMatch(/가중치\s*\d/);
+  });
+
+  it("keeps the Page-6 card system bordered, never the shadowed figma card", async () => {
+    const { container } = await renderDashboard();
+    // Page 6's Figma frame uses a bordered/shadowless dataset-card system, and the
+    // shared shadowed `.wep-figma-card` belongs to the other five areas. A migration
+    // here would restyle every source card into a floating tile.
+    expect(container.querySelectorAll(".wep-figma-card")).toHaveLength(0);
+    const card = (await screen.findAllByTestId("transparency-source-card"))[0];
+    expect(card.className).toContain("border-hairline");
   });
 });

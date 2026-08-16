@@ -58,6 +58,41 @@
  * `32개 지역` column, and its `처리시설 → 자료 없음` row are prototype placeholders
  * that contradict the served responses, and every one of them is ignored.
  *
+ * ── WHAT THE PROVENANCE CLEANUP CHANGED ────────────────────────────────────────
+ * Presentation and information architecture only, a third time. No endpoint, request
+ * parameter, response field, count, reference period, snapshot, availability rule,
+ * filter option, ordering, link, or analytical value changed.
+ *
+ * This screen is the platform's canonical home for anything true of MORE THAN ONE
+ * area — Pages 1–3 are removing the repeated copies from their primary surfaces, and
+ * a rule they drop has to be findable here. An audit found the opposite problem as
+ * well: six of those rules were written out three or four times on THIS screen, in
+ * the standing banner and an overview caption and a gap block and a methodology
+ * disclosure at once. A permanent caveat repeated five times stops being read.
+ *
+ *   1. 공통 해석 기준 (`TransparencyDefinitions`) is new, and is the ONE home for
+ *      every cross-screen rule: what a blank means, reported versus derived, a
+ *      failed lookup versus an absent period, differing reference periods, differing
+ *      accounting bases, per-capita as a conversion, the ranking denominator, map
+ *      classes as relative bands, weights not moving a screening verdict, and
+ *      screening not being a siting decision. `TransparencyDashboard.test.tsx`
+ *      asserts each is present AND that none of them is stated twice.
+ *   2. The banner, the overview period tile, both gap blocks and the methodology
+ *      section gave up their copies of those rules and kept only what is theirs: a
+ *      served count, and what that particular count does not mean.
+ *   3. 계산 방법과 기술 정보 lost three disclosures to (1) and now holds only the
+ *      analysis run and the version identifiers.
+ *   4. 현재 제공되지 않는 자료 gained a FOURTH gap — the suitability factors the
+ *      screening does not evaluate — rendered from the same shared component and
+ *      glossary constants the suitability screens use, so the two can never drift.
+ *   5. A structural slot for the NEXT screening methodology says only that it is not
+ *      settled. It publishes no weight, threshold, distance, numerator, direction or
+ *      stability rule, because none has been decided.
+ *
+ * The dataset-card system is untouched: Page 6's Figma frame is bordered and
+ * shadowless, so the shared `.wep-figma-card` elevation the other five areas use is
+ * deliberately NOT adopted here, and a unit test asserts this view renders none.
+ *
  * ── DATA-INTEGRITY CONTRACTS (repo AGENTS.md; redesign plan §5) ──────────────────
  *   - Nothing is fabricated: no source, owner, period, snapshot date, coverage area,
  *     completeness figure, or URL. Links are only ever a served `documentation_url`
@@ -103,6 +138,7 @@ import DatasetPeriodTable from "./transparency/DatasetPeriodTable";
 import KnownDataGaps from "./transparency/KnownDataGaps";
 import SourceCatalog from "./transparency/SourceCatalog";
 import SourceOverview from "./transparency/SourceOverview";
+import TransparencyDefinitions from "./transparency/TransparencyDefinitions";
 import TransparencyMethodology from "./transparency/TransparencyMethodology";
 import TransparencyNotice from "./transparency/TransparencyNotice";
 import TransparencySection from "./transparency/TransparencySection";
@@ -375,6 +411,20 @@ export default function TransparencyDashboard({
           <DatasetPeriodTable rows={datasets} />
         </TransparencySection>
 
+        {/* ── The global interpretation rules ───────────────────────────────────
+            Page 6 is the platform's canonical home for anything true of MORE THAN
+            ONE screen, so Pages 1–3 can stop repeating it on their primary
+            surfaces. Placed directly after the dataset table because that table is
+            where a reader first meets 값 구분 and 자료 기준 시점 side by side, and
+            before the gap section, which uses the same vocabulary. */}
+        <TransparencySection
+          title="공통 해석 기준"
+          testId="transparency-definitions"
+          description="이 서비스의 모든 화면에 함께 적용되는 표시·비교·해석 기준입니다. 각 화면에서 반복하지 않고 여기에 한 번만 정리합니다."
+        >
+          <TransparencyDefinitions />
+        </TransparencySection>
+
         {/* ── What is currently unavailable ─────────────────────────────────────
             Figma frame 156:470 stops after the table. This section, the facility
             mapping panel, and the methodology disclosure are kept: the frame is a
@@ -385,7 +435,7 @@ export default function TransparencyDashboard({
         <TransparencySection
           title="현재 제공되지 않는 자료"
           testId="transparency-gaps"
-          description="공식 자료를 확보하지 못한 항목, 자료는 있으나 지도에 표시하지 못한 시설, 그리고 기준 기간을 확인하지 못한 자료입니다. 어느 쪽도 값이 0이라는 뜻이 아닙니다."
+          description="공식 자료를 확보하지 못한 항목, 자료는 있으나 지도에 표시하지 못한 시설, 기준 기간을 확인하지 못한 자료, 그리고 후보지 분석이 아직 평가하지 못하는 입지 요인입니다."
         >
           <KnownDataGaps
             overview={overview}
@@ -410,22 +460,32 @@ export default function TransparencyDashboard({
           />
         </TransparencySection>
 
-        {/* ── Method, interpretation limits, and technical provenance ──────────── */}
+        {/* ── Technical provenance ─────────────────────────────────────────────
+            The interpretation limits and the label glossary that used to share this
+            section now live once, in 공통 해석 기준 above. What is left is what is
+            genuinely specific to the served run: which analysis version produced the
+            figures. */}
         <TransparencySection
           title="계산 방법과 기술 정보"
           testId="transparency-methodology"
-          description="자세한 계산 방법, 화면에 쓰인 표시 용어, 기술 식별자를 아래에서 펼쳐 볼 수 있습니다."
+          description="이 화면의 수치를 만들어 낸 분석 실행과 기술 식별자를 아래에서 펼쳐 볼 수 있습니다."
         >
           <TransparencyMethodology policy={policy} run={run} costOptions={costOptions} />
         </TransparencySection>
 
-        {/* ── The modal's closing band ─────────────────────────────────────────
+        {/* ── The closing band ─────────────────────────────────────────────────
             Figma rules the modal off and pairs the preservation statement with a
             primary 닫기. Rendered here rather than in `ui/Dialog` so the shared
-            primitive (also used by 지표 순위 전체보기) is untouched. */}
-        {embedded && onClose ? (
-          <div className="flex flex-col gap-3 border-t border-hairline pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-ink-subtle">{CATALOG_PRESERVATION_NOTE}</p>
+            primitive (also used by 지표 순위 전체보기) is untouched.
+
+            The STATEMENT is unconditional; only the BUTTON is embedded-only. It used
+            to be conditional on both, which was safe while it was also duplicated in
+            the catalog's search caption — now that the caption states only how to
+            search, a conditional closing band would have left the standalone form
+            with no preservation claim at all. */}
+        <div className="flex flex-col gap-3 border-t border-hairline pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-ink-subtle">{CATALOG_PRESERVATION_NOTE}</p>
+          {embedded && onClose ? (
             <button
               type="button"
               className="wep-btn-primary flex-none rounded-xl"
@@ -434,8 +494,8 @@ export default function TransparencyDashboard({
             >
               닫기
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </div>
   );

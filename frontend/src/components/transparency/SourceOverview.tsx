@@ -125,9 +125,15 @@ export default function SourceOverview({ overview, freshnessState }: SourceOverv
             : {
                 unavailableReason: freshnessState === "loading" ? "확인 중" : "확인하지 못했습니다",
               })}
+          // The RESOLVED caption states only what the counted remainder is. What an
+          // absent reference period means — not "no data", not zero — is defined
+          // once in 공통 해석 기준 and carried by the card badge where it applies.
+          // The UNRESOLVED caption keeps its correction: there is no badge and no
+          // definition that can tell a reader an un-fetched count is not a zero, so
+          // the tile has to say so itself.
           caption={
             freshnessState === "ready"
-              ? "나머지는 기준 기간이 제공되지 않은 자료이며, 자료가 없다는 뜻은 아닙니다."
+              ? "나머지는 기준 기간이 제공되지 않은 자료입니다."
               : "기준 기간 정보를 아직 확인하지 못했습니다. 0건이라는 뜻이 아닙니다."
           }
           testId="transparency-overview-period"
