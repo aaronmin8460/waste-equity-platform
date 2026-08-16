@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_TOP_N,
   type RankableRegion,
   SCOPE_LABELS,
+  TOP_N_OPTIONS,
   rankAllRegions,
   rankRegions,
   regionScope,
@@ -107,6 +109,22 @@ describe("rankRegions", () => {
     expect(result.low).toHaveLength(5);
     expect(result.high[0].numeric).toBe(29);
     expect(result.low[0].numeric).toBe(0);
+  });
+
+  it("offers no compact-card size above 10, and defaults to 10", () => {
+    // The compact card is a summary; 전체보기 (rankAllRegions) is the uncapped
+    // list, and it is asserted separately below to still return EVERY region.
+    expect(TOP_N_OPTIONS).toEqual([5, 10]);
+    expect(Math.max(...TOP_N_OPTIONS)).toBeLessThanOrEqual(10);
+    expect(TOP_N_OPTIONS).toContain(DEFAULT_TOP_N);
+    expect(DEFAULT_TOP_N).toBe(10);
+  });
+
+  it("still ranks every region in the full view, well past the compact cap", () => {
+    const many: RankableRegion[] = Array.from({ length: 30 }, (_, i) =>
+      region(`KR-SGIS-111${String(i).padStart(2, "0")}`, `구${i}`, i),
+    );
+    expect(rankAllRegions(many, "all", "high").rows).toHaveLength(30);
   });
 
   it("exposes plain Korean scope labels without English", () => {

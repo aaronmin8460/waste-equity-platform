@@ -44,6 +44,7 @@ import type { ReactNode } from "react";
 
 import type { RegionSelection } from "../MapView";
 import type { DataStatus } from "../../lib/glossary";
+import { unitLabel } from "../../lib/units";
 import DataStatusBadge from "../ui/DataStatusBadge";
 
 export interface EquityRegionSummaryProps {
@@ -146,7 +147,11 @@ export default function EquityRegionSummary({
             <span className="block text-[15px] font-bold leading-[18px] text-brand">
               {metricLabel}
             </span>
-            {unit ? <span className="mt-0.5 block text-xs text-ink-subtle">단위 {unit}</span> : null}
+            {/* The PRINTED unit (lib/units.ts), so this reads 단위 명 rather than the
+                served English `persons` the value above it is already rendered with. */}
+            {unit ? (
+              <span className="mt-0.5 block text-xs text-ink-subtle">단위 {unitLabel(unit)}</span>
+            ) : null}
           </dd>
         </div>
         {referencePeriod ? (

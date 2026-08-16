@@ -244,7 +244,7 @@ describe("accessible selected-region alternative", () => {
     // The summary now names the region and shows its served value with unit —
     // never a fabricated 0.
     expect(screen.getByTestId("selected-region-name").textContent).toBe("종로구");
-    expect(screen.getByTestId("selected-region-value").textContent).toContain("142,000 persons");
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("142,000명");
     // The displayed analytical value carries its metric source + reference period
     // (repo AGENTS.md), distinct from the boundary provenance.
     const sources = screen

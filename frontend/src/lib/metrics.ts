@@ -219,7 +219,10 @@ export const METRIC_SECTIONS: readonly MetricSection[] = [
   {
     key: "generation",
     title: "폐기물 발생량",
-    description: "선택 지역에서 발생하는 폐기물의 양을 확인합니다.",
+    // No group description. It restated the heading in a sentence ("선택 지역에서
+    // 발생하는 폐기물의 양을 확인합니다.") and carried no distinction the four row
+    // labels below do not already make. The ROW descriptions stay: they say which
+    // official series each row is, which is not readable from the label alone.
     rows: [
       {
         key: "household",
@@ -253,7 +256,9 @@ export const METRIC_SECTIONS: readonly MetricSection[] = [
   {
     key: "facility",
     title: "1인당 시설 처리 수준",
-    description: "선택 지역의 폐기물 처리시설 처리량을 확인합니다.",
+    // Same removal as 폐기물 발생량 above. The two rows keep their own descriptions
+    // (소재 시설 vs 5km 이내), which is the distinction that actually decides which
+    // one a reader wants.
     rows: [
       {
         key: "facility_located",
@@ -493,12 +498,21 @@ export function colorFor(value: number, breaks: number[], palette: readonly stri
   return palette[Math.min(classIndexFor(value, breaks), palette.length - 1)];
 }
 
-/** Short human note describing the active classification method for the legend. */
+/**
+ * Short human note describing the active classification method for the legend.
+ *
+ * Korean only. The English restatements (`(7-class quantiles)`,
+ * `(7-class logarithmic intervals)`) were a translation of the Korean beside them,
+ * not an extra fact, and they are the copy-density the Page-1 audit is after. The
+ * method itself is NOT dropped: this note still prints inside the 범례 disclosure,
+ * which is where a reader asks what the colour classes mean, and the full
+ * derivation lives in the methodology surface.
+ */
 export function scaleMethodNote(scale: ActiveScale): string {
   if (scale.method === "log-equal-interval") {
-    return `로그 간격 ${scale.requestedClasses}단계 (${scale.requestedClasses}-class logarithmic intervals)`;
+    return `로그 간격 ${scale.requestedClasses}단계`;
   }
-  return `분위수 ${scale.requestedClasses}단계 (${scale.requestedClasses}-class quantiles)`;
+  return `분위수 ${scale.requestedClasses}단계`;
 }
 
 /**
@@ -580,3 +594,52 @@ export const FACILITY_CATEGORY_COLORS: Record<string, string> = {
   PRIVATE_FINAL_DISPOSAL: "#66a61e",
   PRIVATE_RECYCLING: "#e6ab02",
 };
+
+/**
+ * The Korean initial each facility category's map marker carries (Figma frame
+ * 222:439 draws glyph-bearing markers: 소 · 매 · 기 · 재).
+ *
+ * ── ONE GLYPH PER REAL CATEGORY, AND NO CATEGORY MERGED ──────────────────────────
+ * Figma shows FOUR marks. Production serves SIX categories, and two of them are
+ * incineration (공공 소각시설 and 민간 중간처분(소각)), so reusing 소 for both would
+ * make two distinct served categories indistinguishable at a glance — the same
+ * failure as merging them. Each glyph is therefore taken from the word that makes
+ * its own category unique:
+ *
+ *   소 소각 · 매 매립 · 기 기타 · 중 중간처분 · 최 최종처분 · 재 재활용
+ *
+ * All four Figma glyphs are present; 중 and 최 are the two the design had no mark
+ * for because it had no row for them. Nothing here adds, renames, merges, or hides
+ * a category: the keys are exactly the keys of the two maps above, and colour
+ * remains the primary carrier — the glyph is a redundant second signal, and the
+ * marker's popup names the category in full words either way.
+ */
+export const FACILITY_CATEGORY_GLYPHS: Record<string, string> = {
+  PUBLIC_INCINERATION: "소",
+  PUBLIC_OTHER: "기",
+  PUBLIC_LANDFILL: "매",
+  PRIVATE_INTERMEDIATE_INCINERATION: "중",
+  PRIVATE_FINAL_DISPOSAL: "최",
+  PRIVATE_RECYCLING: "재",
+};
+
+/**
+ * Whether a marker glyph printed on `background` should be drawn in white or in
+ * near-black, chosen by WCAG relative luminance so the character is always the
+ * more legible of the two rather than a fixed colour that happens to fail on the
+ * lighter categories (white on #e6ab02 is 2.1:1).
+ *
+ * Kept as a computation rather than a hand-written table so it cannot go stale if
+ * a category colour is ever retuned.
+ */
+export function markerGlyphInk(background: string): string {
+  const hex = background.replace("#", "");
+  const channel = (offset: number): number => {
+    const srgb = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  const onWhite = 1.05 / (luminance + 0.05);
+  const onBlack = (luminance + 0.05) / 0.05;
+  return onBlack >= onWhite ? "#000000" : "#ffffff";
+}

@@ -5,7 +5,11 @@ import {
   CANDIDATE_SCORE_PALETTE_5,
   DEFAULT_EQUITY_PALETTE_7,
   FACILITY_BURDEN_PALETTE_9,
+  FACILITY_CATEGORY_COLORS,
+  FACILITY_CATEGORY_GLYPHS,
+  FACILITY_CATEGORY_LABELS,
   METRICS,
+  markerGlyphInk,
   classIndexFor,
   colorFor,
   computeBreaks,
@@ -268,22 +272,74 @@ describe("legend consistency", () => {
 });
 
 describe("scaleMethodNote", () => {
-  it("labels the facility-burden scale as 9-class logarithmic intervals", () => {
+  // The method and its class count are still stated — that is the note's whole
+  // job. What is gone is the English restatement that followed it in brackets.
+  it("names the facility-burden scale and its class count, in Korean only", () => {
     const scale = resolveActiveScale(FACILITY_BURDEN_FIXTURE, FACILITY_CONFIG);
     const note = scaleMethodNote(scale);
-    expect(note).toContain("로그 간격 9단계");
-    expect(note).toContain("9-class logarithmic intervals");
+    expect(note).toBe("로그 간격 9단계");
+    expect(note).not.toMatch(/[A-Za-z]/);
   });
 
-  it("labels the quantile scale as 7-class quantiles", () => {
+  it("names the quantile scale and its class count, in Korean only", () => {
     const scale = resolveActiveScale([1, 2, 3, 4, 5, 6, 7, 8], {
       method: "quantile",
       classes: 7,
       palette: DEFAULT_EQUITY_PALETTE_7,
     });
     const note = scaleMethodNote(scale);
-    expect(note).toContain("분위수 7단계");
-    expect(note).toContain("7-class quantiles");
+    expect(note).toBe("분위수 7단계");
+    expect(note).not.toMatch(/[A-Za-z]/);
+  });
+});
+
+describe("facility categories", () => {
+  // The six SERVED categories. Figma draws fewer; production must keep all six,
+  // and this is the guard that a redesign pass cannot quietly drop or merge one.
+  const SERVED_CATEGORIES = [
+    "PUBLIC_INCINERATION",
+    "PUBLIC_OTHER",
+    "PUBLIC_LANDFILL",
+    "PRIVATE_INTERMEDIATE_INCINERATION",
+    "PRIVATE_FINAL_DISPOSAL",
+    "PRIVATE_RECYCLING",
+  ];
+
+  it("serves exactly six categories, each with a label, a colour, and a glyph", () => {
+    expect(Object.keys(FACILITY_CATEGORY_LABELS).sort()).toEqual([...SERVED_CATEGORIES].sort());
+    expect(Object.keys(FACILITY_CATEGORY_COLORS).sort()).toEqual([...SERVED_CATEGORIES].sort());
+    expect(Object.keys(FACILITY_CATEGORY_GLYPHS).sort()).toEqual([...SERVED_CATEGORIES].sort());
+  });
+
+  it("gives every category its own colour and its own glyph", () => {
+    // Two categories sharing either signal would render as one on the map.
+    expect(new Set(Object.values(FACILITY_CATEGORY_COLORS)).size).toBe(6);
+    expect(new Set(Object.values(FACILITY_CATEGORY_GLYPHS)).size).toBe(6);
+  });
+
+  it("uses the Figma glyphs where the design has a matching category", () => {
+    expect(FACILITY_CATEGORY_GLYPHS.PUBLIC_INCINERATION).toBe("소");
+    expect(FACILITY_CATEGORY_GLYPHS.PUBLIC_LANDFILL).toBe("매");
+    expect(FACILITY_CATEGORY_GLYPHS.PUBLIC_OTHER).toBe("기");
+    expect(FACILITY_CATEGORY_GLYPHS.PRIVATE_RECYCLING).toBe("재");
+  });
+
+  it("picks a glyph ink that clears 4.5:1 against every category colour", () => {
+    const contrast = (a: string, b: string): number => {
+      const luminance = (hex: string): number => {
+        const h = hex.replace("#", "");
+        const ch = (o: number): number => {
+          const s = parseInt(h.slice(o, o + 2), 16) / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * ch(0) + 0.7152 * ch(2) + 0.0722 * ch(4);
+      };
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    for (const color of Object.values(FACILITY_CATEGORY_COLORS)) {
+      expect(contrast(color, markerGlyphInk(color))).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 

@@ -53,6 +53,7 @@ import {
   type ScopeSelection,
 } from "../lib/ranking";
 import { formatCount } from "../lib/metrics";
+import { unitLabel } from "../lib/units";
 
 interface RegionRankingProps {
   regions: RankableRegion[];
@@ -208,7 +209,7 @@ export default function RegionRanking({
       <h2 className="text-xl font-bold leading-6 text-brand">{RANKING_SECTION_LABEL}</h2>
       {/* The ranking basis: which metric, in what unit, from when. */}
       <p className="mt-1.5 text-xs text-ink-subtle" data-testid="rank-basis">
-        {metricLabel} 기준{unit ? ` · 단위 ${unit}` : ""}
+        {metricLabel} 기준{unit ? ` · 단위 ${unitLabel(unit)}` : ""}
         {referencePeriod ? ` · 자료 기준 ${referencePeriod}` : ""}
       </p>
       {/* The "지역을 누르면 지도와 요약이 함께 움직입니다" line is gone: Figma's 지표
@@ -252,7 +253,9 @@ export default function RegionRanking({
       </div>
 
       {/* Top-N selector. Not in the Figma frame, kept because it is real behaviour
-          the redesign never asked to remove. */}
+          the redesign never asked to remove — but now capped at 10 (TOP_N_OPTIONS),
+          so this compact card can never grow into a 20-row table. 전체보기 below is
+          the way to every region, so the cap removes a setting, not access. */}
       <div className="mt-3 flex items-center gap-2">
         <label className="text-xs text-ink-subtle" htmlFor="rank-topn">
           표시 개수
@@ -283,20 +286,21 @@ export default function RegionRanking({
         />
       </div>
 
-      {/* Figma prints only the count ("순위 32개 지역"). The exclusion clause is NOT
-          boilerplate — it is the missing-data indicator this repo requires — so it is
-          kept verbatim, but only when something was actually excluded. With nothing
-          excluded it was a standing sentence reporting 0 of a thing that did not
-          happen, which is the duplication the audit is after; the underlying rule
-          ("값이 없는 지역은 0으로 채우지 않음") is stated in full in 전체보기. */}
+      {/* Figma prints only the count ("순위 32개 지역"), which is now what this reads:
+          "순위 대상 …개 지역." was a label sentence where a count label does, and the
+          full stop after a fragment was doing nothing.
+
+          THE EXCLUSION CLAUSE IS NOT BOILERPLATE and is not touched — it is the
+          missing-data indicator this repo requires, so it still appears verbatim
+          whenever something was actually excluded, still names the count, and still
+          says 0으로 채우지 않음. With nothing excluded it stays absent rather than
+          standing there reporting 0 of a thing that did not happen; the underlying
+          rule is stated in full in 전체보기. */}
       <p className="mt-3 text-[11px] text-ink-subtle" data-testid="rank-excluded">
-        순위 대상 {formatCount(result.rankedCount)}개 지역
+        순위 {formatCount(result.rankedCount)}개 지역
         {result.excludedCount > 0 && (
-          <>
-            . 값이 없어 제외한 지역 {formatCount(result.excludedCount)}개(0으로 채우지 않음)
-          </>
+          <> · 값이 없어 제외한 지역 {formatCount(result.excludedCount)}개(0으로 채우지 않음)</>
         )}
-        .
       </p>
 
       {/* The way out of the top-N cut. A native button, labelled with the exact

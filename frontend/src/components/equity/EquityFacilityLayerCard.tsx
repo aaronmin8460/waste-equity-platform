@@ -25,11 +25,17 @@
  *     colours on the map; adopting the two-colour scheme would make the legend
  *     disagree with the marks it explains, and dropping a category would hide
  *     facilities that are drawn. All six are listed, in their real colours.
- *   - Figma's swatch carries a white Korean initial (소 / 매 / 기 / 재). The map draws
- *     plain 4.5px circles with no glyph, and enlarging every marker enough to hold a
- *     character would bury the choropleth under several hundred labelled discs. The
- *     swatch is a plain dot, exactly like the mark.
+ *   - Figma's swatch carries a Korean initial (소 / 매 / 기 / 재) and has FOUR of
+ *     them. The swatch now carries one too, because the map now draws one — the
+ *     markers are zoom-ramped discs with their category's glyph over them
+ *     (MapView.tsx). But there are SIX glyphs here, one per real category, from
+ *     `FACILITY_CATEGORY_GLYPHS`: reusing 소 for both 공공 소각시설 and 민간
+ *     중간처분(소각) would make two served categories read as one.
  * Both are recorded in docs/figma-redesign/PAGE_1_REGIONAL_INDICATORS.md.
+ *
+ * The swatch stays a faithful miniature of the mark: same colour, same glyph, and
+ * the same luminance-chosen ink (`markerGlyphInk`), so a reader matching a dot on
+ * the map to a row in this list is comparing like with like.
  *
  * Colour is never the only signal: every row's category NAME is beside its swatch,
  * and the popup a marker opens names its category in words too.
@@ -48,8 +54,10 @@
 import { accountingBasisLabel } from "../../lib/glossary";
 import {
   FACILITY_CATEGORY_COLORS,
+  FACILITY_CATEGORY_GLYPHS,
   FACILITY_CATEGORY_LABELS,
   formatCount,
+  markerGlyphInk,
 } from "../../lib/metrics";
 
 export interface FacilityCoverage {
@@ -115,12 +123,18 @@ export default function EquityFacilityLayerCard({
             className="flex items-center gap-2 text-[13px] text-ink"
             data-testid="facility-type-legend-row"
           >
-            {/* Decorative: the category name beside it is the row's text. */}
+            {/* Decorative: the category name beside it is the row's text, so the
+                glyph is never the only way to read the row. */}
             <span
               aria-hidden
-              className="size-4 shrink-0 rounded-full border border-surface"
-              style={{ backgroundColor: FACILITY_CATEGORY_COLORS[category] }}
-            />
+              className="flex size-[18px] shrink-0 items-center justify-center rounded-full border border-surface text-[10px] font-bold leading-none"
+              style={{
+                backgroundColor: FACILITY_CATEGORY_COLORS[category],
+                color: markerGlyphInk(FACILITY_CATEGORY_COLORS[category]),
+              }}
+            >
+              {FACILITY_CATEGORY_GLYPHS[category]}
+            </span>
             <span className="min-w-0">{FACILITY_CATEGORY_LABELS[category]}</span>
           </li>
         ))}

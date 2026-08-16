@@ -22,7 +22,7 @@
 import type { MetricKey } from "./metrics";
 import { METRICS } from "./metrics";
 import type { DashboardArea, SuitabilitySubview } from "./glossary";
-import type { ScopeSelection } from "./ranking";
+import { DEFAULT_TOP_N, TOP_N_OPTIONS, type ScopeSelection } from "./ranking";
 import type {
   LandfillOrigin,
   MunicipalCostSido,
@@ -49,7 +49,13 @@ const PROFILES: readonly SuitabilityProfile[] = [
 ];
 const STATUSES: readonly SuitabilityStatus[] = ["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"];
 const SCOPES: readonly ScopeSelection[] = ["all", "11", "23", "31"];
-const TOP_NS: readonly number[] = [5, 10, 20];
+/**
+ * The accepted `?top=` values ARE the ranking card's own options — held by
+ * reference, not copied, so the whitelist can never drift from the control. A link
+ * carrying a size the card no longer offers (`?top=20`) is dropped with the usual
+ * warning and falls back to the default, exactly like any other out-of-set value.
+ */
+const TOP_NS: readonly number[] = TOP_N_OPTIONS;
 const METRIC_KEYS = new Set<string>(METRICS.map((m) => m.key));
 /** 매립지 현황 origin: the three capital-region SGIS sido codes (see api.ts). */
 const LANDFILL_ORIGINS: readonly LandfillOrigin[] = ["11", "28", "41"];
@@ -500,7 +506,7 @@ export function encodeUrlState(state: AppUrlState): string {
   if (state.region) params.set("region", state.region);
   if (state.cmp.length) params.set("cmp", state.cmp.slice(0, MAX_COMPARE).join(","));
   if (state.scope !== "all") params.set("scope", state.scope);
-  if (state.top !== 10) params.set("top", String(state.top));
+  if (state.top !== DEFAULT_TOP_N) params.set("top", String(state.top));
 
   // Suitability-only fields are only meaningful in that area.
   if (state.mode === "suitability") {

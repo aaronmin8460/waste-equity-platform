@@ -8,8 +8,14 @@ import {
 } from "./regionDisplay";
 
 describe("formatRegionMetricDisplay", () => {
-  it("appends the unit to a served value", () => {
-    expect(formatRegionMetricDisplay("142,000", "persons", null)).toBe("142,000 persons");
+  it("appends the PRINTED unit to a served value", () => {
+    // The served unit is the English `persons`; a Korean-only surface prints 명,
+    // attached to the numeral the way a Korean counter word is written.
+    expect(formatRegionMetricDisplay("142,000", "persons", null)).toBe("142,000명");
+  });
+
+  it("keeps the space before a symbol unit it does not translate", () => {
+    expect(formatRegionMetricDisplay("12.3", "kg/인/년", null)).toBe("12.3 kg/인/년");
   });
 
   it("omits a trailing space when there is no unit", () => {
@@ -24,9 +30,7 @@ describe("formatRegionMetricDisplay", () => {
   });
 
   it("falls back to a generic no-data label when no reason is given", () => {
-    expect(formatRegionMetricDisplay(undefined, "persons", null)).toBe(
-      "데이터 없음 (no served value)",
-    );
+    expect(formatRegionMetricDisplay(undefined, "persons", null)).toBe("데이터 없음");
   });
 
   it("passes an unknown reason code through verbatim", () => {
@@ -40,10 +44,26 @@ describe("regionUnavailableReasonLabel", () => {
     expect(regionUnavailableReasonLabel(undefined)).toBe("");
   });
 
-  it("maps a known reason code to its bilingual label", () => {
-    expect(regionUnavailableReasonLabel("COARSER_REPORTING_GEOGRAPHY")).toContain(
+  it("maps a known reason code to its Korean label", () => {
+    expect(regionUnavailableReasonLabel("COARSER_REPORTING_GEOGRAPHY")).toBe(
       "상위 보고 단위로 보고됨",
     );
+  });
+
+  it("keeps every served reason, with no English restatement left in any of them", () => {
+    // The REASONS are the missing-data disclosure and must all survive; only the
+    // bracketed English translation beside each was dropped.
+    for (const code of [
+      "SOURCE_NOT_REPORTED",
+      "COARSER_REPORTING_GEOGRAPHY",
+      "SOURCE_ROW_REJECTED",
+      "UNMATCHED_REGION_LABEL",
+      "AMBIGUOUS_REGION_LABEL",
+    ]) {
+      const label = regionUnavailableReasonLabel(code);
+      expect(label.length).toBeGreaterThan(0);
+      expect(label).not.toMatch(/[A-Za-z]/);
+    }
   });
 });
 

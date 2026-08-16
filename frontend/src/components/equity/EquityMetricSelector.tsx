@@ -11,9 +11,10 @@
  *   - 지역별 인구 is a single row on its own tinted plate, above a rule, because it
  *     is one metric rather than a family — its `<legend>` would only repeat the row
  *     label, so it is kept for the accessibility tree and hidden visually.
- *   - 폐기물 발생량 and 1인당 시설 처리 수준 keep a visible group heading with its
- *     supporting line, and their rows sit inside ONE hairlined container divided by
- *     rules, instead of each row being its own bordered card.
+ *   - 폐기물 발생량 and 1인당 시설 처리 수준 keep a visible group heading, and their
+ *     rows sit inside ONE hairlined container divided by rules, instead of each row
+ *     being its own bordered card. Each group is separated from the one above it by
+ *     a grey rule.
  *   - The 총량/1인당 switch is inside the active row, as before.
  *
  * `lib/metrics.ts` (METRIC_SECTIONS) owns the mapping and explains why the two
@@ -164,9 +165,15 @@ export default function EquityMetricSelector({
       {/* No supporting line under the heading. Figma's 지표 선택 card (74:1992) has
           none, and "지표를 바꾸면 지도와 순위가 모두 같은 값을 따라갑니다" described
           what the reader observes the moment they touch a radio — orientation copy
-          for a control that demonstrates itself. The three section descriptions
-          below ARE in the design and stay: they say what each family measures,
-          which is not observable from the row labels. */}
+          for a control that demonstrates itself.
+
+          The two GROUP descriptions are gone for the same reason: "선택 지역에서
+          발생하는 폐기물의 양을 확인합니다" restated 폐기물 발생량 as a sentence, and
+          its 시설 counterpart did the same, so a reader paid two grey lines for
+          nothing the headings had not already said. `section.description` is still
+          rendered here — the field survives for any group that ever needs a real
+          distinction — and the ROW descriptions are untouched, because those DO
+          carry one (which official series a row is; 소재 시설 vs 5km 이내). */}
       <h2 className="text-xl font-bold leading-6 text-brand">지표 선택</h2>
 
       <div className="mt-4 flex flex-col gap-4">
@@ -176,10 +183,13 @@ export default function EquityMetricSelector({
             <fieldset
               key={section.key}
               className={`m-0 border-0 p-0 ${
-                // Figma rules OFF the first (single-row) plate from the grouped
-                // sections beneath it; the grouped sections are separated by their
-                // own containers, so only this one boundary is drawn.
-                index === 1 ? "border-t border-[var(--figma-rule)] pt-4" : ""
+                // Figma draws a grey rule BETWEEN consecutive metric groups — before
+                // 폐기물 발생량 and again before 1인당 시설 처리 수준. Only the first
+                // was drawn, so the last group floated on the `gap-4` alone and read
+                // as trailing content of the group above rather than as a peer of it.
+                // Every boundary between groups is now a rule; the first group has
+                // nothing above it, so it gets none.
+                index > 0 ? "border-t border-[var(--figma-rule)] pt-4" : ""
               }`}
               data-testid={`metric-section-${section.key}`}
             >

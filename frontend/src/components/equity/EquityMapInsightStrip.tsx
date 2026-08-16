@@ -50,6 +50,7 @@
 
 import type { DataStatus } from "../../lib/glossary";
 import { MAP_INSIGHT_SUMMARY_LABEL } from "../../lib/glossary";
+import { unitLabel } from "../../lib/units";
 import DataStatusBadge from "../ui/DataStatusBadge";
 import InfoBanner from "../ui/InfoBanner";
 
@@ -125,7 +126,7 @@ export default function EquityMapInsightStrip({
             </h2>
             <p className="mt-1 leading-snug text-ink" data-testid="insight-interpretation">
               이 지도는 <span className="font-semibold">{metricLabel}</span>
-              {unit ? ` (단위 ${unit})` : ""}의 지역 간 상대적 차이를 보여줍니다. 값이 클수록 색이
+              {unit ? ` (단위 ${unitLabel(unit)})` : ""}의 지역 간 상대적 차이를 보여줍니다. 값이 클수록 색이
               진해집니다.
             </p>
           </div>
