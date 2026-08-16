@@ -240,7 +240,18 @@ Scenarios are computed on read; nothing is persisted server-side.
 | successor | successor | `422 COMPONENT_MODEL_SCENARIOS_UNAVAILABLE` |
 | anything else | any | `422 INVALID_SCENARIO_WEIGHTS` (unchanged) |
 
-Weight validation is now **run-model-relative** rather than relative to a module
+**Guard order is load-bearing, not incidental.** Weights are validated against the
+run's components *first*, and only then is the run's model checked for scenario
+support. The two refusals answer different questions and the more specific one has
+to win: `COMPONENT_MODEL_MISMATCH` is a statement about the caller's own artifact —
+a saved scenario that remains perfectly valid against a run of its own model, which
+the UI must render as "belongs to a different model" — whereas
+`COMPONENT_MODEL_SCENARIOS_UNAVAILABLE` describes the run. Checking availability
+first collapses row 2 into row 4 and destroys the only signal that separates them.
+(That inversion was a real defect, caught by the PostGIS operational validation and
+pinned by `test_a_historical_scenario_against_a_successor_run_is_a_model_mismatch`.)
+
+Weight validation is **run-model-relative** rather than relative to a module
 constant: `scenario.parse_and_validate_weights(raw, run.component_order)`. Its
 strictness — rejecting both missing and unknown keys, with no repair, renormalization,
 or positional remapping — is the load-bearing safety property of the entire scenario

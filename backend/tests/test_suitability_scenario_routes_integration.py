@@ -703,12 +703,25 @@ def test_a_historical_scenario_against_a_historical_run_is_valid(
 def test_a_historical_scenario_against_a_successor_run_is_a_model_mismatch(
     pg_client: TestClient, seeded_successor_shaped: int
 ) -> None:
+    """The weights belong to a *different model*, and the error must say so.
+
+    ``COMPONENT_MODEL_SCENARIOS_UNAVAILABLE`` would be a strictly weaker answer
+    here: it describes the run, not the mismatch, and it is what a client sees when
+    its weights DO match the run's components. Collapsing the two loses the only
+    signal that distinguishes "this saved scenario belongs to another model" from
+    "this model has no scenario support yet" — and the first is a statement about
+    the user's own artifact, which the UI has to render differently.
+    """
+
     resp = _preview(pg_client, seeded_successor_shaped, EQUAL_BODY)
     assert resp.status_code == 422
-    error = resp.json()["detail"]["error"]
-    # Refused for a model reason, never as "your weights are wrong".
-    assert error in {"COMPONENT_MODEL_MISMATCH", "COMPONENT_MODEL_SCENARIOS_UNAVAILABLE"}
-    assert error != "INVALID_SCENARIO_WEIGHTS"
+    detail = resp.json()["detail"]
+    assert detail["error"] == "COMPONENT_MODEL_MISMATCH"
+    assert detail["error"] != "INVALID_SCENARIO_WEIGHTS"
+    assert detail["fields"]["submitted_component_model"] == (
+        "suitability-components-zred-v1"
+    )
+    assert detail["fields"]["run_component_order"] == SUCCESSOR_ORDER
 
 
 def test_a_successor_scenario_against_a_historical_run_is_a_model_mismatch(
@@ -749,6 +762,15 @@ def test_a_cross_model_candidate_detail_is_refused(
 def test_a_scenario_tile_for_a_successor_run_is_refused(
     pg_client: TestClient, seeded_successor_shaped: int
 ) -> None:
+    """A scenario tile can only ever carry historical weights, so this is a mismatch.
+
+    The ``wz``/``wr``/``we``/``wd`` parameters are historical-model abbreviations
+    and are deliberately not extended to another model — ``we`` would abbreviate the
+    successor's ``existing_burden`` just as naturally as it currently abbreviates
+    ``equity``. A tile request against a run of another model is therefore always
+    carrying *another model's* weights, and the mismatch is the accurate answer.
+    """
+
     weights = scenario.parse_and_validate_weights(EQUAL_BODY)
     full_hash = scenario.scenario_hash(seeded_successor_shaped, weights)
     resp = pg_client.get(
@@ -757,7 +779,7 @@ def test_a_scenario_tile_for_a_successor_run_is_refused(
         f"&scenario_hash={full_hash}"
     )
     assert resp.status_code == 422
-    assert resp.json()["detail"]["error"] == "COMPONENT_MODEL_SCENARIOS_UNAVAILABLE"
+    assert resp.json()["detail"]["error"] == "COMPONENT_MODEL_MISMATCH"
 
 
 def test_an_unpinned_scenario_preview_stays_on_the_historical_model(

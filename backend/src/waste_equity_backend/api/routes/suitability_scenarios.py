@@ -288,16 +288,36 @@ def _validate_weights(
 
 
 def _resolve_scenario_run(session: Session, run_id: int | None, requested_model: str | None) -> Any:
-    """Resolve the run and return its metadata, with its component model validated.
+    """Resolve the run and return ``(run_id, run_meta, model_version, component_order)``.
 
-    Returns ``(resolved_run_id, run_meta, component_model_version, component_order)``.
-    A run of any component model other than the historical one is refused here,
-    before any weight is read, because no successor scenario contract exists yet.
+    Deliberately does **not** refuse a run whose component model has no scenario
+    contract. That refusal belongs after the weights have been validated against
+    this run's components — see :func:`_assert_scenario_model_supported`.
     """
 
     resolved = _resolve_run_id(session, run_id, requested_model)
     run_meta = _load_run_meta(session, resolved)
     model_version, order = _run_model_identity(run_meta)
+    return resolved, run_meta, model_version, order
+
+
+def _assert_scenario_model_supported(resolved: int, model_version: str) -> None:
+    """Refuse a run whose component model has no scenario contract yet.
+
+    **Called after weight validation, not before.** The two refusals answer
+    different questions and the more specific one has to win:
+
+    * weights defined over *another* model's components → ``COMPONENT_MODEL_MISMATCH``.
+      That is a statement about the caller's own artifact — a saved scenario that is
+      still perfectly valid against a run of its own model — and the UI has to render
+      it as "belongs to a different model", never as "unsupported".
+    * weights that *do* match this run's components, on a model with no approved
+      weight vector or normalization strategy → ``COMPONENT_MODEL_SCENARIOS_UNAVAILABLE``.
+
+    Checking availability first collapsed both into the second answer and threw away
+    the only signal that distinguishes them.
+    """
+
     if model_version != component_model.COMPONENT_MODEL_HISTORICAL:
         raise HTTPException(
             status_code=422,
@@ -318,7 +338,6 @@ def _resolve_scenario_run(session: Session, run_id: int | None, requested_model:
                 },
             },
         )
-    return resolved, run_meta, model_version, order
 
 
 def _weight_params(weights: dict[str, Decimal]) -> dict[str, Decimal]:
@@ -566,6 +585,7 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
     )
 
     weights = _validate_weights(req.weights, run_component_order)
+    _assert_scenario_model_supported(resolved, run_model_version)
     canonical = scenario.canonical_weight_strings(weights, run_component_order)
     full_hash = scenario.scenario_hash(resolved, weights)
 
@@ -675,6 +695,7 @@ def candidate_detail(
     )
 
     weights = _validate_weights(req.weights, run_component_order)
+    _assert_scenario_model_supported(resolved, run_model_version)
     canonical = scenario.canonical_weight_strings(weights, run_component_order)
     full_hash = scenario.scenario_hash(resolved, weights)
     return _build_candidate_detail(
@@ -724,12 +745,13 @@ def scenario_tile(
     # successor's ``existing_burden`` just as naturally as it currently abbreviates
     # ``equity``, and a parameter name that can be reinterpreted is exactly how one
     # model's weight silently becomes another's.
-    resolved, _run_meta, _model_version, run_component_order = _resolve_scenario_run(
+    resolved, _run_meta, run_model_version, run_component_order = _resolve_scenario_run(
         session, run_id, None
     )
     weights = _validate_weights(
         {"zoning": wz, "road": wr, "equity": we, "demand": wd}, run_component_order
     )
+    _assert_scenario_model_supported(resolved, run_model_version)
     expected_hash = scenario.scenario_hash(run_id, weights)
     if scenario_hash != expected_hash:
         raise HTTPException(
