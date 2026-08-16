@@ -31,18 +31,17 @@ export const HEADER_SUMMARY =
 export const OVERVIEW_TITLE = "한눈에 보기";
 export const OVERVIEW_SUMMARY = "모두 등록된 기록의 개수입니다. 완성도 점수나 품질 등급이 아닙니다.";
 /**
- * Figma's two sentences — how to search this list, and where the raw registered names
- * survive. Nothing else: this is the caption of a search control.
+ * How to search this list. Nothing else: this is the caption of a search control.
  *
- * The architectural claim that used to be appended here (the browser never calls a
- * government API and no personal data is stored) is NOT deleted. It is a statement
- * about how the platform is built, not about how to use the search box, so it moved
- * to `TransparencyMethodology`'s 이 자료로 말할 수 있는 것과 없는 것 — the screen's
- * standing home for interpretation limits. See `DATA_HANDLING_NOTE`.
+ * TWO claims were appended here at different times and neither belonged. The
+ * architectural one (the browser never calls a government API and stores no personal
+ * data) is now a 공통 해석 기준 entry — see `DATA_HANDLING_NOTE`. The preservation one
+ * ("the registered original names survive in each card's 기술 정보 보기") is the same
+ * sentence the modal already closes with, so it is stated once, there — see
+ * {@link CATALOG_PRESERVATION_NOTE}. Neither claim was weakened by the move; both are
+ * still on this screen, each in one place.
  */
-export const CATALOG_SUMMARY =
-  "자료명·기관명·분야로 검색할 수 있습니다. 등록된 원문 이름은 각 카드의 " +
-  "‘기술 정보 보기’에 그대로 남아 있습니다.";
+export const CATALOG_SUMMARY = "자료명·기관명·분야로 검색할 수 있습니다.";
 
 /**
  * How the data reaches the reader. Stated once, on the methodology surface.
@@ -54,6 +53,127 @@ export const CATALOG_SUMMARY =
 export const DATA_HANDLING_NOTE =
   "브라우저에서 정부 API를 직접 호출하거나 개인정보를 저장하지 않습니다. 모든 공식 자료는 " +
   "이 서비스의 서버가 받아 정리한 뒤 전달합니다.";
+
+// --------------------------------------------------------------------------- //
+// 공통 해석 기준 — the ONE formal home for every rule that applies to more than one
+// screen.
+//
+// WHY THIS BLOCK EXISTS
+// ---------------------
+// Before it, six of these rules were written out three or four times each: in the
+// standing banner, in an overview tile caption, in a gap block, in the methodology
+// disclosure, and again on a dataset card. A permanent caveat repeated five times
+// stops being read, and five copies of one sentence drift apart the moment one of
+// them is edited. Each rule is now stated ONCE, here; every other surface either
+// carries the stateful badge (`ui/DataStatusBadge`) or a short, genuinely
+// record-specific sentence, and points here for the general rule.
+//
+// WHAT MAY GO IN
+// --------------
+// Only a rule this application ALREADY applies, phrased in plain Korean. Nothing
+// here is a decision, a threshold, a weight, or a policy: those belong to the
+// backend that serves them, and inventing one on a transparency screen would be the
+// exact failure this screen exists to prevent. See {@link SUCCESSOR_METHODOLOGY_SLOT}.
+// --------------------------------------------------------------------------- //
+
+export interface GlobalDefinition {
+  /** The term as a reader meets it on the other screens. */
+  term: string;
+  /** One sentence — what it means, and what it does NOT mean. */
+  meaning: string;
+}
+
+/**
+ * Rules for reading two different datasets side by side.
+ *
+ * The first two are the reason this platform never sums across sources; the last two
+ * are the standing caveats that used to live on the Page-1 map insight strip (the
+ * relative-class statement) and beside every ranking (the denominator statement).
+ */
+export const COMPARISON_DEFINITIONS: readonly GlobalDefinition[] = [
+  {
+    term: "기준 기간이 다른 값",
+    meaning:
+      "자료마다 기준 기간이 다릅니다. 기준 기간이 다른 값은 같은 시점의 값처럼 비교하거나 하나로 묶지 않습니다.",
+  },
+  {
+    term: "집계 기준이 다른 값",
+    meaning:
+      "발생지 기준·시설 소재지 기준·수도권 반입 기준은 세는 대상이 서로 다릅니다. 집계 기준이 다른 값은 더하거나 빼거나 나누지 않습니다.",
+  },
+  {
+    term: "1인당 값",
+    meaning:
+      "공식 발생량을 같은 기준의 공식 인구로 나눈 비교용 환산값입니다. 개인이 실제로 버린 양이나 개인이 내는 금액이 아닙니다.",
+  },
+  {
+    term: "순위와 비교 대상(분모)",
+    meaning:
+      "순위와 상·하위 표시는 각 화면이 밝힌 ‘순위 대상’ 개수를 분모로 계산합니다. 값을 확인하지 못한 지역·구역은 순위 대상에서 빼며, 0으로 채워 순위를 매기지 않습니다.",
+  },
+  {
+    term: "지도 색 구간",
+    meaning:
+      "지도 색은 표시된 지역 사이의 상대적 구간(급)이며 절대 기준이나 합격선이 아닙니다. 적용된 분류 방식(분위수·로그 간격)과 구간 값은 각 지도의 범례에 표시합니다.",
+  },
+];
+
+/**
+ * Rules for reading a figure this platform produced, rather than received.
+ *
+ * `scenario` keeps the `transparency-scenario` test id it carried as a disclosure:
+ * the sentence is the same commitment, and it now also states the part that was
+ * previously only implied — changing a weight never changes a screening verdict.
+ */
+export const ANALYSIS_DEFINITIONS: readonly (GlobalDefinition & { testId?: string })[] = [
+  {
+    term: "후보지 분석의 성격",
+    meaning:
+      "공공자료를 이용한 1차 비교이며, 실제 입지 결정·허가·법적 적격성을 의미하지 않습니다.",
+  },
+  {
+    term: "가중치 바꿔보기",
+    meaning:
+      "점수 반영 기준(가중치)을 바꾸면 점수와 순위는 달라지지만, 스크리닝 통과·추가 검토·제외 판정 자체는 바뀌지 않습니다. 바꾼 결과는 화면에서만 계산하는 임시 결과이며 저장되지 않습니다.",
+    testId: "transparency-scenario",
+  },
+  {
+    term: "설치비",
+    meaning:
+      "표준공사비 기준의 참고용 설치비 계산이며, 실제 총사업비가 아닙니다. 확정 사업비나 예산 승인 금액도 아닙니다.",
+  },
+  {
+    term: "매립지 반입 자료",
+    meaning:
+      "광역지자체 단위이며, 시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다.",
+  },
+  {
+    term: "원문의 현재 제공 여부",
+    meaning: "원문 자료가 지금도 제공되는지는 각 기관 안내 페이지에서 확인해야 합니다.",
+  },
+  {
+    term: "자료 전달 경로",
+    meaning: DATA_HANDLING_NOTE,
+  },
+];
+
+/**
+ * The structural slot for the NEXT screening methodology.
+ *
+ * It is deliberately empty of decisions. The successor policy is not final on the
+ * backend, so there is no weight, no missing-component rule, no distance floor, no
+ * numerator, no direction, and no stability definition to publish — and a
+ * transparency screen that guessed at one would be publishing a decision nobody
+ * made. What the slot DOES do is make the absence legible, so a reader who has heard
+ * a new version is coming is told plainly that it is not what this screen documents.
+ */
+export const SUCCESSOR_METHODOLOGY_SLOT = {
+  title: "다음 판정 기준 (아직 확정되지 않음)",
+  body:
+    "후보지 판정 기준의 다음 버전은 아직 확정되지 않았습니다. 확정되기 전까지 이 화면은 현재 " +
+    "적용 중인 기준만 설명하며, 확정되지 않은 가중치나 판정 규칙을 미리 적어 두지 않습니다. " +
+    "기준이 확정되면 그 내용과 적용 시점을 이 자리에 정리합니다.",
+} as const;
 /** The modal's closing line. States the preservation rule the cards implement. */
 export const CATALOG_PRESERVATION_NOTE =
   "등록된 원문 이름과 식별자는 삭제하지 않고 각 카드의 ‘기술 정보 보기’에 보존합니다.";
