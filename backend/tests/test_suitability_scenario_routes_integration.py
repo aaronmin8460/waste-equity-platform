@@ -23,7 +23,7 @@ from geoalchemy2 import WKTElement
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from waste_equity_backend.analysis.suitability import scenario
+from waste_equity_backend.analysis.suitability import component_model, scenario
 from waste_equity_backend.api.app import create_app
 from waste_equity_backend.db import get_session
 from waste_equity_backend.models import SuitabilityAnalysisRun, SuitabilityCandidate
@@ -656,3 +656,145 @@ def test_no_scenario_tables_added(pg_session: Session) -> None:
         .all()
     )
     assert rows == []
+
+
+# --------------------------------------------------------------------------- #
+# Component-model isolation
+# --------------------------------------------------------------------------- #
+#
+# A scenario is a statement about which of *those* factors a user weighted. There
+# is no defensible mapping from one component model's weight vector onto another's
+# components, so every cross-model combination below must be refused — never
+# renormalized, never positionally remapped, never partially applied.
+
+SUCCESSOR_MODEL = component_model.COMPONENT_MODEL_SUCCESSOR
+SUCCESSOR_ORDER = list(component_model.COMPONENT_ORDER_SUCCESSOR)
+SUCCESSOR_BODY = dict.fromkeys(SUCCESSOR_ORDER, "0.25")
+
+
+@pytest.fixture
+def seeded_successor_shaped(pg_session: Session) -> int:
+    """A synthetic run labelled with the successor component model.
+
+    A fixture, not a produced run: nothing in this branch builds or scores a
+    successor analysis, and nothing can — the model is not activated.
+    """
+
+    return _make_run(
+        pg_session,
+        sig="scenario-int-successor-sig",
+        component_model_version=SUCCESSOR_MODEL,
+        component_order=SUCCESSOR_ORDER,
+        weight_profiles={},
+        total=0,
+        eligible=0,
+    )
+
+
+def test_a_historical_scenario_against_a_historical_run_is_valid(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    body = _preview(pg_client, seeded["run"], EQUAL_BODY).json()
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+    assert body["component_order"] == ["zoning", "road", "equity", "demand"]
+    assert set(body["canonical_weights"]) == {"zoning", "road", "equity", "demand"}
+
+
+def test_a_historical_scenario_against_a_successor_run_is_a_model_mismatch(
+    pg_client: TestClient, seeded_successor_shaped: int
+) -> None:
+    resp = _preview(pg_client, seeded_successor_shaped, EQUAL_BODY)
+    assert resp.status_code == 422
+    error = resp.json()["detail"]["error"]
+    # Refused for a model reason, never as "your weights are wrong".
+    assert error in {"COMPONENT_MODEL_MISMATCH", "COMPONENT_MODEL_SCENARIOS_UNAVAILABLE"}
+    assert error != "INVALID_SCENARIO_WEIGHTS"
+
+
+def test_a_successor_scenario_against_a_historical_run_is_a_model_mismatch(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    resp = _preview(pg_client, seeded["run"], SUCCESSOR_BODY)
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["error"] == "COMPONENT_MODEL_MISMATCH"
+    assert detail["fields"]["submitted_component_model"] == SUCCESSOR_MODEL
+    assert detail["fields"]["run_component_order"] == ["zoning", "road", "equity", "demand"]
+
+
+def test_successor_scenario_creation_is_disabled_not_approximated(
+    pg_client: TestClient, seeded_successor_shaped: int
+) -> None:
+    """No approved successor weight vector or normalization strategy exists, so a
+    recombination would be a fabricated result rather than the user's scenario."""
+
+    resp = _preview(pg_client, seeded_successor_shaped, SUCCESSOR_BODY)
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["error"] == "COMPONENT_MODEL_SCENARIOS_UNAVAILABLE"
+    assert detail["fields"]["run_component_model_version"] == SUCCESSOR_MODEL
+
+
+def test_a_cross_model_candidate_detail_is_refused(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    resp = pg_client.post(
+        f"/api/v1/suitability/scenarios/candidates/{seeded['a']}",
+        json={"run_id": seeded["run"], "weights": SUCCESSOR_BODY},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "COMPONENT_MODEL_MISMATCH"
+
+
+def test_a_scenario_tile_for_a_successor_run_is_refused(
+    pg_client: TestClient, seeded_successor_shaped: int
+) -> None:
+    weights = scenario.parse_and_validate_weights(EQUAL_BODY)
+    full_hash = scenario.scenario_hash(seeded_successor_shaped, weights)
+    resp = pg_client.get(
+        f"/api/v1/suitability/scenarios/tiles/{seeded_successor_shaped}/3/4/3.mvt"
+        "?wz=0.25000000&wr=0.25000000&we=0.25000000&wd=0.25000000"
+        f"&scenario_hash={full_hash}"
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "COMPONENT_MODEL_SCENARIOS_UNAVAILABLE"
+
+
+def test_an_unpinned_scenario_preview_stays_on_the_historical_model(
+    pg_client: TestClient, seeded: dict[str, Any], seeded_successor_shaped: int
+) -> None:
+    body = pg_client.post(
+        "/api/v1/suitability/scenarios/preview", json={"weights": EQUAL_BODY}
+    ).json()
+    assert body["run_id"] == seeded["run"]
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+
+
+def test_scenario_responses_carry_the_runs_component_scores_shape(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    body = _preview(pg_client, seeded["run"], EQUAL_BODY, top_n=1).json()
+    top = body["top_candidates"][0]
+    assert top["zoning_score"] is not None
+    # Historical run: the legacy fields are authoritative and nothing duplicates them.
+    assert top["component_scores"] == {}
+    detail_resp = pg_client.post(
+        f"/api/v1/suitability/scenarios/candidates/{seeded['a']}",
+        json={"run_id": seeded["run"], "weights": EQUAL_BODY},
+    )
+    detail = detail_resp.json()
+    assert detail["component_model_version"] == "suitability-components-zred-v1"
+    assert detail["component_order"] == ["zoning", "road", "equity", "demand"]
+    assert detail["component_scores"] == {}
+    assert [c["component"] for c in detail["contributions"]] == detail["component_order"]
+
+
+def test_the_scenario_method_version_and_hash_are_unchanged(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    """Model awareness must not move a single existing scenario identity."""
+
+    body = _preview(pg_client, seeded["run"], EQUAL_BODY).json()
+    assert body["method_version"] == "user-weight-scenario-v1"
+    weights = scenario.parse_and_validate_weights(EQUAL_BODY)
+    assert body["scenario_hash"] == scenario.scenario_hash(seeded["run"], weights)

@@ -28,6 +28,10 @@ class UserWeightScenarioRequest(BaseModel):
     """
 
     run_id: int | None = None
+    # Optional component-model selector. Omitted → the default model, which
+    # preserves existing behaviour. When ``run_id`` is also given, the run must
+    # belong to this model or the request fails with COMPONENT_MODEL_MISMATCH.
+    component_model_version: str | None = None
     weights: dict[str, str]
     compare_profile: CompareProfile = "baseline"
     top_n: int = Field(default=10, ge=1, le=50)
@@ -38,6 +42,7 @@ class UserScenarioCandidateDetailRequest(BaseModel):
     """Candidate-detail request for a single candidate under a scenario."""
 
     run_id: int | None = None
+    component_model_version: str | None = None
     weights: dict[str, str]
     compare_profile: CompareProfile = "baseline"
 
@@ -65,10 +70,15 @@ class UserScenarioTopCandidate(BaseModel):
     comparison_rank: int | None
     rank_delta: int | None
     rank_change_direction: str | None
+    # Legacy (zred-v1) component scores: populated for historical runs, explicit
+    # null for every other component model.
     zoning_score: str | None
     road_score: str | None
     equity_score: str | None
     demand_score: str | None
+    # Version-aware component scores keyed by the run's own component names ({} for
+    # historical runs, whose scores are the four fields above).
+    component_scores: dict[str, str | None] = Field(default_factory=dict)
     stable_count: int | None
     stability_class: str | None
     centroid_lon: float | None
@@ -95,12 +105,17 @@ class UserScenarioCandidateDetailOut(BaseModel):
     comparison_rank: int | None
     rank_delta: int | None
     rank_change_direction: str | None
+    # Legacy (zred-v1) component scores: populated for historical runs, explicit
+    # null for every other component model.
     zoning_score: str | None
     road_score: str | None
     equity_score: str | None
     demand_score: str | None
+    # Version-aware component scores keyed by the run's own component names ({} for
+    # historical runs).
+    component_scores: dict[str, str | None] = Field(default_factory=dict)
     # component_score · scenario weight per component (sums to custom_score within
-    # the documented 4-dp quantization).
+    # the documented 4-dp quantization). Ordered by the run's component_order.
     contributions: list[ScenarioContribution]
     # Stored-run weight-sensitivity stability (NOT recomputed under the scenario).
     stable_count: int | None
@@ -126,6 +141,10 @@ class UserScenarioCandidateDetailOut(BaseModel):
     policy_version: str
     derivation_version: str
     candidate_grid_version: str
+    # The run's OWN component-model identity. A scenario is only ever valid against
+    # a run of the component model its weights are defined over.
+    component_model_version: str
+    component_order: list[str]
     scenario_label: str
     scenario_disclaimer: str
     screening_disclaimer: str
@@ -140,6 +159,10 @@ class UserWeightScenarioPreviewOut(BaseModel):
     policy_version: str
     derivation_version: str
     candidate_grid_version: str
+    # The run's OWN component-model identity; the canonical weights below are
+    # defined over exactly these components, in this order.
+    component_model_version: str
+    component_order: list[str]
     canonical_weights: dict[str, str]
     compare_profile: str
     candidate_count_total: int
