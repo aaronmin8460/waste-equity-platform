@@ -8,9 +8,20 @@ import { mockEquityBackend } from "./phase4Fixtures";
  * `phase4EquityMap.spec.ts` owns the selection flow and the legend geometry;
  * `civicShell.spec.ts` owns the shell. This file owns what the restructured
  * screen newly promises — the sidebar as the single scroll container, the map
- * still reaching the viewport bottom BENEATH the new insight strip, the strip
- * never colliding with the legend or collapsing the map, and the current-selection
- * summary carrying region · metric · value · reference period · source.
+ * reaching the viewport bottom, the legend sitting clear of the OSM attribution,
+ * and the current-selection summary carrying region · metric · value · reference
+ * period · source.
+ *
+ * ── THE MAP INSIGHT STRIP IS NO LONGER ON THIS SCREEN ────────────────────────────
+ * 해석 · 주의 · 출처 보기 was taken off Page 1's primary UI by the `page-1 기술요청`
+ * (see the note beside its former mount in `app/page.tsx`). The assertions that
+ * described it are gone from this file; the assertions that described the map, the
+ * legend, and the selection summary are NOT, because those promises still stand.
+ *
+ * Nothing it disclosed lost its coverage here: the reference period and the metric
+ * source are still asserted to be on screen, in 선택한 지역 — which is exactly where
+ * the removal note says they now live. `mapInsightDisclosure.spec.ts` continues to
+ * own the disclosure's behaviour for the suitability screens, which keep it.
  *
  * Self-mocked through `phase4Fixtures.mockEquityBackend`: no backend, no database,
  * no tile server, no government API. Structure, geometry, and behaviour only —
@@ -72,76 +83,37 @@ for (const vp of VIEWPORTS) {
       expect(await page.evaluate(() => window.scrollY)).toBe(0);
     });
 
-    test("keeps the map filling the workspace beneath the insight strip", async ({ page }) => {
+    test("keeps the map filling the workspace", async ({ page }) => {
       await openEquity(page);
       const mapBox = (await page.getByTestId("map-container").boundingBox())!;
 
-      // The map still reaches the viewport bottom — the strip is an overlay, not a
-      // band below the canvas (docs/ui-refresh/regression-contract.md §4).
+      // The map reaches the viewport bottom — nothing sits as a band below the canvas
+      // (docs/ui-refresh/regression-contract.md §4).
       expect(mapBox.y + mapBox.height, "map reaches the viewport bottom").toBeGreaterThanOrEqual(
         vp.height - 6,
       );
       expect(mapBox.height, "map is the dominant surface").toBeGreaterThan(vp.height * 0.75);
       expect(mapBox.width, "map keeps a meaningful width").toBeGreaterThan(400);
 
-      // Collapsed, the insight is a compact bar; opened, it is a bounded card. Both
-      // states stay inside the map bounds and neither collapses the canvas.
-      const strip = page.getByTestId("equity-insight-strip");
-      await expect(strip).toBeVisible();
-      const stripBox = (await strip.boundingBox())!;
-      // Inside the map bounds…
-      expect(stripBox.x).toBeGreaterThanOrEqual(mapBox.x - 2);
-      expect(stripBox.x + stripBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width + 2);
-      expect(stripBox.y).toBeGreaterThanOrEqual(mapBox.y - 2);
-      expect(stripBox.y + stripBox.height).toBeLessThanOrEqual(mapBox.y + mapBox.height + 2);
-      // …and it does not collapse the map: it covers at most a third of its height.
-      expect(stripBox.height).toBeLessThan(mapBox.height / 3);
-
-      await page.getByTestId("equity-insight-summary").click();
-      const openBox = (await strip.boundingBox())!;
-      expect(openBox.x).toBeGreaterThanOrEqual(mapBox.x - 2);
-      expect(openBox.x + openBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width + 2);
-      expect(openBox.y).toBeGreaterThanOrEqual(mapBox.y - 2);
-      expect(openBox.y + openBox.height).toBeLessThanOrEqual(mapBox.y + mapBox.height + 2);
-      // Looser than the collapsed bound above: the expanded card is a transient,
-      // user-opened state and carries a summary bar the old always-open card lacked.
-      expect(openBox.height, "the expanded card still leaves the map dominant").toBeLessThan(
-        mapBox.height * 0.4,
-      );
+      // The retired strip must not come back as a primary Page-1 control.
+      await expect(page.getByTestId("equity-insight-strip")).toHaveCount(0);
     });
 
-    test("stacks the legend clear of the strip and of the attribution", async ({ page }) => {
+    test("stacks the legend clear of the attribution", async ({ page }) => {
       await openEquity(page);
       const mapBox = (await page.getByTestId("map-container").boundingBox())!;
       const legendBox = (await page.getByTestId("map-legend").boundingBox())!;
-      const stripBox = (await page.getByTestId("equity-insight-strip").boundingBox())!;
 
-      // One bottom overlay column: the legend sits directly above the insight and the
-      // two never overlap, whatever either one's height turns out to be. The insight
-      // is right-aligned in that band; the legend keeps the map's left edge.
-      expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(stripBox.y + 1);
+      // The legend keeps the map's left edge and stays inside the canvas.
       expect(legendBox.x).toBeGreaterThanOrEqual(mapBox.x - 2);
       expect(legendBox.x).toBeLessThan(mapBox.x + 24);
       expect(legendBox.y).toBeGreaterThanOrEqual(mapBox.y - 2);
-      expect(stripBox.x + stripBox.width, "insight sits at the map's right edge").toBeGreaterThan(
-        mapBox.x + mapBox.width - 40,
-      );
+      expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(mapBox.y + mapBox.height + 2);
 
-      // Opening it grows the card UPWARD and lifts the legend, so the disclosure can
-      // never cover the legend in either state.
-      await page.getByTestId("equity-insight-summary").click();
-      const openLegendBox = (await page.getByTestId("map-legend").boundingBox())!;
-      const openStripBox = (await page.getByTestId("equity-insight-strip").boundingBox())!;
-      expect(openLegendBox.y + openLegendBox.height).toBeLessThanOrEqual(openStripBox.y + 1);
-      expect(openLegendBox.y, "the legend rides above the expanded card").toBeGreaterThanOrEqual(
-        mapBox.y - 2,
-      );
-
-      // The OSM attribution is never covered, open or closed.
+      // The OSM attribution is never covered by the legend.
       const attribBox = await page.locator(".maplibregl-ctrl-attrib").boundingBox();
       if (attribBox) {
-        expect(stripBox.y + stripBox.height).toBeLessThanOrEqual(attribBox.y + 2);
-        expect(openStripBox.y + openStripBox.height).toBeLessThanOrEqual(attribBox.y + 2);
+        expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(attribBox.y + 2);
       }
     });
 
@@ -197,14 +169,10 @@ for (const vp of VIEWPORTS) {
       await expect(summary).toBeInViewport();
       await expect(page.getByTestId("equity-summary-status")).toBeVisible();
       // The reference period and the metric source are on screen, not in a tooltip.
+      // With the map insight off Page 1 these are now the ONLY on-screen home for
+      // them, which is precisely why they are asserted here rather than assumed.
       await expect(page.getByTestId("equity-summary-reference-period")).toBeVisible();
       await expect(page.getByTestId("selected-region-metric-source").first()).toBeVisible();
-      // The map insight is collapsed by default, so its copy of the same facts is
-      // one click away — never a tooltip, and never the only home for them.
-      await expect(page.getByTestId("insight-reference-period")).toBeHidden();
-      await page.getByTestId("equity-insight-summary").click();
-      await expect(page.getByTestId("insight-reference-period")).toBeVisible();
-      await expect(page.getByTestId("insight-provenance")).toBeVisible();
     });
   });
 }
@@ -216,7 +184,7 @@ for (const vp of VIEWPORTS) {
 test.describe("equity dashboard behaviour at 1440×900", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("selecting a metric updates the summary, the legend, the strip, and the URL", async ({
+  test("selecting a metric updates the summary, the legend, and the URL", async ({
     page,
   }) => {
     await openEquity(page);
@@ -227,7 +195,6 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
 
     await expect(page.getByTestId("selected-metric-summary")).toContainText("1인당 생활계 발생량");
     await expect(page.getByTestId("legend-metric-label")).toContainText("1인당 생활계 발생량");
-    await expect(page.getByTestId("insight-interpretation")).toContainText("1인당 생활계 발생량");
     // One canonical metric state, mirrored into the versioned share URL.
     await expect(page).toHaveURL(/[?&]v=1(&|$|&)/);
     await expect(page).toHaveURL(/metric=PER_CAPITA_HOUSEHOLD/);
@@ -249,7 +216,9 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
     // Picker → the same state, in the other direction.
     await page.getByTestId("region-select").selectOption("KR-SGIS-11680");
     await expect(page.getByTestId("selected-region-name")).toHaveText("강남구");
-    await expect(page.getByTestId("selected-region-value")).toContainText("persons");
+    // The counter word attaches to the numeral (`561,000명`); never the raw `persons`.
+    await expect(page.getByTestId("selected-region-value")).toContainText("명");
+    await expect(page.getByTestId("selected-region-value")).not.toContainText("persons");
     await expect(page.getByTestId("rank-row").filter({ hasText: "강남구" }).first()).toHaveAttribute(
       "aria-current",
       "true",
@@ -266,7 +235,10 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
   }) => {
     await openEquity(page);
     await expect(page.getByTestId("rank-basis")).toContainText("인구");
-    await expect(page.getByTestId("rank-basis")).toContainText("persons");
+    // The unit is PRINTED in Korean: /api/v1/population serves the English `persons`
+    // and every display path routes through lib/units, so a reader never meets it.
+    await expect(page.getByTestId("rank-basis")).toContainText("단위 명");
+    await expect(page.getByTestId("rank-basis")).not.toContainText("persons");
 
     // 지표 순위 전체보기 replaced the 지역 비교 card (correction pass): the same
     // served values, every region, no top-N cut.
@@ -289,10 +261,13 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
     await expect(page.getByTestId("open-report")).toBeVisible();
   });
 
-  test("routes to the existing 데이터·출처 area from the map source block", async ({ page }) => {
+  test("opens 데이터·출처 over this view, keeping its map mounted", async ({ page }) => {
     await openEquity(page);
-    await page.getByTestId("equity-insight-summary").click();
-    await page.getByTestId("insight-open-sources").click();
+    // The map source block used to carry this route. With 해석 · 주의 · 출처 보기 off
+    // Page 1, the navigation is the route — what is asserted below is unchanged and
+    // is the part that actually matters: 데이터·출처 arrives as a DIALOG over this
+    // view rather than replacing it, so the map is never torn down and rebuilt.
+    await page.getByTestId("mode-transparency").click();
     await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
     // 데이터·출처 is a DIALOG over this view (spec §8), so its map stays mounted —
     // still exactly one, never a second.

@@ -110,7 +110,11 @@ test.describe("equity map structure at 1440×900", () => {
     const summary = page.getByTestId("selected-metric-summary");
     await expect(summary).toHaveAttribute("role", "status");
     await expect(summary).toContainText("인구");
-    await expect(summary).toContainText("persons");
+    // The unit is PRINTED in Korean. /api/v1/population serves the English `persons`
+    // and every display path routes through lib/units, so a citizen never meets the
+    // raw API token — the CSV still records it, which is where it belongs.
+    await expect(summary).toContainText("단위 명");
+    await expect(summary).not.toContainText("persons");
 
     // The metric name is visually dominant over the unit within the summary.
     const nameSize = await summary
@@ -188,7 +192,9 @@ test.describe("selected-region flow at 1440×900", () => {
     // Changing the select drives the same state in the other direction.
     await page.getByTestId("region-select").selectOption("KR-SGIS-11680");
     await expect(page.getByTestId("selected-region-name")).toHaveText("강남구");
-    await expect(page.getByTestId("selected-region-value")).toContainText("persons");
+    // The counter word attaches to the numeral (`561,000명`); never the raw `persons`.
+    await expect(page.getByTestId("selected-region-value")).toContainText("명");
+    await expect(page.getByTestId("selected-region-value")).not.toContainText("persons");
 
     // Clearing returns to the explicit empty prompt — never a zero.
     await page.getByTestId("selected-region-clear").click();

@@ -1,5 +1,4 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { mockEquityBackend } from "./phase4Fixtures";
 import { mockSuitabilityBackend } from "./suitabilityFixtures";
 
 /**
@@ -66,12 +65,6 @@ const LAND_COVER_RELEASE = {
   },
 };
 
-async function openEquity(page: Page): Promise<void> {
-  await mockEquityBackend(page);
-  await page.goto("/?v=1&mode=equity");
-  await expect(page.getByTestId("map-container")).toBeVisible({ timeout: 15000 });
-}
-
 async function openSuitability(page: Page, view: "score" | "scenario"): Promise<void> {
   await mockSuitabilityBackend(page);
   // Served BEFORE navigation so the layer control mounts available, not disabled —
@@ -92,18 +85,19 @@ async function openSuitability(page: Page, view: "score" | "scenario"): Promise<
   ).toBeVisible();
 }
 
-/** The three map views that carry a disclosure, by the test IDs they use. */
+/**
+ * The map views that carry a disclosure, by the test IDs they use.
+ *
+ * 지역 지표 (Page 1) USED to be the first entry here. 해석 · 주의 · 출처 보기 was taken
+ * off Page 1's primary UI by the `page-1 기술요청` — see the note beside its former
+ * mount in `app/page.tsx` — so there is no longer a disclosure on that screen to
+ * describe, and `equityDashboard.spec.ts` now asserts its ABSENCE instead.
+ *
+ * The suitability entries below are untouched: those screens deliberately keep the
+ * disclosure, and `equity/EquityMapInsightStrip.tsx` is likewise kept (with its own
+ * component tests) rather than deleted.
+ */
 const CASES = [
-  {
-    name: "지역 지표",
-    open: (page: Page) => openEquity(page),
-    strip: "equity-insight-strip",
-    summary: "equity-insight-summary",
-    interpretation: "insight-interpretation",
-    caution: "insight-caution",
-    action: "insight-open-sources",
-    heading: "자료 기준·출처",
-  },
   {
     name: "후보지 심층 분석",
     open: (page: Page) => openSuitability(page, "score"),
@@ -381,7 +375,7 @@ for (const c of CASES) {
       // "returns to the collapsed default after navigating away" — is about.
       await page.getByTestId("mode-flow").click();
       await expect(page.getByTestId(c.strip)).toHaveCount(0);
-      await page.getByTestId(c.name === "지역 지표" ? "mode-equity" : "mode-suitability").click();
+      await page.getByTestId("mode-suitability").click();
       if (c.name === "후보지 심층 비교") {
         await page.getByTestId("suitability-view-scenario").click();
         await expect(page.getByTestId("scenario-lab")).toBeVisible();
@@ -467,10 +461,7 @@ for (const c of CASES) {
       page,
     }) => {
       await c.open(page);
-      const legendRow =
-        c.name === "지역 지표"
-          ? page.getByTestId("choropleth-legend-row")
-          : page.getByTestId("score-class-row");
+      const legendRow = page.getByTestId("score-class-row");
       const swatchesBefore = await legendRow.evaluateAll((els) =>
         els.map((el) => getComputedStyle(el.querySelector("span")!).backgroundColor),
       );
@@ -485,11 +476,7 @@ for (const c of CASES) {
       expect(swatchesAfter).toEqual(swatchesBefore);
       // The disclosure owns no analytical state, so it writes nothing to the URL.
       expect(page.url()).toBe(urlBefore);
-      if (c.name === "지역 지표") {
-        await expect(page.locator('input[type="radio"][name="metric"]:checked')).toHaveCount(1);
-      } else {
-        await expect(page.getByTestId("status-toggle-ELIGIBLE")).toBeChecked();
-      }
+      await expect(page.getByTestId("status-toggle-ELIGIBLE")).toBeChecked();
     });
   });
 }
