@@ -10,8 +10,10 @@ import datetime
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from waste_equity_backend.analysis.suitability import policy
 from waste_equity_backend.api.routes import suitability as suitability_routes
 from waste_equity_backend.models import SuitabilityAnalysisRun
 
@@ -120,6 +122,42 @@ def test_unknown_run_404(client: TestClient) -> None:
     response = client.get("/api/v1/suitability/summary?run_id=987654")
     assert response.status_code == 404
     assert response.json()["detail"]["error"] == "RUN_NOT_FOUND"
+
+
+def test_the_candidate_collection_run_lookup_selects_the_runs_own_versions(
+    session: Session,
+) -> None:
+    """The candidate collection's run lookup must read the run's version identity.
+
+    The route previously echoed the *running code's* module constants, which
+    mislabels a stored run the moment two component models coexist. The candidate
+    rows themselves are spatial (PostGIS tier), so this asserts the non-spatial
+    half here: the run lookup's exact column list resolves against the real table
+    and returns the versions the run was stored with, not the ones the process
+    happens to be running.
+    """
+
+    run = _seed_run(session)
+    row = (
+        session.execute(
+            text(
+                "SELECT reference_year, weight_profiles, policy_version, "
+                "derivation_version, candidate_grid_version "
+                "FROM suitability_analysis_runs WHERE id = :id"
+            ),
+            {"id": run.id},
+        )
+        .mappings()
+        .first()
+    )
+    assert row is not None
+    assert row["policy_version"] == "suitability-policy-v1"
+    assert row["derivation_version"] == "suitability-screening-v1"
+    assert row["candidate_grid_version"] == "capital-grid-500m-v1"
+    # The seeded run is deliberately stored under versions the running code has
+    # moved past, which is exactly the case the collection used to mislabel.
+    assert row["policy_version"] != policy.POLICY_VERSION
+    assert row["derivation_version"] != policy.DERIVATION_VERSION
 
 
 def test_bad_profile_is_422(client: TestClient) -> None:

@@ -21,6 +21,7 @@ from geoalchemy2 import WKTElement
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
+from waste_equity_backend.analysis.suitability import policy
 from waste_equity_backend.api.app import create_app
 from waste_equity_backend.db import get_session
 from waste_equity_backend.models import SuitabilityAnalysisRun, SuitabilityCandidate
@@ -641,6 +642,39 @@ def test_summary_old_run_without_stability(
     assert body["stability_top_cutoff_rank"] is None
     assert body["candidate_count_stable"] == 0
     assert body["top_stable_candidates"] == []
+
+
+def test_candidates_report_the_runs_own_versions_not_the_running_codes(
+    pg_client: TestClient, seeded_old: dict[str, int]
+) -> None:
+    """A stored run must be labelled with the versions it was built under.
+
+    ``seeded_old`` is a historical run recorded as ``suitability-policy-v1`` /
+    ``suitability-screening-v2`` while the running code is at v2 / v3. The
+    candidate collection previously echoed the *module constants*, stamping this
+    run with versions it was never computed under. Every sibling endpoint reads
+    the run row; this asserts the collection does too, so a historical run stays
+    interpretable once a second component model exists.
+    """
+
+    body = pg_client.get(
+        f"/api/v1/suitability/candidates?run_id={seeded_old['run']}"
+    ).json()
+    assert body["policy_version"] == "suitability-policy-v1"
+    assert body["derivation_version"] == "suitability-screening-v2"
+    assert body["candidate_grid_version"] == "capital-grid-500m-v1"
+    assert body["policy_version"] != policy.POLICY_VERSION
+    assert body["derivation_version"] != policy.DERIVATION_VERSION
+
+    # The same run's other endpoints agree — one run, one version identity.
+    summary = pg_client.get(
+        f"/api/v1/suitability/summary?run_id={seeded_old['run']}"
+    ).json()
+    assert summary["policy_version"] == body["policy_version"]
+    assert summary["derivation_version"] == body["derivation_version"]
+    detail = pg_client.get(f"/api/v1/suitability/candidates/{seeded_old['c1']}").json()
+    assert detail["policy_version"] == body["policy_version"]
+    assert detail["derivation_version"] == body["derivation_version"]
 
 
 def test_candidate_detail_stability_and_run_critic_weights(

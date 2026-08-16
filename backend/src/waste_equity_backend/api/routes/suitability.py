@@ -576,8 +576,15 @@ def list_candidates(
     run = (
         session.execute(
             text(
-                "SELECT reference_year, weight_profiles FROM suitability_analysis_runs "
-                "WHERE id = :id"
+                # The run's OWN version identity is selected here and echoed below.
+                # Reporting the running code's module constants instead would label a
+                # stored run with whatever version the server happens to be on — an
+                # active mislabeling of a historical run as soon as two model versions
+                # coexist. Every sibling endpoint (/summary, /candidates/{id}, /runs)
+                # already reads these from the run row; this one now matches.
+                "SELECT reference_year, weight_profiles, policy_version, "
+                "derivation_version, candidate_grid_version "
+                "FROM suitability_analysis_runs WHERE id = :id"
             ),
             {"id": resolved},
         )
@@ -735,9 +742,9 @@ def list_candidates(
 
     return SuitabilityCandidateCollection(
         indicator="SUITABILITY_SCREENING",
-        derivation_version=policy.DERIVATION_VERSION,
-        policy_version=policy.POLICY_VERSION,
-        candidate_grid_version=policy.CANDIDATE_GRID_VERSION,
+        derivation_version=run["derivation_version"],
+        policy_version=run["policy_version"],
+        candidate_grid_version=run["candidate_grid_version"],
         weight_profile=profile,
         reference_year=run["reference_year"],
         run_id=resolved,
