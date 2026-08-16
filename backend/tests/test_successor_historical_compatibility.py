@@ -16,8 +16,14 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import Numeric
 
-from waste_equity_backend.analysis.suitability import critic, policy, scenario
+from waste_equity_backend.analysis.suitability import (
+    component_model,
+    critic,
+    policy,
+    scenario,
+)
 from waste_equity_backend.analysis.suitability.successor import (
     policy as successor_policy,
 )
@@ -174,17 +180,60 @@ def test_the_historical_run_columns_are_unchanged() -> None:
         assert name in columns
 
 
-def test_this_branch_adds_no_persistence_column_yet() -> None:
-    """The foundation persists nothing, so it introduces no schema change.
+def test_the_persistence_design_is_applied_additively_only() -> None:
+    """The recorded design is now applied, and applied *additively*.
 
-    The additive design is recorded in ``successor_policy.PERSISTENCE_DESIGN`` and
-    is deliberately not applied here: adding a column that nothing reads or writes
-    would change the historical write path for no current reader.
+    The design in ``successor_policy.PERSISTENCE_DESIGN`` adds three columns and
+    alters none. What must stay true is not "no column was added" but "nothing
+    historical moved": the four legacy score columns are still present, still
+    nullable, still ``Numeric(7,4)``, and still the only columns a historical run's
+    component scores live in.
     """
 
-    assert "component_scores" not in SuitabilityCandidate.__table__.columns
-    assert "component_model_version" not in SuitabilityAnalysisRun.__table__.columns
-    assert successor_policy.PERSISTENCE_DESIGN["status"] == "DESIGN_ONLY_NOT_APPLIED"
+    assert successor_policy.PERSISTENCE_DESIGN["status"] == "APPLIED_ADDITIVE_SCHEMA_ONLY"
+
+    run_columns = SuitabilityAnalysisRun.__table__.columns
+    assert "component_model_version" in run_columns
+    assert "component_order" in run_columns
+    candidate_columns = SuitabilityCandidate.__table__.columns
+    assert "component_scores" in candidate_columns
+
+    # The added candidate column is a JSON map, never a fifth score column that
+    # could be confused with the four historical ones.
+    assert not isinstance(candidate_columns["component_scores"].type, Numeric)
+
+    # Nothing historical was renamed, retyped, or made non-nullable.
+    for component in policy.COMPONENTS:
+        column = candidate_columns[f"{component}_score"]
+        assert column.nullable is True
+        assert column.type.precision == 7
+        assert column.type.scale == 4
+
+
+def test_the_added_columns_default_to_labelling_existing_rows_historical() -> None:
+    """The new run columns default to the model existing rows already used.
+
+    Stamping a pre-existing run ``zred-v1`` states a fact that is already true — the
+    candidate table admits no other component model at this revision — so it is
+    labelling, not a semantic backfill. No analytical value is read or written to
+    establish it.
+    """
+
+    run_columns = SuitabilityAnalysisRun.__table__.columns
+    assert run_columns["component_model_version"].server_default is not None
+    assert (
+        component_model.COMPONENT_MODEL_HISTORICAL
+        in run_columns["component_model_version"].server_default.arg.text
+    )
+    assert run_columns["component_order"].server_default is not None
+    for name in policy.COMPONENTS:
+        assert name in run_columns["component_order"].server_default.arg.text
+    # Candidate rows default to an EMPTY map: a historical score is never copied
+    # into the version-aware representation, because a second copy of an
+    # authoritative analytical value can drift from the first.
+    assert (
+        SuitabilityCandidate.__table__.columns["component_scores"].server_default.arg.text == "'{}'"
+    )
 
 
 # --------------------------------------------------------------------------- #

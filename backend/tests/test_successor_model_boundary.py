@@ -240,11 +240,22 @@ def test_preflight_refuses_a_historical_component_matrix() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_the_persistence_design_is_declared_but_not_applied() -> None:
+def test_the_persistence_design_is_applied_but_writes_no_successor_run() -> None:
+    """The schema is applied; the successor *write path* is still blocked.
+
+    Applying the columns is what lets two component models coexist in storage and
+    on the wire. It does not make a successor run producible, and the blocker that
+    replaced the design-only one says exactly that.
+    """
+
     design = policy.PERSISTENCE_DESIGN
-    assert design["status"] == "DESIGN_ONLY_NOT_APPLIED"
+    assert design["status"] == "APPLIED_ADDITIVE_SCHEMA_ONLY"
+    assert design["applied_migrations"] == ["0022", "0023"]
     assert "component_scores" in design["candidate_level"]["added_columns"]
     assert "component_model_version" in design["run_level"]["added_columns"]
+    assert "SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED" in {
+        b.blocker_id for b in policy.activation_blockers()
+    }
 
 
 def test_the_design_forbids_reusing_or_copying_the_historical_columns() -> None:

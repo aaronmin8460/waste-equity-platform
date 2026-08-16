@@ -288,15 +288,17 @@ ACTIVATION_BLOCKERS: tuple[ActivationBlocker, ...] = (
         resolution_owner="analytical-method research lane",
     ),
     ActivationBlocker(
-        blocker_id="SUCCESSOR_PERSISTENCE_NOT_DESIGNED",
+        blocker_id="SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED",
         summary=(
-            "No successor score is persisted. The foundation is pure computation, so no "
-            "migration exists; the additive persistence design (run-level "
-            "component_model_version + component_order, candidate-level component_scores, "
-            "legacy columns untouched and NULL for successor runs) must be applied before "
-            "any successor result is stored beside historical candidate rows."
+            "The additive persistence schema and the version-aware API contract are applied "
+            "(run-level component_model_version + component_order, candidate-level "
+            "component_scores, legacy columns untouched and NULL for successor runs), but "
+            "nothing writes a successor run: no engine stage scores the successor "
+            "components into candidate rows, and doing so requires the missing-component "
+            "eligibility policy, an approved weight vector, and a normalization strategy "
+            "first. Successor user-weight scenarios are refused for the same reason."
         ),
-        blocks="successor persistence and API serialization",
+        blocks="producing any stored successor run, and successor scenario recombination",
         resolution_owner="backend owner",
     ),
     ActivationBlocker(
@@ -661,18 +663,27 @@ def critic_preflight(
 # Persistence design contract (declared, not applied)
 # --------------------------------------------------------------------------- #
 
-# The narrowest safe additive design for eventually storing successor scores. It is
-# recorded here as the single source of truth so the decision is reviewable and
-# testable, and so a future implementer does not re-derive it. **Nothing in this
-# branch applies it**: the foundation persists nothing, so adding a migration now
-# would change the historical write path for no current reader.
+# The narrowest safe additive design for storing successor scores, recorded here as
+# the single source of truth so the decision stays reviewable and testable.
+#
+# **The schema is now applied** (alembic ``0022`` run-level identity, ``0023``
+# candidate-level ``component_scores``), and the API serves it — see
+# ``analysis.suitability.component_model`` and
+# ``docs/SUITABILITY_COMPONENT_MODEL_CONTRACT.md``. What is *not* applied is any
+# successor write: no engine stage produces a successor run, no successor score is
+# stored, and the columns hold their historical labelling defaults on every row.
 #
 # The load-bearing property is that the successor model has *no column to be
 # cross-wired into*. Four adjacent Numeric(7,4) columns and a fifth successor
 # quantity are one careless edit away from each other; a NULL legacy column and a
 # separate versioned map are not.
 PERSISTENCE_DESIGN: dict[str, Any] = {
-    "status": "DESIGN_ONLY_NOT_APPLIED",
+    "status": "APPLIED_ADDITIVE_SCHEMA_ONLY",
+    "applied_migrations": ["0022", "0023"],
+    "not_applied": (
+        "No successor run write path exists: nothing produces a successor run, so "
+        "component_scores is {} and the legacy columns are populated on every stored row."
+    ),
     "run_level": {
         "table": "suitability_analysis_runs",
         "added_columns": {
