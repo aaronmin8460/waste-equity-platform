@@ -16,9 +16,11 @@ import type {
   LandfillFeePerCapita,
   LandfillOriginShare,
   LandfillSummary,
+  MunicipalCostResponse,
 } from "../lib/api";
 import type { LandfillUnavailableState } from "../lib/landfill";
 import { FORBIDDEN_PRIMARY_TOKENS } from "../lib/glossary";
+import { MUNICIPAL_COST_SUMMARY_TITLE } from "./landfill/municipalCostShared";
 
 /**
  * The <h1>, supplied by the page as the visible destination name (spec §2.2).
@@ -263,6 +265,53 @@ function genuineError(
  * proving the two coexist — and supplies no municipal fixture values that could be
  * mistaken for this file's official-landfill ones.
  */
+/**
+ * The UNFILTERED municipal response the KPI-region summary counts from.
+ *
+ * Only `meta` matters here: the summary reports the published SCOPE (the counts the
+ * backend computes before any status filter), never a figure derived from the rows.
+ */
+function municipalCostResponse(): MunicipalCostResponse {
+  return {
+    meta: {
+      indicator_code: "MUNICIPAL_WASTE_COLLECTION_CONTRACT_PAYMENT_PER_CAPITA",
+      display_name: "생활폐기물 수집·운반 계약 지급액",
+      description: "지자체가 공개한 계약 지급액입니다.",
+      reference_year: 2024,
+      unit: "KRW/인",
+      accounting_basis: "MUNICIPAL_CONTRACT_PAYMENT",
+      methodology_version: "municipal-cost-v1",
+      geography_policy: "BASIC_LOCAL_GOVERNMENT",
+      population_policy: "MOIS_ANNUAL",
+      numerator_definition: "수집·운반 대행 계약 지급액",
+      difference_from_official_landfill_fee: "다른 회계 기준입니다.",
+      is_official_landfill_fee: false,
+      expected_count: 3,
+      available_count: 2,
+      partial_count: 0,
+      unavailable_count: 1,
+      returned_count: 3,
+      rejected_source_file_count: 0,
+      rejected_source_files: [],
+      source_coverage: {
+        discovered_file_count: 3,
+        accepted_file_count: 3,
+        rejected_file_count: 0,
+        data_a_file_count: 3,
+        data_b_file_count: 0,
+        municipalities_with_data_a: 2,
+        municipalities_with_data_b: 0,
+        municipalities_with_no_source_file: 1,
+      },
+      caveats: [],
+    },
+    sido_filter: null,
+    status_filter: null,
+    sort: "payment_per_capita_desc",
+    municipalities: [],
+  };
+}
+
 function municipalCostProps() {
   return {
     data: null,
@@ -342,12 +391,21 @@ function renderDashboard(props: Partial<Parameters<typeof LandfillDashboard>[0]>
 
 describe("LandfillDashboard", () => {
   it("renders the heading and keeps the metropolitan-only limitation, without a banner", () => {
-    renderDashboard();
-    expect(screen.getByText(TITLE)).toBeDefined();
-    // Phase 5: the supporting sentence states the scope without claiming a
-    // real-time figure, a resident bill, or any flow outside the inbound dataset.
-    const orientation = screen.getByText(/수도권매립지로 반입된 공식 반입량과 반입수수료/);
-    expect(orientation.textContent).toContain("선택한 기간과 조건");
+    // Deliberately `container` queries rather than `screen.getByRole`/`getByText`
+    // scans: this dashboard renders a large tree, and a role/text sweep of it takes
+    // most of the 5s budget on its own.
+    const { container } = renderDashboard();
+    expect(container.querySelector("h1")?.textContent).toBe(TITLE);
+    // ONE orientation sentence under the <h1>, not two. The header used to carry its
+    // own description as well — "서울 · 인천 · 경기에서 수도권매립지로 반입된 공식
+    // 반입량과 반입수수료를 선택한 기간과 조건으로 보여줍니다" — one line under the
+    // area's orientation strip, in the same voice, saying the same thing at greater
+    // length. The strip is the survivor; the facts the description added beyond it
+    // are on screen as values (the 출발 지역 filter, the 공식 반입수수료 KPI, the
+    // 조회 조건 selection) rather than as a second sentence.
+    // (The strip itself is supplied by `app/page.tsx` and is not passed here.)
+    expect(container.textContent).not.toContain("반입된 공식 반입량과 반입수수료를 선택한");
+    expect(container.querySelector("h1")?.parentElement?.querySelector("p")).toBeNull();
     // Page-2 remediation: the standing 자료 범위 panel is GONE from the presentation
     // screen. The sentence it carried is not — it is still on the page verbatim, in
     // the 근거와 한계 disclosure, and the 시·도-grain consequence is restated in the
@@ -597,7 +655,7 @@ describe("LandfillDashboard", () => {
   it("keeps the official fee caveat and the served caveats visible", () => {
     renderDashboard();
     expect(screen.getByTestId("landfill-fee-caveat").textContent).toContain(
-      "순수 운송비 또는 전체 폐기물 관리비가 아닙니다",
+      "운송비나 전체 폐기물 관리비가 아닙니다",
     );
     const caveats = screen.getByTestId("landfill-caveats").textContent ?? "";
     expect(caveats).toContain("시·군·구별 반입량을 의미하지 않습니다");
@@ -996,8 +1054,16 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
         const bar = row.querySelector("[aria-hidden]");
         if (bar) expect(bar.getAttribute("aria-hidden")).toBe("true");
       }
-      // The reference period stays attached to the comparison.
-      expect(section.textContent).toContain("기준 기간");
+    }
+    // The landfill reference period is stated ONCE for these cards — in the KPI
+    // strip above them — instead of on each. Repeating `기준 기간 {period}` on every
+    // card between the strip and the table was this page's most duplicated string,
+    // and none of the repeats told a reader anything the strip had not.
+    expect(screen.getByTestId("landfill-headline").textContent).toContain(
+      "수도권매립지 기준 기간",
+    );
+    for (const testId of ["landfill-flow-structure", "landfill-composition"]) {
+      expect(screen.getByTestId(testId).textContent).not.toContain("기준 기간");
     }
   });
 
@@ -1076,7 +1142,9 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
       },
     });
     const chart = screen.getByTestId("landfill-trend-chart");
-    expect(chart.querySelectorAll("rect")).toHaveLength(2);
+    // Bars only. Each month also has a transparent full-height hit target carrying
+    // the hover/focus readout, which is not a value and draws nothing.
+    expect(chart.querySelectorAll("[data-testid='landfill-trend-bar']")).toHaveLength(2);
     // The unserved months are absent from the exact table too — not zero rows.
     const rows = screen.getByTestId("landfill-trend-table").querySelectorAll("tbody tr");
     expect(rows).toHaveLength(2);
@@ -1335,6 +1403,9 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
       "수도권매립지 반입 구조 (지역별)",
       "수도권매립지 반입 폐기물 구성",
       "월별 반입 추이",
+      // The municipal dataset's compact summary, in the KPI region the Figma frame
+      // puts it in, with its `시·군·구별 상세 보기 →` into the full section below.
+      MUNICIPAL_COST_SUMMARY_TITLE,
       "지역별 상세 현황",
       "공유 및 내보내기",
       "근거와 한계",
@@ -1344,9 +1415,9 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
         `missing section heading ${title}`,
       ).toHaveLength(1);
     }
-    // The description under the h1 still states the scope without claiming a
-    // real-time figure or a resident bill.
-    expect(screen.getByText(/수도권매립지로 반입된 공식 반입량과 반입수수료/)).toBeDefined();
+    // ONE orientation sentence, and the header no longer supplies a second one of
+    // its own. See "renders the heading and keeps the metropolitan-only limitation".
+    expect(screen.queryByText(/수도권매립지로 반입된 공식 반입량과 반입수수료/)).toBeNull();
   });
 
   it("shows no scope banner in any state, and still alerts on a genuine failure", () => {
@@ -1746,8 +1817,10 @@ describe("LandfillDashboard — Figma page 2", () => {
     expect(notice.textContent).toContain("3월");
     expect(notice.textContent).toContain("연간");
     // It says the month was UNVERIFIED in the new year, not that it was checked and
-    // found missing — the reset happens before any request is made.
-    expect(notice.textContent).toContain("확인되지 않았기 때문입니다");
+    // found missing — the reset happens before any request is made. The notice was
+    // shortened from three sentences to one; that claim is the part that had to
+    // survive verbatim in meaning, and it did.
+    expect(notice.textContent).toContain("확인되지 않았습니다");
   });
 
   it("does not announce a reset when no month was selected", () => {
@@ -1944,5 +2017,124 @@ describe("LandfillDashboard — Figma page 2", () => {
   it("keeps the municipal contract-payment module the design does not show", () => {
     renderDashboard();
     expect(screen.getByTestId("municipal-cost-section")).toBeDefined();
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// Page-2 fidelity pass — the trend readout, the KPI-region municipal summary
+// --------------------------------------------------------------------------- //
+
+describe("LandfillDashboard — 월별 추이 exact-value readout", () => {
+  it("prints n월 · 정확한 값 for the bar under the pointer", () => {
+    renderDashboard();
+    const readout = screen.getByTestId("landfill-trend-readout");
+    // Nothing is claimed before the reader points at anything.
+    expect(readout.textContent).toContain("막대에 커서를 올리거나");
+    const hit = screen
+      .getAllByTestId("landfill-trend-hit")
+      .find((element) => element.getAttribute("data-month") === "2024-01")!;
+    fireEvent.mouseEnter(hit);
+    // The LOSSLESS served value, with its unit — not the rounded axis form.
+    expect(screen.getByTestId("landfill-trend-readout").textContent).toContain("1월 · ");
+    expect(screen.getByTestId("landfill-trend-readout").textContent).toMatch(/\d/);
+    fireEvent.mouseLeave(hit);
+    expect(screen.getByTestId("landfill-trend-readout").textContent).toContain(
+      "막대에 커서를 올리거나",
+    );
+  });
+
+  it("reaches the same value from the keyboard, and announces it on the bar itself", () => {
+    renderDashboard();
+    const hit = screen
+      .getAllByTestId("landfill-trend-hit")
+      .find((element) => element.getAttribute("data-month") === "2024-01")!;
+    // Focusable, so a keyboard reader can reach every month.
+    expect(hit.getAttribute("tabindex")).toBe("0");
+    // …and the same string is the accessible name, so the figure is ANNOUNCED
+    // rather than only painted — a readout alone needs a pointer or a focus ring.
+    const label = hit.getAttribute("aria-label") ?? "";
+    expect(label).toContain("1월 · ");
+    fireEvent.focus(hit);
+    expect(screen.getByTestId("landfill-trend-readout").textContent).toContain(label);
+  });
+
+  it("keeps the exact-value table as well, for readers who never point at a bar", () => {
+    renderDashboard();
+    expect(screen.getByTestId("landfill-trend-exact")).toBeDefined();
+    expect(
+      screen.getByTestId("landfill-trend-table").querySelectorAll("tbody tr").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps the default bars visible rather than adopting the request's #F9F9F9", () => {
+    // The technical-request frame asks for #F9F9F9 on the non-extreme bars. That is
+    // the page canvas colour and would be invisible on a white card; the latest
+    // Figma (read 2026-08-16) does not resolve it, so a distinguishable neutral is
+    // kept and the max/min stay red/blue as asked.
+    renderDashboard();
+    const bars = Array.from(
+      screen.getByTestId("landfill-trend-chart").querySelectorAll("[data-testid='landfill-trend-bar']"),
+    );
+    for (const bar of bars) {
+      expect(bar.getAttribute("fill")?.toUpperCase()).not.toBe("#F9F9F9");
+    }
+  });
+});
+
+describe("LandfillDashboard — 시·군·구별 상세 보기 summary", () => {
+  it("summarises the municipal dataset's SCOPE, never a partial total", () => {
+    renderDashboard({ municipalCostAll: municipalCostResponse() });
+    const card = screen.getByTestId("municipal-cost-kpi-summary");
+    expect(within(card).getByTestId("municipal-cost-kpi-count-available").textContent).toBe("2곳");
+    expect(within(card).getByTestId("municipal-cost-kpi-count-unavailable").textContent).toBe(
+      "1곳",
+    );
+    expect(within(card).getByTestId("municipal-cost-summary-year").textContent).toContain("2024");
+    // No rolled-up amount. Only some municipalities disclosed one, so a "total"
+    // would be a partial sum wearing a complete label — and a 톤당 form would divide
+    // it by a landfill tonnage on a different accounting basis.
+    expect(card.textContent ?? "").not.toContain("억원");
+    expect(card.textContent ?? "").not.toContain("원/t");
+    expect(card.textContent ?? "").not.toContain("원/인");
+  });
+
+  it("carries the distinction from the official fee it sits beside", () => {
+    renderDashboard({ municipalCostAll: municipalCostResponse() });
+    expect(screen.getByTestId("municipal-cost-kpi-summary").textContent).toContain(
+      "위 수도권매립지 반입수수료와 다른 자료입니다",
+    );
+  });
+
+  it("links to the full section, which still renders every value it points at", () => {
+    renderDashboard({ municipalCostAll: municipalCostResponse() });
+    const link = screen.getByTestId("municipal-cost-detail-link");
+    expect(link.textContent).toContain("시·군·구별 상세 보기 →");
+    // The affordance reveals nothing: the section is always rendered, so no data is
+    // hidden behind it. It only moves the reader — and focus — to the heading.
+    expect(link.getAttribute("href")).toBe("#municipal-cost-heading");
+    const heading = document.getElementById("municipal-cost-heading");
+    expect(heading).not.toBeNull();
+    expect(heading?.getAttribute("tabindex")).toBe("-1");
+    expect(screen.getByTestId("municipal-cost-section")).toBeDefined();
+  });
+
+  it("survives an official landfill failure", () => {
+    // The two datasets are fetched and fail independently. An official 404 — what a
+    // fresh database returns — must leave this card and its section operable.
+    renderDashboard({
+      data: null,
+      unavailable: { kind: "no-data", message: "자료 없음", detail: null, availableYears: [2024] },
+      municipalCostAll: municipalCostResponse(),
+    });
+    expect(screen.getByTestId("municipal-cost-kpi-summary")).toBeDefined();
+    expect(screen.getByTestId("municipal-cost-detail-link")).toBeDefined();
+    expect(screen.getByTestId("municipal-cost-section")).toBeDefined();
+  });
+
+  it("states absence rather than a 0곳 while the municipal request is unanswered", () => {
+    renderDashboard({ municipalCostAll: null });
+    const state = screen.getByTestId("municipal-cost-kpi-summary-state");
+    expect(state.textContent).toContain("값이 0이라는 뜻이 아닙니다");
+    expect(screen.queryByTestId("municipal-cost-kpi-coverage")).toBeNull();
   });
 });

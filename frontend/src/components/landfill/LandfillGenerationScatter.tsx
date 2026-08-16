@@ -42,6 +42,7 @@ import Accordion from "../ui/Accordion";
 import DataStatusBadge from "../ui/DataStatusBadge";
 import SectionCard from "../ui/SectionCard";
 import SegmentedControl from "../ui/SegmentedControl";
+import { PAGE2_CARD_CLASS } from "./shared";
 
 /**
  * The X-axis stream. `HOUSEHOLD` — 생활(가정) 폐기물 — is the one series whose
@@ -94,6 +95,7 @@ export default function LandfillGenerationScatter({
           testId="landfill-scatter-mode"
         />
       }
+      className={PAGE2_CARD_CLASS}
       testId="landfill-scatter"
     >
       {dataset.points.length === 0 ? (
@@ -113,9 +115,10 @@ export default function LandfillGenerationScatter({
           >
             {SCATTER_COMPARABILITY_CAVEAT}
           </p>
-          <p className="mt-1 text-[11px] text-ink-subtle">
-            · 점을 클릭하거나 키보드로 선택하면 해당 지역을 강조하고 정확한 값을 표시합니다.
-          </p>
+          {/* The "클릭하거나 키보드로 선택하면 …" instruction is NOT repeated here. The
+              detail slot immediately below is empty until a point is chosen, and its
+              empty state IS that instruction — printing it twice, one line apart,
+              was the same sentence saying the same thing to the same reader. */}
 
           <SelectedPointDetail point={selectedPoint} dataset={dataset} />
 
@@ -299,7 +302,7 @@ function SelectedPointDetail({
         className="mt-2 rounded-card border border-hairline bg-surface-muted p-3 text-xs text-ink-subtle"
         data-testid="landfill-scatter-selection"
       >
-        점을 선택하면 그 지역의 정확한 값이 여기에 표시됩니다.
+        점을 선택하면(클릭 · 키보드) 그 지역의 정확한 값이 여기에 표시됩니다.
       </p>
     );
   }

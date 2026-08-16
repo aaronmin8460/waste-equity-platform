@@ -86,9 +86,19 @@ export interface ScatterDataset {
   bufferMeters: number | null;
 }
 
+/**
+ * The chart-specific short form of the accounting-basis rule.
+ *
+ * The full statement — 발생량은 발생지 기준, 시설 처리량은 시설 소재지 기준이며 서로
+ * 나누거나 뺄 수 없다 — is made once on the primary surface, under the KPI row
+ * (`components/landfill/shared.ts` CROSS_BASIS_NOTICE). This sentence does not repeat
+ * it; it names which AXIS is which and states the one misreading a scatter invites,
+ * which is the part that only makes sense beside the plot. The two axis labels inside
+ * the SVG carry `· 발생지 기준` / `· 시설 소재지 기준` as well, so the basis reaches a
+ * reader who never leaves the plot area.
+ */
 export const SCATTER_COMPARABILITY_CAVEAT =
-  "가로축은 발생지 기준(지역에서 배출된 양), 세로축은 시설 소재지 기준(그 지역 시설이 처리한 양)입니다. " +
-  "서로 다른 집계 기준이므로 두 값의 차이를 처리 부족분이나 잉여로 읽을 수 없습니다.";
+  "가로축은 발생지 기준, 세로축은 시설 소재지 기준입니다. 두 축의 차이는 처리 부족분이나 잉여가 아닙니다.";
 
 /** Reason labels in plain Korean. The raw enum stays in a diagnostic line. */
 export const SCATTER_EXCLUSION_LABELS: Record<ScatterExclusion["reason"], string> = {

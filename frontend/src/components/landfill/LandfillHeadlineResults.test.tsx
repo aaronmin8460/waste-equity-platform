@@ -137,13 +137,21 @@ function renderRow(overrides: Partial<Parameters<typeof LandfillHeadlineResults>
 describe("LandfillHeadlineResults — real periods", () => {
   it("shows each metric's OWN source period, not one period for the row", () => {
     renderRow();
-    // The two annual series are 2024 …
+    // The two annual series are 2024, stated ON their cards …
     expect(screen.getByTestId("landfill-kpi-generation-period")).toHaveTextContent("기준 기간 2024년");
     expect(screen.getByTestId("landfill-kpi-treatment-period")).toHaveTextContent("기준 기간 2024년");
-    // … while the monthly landfill series is 2025. Both are on screen at once, which
-    // is the whole point: they genuinely differ.
-    expect(screen.getByTestId("landfill-kpi-quantity")).toHaveTextContent("기준 기간 2025년 연간");
-    expect(screen.getByTestId("landfill-fee-card-period")).toHaveTextContent("기준 기간 2025년 연간");
+    // … while the monthly landfill series is 2025, stated ONCE for the two official
+    // cards in the strip above them rather than repeated on each. Both periods are on
+    // screen at the same time, which is the whole point: they genuinely differ.
+    expect(screen.getByTestId("landfill-headline")).toHaveTextContent(
+      "수도권매립지 기준 기간: 2025년 연간",
+    );
+    // Neither official card restates it — and neither borrows the 2024 beside it,
+    // which is what a shared row-level period line would have made them do.
+    expect(screen.getByTestId("landfill-kpi-quantity")).toHaveTextContent("공식 보고값");
+    expect(screen.getByTestId("landfill-kpi-quantity").textContent).not.toContain("기준 기간");
+    expect(screen.getByTestId("landfill-fee-caveat")).toHaveTextContent("공식 보고값");
+    expect(screen.getByTestId("landfill-fee-caveat").textContent).not.toContain("기준 기간");
   });
 
   it("never shows the Figma mock's 2025 on the two annual cards", () => {

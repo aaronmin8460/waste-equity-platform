@@ -1,24 +1,26 @@
 "use client";
 
 /**
- * 지자체별 상세 비교 — the municipal payment comparison, in two responsive forms.
+ * 지자체별 상세 비교 — the municipal payment comparison.
  *
- * ── Why two DOM trees rather than one squeezed table ────────────────────────────
- * The comparison carries four primary fields plus a per-row disclosure. At 1024px+
- * that is a comfortable table; below `md` it is not, and the repository's existing
- * `overflow-x-auto` fallback (`LandfillRegionTable`) is only defensible there
- * because that table has four columns and three rows. This one has up to 66 rows, so
- * a sideways-scrolling grid would make the primary data unusable on a phone.
+ * ── The `md:hidden` card list this file used to also render ─────────────────────
+ * It carried a second, phone-shaped copy of every row: `hidden md:block` for the
+ * table, `md:hidden` for a `<ul>` of cards. That branch was UNREACHABLE. The
+ * analytical app is gated at `DESKTOP_MIN_WIDTH` (1024) — `DashboardShell` returns
+ * `NarrowScreenGate` INSTEAD OF its children below that floor, so this component does
+ * not mount at all under 1024px, while Tailwind's `md:hidden` only reveals the cards
+ * under 768px. No viewport could ever show them.
  *
- * So the desktop table is `hidden md:block` and the mobile card list is `md:hidden`.
- * Tailwind's `hidden` is `display: none`, which removes a subtree from the
- * accessibility tree entirely — so exactly ONE of the two is ever exposed to a
- * screen reader at a given width, and the content is not announced twice. (An
- * `aria-hidden` toggle would be the wrong tool: it cannot follow a media query.)
- * Both forms disclose the same fields and share `MunicipalCostRowDetail`, so they
- * cannot drift apart.
+ * Two DOM trees for one dataset is not free: every rule below had to be implemented,
+ * reviewed, and tested twice, and the duplicate `<ul>` shipped in every payload and
+ * every render. It is removed rather than kept "in case the gate moves" — if the
+ * desktop floor ever drops below 768px, a phone form is a design decision to take
+ * then, against whatever the frames say at that point, not a stale copy revived.
  *
- * ── Rules both forms carry ─────────────────────────────────────────────────────
+ * The table keeps its own `overflow-x-auto`, so it still scrolls locally rather than
+ * pushing the page sideways.
+ *
+ * ── Rules the comparison carries ───────────────────────────────────────────────
  *   - An UNAVAILABLE municipality is NEVER dropped from the list and NEVER shows
  *     ₩0. It keeps its place, shows 자료 없음, and states the served reason.
  *   - Status is carried by a TEXT badge, so it survives grayscale, a colour
@@ -65,8 +67,8 @@ export interface MunicipalCostTableProps {
 }
 
 export default function MunicipalCostTable({ rows }: MunicipalCostTableProps) {
-  // One id namespace for the whole comparison, so a PARTIAL value can point at its
-  // own row's limitation sentence without either form inventing global ids.
+  // One id namespace for the comparison, so a PARTIAL value can point at its own
+  // row's limitation sentence without inventing global ids.
   const idPrefix = useId();
   return (
     <SectionCard
@@ -78,12 +80,7 @@ export default function MunicipalCostTable({ rows }: MunicipalCostTableProps) {
       flush
       testId="municipal-cost-comparison"
     >
-      <div className="hidden md:block">
-        <MunicipalCostWideTable rows={rows} idPrefix={idPrefix} />
-      </div>
-      <div className="p-4 pt-0 md:hidden">
-        <MunicipalCostCards rows={rows} idPrefix={`${idPrefix}m`} />
-      </div>
+      <MunicipalCostWideTable rows={rows} idPrefix={idPrefix} />
       <MunicipalCostTableNotes />
     </SectionCard>
   );
@@ -103,7 +100,7 @@ function MunicipalCostTableNotes() {
   );
 }
 
-/** The unavailable marker. A shared component so the two forms word it identically. */
+/** The unavailable marker, worded in exactly one place. */
 function UnavailableValue({ testId }: { testId?: string }) {
   return (
     // Neutral gray, not amber: amber cautions about a value that EXISTS, and absence
@@ -161,7 +158,7 @@ function ScopeCaption({ row }: { row: MunicipalCostRow }) {
   );
 }
 
-/** Desktop: a real table with column headers and a row header per municipality. */
+/** A real table: column headers, and a row header per municipality. */
 function MunicipalCostWideTable({ rows, idPrefix }: { rows: MunicipalCostRow[]; idPrefix: string }) {
   return (
     <div className="overflow-x-auto border-y border-hairline">
@@ -250,8 +247,7 @@ function MunicipalCostWideTable({ rows, idPrefix }: { rows: MunicipalCostRow[]; 
                   {/* `w-fit` so the disclosure shrinks to its label instead of
                       stretching across the widest column and doubling every row's
                       height — the comparison has to stay scannable down the value
-                      columns. The mobile card keeps it full-width, where it is the
-                      only thing on its line. */}
+                      columns. */}
                   <div className="mt-1 w-fit max-w-full">
                     <MunicipalCostRowDetail row={row} />
                   </div>
@@ -262,83 +258,5 @@ function MunicipalCostWideTable({ rows, idPrefix }: { rows: MunicipalCostRow[]; 
         </tbody>
       </table>
     </div>
-  );
-}
-
-/**
- * Mobile: one card per municipality.
- *
- * A `<ul>` of cards rather than a scrolling table. It preserves every primary
- * field — 지자체, 소속·유형, 상태, 1인당 지급액, 총 지급액, and the essential
- * limitation — with the technical detail behind the same disclosure the table uses.
- * Nothing overflows horizontally.
- */
-function MunicipalCostCards({ rows, idPrefix }: { rows: MunicipalCostRow[]; idPrefix: string }) {
-  return (
-    <ul className="flex flex-col gap-2" data-testid="municipal-cost-cards">
-      {rows.map((row, index) => {
-        const perCapita = formatPaymentPerCapita(row.payment_per_capita_krw);
-        const total = formatPayment(row.total_eligible_payment_krw);
-        const limitation = primaryLimitation(row);
-        const partial = row.status === "PARTIAL";
-        const limitationId = `${idPrefix}-limit-${index}`;
-        const describedBy = partial && limitation ? limitationId : undefined;
-        return (
-          <li
-            key={row.municipality_key}
-            className="wep-card"
-            data-testid="municipal-cost-card"
-            data-municipality={row.display_name}
-            data-status={row.status}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="min-w-0 text-sm font-semibold text-ink">
-                {row.display_name}
-                <ScopeCaption row={row} />
-                {hasDerivedPopulation(row) && <DerivedPopulationMarker />}
-              </p>
-              <span className="flex-none">
-                <DataStatusBadge
-                  status={statusBadge(row.status)}
-                  label={statusLabel(row.status)}
-                  testId="municipal-cost-card-status-badge"
-                />
-              </span>
-            </div>
-            <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <dt className="text-xs text-ink-subtle">{MUNICIPAL_COST_PER_CAPITA_LABEL}</dt>
-                <dd className="mt-0.5 tabular-nums text-ink" aria-describedby={describedBy}>
-                  {perCapita ?? (
-                    <UnavailableValue testId="municipal-cost-card-per-capita-unavailable" />
-                  )}
-                  {partial && perCapita !== null && (
-                    <PartialMarker testId="municipal-cost-card-partial-marker" />
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-ink-subtle">{MUNICIPAL_COST_TOTAL_LABEL}</dt>
-                <dd className="mt-0.5 tabular-nums text-ink" aria-describedby={describedBy}>
-                  {total ?? <UnavailableValue testId="municipal-cost-card-total-unavailable" />}
-                </dd>
-              </div>
-            </dl>
-            {limitation && (
-              <p
-                id={limitationId}
-                className="mt-2 text-xs text-ink-subtle"
-                data-testid="municipal-cost-card-limitation"
-              >
-                {limitation}
-              </p>
-            )}
-            <div className="mt-2">
-              <MunicipalCostRowDetail row={row} />
-            </div>
-          </li>
-        );
-      })}
-    </ul>
   );
 }

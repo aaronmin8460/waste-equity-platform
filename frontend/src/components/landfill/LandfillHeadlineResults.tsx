@@ -163,7 +163,11 @@ export default function LandfillHeadlineResults({
           status={<DataStatusBadge status="reported" />}
           caption={
             <>
-              <span className="block">공식 보고값 · 기준 기간 {periodLabel}</span>
+              {/* No 기준 기간 here. The strip directly above states the landfill
+                  period ONCE, by name, for this card and the fee card beside it;
+                  the two derived cards to the left keep their own because theirs is
+                  a different year. */}
+              <span className="block">공식 보고값</span>
               <YoyDelta
                 testId="landfill-yoy-quantity"
                 {...delta(summary.total_quantity_kg, priorSummary?.total_quantity_kg ?? null)}
@@ -174,7 +178,6 @@ export default function LandfillHeadlineResults({
         />
         <FeeCard
           summary={summary}
-          periodLabel={periodLabel}
           priorSummary={priorSummary}
           priorSettled={priorSettled}
           priorPeriodLabel={priorPeriodLabel}
@@ -269,17 +272,19 @@ function DerivedTotalKpi({
  */
 function FeeCard({
   summary,
-  periodLabel,
   priorSummary,
   priorSettled,
   priorPeriodLabel,
 }: {
   summary: LandfillSummary;
-  periodLabel: string;
   priorSummary: LandfillSummary | null;
   priorSettled: boolean;
   priorPeriodLabel: string;
 }) {
+  // Plain `.wep-card`, like the three `KpiCard`s beside it. `.wep-figma-card` is this
+  // page's CONTENT-card treatment; giving it to one KPI tile and not the other three
+  // (KpiCard is a shared primitive this lane does not change) would split the row
+  // into two surfaces.
   return (
     <div className="wep-card" data-testid="landfill-kpi-fee">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:gap-4">
@@ -298,13 +303,11 @@ function FeeCard({
           <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">
             {formatKrwEok(summary.total_inbound_fee_krw)}
           </dd>
-          {/* This card's own period, stated on the card rather than inherited from a
-              row-level line — the two cards to its left are a different year. */}
-          <p className="mt-1 text-xs text-ink-subtle" data-testid="landfill-fee-card-period">
-            공식 보고값 · 기준 기간 {periodLabel}
-          </p>
+          {/* The provenance, without the period: the strip above states the landfill
+               기준 기간 once for both official cards. The two derived cards to the
+              left still carry theirs, because theirs is a different year. */}
           <p className="mt-1 text-xs text-ink-subtle" data-testid="landfill-fee-caveat">
-            {FEE_CAVEAT}
+            공식 보고값 · {FEE_CAVEAT}
           </p>
           <YoyDelta
             testId="landfill-yoy-fee"

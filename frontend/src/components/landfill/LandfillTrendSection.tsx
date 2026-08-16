@@ -11,14 +11,22 @@
  * the zero baseline and never interpolated from its neighbours — an absent month is
  * not a month with zero inbound waste (repo AGENTS.md).
  *
- * ── The chart is never the only way to read a value ───────────────────────────
- * Hover tooltips are unreachable by touch and by screen readers, so every month's
- * exact served figure stays available as text in the table below, and the highest and
- * lowest months are additionally called out in words. The technical request asked for
- * the extremes in red and blue; colour is applied on TOP of those text callouts, never
- * instead of them. (The request's #F9F9F9 for the remaining bars is the page canvas
- * colour and would be invisible on a white card, so the neutral bars use the nearest
- * visible step of the same neutral ramp.)
+ * ── Reading an exact value off the chart ──────────────────────────────────────
+ * The technical-request frame (271:426) asks for "월별 추이에 커서 올리면, n월 + 정확한
+ * 수치". That is implemented as a READOUT LINE under the chart rather than a floating
+ * tooltip: every bar is focusable, and hovering OR focusing one prints
+ * `n월 · <exact served value>` in a fixed slot. Focus makes it keyboard-reachable and
+ * the bar's `aria-label` carries the same string, so the figure is announced rather
+ * than merely painted.
+ *
+ * It is still not the ONLY way to read a value. A readout needs a pointer or a focus
+ * ring; every month's exact served figure therefore also stays as text in the table
+ * below, and the highest and lowest months are called out in words. The request asked
+ * for the extremes in red and blue; colour is applied on TOP of those text callouts,
+ * never instead of them. (The request's #F9F9F9 for the remaining bars is the page
+ * canvas colour and would be invisible on a white card — the latest Figma read
+ * 2026-08-16 still says #F9F9F9 and so does not resolve it — so the neutral bars use
+ * the nearest visible step of the same neutral ramp.)
  */
 
 import { useMemo, useState } from "react";
@@ -29,6 +37,7 @@ import Accordion from "../ui/Accordion";
 import DataStatusBadge from "../ui/DataStatusBadge";
 import SectionCard from "../ui/SectionCard";
 import SegmentedControl from "../ui/SegmentedControl";
+import { PAGE2_CARD_CLASS } from "./shared";
 
 type TrendMetric = "quantity" | "fee";
 
@@ -76,8 +85,17 @@ export interface LandfillTrendSectionProps {
 
 export default function LandfillTrendSection({ trends }: LandfillTrendSectionProps) {
   const [metric, setMetric] = useState<TrendMetric>("quantity");
+  /**
+   * The month the pointer is over and the month that holds focus, kept apart so a
+   * keyboard reader's position is never stolen by a stray mouse move across the
+   * chart. Focus wins when both are set.
+   */
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [focused, setFocused] = useState<string | null>(null);
+  const activeMonth = focused ?? hovered;
   const spec = METRICS[metric];
   const points = trends.points;
+  const activePoint = points.find((point) => point.reference_month === activeMonth) ?? null;
 
   // The extremes, by the CURRENT metric. Ties keep the earliest month so the callout
   // names one specific month rather than silently picking the last match.
@@ -97,7 +115,10 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
   return (
     <SectionCard
       title="월별 반입 추이"
-      description="선택한 조건의 월별 반입량과 공식 반입수수료 변화를 확인합니다. 선택한 연도 전체를 표시합니다 (월 필터와 무관)."
+      // The Figma sentence, plus the one clause it cannot drop: this chart ignores
+      // the 기간 filter and always draws the whole selected year, so a reader who
+      // asked for 3월 must not read it as three months of data.
+      description="선택한 조건의 월별 반입량과 공식 반입수수료 변화 · 선택 연도 전체 (월 필터와 무관)"
       headerAside={
         <SegmentedControl
           options={METRIC_OPTIONS}
@@ -107,6 +128,7 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
           testId="landfill-trend-metric"
         />
       }
+      className={PAGE2_CARD_CLASS}
       testId="landfill-trends"
     >
       {points.length === 0 ? (
@@ -121,7 +143,35 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
             {points[0].reference_month} – {points[points.length - 1].reference_month}
           </p>
 
-          <TrendChart points={points} spec={spec} extremes={extremes} />
+          <TrendChart
+            points={points}
+            spec={spec}
+            extremes={extremes}
+            activeMonth={activeMonth}
+            onHover={setHovered}
+            onFocusMonth={setFocused}
+          />
+
+          {/* `n월 · 정확한 값`, for the bar under the pointer or holding focus. The
+              slot keeps its height when nothing is active, so moving across the
+              chart never reflows the card. It is `aria-live="polite"` rather than
+              `role="status"`: it echoes what the focused bar's own `aria-label`
+              already announced, so it must never interrupt. */}
+          <p
+            className="mt-2 min-h-[1.25rem] text-xs font-medium tabular-nums text-ink"
+            aria-live="polite"
+            data-testid="landfill-trend-readout"
+          >
+            {activePoint ? (
+              <>
+                {monthLabel(activePoint.reference_month)} · {spec.exact(activePoint)}
+              </>
+            ) : (
+              <span className="font-normal text-ink-subtle">
+                막대에 커서를 올리거나 키보드로 이동하면 그 달의 정확한 값이 표시됩니다.
+              </span>
+            )}
+          </p>
 
           {/* The extremes in words. These are the primary statement; the red/blue
               bars are a redundant echo of them. */}
@@ -204,10 +254,16 @@ function TrendChart({
   points,
   spec,
   extremes,
+  activeMonth,
+  onHover,
+  onFocusMonth,
 }: {
   points: LandfillTrendPoint[];
   spec: MetricSpec;
   extremes: { max: LandfillTrendPoint; min: LandfillTrendPoint } | null;
+  activeMonth: string | null;
+  onHover: (month: string | null) => void;
+  onFocusMonth: (month: string | null) => void;
 }) {
   const plotWidth = CHART.width - CHART.padLeft - CHART.padRight;
   const plotHeight = CHART.height - CHART.padTop - CHART.padBottom;
@@ -252,22 +308,52 @@ function TrendChart({
           const x = CHART.padLeft + index * slot + (slot - barWidth) / 2;
           const isMax = extremes?.max.reference_month === point.reference_month;
           const isMin = extremes?.min.reference_month === point.reference_month;
+          const isActive = activeMonth === point.reference_month;
+          const readout = `${monthLabel(point.reference_month)} · ${spec.exact(point)}`;
           return (
             <g key={point.reference_month}>
+              {/* A full-height transparent target over the bar's slot, so a short
+                  month is as easy to reach as a tall one — with the pointer and
+                  with the Tab key. It carries the focus, the hover, and the
+                  accessible name; the painted bar below stays purely visual. */}
+              <rect
+                x={CHART.padLeft + index * slot}
+                y={CHART.padTop}
+                width={slot}
+                height={plotHeight}
+                fill="transparent"
+                tabIndex={0}
+                role="img"
+                aria-label={readout}
+                className="cursor-default focus:outline-none focus-visible:stroke-[#111a56] focus-visible:stroke-2"
+                data-testid="landfill-trend-hit"
+                data-month={point.reference_month}
+                onMouseEnter={() => onHover(point.reference_month)}
+                onMouseLeave={() => onHover(null)}
+                onFocus={() => onFocusMonth(point.reference_month)}
+                onBlur={() => onFocusMonth(null)}
+              >
+                {/* Exact served value (lossless) in the pointer tooltip. Duplicated
+                    in the readout above the table and in the table itself, which are
+                    the reachable versions. */}
+                <title>{readout}</title>
+              </rect>
               <rect
                 x={x}
                 y={CHART.padTop + plotHeight - height}
                 width={barWidth}
                 height={Math.max(0, height)}
                 fill={isMax ? BAR_MAX : isMin ? BAR_MIN : BAR_DEFAULT}
+                stroke={isActive ? "#111a56" : undefined}
+                strokeWidth={isActive ? 1.5 : undefined}
+                // Decorative: the hit target above owns the name and the focus.
+                aria-hidden
+                pointerEvents="none"
                 data-testid="landfill-trend-bar"
                 data-month={point.reference_month}
                 data-extreme={isMax ? "max" : isMin ? "min" : undefined}
-              >
-                {/* Exact served value (lossless) in the pointer tooltip. Duplicated
-                    as text in the table below, which is the reachable version. */}
-                <title>{`${monthLabel(point.reference_month)} · ${spec.exact(point)}`}</title>
-              </rect>
+                data-active={isActive ? "true" : undefined}
+              />
               <text
                 x={x + barWidth / 2}
                 y={CHART.height - 8}

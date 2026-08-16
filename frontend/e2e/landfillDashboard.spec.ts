@@ -205,7 +205,13 @@ for (const vp of VIEWPORTS) {
       // And the monthly chart agrees with its own accessible table: one bar per
       // served month, one row per served month, never a zero-filled twelve.
       await page.getByTestId("landfill-trend-exact-summary").click();
-      const bars = await page.getByTestId("landfill-trend-chart").locator("rect").count();
+      // Bars only. Every month also carries a transparent full-height hit target —
+      // what the hover/focus readout listens on — which is a second <rect> that
+      // paints nothing and encodes no value, so a raw <rect> count double-counts.
+      const bars = await page
+        .getByTestId("landfill-trend-chart")
+        .getByTestId("landfill-trend-bar")
+        .count();
       const trendRows = await page
         .getByTestId("landfill-trend-table")
         .locator("tbody tr")

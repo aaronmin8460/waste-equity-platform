@@ -53,7 +53,7 @@
 
 import { useMemo, useState } from "react";
 
-import type { LandfillOriginShare, LandfillSummary } from "../../lib/api";
+import type { LandfillOriginShare, LandfillSummary, LandfillTrends } from "../../lib/api";
 import type { CapitalRegionWaste, MetropolitanGroup, MunicipalityRow } from "../../lib/capitalRegionWaste";
 import { formatPerCapitaKg } from "../../lib/capitalRegionWaste";
 import {
@@ -66,6 +66,7 @@ import {
   perCapitaUnavailableCode,
   perCapitaUnavailableLabel,
 } from "../../lib/landfill";
+import { downloadLandfillWorkbook } from "../../lib/landfillExport";
 import { MUNICIPAL_COST_STATUS_META } from "../../lib/municipalCost";
 import SectionCard from "../ui/SectionCard";
 import LandfillProportionRule from "./LandfillProportionRule";
@@ -76,6 +77,7 @@ import {
   CONTRACT_PAYMENT_TOTAL_LABEL,
   EFFECTIVE_FEE_LABEL,
   LANDFILL_NOT_AT_MUNICIPAL_GRAIN,
+  PAGE2_CARD_CLASS,
   PER_CAPITA_LABEL,
 } from "./shared";
 
@@ -101,6 +103,13 @@ export interface LandfillRegionTableProps {
   originMax: number;
   periodLabel: string;
   /**
+   * The monthly series, passed ONLY so the table's local 엑셀 다운로드 produces the
+   * SAME workbook the 공유 및 내보내기 section produces — the design asks for the
+   * action here, not for a second, narrower file with its own rules
+   * (`lib/landfillExport.ts` owns every export rule this page has).
+   */
+  trends: LandfillTrends | null;
+  /**
    * The joined municipal model. `null` while the underlying series load — the
    * landfill columns still render, and the municipal columns say so rather than
    * showing zeros.
@@ -122,6 +131,7 @@ export default function LandfillRegionTable({
   summary,
   originMax,
   periodLabel,
+  trends,
   capitalRegion,
   municipalReferenceYear,
   contractReferenceYear,
@@ -166,22 +176,26 @@ export default function LandfillRegionTable({
       title="지역별 상세 현황"
       description={unitLine}
       headerAside={
-        <label className="flex items-center gap-2 text-xs text-ink-subtle">
-          정렬 기준
-          <select
-            className="min-h-[2.25rem] rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm text-ink"
-            data-testid="landfill-region-sort"
-            value={sort}
-            onChange={(event) => setSort(event.target.value as RegionSort)}
-          >
-            {(Object.keys(SORT_LABELS) as RegionSort[]).map((key) => (
-              <option key={key} value={key}>
-                {SORT_LABELS[key]}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <label className="flex items-center gap-2 text-xs text-ink-subtle">
+            정렬 기준
+            <select
+              className="min-h-[2.25rem] rounded-control border border-hairline-strong bg-surface px-2 py-1.5 text-sm text-ink"
+              data-testid="landfill-region-sort"
+              value={sort}
+              onChange={(event) => setSort(event.target.value as RegionSort)}
+            >
+              {(Object.keys(SORT_LABELS) as RegionSort[]).map((key) => (
+                <option key={key} value={key}>
+                  {SORT_LABELS[key]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <RegionTableExcelAction summary={summary} trends={trends} />
+        </div>
       }
+      className={PAGE2_CARD_CLASS}
       testId="landfill-region-table"
     >
       {rows.length === 0 ? (
@@ -291,6 +305,15 @@ export default function LandfillRegionTable({
               광역지자체(시·도) 단위로만 보고되므로 시·군·구 행에서는 「
               {LANDFILL_NOT_AT_MUNICIPAL_GRAIN}」으로 표시되며, 값이 0이라는 뜻이 아닙니다.
             </p>
+            {/* What the local 엑셀 다운로드 beside the heading actually contains. The
+                file is the shared landfill workbook, which by design holds only the
+                official-fee dataset — so the two contract-payment columns in this
+                table are NOT in it, and saying so here is the difference between a
+                scoped file and a file a reader thinks is the whole table. */}
+            <p className="mt-1" data-testid="landfill-region-export-scope">
+              · 엑셀 다운로드에는 공식 반입 자료만 담기며, 회계 기준이 다른 계약 지급액은 포함되지
+              않습니다.
+            </p>
             {contractDistinction && (
               // Served verbatim. It sits at the point of use — beside the column
               // group it qualifies — rather than in a separate banner above the
@@ -303,6 +326,59 @@ export default function LandfillRegionTable({
         </>
       )}
     </SectionCard>
+  );
+}
+
+/**
+ * 엑셀 다운로드 — the local export the design places on this table's own header
+ * (Figma 376:582).
+ *
+ * It calls `downloadLandfillWorkbook`, the SAME function the 공유 및 내보내기 section
+ * calls, so there is exactly one definition of what a landfill workbook contains,
+ * one filename rule, one preamble, and one "an unserved value is an empty cell,
+ * never 0" guarantee. This component adds no column, no sheet, and no scope of its
+ * own — it is a second entry point to one file, not a second file.
+ */
+function RegionTableExcelAction({
+  summary,
+  trends,
+}: {
+  summary: LandfillSummary;
+  trends: LandfillTrends | null;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="flex flex-col items-end">
+      <button
+        type="button"
+        className="wep-btn-quiet"
+        data-testid="landfill-region-export-xlsx"
+        disabled={busy}
+        // The visible label is the design's. The accessible name adds the scope,
+        // because "엑셀 다운로드" alone does not say which of this screen's two
+        // datasets the file holds.
+        aria-label="공식 반입 자료 엑셀(.xlsx) 다운로드"
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          downloadLandfillWorkbook(summary, trends)
+            .catch(() => setError("파일을 만들지 못했습니다. 잠시 후 다시 시도해 주세요."))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <span aria-hidden>↓</span> {busy ? "파일 만드는 중…" : "엑셀 다운로드"}
+      </button>
+      {error && (
+        <p
+          className="mt-1 text-xs text-danger"
+          role="alert"
+          data-testid="landfill-region-export-error"
+        >
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 

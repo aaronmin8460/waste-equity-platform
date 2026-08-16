@@ -27,25 +27,28 @@ import { formatShare, formatTons } from "../../lib/landfill";
 import DataStatusBadge from "../ui/DataStatusBadge";
 import SectionCard from "../ui/SectionCard";
 import LandfillProportionRule from "./LandfillProportionRule";
-import { barRatio } from "./shared";
+import { barRatio, PAGE2_CARD_CLASS } from "./shared";
 
 export interface LandfillFlowStructureProps {
   summary: LandfillSummary;
-  periodLabel: string;
   /** The widest origin quantity on screen; shared with the exact-value table. */
   originMax: number;
 }
 
 export default function LandfillFlowStructure({
   summary,
-  periodLabel,
   originMax,
 }: LandfillFlowStructureProps) {
   return (
     <SectionCard
       title="수도권매립지 반입 구조 (지역별)"
-      description={`기준 기간 ${periodLabel} · 선택한 조건에서 수도권매립지로 반입된 지역별 폐기물입니다.`}
+      // The Figma sentence (125:5064) only. `기준 기간 …` is stated once for the
+      // landfill pair in the KPI strip above and once in the 지역별 상세 현황 unit
+      // line; repeating it on every card in between was the page's single most
+      // duplicated string and told a reader nothing new.
+      description="선택한 조건에서 수도권매립지로 반입된 지역별 폐기물입니다."
       headerAside={<DataStatusBadge status="reported" />}
+      className={PAGE2_CARD_CLASS}
       testId="landfill-flow-structure"
     >
       <div className="flex items-baseline justify-between gap-3 border-b border-hairline pb-3">

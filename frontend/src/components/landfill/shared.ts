@@ -112,12 +112,11 @@ export const LANDFILL_NOT_AT_MUNICIPAL_GRAIN = "시·도 단위 보고";
  * number across without knowing that is comparing two different quantities.
  */
 export const POPULATION_BASIS_NOTE =
-  "인구 기준: 행정안전부 주민등록 인구(월말). 지역 지표 화면의 1인당 값은 통계청 SGIS 연간 인구를 " +
-  "쓰므로 두 화면의 1인당 값은 같은 기준이 아닙니다.";
+  "인구 기준: 행정안전부 주민등록 인구(월말). 지역 지표 화면은 SGIS 연간 인구를 쓰므로 두 화면의 " +
+  "1인당 값은 같은 기준이 아닙니다.";
 
 export const PER_CAPITA_DESCRIPTION =
-  "선택 기간의 공식 반입수수료를 동일 기간 기준의 해당 지역 인구로 나눈 분석용 환산값입니다. " +
-  "개인의 실제 납부액이 아닙니다.";
+  "같은 기간의 공식 반입수수료 ÷ 해당 지역 인구. 개인의 실제 납부액이 아닙니다.";
 
 export const LIMITATION_NOTICE =
   "광역지자체 단위 자료이며 시·군·구별 이동 경로나 실제 운송 경로를 의미하지 않습니다.";
@@ -125,16 +124,22 @@ export const LIMITATION_NOTICE =
 /** Fallback label only; the served population_source_id is authoritative. */
 export const MOIS_SOURCE_ID = "mois_resident_population";
 
-export const FEE_CAVEAT =
-  "반입수수료는 공식 보고된 금액이며 순수 운송비 또는 전체 폐기물 관리비가 아닙니다.";
+export const FEE_CAVEAT = "공식 보고된 반입 금액이며 운송비나 전체 폐기물 관리비가 아닙니다.";
 
 /**
- * The orientation sentence under the <h1>. It states the scope precisely and
- * claims nothing the dataset cannot support: no real-time figure, no resident
- * bill, and no waste flow outside what the corporation reports as inbound.
+ * The Page-2 card treatment.
+ *
+ * `.wep-figma-card` is the shared surface style (globals.css, owned elsewhere) —
+ * referenced, never edited. The two arbitrary variants raise THIS page's card titles
+ * to the 20/24 bold and 11px description scale the canonical Figma frame uses
+ * (125:5064), scoped to the call site so `SectionCard` itself and the other five
+ * areas are untouched. The selectors address `SectionCard`'s header block
+ * (`> div:first-child > div > h2 | p`), which is exactly what the existing global
+ * `.wep-numbered-card` rule addresses for 후보지 심층 분석.
  */
-export const HEADER_SUMMARY =
-  "서울 · 인천 · 경기에서 수도권매립지로 반입된 공식 반입량과 반입수수료를 선택한 기간과 조건으로 보여줍니다.";
+export const PAGE2_CARD_CLASS =
+  "wep-figma-card [&>div:first-child>div>h2]:text-xl [&>div:first-child>div>h2]:leading-6 " +
+  "[&>div:first-child>div>p]:text-[11px] [&>div:first-child>div>p]:leading-tight";
 
 /**
  * The standing banner's second line. It states the four things a reader has to

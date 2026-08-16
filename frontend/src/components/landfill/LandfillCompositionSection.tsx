@@ -33,6 +33,7 @@ import { downloadCompositionCsv } from "../../lib/landfillExport";
 import DataStatusBadge from "../ui/DataStatusBadge";
 import Dialog from "../ui/Dialog";
 import SectionCard from "../ui/SectionCard";
+import { PAGE2_CARD_CLASS } from "./shared";
 
 /**
  * Slice colours. Qualitative and colour-blind-distinguishable, and never the only
@@ -70,13 +71,15 @@ export default function LandfillCompositionSection({
   return (
     <SectionCard
       title="수도권매립지 반입 폐기물 구성"
-      // The served period only. Figma's 반입 폐기물 구성 card (125:5064) carries no
-      // description at all; "비중은 공식 보고값으로 계산했습니다. 순위나 평가가
-      // 아닙니다" was standing methodology, and both halves survive — the 계산값 badge
-      // on the derived roll-up says what was computed, and 근거와 한계 states the
-      // no-ranking rule once for the whole screen.
-      description={`기준 기간 ${periodLabel}`}
+      // No description, exactly as Figma's 반입 폐기물 구성 card (125:5064) has none.
+      // "비중은 공식 보고값으로 계산했습니다. 순위나 평가가 아닙니다" was standing
+      // methodology and both halves survive — the 계산값 badge on the derived roll-up
+      // says what was computed, and 근거와 한계 states the no-ranking rule once for
+      // the whole screen. The `기준 기간` that replaced it restated the KPI strip a
+      // few hundred pixels above; the modal below still names the period on the one
+      // surface that leaves this page's context (its own header and its CSV).
       headerAside={<DataStatusBadge status="reported" />}
+      className={PAGE2_CARD_CLASS}
       testId="landfill-composition"
     >
       <div className="flex items-baseline justify-between gap-3 border-b border-hairline pb-3">
