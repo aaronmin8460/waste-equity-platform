@@ -1,0 +1,1485 @@
+{
+  "phase": "SUITABILITY SUCCESSOR V3 — PHASE 3 REAL-DATA VALIDATION",
+  "status": "RESEARCH / EVIDENCE ONLY — successor model NOT activated",
+  "component_contract_version": "successor-component-contract-v1",
+  "component_order": [
+    "existing_burden",
+    "air_impact_proxy",
+    "resident_impact",
+    "land_conversion"
+  ],
+  "dataset_snapshot": {
+    "alembic_version": "0021",
+    "run_id": 47,
+    "run_status": "SUCCEEDED",
+    "policy_version": "suitability-policy-v1",
+    "derivation_version": "suitability-screening-v2",
+    "candidate_grid_version": "capital-grid-500m-v1",
+    "run_created_at": "2026-07-13T05:05:25.079701+00:00",
+    "candidate_count": 47893,
+    "sigungu_count": 79,
+    "sido_count": 3,
+    "population_reference_year": 2024,
+    "population_definition": "SGIS_TOTAL_POPULATION",
+    "population_region_count": 79,
+    "facility_reference_year": 2024,
+    "waste_statistics_reference_year": 2024,
+    "land_cover_statistics_version_id": 1,
+    "land_cover_derivation_version": "land-cover-cell-stats-v1",
+    "land_cover_area_crs": "EPSG:5186"
+  },
+  "population_denominator": {
+    "series": "SGIS_TOTAL_POPULATION",
+    "reference_year": 2024,
+    "regions_with_population": 79,
+    "sigungu_regions": 79,
+    "regions_without_population": [],
+    "note": "regional_population holds two non-interchangeable series; only the annual SGIS series has SIGUNGU resolution. The MOIS monthly series covers the three SIDO only and is never substituted for it."
+  },
+  "candidates": {
+    "count": 47893,
+    "distinct_sigungu": 79,
+    "distinct_sido": 3,
+    "without_sigungu_region_code": 553,
+    "status_counts": {
+      "ELIGIBLE": 17501,
+      "EXCLUDED": 12260,
+      "REVIEW_REQUIRED": 18132
+    }
+  },
+  "existing_burden": {
+    "definition": "located facility throughput per resident (kg/인/년); LOWER_RAW_IS_BETTER",
+    "method_version": "successor-existing-burden-v1",
+    "numerator": "sum(waste_treatment_facilities.throughput_quantity[톤/년]) x 1000",
+    "denominator": "regional_population[SGIS_TOTAL_POPULATION, 2024]",
+    "reference_period": "2024",
+    "coverage": {
+      "component": "existing_burden",
+      "unit_grain": "SIGUNGU",
+      "unit_count": 79,
+      "available_count": 79,
+      "unavailable_count": 0,
+      "partial_count": 0,
+      "available_share": "1.000000",
+      "unavailable_reason_counts": {}
+    },
+    "distribution": {
+      "observation_count": 79,
+      "available_count": 79,
+      "null_count": 0,
+      "zero_count": 27,
+      "unique_count": 53,
+      "min": "0.0000000000",
+      "p10": "0.0000000000",
+      "p25": "0.0000000000",
+      "median": "86.6562380000",
+      "p75": "319.0776995000",
+      "p90": "476.6841440000",
+      "max": "2824.1056920000",
+      "mean": "213.4172565570",
+      "stdev": "369.9793980900",
+      "variance": "136884.7550110519",
+      "skewness": "4.7327611092",
+      "warnings": [
+        "HIGH_SKEW",
+        "EXTREME_OUTLIERS"
+      ]
+    },
+    "regions_with_zero_located_throughput": [
+      "KR-SGIS-11010",
+      "KR-SGIS-11050",
+      "KR-SGIS-11130",
+      "KR-SGIS-11190",
+      "KR-SGIS-11220",
+      "KR-SGIS-23090",
+      "KR-SGIS-23510",
+      "KR-SGIS-31011",
+      "KR-SGIS-31012",
+      "KR-SGIS-31013",
+      "KR-SGIS-31014",
+      "KR-SGIS-31021",
+      "KR-SGIS-31022",
+      "KR-SGIS-31023",
+      "KR-SGIS-31041",
+      "KR-SGIS-31042",
+      "KR-SGIS-31051",
+      "KR-SGIS-31052",
+      "KR-SGIS-31053",
+      "KR-SGIS-31091",
+      "KR-SGIS-31092",
+      "KR-SGIS-31101",
+      "KR-SGIS-31103",
+      "KR-SGIS-31104",
+      "KR-SGIS-31191",
+      "KR-SGIS-31192",
+      "KR-SGIS-31193"
+    ],
+    "unmapped_facility_rows": {
+      "count": 99,
+      "by_status": {
+        "REQUIRES_GEOCODE": 99
+      },
+      "caveat": "These facility rows exist but carry no region. A region whose burden reads zero may be a region with no facilities OR a region whose facilities are among these unmapped rows. The component cannot distinguish the two, and a zero here is therefore not evidence of absence."
+    }
+  },
+  "air_impact_proxy": {
+    "definition": "total waste-generation activity per resident (kg/인/년); LOWER_RAW_IS_BETTER",
+    "method_version": "successor-air-impact-proxy-v1",
+    "semantic_warning": "PROXY ONLY. air_impact_proxy is total regional waste-generation activity per resident. It is NOT measured atmospheric emissions, NOT a modelled stack or dispersion concentration, and NOT a health-risk or exposure estimate. It is a coarse activity indicator used for analytical screening and must never be presented as air-quality evidence. No air-quality dataset is ingested by this platform, so this proxy has not been validated against any measured air variable.",
+    "caveats": [
+      "Origin-based generation describes how a region's own generated waste was treated. It is not facility throughput, not an origin-to-destination flow, and says nothing about where combustion or handling physically occurred.",
+      "The HOUSEHOLD stream's population coverage cannot be verified from this platform's data: RCIS NTN002 (생활폐기물관리구역현황), which reports the household-waste management-excluded area and population per SIGUNGU, is not ingested. Where a region has a management-excluded area, HOUSEHOLD generation covers a sub-population while the per-capita denominator uses the full resident population. The other three streams are not population-denominated at source, so this caveat is asymmetric across the four.",
+      "This component is a region-level variable broadcast to every candidate cell in the region; it cannot discriminate between cells within one region."
+    ],
+    "numerator": "TOTAL_GENERATION_ACROSS_FOUR_CANONICAL_STREAMS",
+    "numerator_alternative_under_review": "ORIGIN_BASED_INCINERATION_QUANTITY",
+    "denominator": "regional_population[SGIS_TOTAL_POPULATION, 2024]",
+    "reference_period": "2024",
+    "required_streams": [
+      "HOUSEHOLD",
+      "BUSINESS_NON_FACILITY",
+      "INDUSTRIAL_FACILITY",
+      "CONSTRUCTION"
+    ],
+    "per_stream_region_coverage": {
+      "HOUSEHOLD": 59,
+      "BUSINESS_NON_FACILITY": 59,
+      "INDUSTRIAL_FACILITY": 57,
+      "CONSTRUCTION": 59
+    },
+    "stream_combination_counts": {
+      "BUSINESS_NON_FACILITY+CONSTRUCTION+HOUSEHOLD": 2,
+      "BUSINESS_NON_FACILITY+CONSTRUCTION+HOUSEHOLD+INDUSTRIAL_FACILITY": 57,
+      "NONE": 20
+    },
+    "coverage": {
+      "component": "air_impact_proxy",
+      "unit_grain": "SIGUNGU",
+      "unit_count": 79,
+      "available_count": 57,
+      "unavailable_count": 22,
+      "partial_count": 0,
+      "available_share": "0.721519",
+      "unavailable_reason_counts": {
+        "MISSING_WASTE_STREAM": 22
+      }
+    },
+    "distribution": {
+      "observation_count": 79,
+      "available_count": 57,
+      "null_count": 22,
+      "zero_count": 0,
+      "unique_count": 57,
+      "min": "601.9570440000",
+      "p10": "819.3917964000",
+      "p25": "1151.9399020000",
+      "median": "2073.6072090000",
+      "p75": "3445.3523200000",
+      "p90": "5090.0663346000",
+      "max": "16995.8921540000",
+      "mean": "2706.6363180526",
+      "stdev": "2440.4395345618",
+      "variance": "5955745.1218524331",
+      "skewness": "3.6294117579",
+      "warnings": [
+        "HIGH_SKEW",
+        "EXTREME_OUTLIERS"
+      ]
+    },
+    "city_grain_rows_excluded": {
+      "counts_by_stream": {
+        "BUSINESS_NON_FACILITY": 7,
+        "CONSTRUCTION": 7,
+        "HOUSEHOLD": 7,
+        "INDUSTRIAL_FACILITY": 7
+      },
+      "note": "RCIS reports seven large Gyeonggi cities at CITY grain in reporting_region_waste_statistics. Summing them into a SIGUNGU total would mix geographies, so they are excluded rather than folded in (INCOMPATIBLE_GEOGRAPHIC_GRAIN)."
+    }
+  },
+  "resident_impact": {
+    "definition": "population / max(candidate-to-representative-point distance, floor) summed over population units (persons/m); LOWER_RAW_IS_BETTER",
+    "method_version": "successor-resident-impact-v1",
+    "distance_measurement": "POSTGIS_GEOGRAPHY_METERS",
+    "representative_geometry": "ST_PointOnSurface",
+    "self_unit_exclusion": false,
+    "population_resolution_disclosure": "Population is modelled at SIGUNGU resolution from a single representative point per region. This is not the location of that region's residents, and the component's apparent per-cell precision exceeds the resolution of the underlying population data.",
+    "candidates_with_value": 47893,
+    "candidates_total": 47893,
+    "population_units_per_candidate": [
+      79
+    ],
+    "sql_module_equivalence_check": {
+      "floor_m": 1000,
+      "sample_size": 12,
+      "mismatch_count": 0,
+      "agrees": true,
+      "samples": [
+        {
+          "candidate_key": "capital-grid-500m-v1:1492_4000",
+          "module_raw_value": "126.6432639712",
+          "sql_raw_value": "126.64326397118225741163",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1849_3925",
+          "module_raw_value": "920.8521695490",
+          "sql_raw_value": "920.85216954904980006446",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1872_3790",
+          "module_raw_value": "578.3204378111",
+          "sql_raw_value": "578.32043781114589951765",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1889_3831",
+          "module_raw_value": "980.2853850915",
+          "sql_raw_value": "980.28538509149244119031",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1904_3784",
+          "module_raw_value": "718.7043749538",
+          "sql_raw_value": "718.70437495380675688180",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1918_3799",
+          "module_raw_value": "726.0842779134",
+          "sql_raw_value": "726.08427791335488678186",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1931_3986",
+          "module_raw_value": "558.0919397387",
+          "sql_raw_value": "558.09193973867917886672",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1946_3800",
+          "module_raw_value": "616.1676140705",
+          "sql_raw_value": "616.16761407052274892093",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1960_3974",
+          "module_raw_value": "535.0445371485",
+          "sql_raw_value": "535.04453714845000831251",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1976_3777",
+          "module_raw_value": "455.8597300928",
+          "sql_raw_value": "455.85973009282773131833",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:1992_3792",
+          "module_raw_value": "442.6569724827",
+          "sql_raw_value": "442.65697248273570392025",
+          "agrees": true
+        },
+        {
+          "candidate_key": "capital-grid-500m-v1:2012_3891",
+          "module_raw_value": "575.2287178976",
+          "sql_raw_value": "575.22871789762733681849",
+          "agrees": true
+        }
+      ]
+    },
+    "representative_point_audit": {
+      "regions_audited": 79,
+      "centroid_outside_region_count": 2,
+      "centroid_outside_regions": [
+        {
+          "region_code": "KR-SGIS-23520",
+          "region_name": "인천광역시 옹진군",
+          "part_count": 74,
+          "centroid_to_surface_point_m": "99650.7"
+        },
+        {
+          "region_code": "KR-SGIS-31092",
+          "region_name": "경기도 안산시 단원구",
+          "part_count": 13,
+          "centroid_to_surface_point_m": "11353.0"
+        }
+      ],
+      "centroid_to_surface_separation_distribution": {
+        "observation_count": 79,
+        "available_count": 79,
+        "null_count": 0,
+        "zero_count": 0,
+        "unique_count": 79,
+        "min": "41.5000000000",
+        "p10": "148.1600000000",
+        "p25": "331.7500000000",
+        "median": "619.9000000000",
+        "p75": "1202.6500000000",
+        "p90": "2387.2200000000",
+        "max": "99650.7000000000",
+        "mean": "2268.0075949367",
+        "stdev": "11120.2021733144",
+        "variance": "123658896.3753853549",
+        "skewness": "8.5048439460",
+        "warnings": [
+          "HIGH_SKEW",
+          "EXTREME_OUTLIERS"
+        ]
+      },
+      "equivalent_circle_radius_distribution": {
+        "observation_count": 79,
+        "available_count": 79,
+        "null_count": 0,
+        "zero_count": 0,
+        "unique_count": 79,
+        "min": "1522.6000000000",
+        "p10": "2326.9000000000",
+        "p25": "2761.5000000000",
+        "median": "3625.8000000000",
+        "p75": "6604.5500000000",
+        "p90": "12414.3800000000",
+        "max": "16705.4000000000",
+        "mean": "5541.2696202532",
+        "stdev": "4229.7085946055",
+        "variance": "17890434.7952796026",
+        "skewness": "1.4028779367",
+        "warnings": []
+      },
+      "note": "The representative-geometry convention is an explicit caller input. The historical grid uses ST_Centroid for 500 m cells; ST_PointOnSurface is the safer choice for irregular administrative boundaries. Selecting one for production is an analytical decision, not an implementation detail."
+    },
+    "floors": {
+      "500": {
+        "distance_floor_m": 500,
+        "approved": false,
+        "basis": "RESEARCH SENSITIVITY ONLY — not an approved production distance floor. Evaluated to measure how much the component's raw value and ranking depend on a parameter nobody has signed off.",
+        "candidates_with_any_floored_unit": 245,
+        "total_floored_unit_pairs": 245,
+        "distribution": {
+          "observation_count": 47893,
+          "available_count": 47893,
+          "null_count": 0,
+          "zero_count": 0,
+          "unique_count": 47893,
+          "min": "126.4544863923",
+          "p10": "401.5649392018",
+          "p25": "486.4317906261",
+          "median": "635.3582072028",
+          "p75": "954.8636216424",
+          "p90": "1387.3592846952",
+          "max": "2704.2961263459",
+          "mean": "773.1854299927",
+          "stdev": "394.9626903808",
+          "variance": "155995.5267928583",
+          "skewness": "1.2816385262",
+          "warnings": [
+            "EXTREME_OUTLIERS"
+          ]
+        }
+      },
+      "1000": {
+        "distance_floor_m": 1000,
+        "approved": false,
+        "basis": "RESEARCH SENSITIVITY ONLY — not an approved production distance floor. Evaluated to measure how much the component's raw value and ranking depend on a parameter nobody has signed off.",
+        "candidates_with_any_floored_unit": 1001,
+        "total_floored_unit_pairs": 1001,
+        "distribution": {
+          "observation_count": 47893,
+          "available_count": 47893,
+          "null_count": 0,
+          "zero_count": 0,
+          "unique_count": 47893,
+          "min": "126.4544863923",
+          "p10": "401.5649392018",
+          "p25": "486.4317906261",
+          "median": "634.7911006977",
+          "p75": "954.6422113184",
+          "p90": "1382.1817264155",
+          "max": "2131.7287647417",
+          "mean": "769.7432493686",
+          "stdev": "386.2635034008",
+          "variance": "149199.4940594428",
+          "skewness": "1.1940333959",
+          "warnings": []
+        }
+      },
+      "2000": {
+        "distance_floor_m": 2000,
+        "approved": false,
+        "basis": "RESEARCH SENSITIVITY ONLY — not an approved production distance floor. Evaluated to measure how much the component's raw value and ranking depend on a parameter nobody has signed off.",
+        "candidates_with_any_floored_unit": 3921,
+        "total_floored_unit_pairs": 3970,
+        "distribution": {
+          "observation_count": 47893,
+          "available_count": 47893,
+          "null_count": 0,
+          "zero_count": 0,
+          "unique_count": 47893,
+          "min": "126.4544863923",
+          "p10": "401.5649392018",
+          "p25": "486.0876666774",
+          "median": "633.5104505195",
+          "p75": "948.6895064517",
+          "p90": "1358.6612492448",
+          "max": "1945.5988288295",
+          "mean": "762.8457076948",
+          "stdev": "373.4710586191",
+          "variance": "139480.6316260648",
+          "skewness": "1.1318940302",
+          "warnings": []
+        }
+      },
+      "5000": {
+        "distance_floor_m": 5000,
+        "approved": false,
+        "basis": "RESEARCH SENSITIVITY ONLY — not an approved production distance floor. Evaluated to measure how much the component's raw value and ranking depend on a parameter nobody has signed off.",
+        "candidates_with_any_floored_unit": 15426,
+        "total_floored_unit_pairs": 24420,
+        "distribution": {
+          "observation_count": 47893,
+          "available_count": 47893,
+          "null_count": 0,
+          "zero_count": 0,
+          "unique_count": 47893,
+          "min": "126.4544863923",
+          "p10": "401.2134304352",
+          "p25": "484.5381873417",
+          "median": "632.0391311997",
+          "p75": "928.2396418489",
+          "p90": "1288.6909766329",
+          "max": "1731.8964191601",
+          "mean": "742.2291145882",
+          "stdev": "341.6552075760",
+          "variance": "116728.2808637968",
+          "skewness": "1.0215285415",
+          "warnings": []
+        }
+      }
+    },
+    "floor_sensitivity": {
+      "pairs": [
+        {
+          "floor_a_m": 500,
+          "floor_b_m": 1000,
+          "spearman_raw": "0.9997713480",
+          "top_10_overlap": 10,
+          "top_10_k": 10,
+          "top_50_overlap": 50,
+          "top_50_k": 50,
+          "rank_churn": {
+            "shared_units": 47893,
+            "unchanged": 11377,
+            "moved_gt_10": 26397,
+            "moved_gt_100": 4336,
+            "moved_gt_1000": 388,
+            "max_move": 8961,
+            "mean_abs_move": "50.4569352515"
+          }
+        },
+        {
+          "floor_a_m": 500,
+          "floor_b_m": 2000,
+          "spearman_raw": "0.9986967294",
+          "top_10_overlap": 10,
+          "top_10_k": 10,
+          "top_50_overlap": 50,
+          "top_50_k": 50,
+          "rank_churn": {
+            "shared_units": 47893,
+            "unchanged": 5117,
+            "moved_gt_10": 39982,
+            "moved_gt_100": 18792,
+            "moved_gt_1000": 1282,
+            "max_move": 14823,
+            "mean_abs_move": "199.1525692690"
+          }
+        },
+        {
+          "floor_a_m": 500,
+          "floor_b_m": 5000,
+          "spearman_raw": "0.9956032426",
+          "top_10_overlap": 10,
+          "top_10_k": 10,
+          "top_50_overlap": 33,
+          "top_50_k": 50,
+          "rank_churn": {
+            "shared_units": 47893,
+            "unchanged": 2433,
+            "moved_gt_10": 44635,
+            "moved_gt_100": 38274,
+            "moved_gt_1000": 4917,
+            "max_move": 20979,
+            "mean_abs_move": "577.9522268390"
+          }
+        },
+        {
+          "floor_a_m": 1000,
+          "floor_b_m": 2000,
+          "spearman_raw": "0.9993854556",
+          "top_10_overlap": 10,
+          "top_10_k": 10,
+          "top_50_overlap": 50,
+          "top_50_k": 50,
+          "rank_churn": {
+            "shared_units": 47893,
+            "unchanged": 6857,
+            "moved_gt_10": 38361,
+            "moved_gt_100": 14032,
+            "moved_gt_1000": 1239,
+            "max_move": 7076,
+            "mean_abs_move": "154.8523583822"
+          }
+        },
+        {
+          "floor_a_m": 1000,
+          "floor_b_m": 5000,
+          "spearman_raw": "0.9965964597",
+          "top_10_overlap": 10,
+          "top_10_k": 10,
+          "top_50_overlap": 33,
+          "top_50_k": 50,
+          "rank_churn": {
+            "shared_units": 47893,
+            "unchanged": 2429,
+            "moved_gt_10": 44638,
+            "moved_gt_100": 37921,
+            "moved_gt_1000": 4548,
+            "max_move": 14636,
+            "mean_abs_move": "541.3486313240"
+          }
+        },
+        {
+          "floor_a_m": 2000,
+          "floor_b_m": 5000,
+          "spearman_raw": "0.9983236955",
+          "top_10_overlap": 10,
+          "top_10_k": 10,
+          "top_50_overlap": 33,
+          "top_50_k": 50,
+          "rank_churn": {
+            "shared_units": 47893,
+            "unchanged": 2436,
+            "moved_gt_10": 44583,
+            "moved_gt_100": 35359,
+            "moved_gt_1000": 3315,
+            "max_move": 7898,
+            "mean_abs_move": "420.5997118577"
+          }
+        }
+      ],
+      "top_k_tie_caveat": "Top-k overlap is computed with a deterministic unit-key tiebreak. Where the top of a distribution is heavily tied, the overlap measures a deterministic slice of a tied block rather than a genuine stability property.",
+      "regional_concentration_of_top_50": {
+        "500": {
+          "distinct_regions": 1,
+          "candidates_without_region": 15,
+          "top_regions": [
+            {
+              "region_code": "KR-SGIS-23520",
+              "count": 35,
+              "share": "0.700000"
+            }
+          ]
+        },
+        "1000": {
+          "distinct_regions": 1,
+          "candidates_without_region": 15,
+          "top_regions": [
+            {
+              "region_code": "KR-SGIS-23520",
+              "count": 35,
+              "share": "0.700000"
+            }
+          ]
+        },
+        "2000": {
+          "distinct_regions": 1,
+          "candidates_without_region": 15,
+          "top_regions": [
+            {
+              "region_code": "KR-SGIS-23520",
+              "count": 35,
+              "share": "0.700000"
+            }
+          ]
+        },
+        "5000": {
+          "distinct_regions": 1,
+          "candidates_without_region": 6,
+          "top_regions": [
+            {
+              "region_code": "KR-SGIS-23520",
+              "count": 44,
+              "share": "0.880000"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "land_conversion": {
+    "definition": "share of the evaluated cell area that is NOT already developed (share_of_denominator_area); LOWER_RAW_IS_BETTER",
+    "method_version": "successor-land-conversion-v1",
+    "denominator": "EVALUATED_AREA",
+    "class_registry": {
+      "registry_id": "RESEARCH-ONLY-l2-first-digit-v0-NOT-PRODUCTION-POLICY",
+      "class_level": 2,
+      "developed_class_codes": [
+        "110",
+        "120",
+        "130",
+        "140",
+        "150",
+        "160"
+      ],
+      "excluded_class_codes": [
+        "710",
+        "720"
+      ],
+      "ambiguous_class_codes": [
+        "230",
+        "420",
+        "620",
+        "710",
+        "720"
+      ],
+      "known_class_code_count": 22,
+      "source": "Phase-3 research lane; L2 codes enumerated from environmental_land_cover_cell_class_areas for candidate-grid capital-grid-500m-v1",
+      "approved": false,
+      "note": "RESEARCH-ONLY registry built for Phase-3 measurement. Developed = the 1xx 시가화·건조지역 grouping only, read off the source code structure rather than supplied by any authority. Water (7xx) is excluded from numerator and denominator. 230/420/620 are resolved as NOT developed and flagged ambiguous. This is not an approved classification and must not be used to produce, rank, or publish any candidate result."
+    },
+    "registry_status": "RESEARCH-ONLY — NOT PRODUCTION POLICY. land_conversion.PRODUCTION_REGISTRY is None and remains None.",
+    "production_registry_is_none": true,
+    "cells_total": 47893,
+    "coverage_status_counts": {
+      "COMPLETE_EXACT": 35902,
+      "NO_COVERAGE": 7387,
+      "PARTIAL": 4604
+    },
+    "coverage": {
+      "component": "land_conversion",
+      "unit_grain": "CANDIDATE_CELL",
+      "unit_count": 47893,
+      "available_count": 28853,
+      "unavailable_count": 19040,
+      "partial_count": 2814,
+      "available_share": "0.602447",
+      "unavailable_reason_counts": {
+        "CLASS_AREA_EXCEEDS_DENOMINATOR": 11653,
+        "NO_EVALUATED_AREA": 7387,
+        "NO_LAND_COVER_COVERAGE": 7387
+      }
+    },
+    "conversion_share_distribution": {
+      "observation_count": 47893,
+      "available_count": 28853,
+      "null_count": 19040,
+      "zero_count": 134,
+      "unique_count": 26375,
+      "min": "0.0000000000",
+      "p10": "0.3550136584",
+      "p25": "0.6691444713",
+      "median": "0.8710189287",
+      "p75": "0.9632699484",
+      "p90": "0.9984796935",
+      "max": "1.0000000000",
+      "mean": "0.7729053851",
+      "stdev": "0.2529315387",
+      "variance": "0.0639743633",
+      "skewness": "-1.3525605296",
+      "warnings": []
+    },
+    "developed_share_distribution": {
+      "observation_count": 47893,
+      "available_count": 28853,
+      "null_count": 19040,
+      "zero_count": 2616,
+      "unique_count": 26229,
+      "min": "0.0000000000",
+      "p10": "0.0004092865",
+      "p25": "0.0262646179",
+      "median": "0.0955179195",
+      "p75": "0.2569225076",
+      "p90": "0.5502878674",
+      "max": "1.0000000000",
+      "mean": "0.1873268656",
+      "stdev": "0.2277550255",
+      "variance": "0.0518723516",
+      "skewness": "1.6225804042",
+      "warnings": [
+        "EXTREME_OUTLIERS"
+      ]
+    },
+    "ambiguous_class_exposure": {
+      "cells_touching_an_ambiguous_class": 26795,
+      "share_of_available_cells": "0.928673",
+      "per_ambiguous_class_cell_counts": {
+        "230": 16152,
+        "420": 26066,
+        "620": 24411,
+        "710": 16685,
+        "720": 408
+      },
+      "class_names": {
+        "230": "시설재배지",
+        "420": "인공초지",
+        "620": "인공나지",
+        "710": "내륙수",
+        "720": "해양수"
+      },
+      "note": "An ambiguous class is still resolved into exactly one bucket so the registry stays total; the flag records that the resolution is a contested policy call, not that the value is missing."
+    },
+    "class_area_excess_diagnostic": {
+      "affected_cells": 11653,
+      "excess_distribution_m2": {
+        "observation_count": 11653,
+        "available_count": 11653,
+        "null_count": 0,
+        "zero_count": 0,
+        "unique_count": 7578,
+        "min": "0.0000000000",
+        "p10": "0.0000000000",
+        "p25": "0.0000000000",
+        "median": "0.0000000001",
+        "p75": "0.0000000001",
+        "p90": "0.0000000002",
+        "max": "0.0000073296",
+        "mean": "0.0000000013",
+        "stdev": "0.0000000732",
+        "variance": "0.0000000000",
+        "skewness": "89.4425525553",
+        "warnings": [
+          "HIGH_SKEW",
+          "EXTREME_OUTLIERS"
+        ]
+      },
+      "materially_exceeding_cells_gt_1_m2": 0,
+      "interpretation": "Every excess is a sub-square-millimetre floating-point boundary, not a double-counted overlay: the stored class areas and the stored evaluated area are both double precision, and their exact Decimal sum differs from the stored total in the last unit in the last place. The component is behaving as specified — it refuses to clamp — but the cells it removes are removed for a precision artifact rather than for missing data.",
+      "consequence": "These cells are NOT missing land-cover data. Treating this artifact as missingness overstates land_conversion's real data gap and understates the successor model's achievable eligible population."
+    },
+    "no_coverage_share": "0.154240",
+    "missingness_regional_concentration": {
+      "distinct_regions": 79,
+      "candidates_without_region": 226,
+      "top_regions": [
+        {
+          "region_code": "KR-SGIS-31550",
+          "count": 2337,
+          "share": "0.122742"
+        },
+        {
+          "region_code": "KR-SGIS-31200",
+          "count": 2253,
+          "share": "0.118330"
+        },
+        {
+          "region_code": "KR-SGIS-23510",
+          "count": 1291,
+          "share": "0.067805"
+        },
+        {
+          "region_code": "KR-SGIS-31580",
+          "count": 1181,
+          "share": "0.062027"
+        },
+        {
+          "region_code": "KR-SGIS-31570",
+          "count": 1176,
+          "share": "0.061765"
+        },
+        {
+          "region_code": "KR-SGIS-31270",
+          "count": 1032,
+          "share": "0.054202"
+        },
+        {
+          "region_code": "KR-SGIS-31230",
+          "count": 777,
+          "share": "0.040809"
+        },
+        {
+          "region_code": "KR-SGIS-31240",
+          "count": 774,
+          "share": "0.040651"
+        },
+        {
+          "region_code": "KR-SGIS-31280",
+          "count": 659,
+          "share": "0.034611"
+        },
+        {
+          "region_code": "KR-SGIS-31220",
+          "count": 604,
+          "share": "0.031723"
+        }
+      ]
+    }
+  },
+  "missing_data_matrix": [
+    {
+      "component": "existing_burden",
+      "required_source": "waste_treatment_facilities + regional_population",
+      "numerator": "sum(throughput_quantity[톤/년]) x 1000",
+      "denominator": "resident population [persons]",
+      "unit_grain": "SIGUNGU",
+      "region_coverage": "79/79",
+      "missing_regions": 0,
+      "reference_period": "2024",
+      "candidate_coverage": "47340/47893",
+      "missing_candidates": 553,
+      "null_share": "0.011547",
+      "complete_case_impact": {
+        "candidates_this_component_alone_would_keep": 47340,
+        "candidates_kept_with_all_four": 24064
+      },
+      "missing_reason_categories": {
+        "CANDIDATE_HAS_NO_SIGUNGU_CODE": 553
+      }
+    },
+    {
+      "component": "air_impact_proxy",
+      "required_source": "regional_waste_statistics (4 canonical streams) + regional_population",
+      "numerator": "HOUSEHOLD + BUSINESS_NON_FACILITY + INDUSTRIAL_FACILITY + CONSTRUCTION [톤/년] x 1000",
+      "denominator": "resident population [persons]",
+      "unit_grain": "SIGUNGU",
+      "region_coverage": "57/79",
+      "missing_regions": 22,
+      "reference_period": "2024",
+      "candidate_coverage": "38592/47893",
+      "missing_candidates": 9301,
+      "null_share": "0.194204",
+      "complete_case_impact": {
+        "candidates_this_component_alone_would_keep": 38592,
+        "candidates_kept_with_all_four": 24064
+      },
+      "missing_reason_categories": {
+        "MISSING_WASTE_STREAM": 22,
+        "CANDIDATE_HAS_NO_SIGUNGU_CODE": 553
+      }
+    },
+    {
+      "component": "resident_impact",
+      "required_source": "suitability_candidates.centroid + regions.geometry + regional_population",
+      "numerator": "sum(population / max(geodesic distance m, floor))",
+      "denominator": "distance [m], floored",
+      "unit_grain": "CANDIDATE_CELL",
+      "region_coverage": "n/a",
+      "missing_regions": null,
+      "reference_period": "2024",
+      "candidate_coverage": "47893/47893",
+      "missing_candidates": 0,
+      "null_share": "0.000000",
+      "complete_case_impact": {
+        "candidates_this_component_alone_would_keep": 47893,
+        "candidates_kept_with_all_four": 24064
+      },
+      "missing_reason_categories": {}
+    },
+    {
+      "component": "land_conversion",
+      "required_source": "environmental_land_cover_cell_statistics + _cell_class_areas",
+      "numerator": "non-developed class area [m2]",
+      "denominator": "evaluated cell area [m2]",
+      "unit_grain": "CANDIDATE_CELL",
+      "region_coverage": "n/a",
+      "missing_regions": null,
+      "reference_period": "land-cover-cell-stats-v1",
+      "candidate_coverage": "28853/47893",
+      "missing_candidates": 19040,
+      "null_share": "0.397553",
+      "complete_case_impact": {
+        "candidates_this_component_alone_would_keep": 28853,
+        "candidates_kept_with_all_four": 24064
+      },
+      "missing_reason_categories": {
+        "CLASS_AREA_EXCEEDS_DENOMINATOR": 11653,
+        "NO_EVALUATED_AREA": 7387,
+        "NO_LAND_COVER_COVERAGE": 7387
+      }
+    }
+  ],
+  "eligibility_shrinkage": {
+    "note": "Complete-case staging only. This is NOT a proposal to adopt STRICT_ALL_COMPONENTS_REQUIRED; the missing-component eligibility policy is undecided, and screening eligibility is a separate concept from ranking score.",
+    "stages": [
+      {
+        "stage": "ALL CANDIDATES",
+        "required_components": [],
+        "remaining_candidates": 47893,
+        "removed_at_this_stage": 0,
+        "removed_cumulative": 0,
+        "removed_cumulative_share": "0.000000",
+        "remaining_share": "1.000000"
+      },
+      {
+        "stage": "+ existing_burden",
+        "required_components": [
+          "existing_burden"
+        ],
+        "remaining_candidates": 47340,
+        "removed_at_this_stage": 553,
+        "removed_cumulative": 553,
+        "removed_cumulative_share": "0.011547",
+        "remaining_share": "0.988453"
+      },
+      {
+        "stage": "+ air_impact_proxy",
+        "required_components": [
+          "existing_burden",
+          "air_impact_proxy"
+        ],
+        "remaining_candidates": 38592,
+        "removed_at_this_stage": 8748,
+        "removed_cumulative": 9301,
+        "removed_cumulative_share": "0.194204",
+        "remaining_share": "0.805796"
+      },
+      {
+        "stage": "+ resident_impact",
+        "required_components": [
+          "existing_burden",
+          "air_impact_proxy",
+          "resident_impact"
+        ],
+        "remaining_candidates": 38592,
+        "removed_at_this_stage": 0,
+        "removed_cumulative": 9301,
+        "removed_cumulative_share": "0.194204",
+        "remaining_share": "0.805796"
+      },
+      {
+        "stage": "+ land_conversion",
+        "required_components": [
+          "existing_burden",
+          "air_impact_proxy",
+          "resident_impact",
+          "land_conversion"
+        ],
+        "remaining_candidates": 24064,
+        "removed_at_this_stage": 14528,
+        "removed_cumulative": 23829,
+        "removed_cumulative_share": "0.497547",
+        "remaining_share": "0.502453"
+      },
+      {
+        "stage": "ALL FOUR COMPLETE",
+        "required_components": [
+          "existing_burden",
+          "air_impact_proxy",
+          "resident_impact",
+          "land_conversion"
+        ],
+        "remaining_candidates": 24064,
+        "removed_at_this_stage": 0,
+        "removed_cumulative": 23829,
+        "removed_cumulative_share": "0.497547",
+        "remaining_share": "0.502453"
+      }
+    ],
+    "regional_concentration_of_removed": {
+      "distinct_regions": 79,
+      "candidates_without_region": 553,
+      "top_regions": [
+        {
+          "region_code": "KR-SGIS-31550",
+          "count": 2751,
+          "share": "0.115448"
+        },
+        {
+          "region_code": "KR-SGIS-31200",
+          "count": 2253,
+          "share": "0.094549"
+        },
+        {
+          "region_code": "KR-SGIS-31191",
+          "count": 1864,
+          "share": "0.078224"
+        },
+        {
+          "region_code": "KR-SGIS-23510",
+          "count": 1291,
+          "share": "0.054178"
+        },
+        {
+          "region_code": "KR-SGIS-31580",
+          "count": 1181,
+          "share": "0.049561"
+        },
+        {
+          "region_code": "KR-SGIS-31570",
+          "count": 1176,
+          "share": "0.049352"
+        },
+        {
+          "region_code": "KR-SGIS-31270",
+          "count": 1032,
+          "share": "0.043309"
+        },
+        {
+          "region_code": "KR-SGIS-31230",
+          "count": 777,
+          "share": "0.032607"
+        },
+        {
+          "region_code": "KR-SGIS-31240",
+          "count": 774,
+          "share": "0.032481"
+        },
+        {
+          "region_code": "KR-SGIS-31280",
+          "count": 659,
+          "share": "0.027655"
+        }
+      ]
+    },
+    "regional_concentration_of_retained": {
+      "distinct_regions": 57,
+      "candidates_without_region": 0,
+      "top_regions": [
+        {
+          "region_code": "KR-SGIS-31240",
+          "count": 2363,
+          "share": "0.098196"
+        },
+        {
+          "region_code": "KR-SGIS-31580",
+          "count": 2309,
+          "share": "0.095952"
+        },
+        {
+          "region_code": "KR-SGIS-31270",
+          "count": 2240,
+          "share": "0.093085"
+        },
+        {
+          "region_code": "KR-SGIS-31570",
+          "count": 2141,
+          "share": "0.088971"
+        },
+        {
+          "region_code": "KR-SGIS-31280",
+          "count": 1752,
+          "share": "0.072806"
+        },
+        {
+          "region_code": "KR-SGIS-31220",
+          "count": 1590,
+          "share": "0.066074"
+        },
+        {
+          "region_code": "KR-SGIS-31070",
+          "count": 1301,
+          "share": "0.054064"
+        },
+        {
+          "region_code": "KR-SGIS-31130",
+          "count": 1294,
+          "share": "0.053773"
+        },
+        {
+          "region_code": "KR-SGIS-31210",
+          "count": 1279,
+          "share": "0.053150"
+        },
+        {
+          "region_code": "KR-SGIS-31250",
+          "count": 1158,
+          "share": "0.048122"
+        }
+      ]
+    },
+    "counterfactual_without_precision_artifact": {
+      "note": "DIAGNOSTIC ONLY. Identical staging except that cells removed by the sub-square-millimetre CLASS_AREA_EXCEEDS_DENOMINATOR float boundary are treated as measurable. This is not a proposed tolerance and not a policy; it isolates how much of the observed shrinkage is genuinely absent data.",
+      "cells_restored": 11653,
+      "stages": [
+        {
+          "stage": "ALL CANDIDATES",
+          "required_components": [],
+          "remaining_candidates": 47893,
+          "removed_at_this_stage": 0,
+          "removed_cumulative": 0,
+          "removed_cumulative_share": "0.000000",
+          "remaining_share": "1.000000"
+        },
+        {
+          "stage": "+ existing_burden",
+          "required_components": [
+            "existing_burden"
+          ],
+          "remaining_candidates": 47340,
+          "removed_at_this_stage": 553,
+          "removed_cumulative": 553,
+          "removed_cumulative_share": "0.011547",
+          "remaining_share": "0.988453"
+        },
+        {
+          "stage": "+ air_impact_proxy",
+          "required_components": [
+            "existing_burden",
+            "air_impact_proxy"
+          ],
+          "remaining_candidates": 38592,
+          "removed_at_this_stage": 8748,
+          "removed_cumulative": 9301,
+          "removed_cumulative_share": "0.194204",
+          "remaining_share": "0.805796"
+        },
+        {
+          "stage": "+ resident_impact",
+          "required_components": [
+            "existing_burden",
+            "air_impact_proxy",
+            "resident_impact"
+          ],
+          "remaining_candidates": 38592,
+          "removed_at_this_stage": 0,
+          "removed_cumulative": 9301,
+          "removed_cumulative_share": "0.194204",
+          "remaining_share": "0.805796"
+        },
+        {
+          "stage": "+ land_conversion",
+          "required_components": [
+            "existing_burden",
+            "air_impact_proxy",
+            "resident_impact",
+            "land_conversion"
+          ],
+          "remaining_candidates": 33980,
+          "removed_at_this_stage": 4612,
+          "removed_cumulative": 13913,
+          "removed_cumulative_share": "0.290502",
+          "remaining_share": "0.709498"
+        },
+        {
+          "stage": "ALL FOUR COMPLETE",
+          "required_components": [
+            "existing_burden",
+            "air_impact_proxy",
+            "resident_impact",
+            "land_conversion"
+          ],
+          "remaining_candidates": 33980,
+          "removed_at_this_stage": 0,
+          "removed_cumulative": 13913,
+          "removed_cumulative_share": "0.290502",
+          "remaining_share": "0.709498"
+        }
+      ]
+    }
+  },
+  "critic_viability": {
+    "label": "RESEARCH DIAGNOSTIC ONLY — NOT PRODUCTION WEIGHTS — NOT ACTIVATED",
+    "complete_case_population": 24064,
+    "historical_critic_reuse": "REFUSED BY CONSTRUCTION — critic.compute_critic_weights iterates the historical CRITERION_ORDER literal and cannot accept successor component keys. No historical CRITIC vector, weight, or stability class was reused.",
+    "distinct_value_counts": {
+      "existing_burden": 51,
+      "air_impact_proxy": 57,
+      "resident_impact": 24064,
+      "land_conversion": 21328
+    },
+    "constant_components": [],
+    "viable": true,
+    "research_only_result": {
+      "label": "RESEARCH DIAGNOSTIC ONLY — NOT PRODUCTION WEIGHTS — NOT ACTIVATED",
+      "criterion_order": [
+        "existing_burden",
+        "air_impact_proxy",
+        "resident_impact",
+        "land_conversion"
+      ],
+      "population_count": 24064,
+      "means": {
+        "existing_burden": "0.2506713282",
+        "air_impact_proxy": "0.3109764988",
+        "resident_impact": "0.4975672627",
+        "land_conversion": "0.2174417384"
+      },
+      "standard_deviations": {
+        "existing_burden": "0.2056385203",
+        "air_impact_proxy": "0.2384952694",
+        "resident_impact": "0.2786369896",
+        "land_conversion": "0.2471314421"
+      },
+      "correlation_matrix": {
+        "existing_burden": {
+          "existing_burden": "1.0000000000",
+          "air_impact_proxy": "0.4747955441",
+          "resident_impact": "-0.1505491511",
+          "land_conversion": "0.0973908960"
+        },
+        "air_impact_proxy": {
+          "existing_burden": "0.4747955441",
+          "air_impact_proxy": "1.0000000000",
+          "resident_impact": "-0.3767814257",
+          "land_conversion": "0.1744050277"
+        },
+        "resident_impact": {
+          "existing_burden": "-0.1505491511",
+          "air_impact_proxy": "-0.3767814257",
+          "resident_impact": "1.0000000000",
+          "land_conversion": "-0.4703847478"
+        },
+        "land_conversion": {
+          "existing_burden": "0.0973908960",
+          "air_impact_proxy": "0.1744050277",
+          "resident_impact": "-0.4703847478",
+          "land_conversion": "1.0000000000"
+        }
+      },
+      "information_values": {
+        "existing_burden": "0.5302106928",
+        "air_impact_proxy": "0.6505151306",
+        "resident_impact": "1.1139113633",
+        "land_conversion": "0.7904718688"
+      },
+      "weights": {
+        "existing_burden": "0.17186125",
+        "air_impact_proxy": "0.21085645",
+        "resident_impact": "0.36106061",
+        "land_conversion": "0.25622169"
+      },
+      "zero_variance_criteria": [],
+      "activation_status": "NOT ACTIVATED — no successor weight vector is approved"
+    },
+    "normalization_sensitivity": {
+      "weights_by_distance_floor": {
+        "500": {
+          "existing_burden": "0.17186125",
+          "air_impact_proxy": "0.21085645",
+          "resident_impact": "0.36106061",
+          "land_conversion": "0.25622169"
+        },
+        "1000": {
+          "existing_burden": "0.17182338",
+          "air_impact_proxy": "0.21082056",
+          "resident_impact": "0.36121630",
+          "land_conversion": "0.25613976"
+        },
+        "2000": {
+          "existing_burden": "0.17178639",
+          "air_impact_proxy": "0.21083605",
+          "resident_impact": "0.36141475",
+          "land_conversion": "0.25596281"
+        },
+        "5000": {
+          "existing_burden": "0.17179214",
+          "air_impact_proxy": "0.21090381",
+          "resident_impact": "0.36181020",
+          "land_conversion": "0.25549386"
+        }
+      },
+      "note": "The research CRITIC weight vector is a function of the distance floor, which is itself unapproved. A weight vector cannot be fixed before the floor is."
+    }
+  },
+  "ranking_diagnostics": {
+    "computable": true,
+    "weight_vector_label": "NEUTRAL MATHEMATICAL DIAGNOSTIC — equal weights (0.25 each). NOT approved, NOT recommended, NOT a default, NOT production policy. Used only because a ranking diagnostic needs some weight vector and no successor profile exists.",
+    "population": 24064,
+    "composite_distribution": {
+      "observation_count": 24064,
+      "available_count": 24064,
+      "null_count": 0,
+      "zero_count": 0,
+      "unique_count": 23860,
+      "min": "4.4331750000",
+      "p10": "18.8792525000",
+      "p25": "24.4523687500",
+      "median": "30.6958625000",
+      "p75": "37.8209125000",
+      "p90": "47.8537475000",
+      "max": "74.8223250000",
+      "mean": "31.9164207021",
+      "stdev": "10.6887207022",
+      "variance": "114.2487502492",
+      "skewness": "0.5363507881",
+      "warnings": []
+    },
+    "regional_concentration_of_top_50": {
+      "distinct_regions": 2,
+      "candidates_without_region": 0,
+      "top_regions": [
+        {
+          "region_code": "KR-SGIS-11050",
+          "count": 34,
+          "share": "0.680000"
+        },
+        {
+          "region_code": "KR-SGIS-11130",
+          "count": 16,
+          "share": "0.320000"
+        }
+      ]
+    },
+    "regional_concentration_of_top_500": {
+      "distinct_regions": 24,
+      "candidates_without_region": 0,
+      "top_regions": [
+        {
+          "region_code": "KR-SGIS-31580",
+          "count": 85,
+          "share": "0.170000"
+        },
+        {
+          "region_code": "KR-SGIS-11190",
+          "count": 74,
+          "share": "0.148000"
+        },
+        {
+          "region_code": "KR-SGIS-11050",
+          "count": 45,
+          "share": "0.090000"
+        },
+        {
+          "region_code": "KR-SGIS-11170",
+          "count": 34,
+          "share": "0.068000"
+        },
+        {
+          "region_code": "KR-SGIS-23090",
+          "count": 32,
+          "share": "0.064000"
+        },
+        {
+          "region_code": "KR-SGIS-11130",
+          "count": 30,
+          "share": "0.060000"
+        },
+        {
+          "region_code": "KR-SGIS-11080",
+          "count": 28,
+          "share": "0.056000"
+        },
+        {
+          "region_code": "KR-SGIS-11070",
+          "count": 26,
+          "share": "0.052000"
+        },
+        {
+          "region_code": "KR-SGIS-11010",
+          "count": 23,
+          "share": "0.046000"
+        },
+        {
+          "region_code": "KR-SGIS-11210",
+          "count": 22,
+          "share": "0.044000"
+        }
+      ]
+    },
+    "weight_perturbation_sensitivity": {
+      "existing_burden": {
+        "weight_vector": {
+          "existing_burden": "0.40",
+          "air_impact_proxy": "0.20",
+          "resident_impact": "0.20",
+          "land_conversion": "0.20"
+        },
+        "spearman_vs_equal": "0.9720519834",
+        "top_10_overlap": 10,
+        "top_10_k": 10,
+        "top_50_overlap": 50,
+        "top_50_k": 50,
+        "rank_churn": {
+          "shared_units": 24064,
+          "unchanged": 82,
+          "moved_gt_10": 23847,
+          "moved_gt_100": 22392,
+          "moved_gt_1000": 10639,
+          "max_move": 8557,
+          "mean_abs_move": "1195.3937832447"
+        }
+      },
+      "air_impact_proxy": {
+        "weight_vector": {
+          "existing_burden": "0.20",
+          "air_impact_proxy": "0.40",
+          "resident_impact": "0.20",
+          "land_conversion": "0.20"
+        },
+        "spearman_vs_equal": "0.9450220137",
+        "top_10_overlap": 5,
+        "top_10_k": 10,
+        "top_50_overlap": 46,
+        "top_50_k": 50,
+        "rank_churn": {
+          "shared_units": 24064,
+          "unchanged": 9,
+          "moved_gt_10": 23858,
+          "moved_gt_100": 21763,
+          "moved_gt_1000": 13078,
+          "max_move": 9179,
+          "mean_abs_move": "1674.7801695479"
+        }
+      },
+      "resident_impact": {
+        "weight_vector": {
+          "existing_burden": "0.20",
+          "air_impact_proxy": "0.20",
+          "resident_impact": "0.40",
+          "land_conversion": "0.20"
+        },
+        "spearman_vs_equal": "0.8437182793",
+        "top_10_overlap": 0,
+        "top_10_k": 10,
+        "top_50_overlap": 0,
+        "top_50_k": 50,
+        "rank_churn": {
+          "shared_units": 24064,
+          "unchanged": 11,
+          "moved_gt_10": 23934,
+          "moved_gt_100": 23093,
+          "moved_gt_1000": 17965,
+          "max_move": 9959,
+          "mean_abs_move": "3057.2088597074"
+        }
+      },
+      "land_conversion": {
+        "weight_vector": {
+          "existing_burden": "0.20",
+          "air_impact_proxy": "0.20",
+          "resident_impact": "0.20",
+          "land_conversion": "0.40"
+        },
+        "spearman_vs_equal": "0.9286912436",
+        "top_10_overlap": 8,
+        "top_10_k": 10,
+        "top_50_overlap": 39,
+        "top_50_k": 50,
+        "rank_churn": {
+          "shared_units": 24064,
+          "unchanged": 12,
+          "moved_gt_10": 23851,
+          "moved_gt_100": 22589,
+          "moved_gt_1000": 16077,
+          "max_move": 11410,
+          "mean_abs_move": "1992.3649434840"
+        }
+      }
+    },
+    "eligibility_note": "These are RANKING diagnostics only. No weighted score is used here as a pass/fail screening test, and changing a research weight never redefines screening eligibility."
+  },
+  "invariants": {
+    "missing_never_zero": {
+      "observations_checked": 48051,
+      "violations": [],
+      "confirmed": true,
+      "note": "Every successor component is LOWER_RAW_IS_BETTER, so 0 is the best possible raw value. Zero-filling a missing observation would systematically promote exactly the units with the least evidence."
+    },
+    "historical_components_untouched": {
+      "historical_order": [
+        "zoning",
+        "road",
+        "equity",
+        "demand"
+      ],
+      "successor_order": [
+        "existing_burden",
+        "air_impact_proxy",
+        "resident_impact",
+        "land_conversion"
+      ],
+      "namespaces_disjoint": true,
+      "note": "This lane read zoning/road/equity/demand only to confirm disjointness. No historical score, weight, rank, CRITIC vector, or stability class was read into a successor calculation or written anywhere."
+    },
+    "successor_activation_status": "NOT ACTIVATED"
+  }
+}
