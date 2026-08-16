@@ -196,7 +196,11 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     mode: "suitability",
     view: "cost",
     testId: "suitability-view-cost",
-    orientation: "처리 대상 지역을 정하고 공식 표준공사비로 설치비를 살펴봅니다.",
+    // Shortened, not re-scoped. The clause that went ("처리 대상 지역을 정하고")
+    // announced the region choice one line above card ①, whose own title is
+    // 비용 계산 희망 지역 선택 — the strip now carries only what the cards do not
+    // say for themselves: the basis of the estimate.
+    orientation: "공식 표준공사비로 설치비를 추정합니다.",
   },
   {
     key: "candidate-deep-analysis",

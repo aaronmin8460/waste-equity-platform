@@ -343,8 +343,12 @@ describe("bulk actions", () => {
     expect(clear.disabled).toBe(false);
     fireEvent.click(clear);
     await waitFor(() => expect(chipLabels()).toHaveLength(0));
+    // The empty selection is still STATED, not left to be inferred from the
+    // absence of chips — as the count line, which is now the only place it is
+    // said (it used to be followed by "아직 선택한 지역이 없습니다.", restating the
+    // same zero one line below itself).
     expect(screen.getByTestId("facility-cost-selected-regions").textContent).toContain(
-      "아직 선택한 지역이 없습니다",
+      "선택한 지역 0개",
     );
     expect(clear.disabled).toBe(true);
   });

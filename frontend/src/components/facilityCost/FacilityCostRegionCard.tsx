@@ -72,6 +72,7 @@ export default function FacilityCostRegionCard({
       headingRef={headingRef}
       description="공식 폐기물 자료가 있는 지역만 선택할 수 있습니다."
       testId="facility-cost-step-regions"
+      className="wep-figma-card wep-numbered-card"
     >
       {regionOptions.length === 0 ? (
         <EmptyState
@@ -83,11 +84,13 @@ export default function FacilityCostRegionCard({
         <>
           <SearchableRegionPicker
             label="지역 이름 검색"
-            // Only the non-obvious half survives. That a search box searches and a
-            // button selects is visible from the controls; that the 광역시·도 buttons
-            // MERGE into the selection rather than replacing it is not, and a reader
-            // who assumes otherwise misreads the result.
-            hint="광역시·도 버튼은 기존 선택에 더해집니다."
+            // No `hint`. The merge behaviour it announced ("광역시·도 버튼은 기존
+            // 선택에 더해집니다.") is demonstrated by the controls themselves — the
+            // chip list and its count grow on a second 광역시·도 click and the
+            // 선택 초기화 button beside them is the way back — so the sentence
+            // pre-announced something the reader is shown a moment later. The
+            // picker's `aria-describedby` is conditional on `hint`, so dropping it
+            // leaves no dangling reference.
             regions={regionOptions}
             selectedCodes={selectedCodes}
             onChange={onChangeRegions}

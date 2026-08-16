@@ -347,12 +347,15 @@ export default function SearchableRegionPicker({
       </div>
 
       {/* Selected regions. The container is always rendered so its testid is a
-          stable contract, and an empty selection says so in words. */}
+          stable contract, and the count line states an empty selection in words
+          ("선택한 지역 0개") — the sentence that used to follow it ("아직 선택한
+          지역이 없습니다.") restated that same zero one line below itself. The
+          empty state is still SAID, not merely implied by an absence of chips;
+          it is now said once. The polite announcement region below is unchanged
+          and still reports the count on every selection change. */}
       <div className="mt-3" data-testid="facility-cost-selected-regions">
         <p className="text-xs text-ink-subtle">선택한 지역 {selectedRegions.length}개</p>
-        {selectedRegions.length === 0 ? (
-          <p className="mt-1 text-sm text-ink-muted">아직 선택한 지역이 없습니다.</p>
-        ) : (
+        {selectedRegions.length > 0 && (
           <ul className="mt-1 flex flex-wrap gap-1.5">
             {selectedRegions.map((region) => (
               <li key={region.code} data-region-code={region.code}>

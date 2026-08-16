@@ -106,7 +106,11 @@ export default function FacilityCostResultCard({
   const showResult = result !== null && resultCurrent && !calculating;
 
   return (
-    <SectionCard title="③ 비용 계산 결과" testId="facility-cost-step-result">
+    <SectionCard
+      title="③ 비용 계산 결과"
+      testId="facility-cost-step-result"
+      className="wep-figma-card wep-numbered-card"
+    >
       <dl className="flex flex-col gap-2">
         <SummaryRow
           label="선택 지역"
@@ -208,12 +212,21 @@ export default function FacilityCostResultCard({
             </div>
             {/* A DATA-STATE message, not boilerplate: it appears only when the
                 backend reports the result as partial, and it is the one thing a
-                reader cannot infer from the figures. Compressed to a single line;
-                the missing components are enumerated, with their served reasons,
-                in 계산 방법과 한계 → 포함되지 않은 비용. */}
+                reader cannot infer from the figures — so the `is_partial` gate and
+                this testid are unchanged, and a partial result is still never
+                allowed to read as a complete one.
+
+                Figma asks for the sentence to go; what goes is its LENGTH, not the
+                state. Compressed to the standing badge below, which keeps both
+                loadbearing halves: that something is missing, and that missing is
+                not zero. The pointer at the end ("「계산 방법과 한계」 참고") is
+                dropped as duplication, not as content — the button carrying that
+                exact title sits a few pixels below, in this same card, and the
+                itemised components with their served reasons are behind it in
+                포함되지 않은 비용. */}
             {result.completeness.is_partial && (
               <p className="mt-2 text-xs text-warn" data-testid="facility-cost-partial">
-                일부 비용 항목은 자료가 없어 빠졌습니다 (0이 아님) — 「{DETAILS_TITLE}」 참고.
+                일부 항목 미포함 (0이 아님)
               </p>
             )}
           </>

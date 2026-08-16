@@ -351,9 +351,9 @@ export default function FacilityCostDashboard({
       data-testid="facility-cost-dashboard"
     >
       {/* No `description`: the destination's own orientation strip below already
-          says what this screen does ("처리 대상 지역을 정하고 공식 표준공사비로 설치비를
-          살펴봅니다.", lib/glossary.ts). Carrying a second, near-identical sentence
-          under the same <h1> cost a line of the fold and told a reader nothing new. */}
+          says what this screen does ("공식 표준공사비로 설치비를 추정합니다.",
+          lib/glossary.ts). Carrying a second, near-identical sentence under the
+          same <h1> cost a line of the fold and told a reader nothing new. */}
       <PageHeader title={title} testId="facility-cost-header">
         {orientation}
       </PageHeader>
@@ -469,15 +469,21 @@ function FacilityCostBody({
   // guidance rather than an error, so it goes to a POLITE status region — the
   // numeric out-of-range message keeps role="alert" beside its own field, because
   // an input the user has actually put out of bounds is a genuine actionable error.
+  //
+  // There is no branch for `validationMessage !== null`. The card's status line
+  // renders `validationMessage ?? blockedReason`, so the specific message — which
+  // names the field AND its bound ("지역 처리 비율은 0–100(%) 사이여야 합니다.") — is
+  // what a reader sees in that state. The generic pointer that used to sit here
+  // ("고급 설정에 입력한 값을 확인해 주세요.") was already unreachable behind it, and
+  // said less. The real validation error itself is untouched, in both of its homes:
+  // beside its own field as an alert, and repeated here beside the button.
   const blockedReason = noFacilityTypes
     ? "시설 종류를 불러오지 못해 계산할 수 없습니다."
     : noRegions
       ? "처리할 지역을 한 곳 이상 선택하면 계산할 수 있습니다."
       : calculating
         ? "계산 중입니다."
-        : validationMessage !== null
-          ? "고급 설정에 입력한 값을 확인해 주세요."
-          : "";
+        : "";
 
   return (
     <>

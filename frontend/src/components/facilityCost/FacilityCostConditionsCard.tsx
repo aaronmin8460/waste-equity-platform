@@ -43,7 +43,6 @@ import {
   matchedSharePreset,
   PROCESSING_SHARE_PRESETS,
   SUBSIDY_RATE_FORM_NOTE,
-  SUBSIDY_RATE_SOURCE_NOTE,
   WASTE_STREAMS,
   type ScenarioState,
 } from "./shared";
@@ -69,15 +68,15 @@ export default function FacilityCostConditionsCard({
 }: FacilityCostConditionsCardProps) {
   const shareInputRef = useRef<HTMLInputElement>(null);
   const preset = matchedSharePreset(scenario.processingSharePercent);
-  const subsidyLabel =
-    options.subsidy_schemes.find((s) => s.value === scenario.subsidyScheme)?.label ??
-    scenario.subsidyScheme;
 
   return (
     <SectionCard
       title="② 계산 조건"
-      description="폐기물 종류와 처리 비율, 시설 종류를 정합니다."
+      // No `description`. The one it carried ("폐기물 종류와 처리 비율, 시설 종류를
+      // 정합니다.") named the three fields that are drawn, labelled, in the
+      // 40 pixels directly beneath it.
       testId="facility-cost-step-conditions"
+      className="wep-figma-card wep-numbered-card"
     >
       <div className="flex flex-col gap-3">
         <div>
@@ -97,9 +96,12 @@ export default function FacilityCostConditionsCard({
               </option>
             ))}
           </select>
-          <span className={captionClass}>
-            종류를 바꿔도 선택 지역은 유지되며, 자료가 없는 곳만 빠집니다.
-          </span>
+          {/* No standing caption here. The behaviour it pre-announced ("종류를
+              바꿔도 선택 지역은 유지되며, 자료가 없는 곳만 빠집니다.") is REPORTED
+              when it happens: a stream change that drops regions names every one
+              of them in card ①'s `facility-cost-dropped-regions` note, and a
+              change that drops none needs no announcement at all. The behaviour
+              is unchanged — only its pre-announcement is gone. */}
         </div>
 
         <div>
@@ -152,9 +154,12 @@ export default function FacilityCostConditionsCard({
             />
             <span className="flex-none text-xs text-ink-subtle">%</span>
           </div>
-          <span className={captionClass}>
-            선택 지역 발생량 중 이 시설에서 처리할 비율입니다 (0–100).
-          </span>
+          {/* The BOUND, compactly. What the share is OF is already carried by the
+              field's own label and by 선택 지역 in card ③'s condition summary; what
+              a reader cannot see from the control is the accepted range, so that
+              is what stays. `validateScenario` is untouched and remains the single
+              place the 0–100 rule is enforced. */}
+          <span className={captionClass}>0–100 %</span>
         </div>
 
         <div>
@@ -186,42 +191,31 @@ export default function FacilityCostConditionsCard({
       </div>
 
       {/* 고급 설정 — the analytical assumptions. Collapsed, as in Figma, with the
-          values in force stated in the summary line so a closed accordion never
-          hides WHAT is assumed. It opens automatically when a value inside is out
-          of range, and the calculate card repeats the reason, so an invalid input
-          can never be hidden behind it. */}
+          accordion's own label stating whether any of them has been moved off the
+          served default, so a closed accordion never hides THAT something was
+          changed. It opens automatically when a value inside is out of range, and
+          the calculate card repeats the reason, so an invalid input can never be
+          hidden behind it.
+
+          WHAT WAS REMOVED, AND WHY IT IS NOT A LOSS OF DISCLOSURE: a four-row
+          `<dl>` used to restate 연간 가동일수 / 지하화 배수 / 보조 시나리오 /
+          공사비 기준 immediately above the four controls that hold those exact
+          values. It sat INSIDE the accordion, so it was never the closed-state
+          summary its comment claimed — it was visible only when the controls it
+          duplicated were visible too. Every value it printed is still on screen,
+          in the control that owns it, and card ③'s 고급 설정 row still reports
+          기본값 / 기본값에서 변경됨 without opening anything. The subsidy rate's
+          provenance line that followed it went with it: it was the SOURCE half of
+          the fuller note that stays beside the 보조 시나리오 selector below
+          (`SUBSIDY_RATE_FORM_NOTE` = the same source string + the non-claim), so
+          the shorter copy was strictly contained in the longer one. */}
       <div className="mt-3">
         <Accordion
           label={`고급 설정 — ${advancedChanged ? "기본값에서 변경됨" : "기본값 사용 중"}`}
           defaultOpen={validationMessage !== null}
           testId="facility-cost-advanced-settings"
         >
-          <dl
-            className="grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2"
-            data-testid="facility-cost-current-assumptions"
-          >
-            <div>
-              <dt className="inline font-medium text-ink">연간 가동일수: </dt>
-              <dd className="inline text-ink-muted">{scenario.operatingDays}일</dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-ink">지하화 배수: </dt>
-              <dd className="inline text-ink-muted">{scenario.undergroundMultiplier}</dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-ink">보조 시나리오: </dt>
-              <dd className="inline text-ink-muted">{subsidyLabel}</dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-ink">공사비 기준: </dt>
-              <dd className="inline text-ink-muted">{scenario.costVersion}</dd>
-            </div>
-          </dl>
-          {/* The subsidy rate's provenance travels with the rate wherever it is
-              shown, here as well as beside the selector below. */}
-          <p className="mt-2 text-xs text-ink-subtle">{SUBSIDY_RATE_SOURCE_NOTE}</p>
-
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className={labelClass}>
               연간 가동일수
               <input
