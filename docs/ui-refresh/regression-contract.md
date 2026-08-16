@@ -408,10 +408,12 @@ The cost view is now nine presentational components under
   the in-flight state and by the error state, never shown alongside them, and no
   KPI, skeleton value, or sample amount stands in for a result.
 * **`completeness.is_partial` must be stated when served.** A partial response
-  renders `facility-cost-partial` — an `InfoBanner tone="warning"` naming the
-  included and excluded item counts and stating the excluded ones are not zero. It
-  carries **no** `role="alert"`. The screen must never read as complete when the
-  response marks itself partial.
+  renders `facility-cost-partial` — a `text-warn` standing line ("일부 항목 미포함
+  (0이 아님)") whose two halves are both load-bearing: that items are missing, and
+  that missing is not zero. It carries **no** `role="alert"`. The itemised
+  components with their served reasons are one click below, in 계산 방법과 한계 →
+  포함되지 않은 비용, reached by the button in the same card. The screen must never
+  read as complete when the response marks itself partial.
 * **Four data states are visually distinct, and none is amber-by-default.**
   분석 제외 → `DataStatusBadge status="excluded"`; a value that was not served →
   `status="missing"` (the neutral no-data gray, always with its text label);

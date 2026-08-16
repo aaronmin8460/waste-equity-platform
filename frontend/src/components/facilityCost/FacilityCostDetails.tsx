@@ -92,7 +92,14 @@ export default function FacilityCostDetails({
       onClose={onClose}
       testId="facility-cost-details"
     >
-      <div className="flex flex-col gap-3">
+      {/* `.wep-dialog-body` is a bare scroll container with NO padding of its own,
+          so each consumer insets its own content — `p-4 sm:p-5` is what
+          FullRankingDialog and SuitabilityRankingDialog already use, and it lines
+          the content up with the dialog head's 1rem/1.25rem. This surface was the
+          one that never applied it, which is why its accordions ran edge to edge
+          against the panel and read as denser than the same components elsewhere.
+          Nothing was added or removed here — only the inset and the section gap. */}
+      <div className="flex flex-col gap-4 p-4 sm:p-5">
         <Accordion label="이 계산의 범위" defaultOpen testId="facility-cost-scope-section">
           <FacilityCostNotice />
         </Accordion>

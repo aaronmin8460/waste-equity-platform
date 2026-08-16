@@ -1389,22 +1389,37 @@ describe("계산 방법과 한계 — the progressive-disclosure surface", () =>
     expect(scope).toContain("환경영향평가");
   });
 
-  it("lists the analytical assumptions in force, beside the controls that set them", async () => {
+  it("shows every analytical assumption in force, in the control that owns it", async () => {
+    // The assumptions used to be printed TWICE inside 고급 설정: a summary <dl>
+    // immediately above the four controls holding those same values. The <dl> is
+    // gone; the guarantee it was there for is not, so it is asserted here against
+    // the controls themselves — every value is still readable, and still exact.
     await renderPanel();
-    const current = screen.getByTestId("facility-cost-current-assumptions");
-    const text = current.textContent ?? "";
-    expect(text).toContain("300일");
-    expect(text).toContain("1.00");
-    expect(text).toContain("시·군 (30%)");
-    expect(text).toContain("capex-standard-v2022dec");
-    // Provenance travels with the subsidy rate wherever it is shown.
-    expect(current.parentElement?.textContent).toContain("국고보조금 업무처리지침");
+    expect((screen.getByTestId("facility-cost-operating-days") as HTMLInputElement).value).toBe(
+      "300",
+    );
+    expect((screen.getByTestId("facility-cost-underground") as HTMLInputElement).value).toBe("1.00");
+    const subsidy = screen.getByTestId("facility-cost-subsidy-scheme") as HTMLSelectElement;
+    expect(subsidy.selectedOptions[0].textContent).toContain("시·군 (30%)");
+    expect(screen.getByTestId("facility-cost-version-fixed").textContent).toContain(
+      "capex-standard-v2022dec",
+    );
+    // Provenance still travels with the subsidy rate, beside its own selector —
+    // the fuller note, which contains the source string the removed line carried.
+    expect(screen.getByTestId("facility-cost-subsidy-note").textContent).toContain(
+      "국고보조금 업무처리지침",
+    );
+    // The value the reader types is the value that is shown, with no second copy
+    // of it left standing elsewhere in the accordion.
     fireEvent.change(screen.getByTestId("facility-cost-operating-days"), {
       target: { value: "320" },
     });
     await waitFor(() =>
-      expect(screen.getByTestId("facility-cost-current-assumptions").textContent).toContain("320일"),
+      expect((screen.getByTestId("facility-cost-operating-days") as HTMLInputElement).value).toBe(
+        "320",
+      ),
     );
+    expect(screen.queryByTestId("facility-cost-current-assumptions")).toBeNull();
   });
 
   it("shows the cost composition, exact and without implying approval", async () => {
@@ -1624,10 +1639,15 @@ describe("results — excluded cost components", () => {
     await calculateToResults();
     const partial = screen.getByTestId("facility-cost-partial");
     const text = partial.textContent ?? "";
-    expect(text).toContain("일부 비용 항목은 자료가 없어 빠졌습니다");
+    // Compact, but both load-bearing halves survive: that items are missing, and
+    // that missing is not zero. A partial result may never read as a complete one.
+    expect(text).toContain("미포함");
     expect(text).toContain("0이 아님");
-    // It points at the surface that holds the itemised list.
-    expect(text).toContain("계산 방법과 한계");
+    // The route to the itemised list is still in this card — the button carrying
+    // that surface's own title, a few pixels below the badge.
+    expect(screen.getByTestId("facility-cost-open-details").textContent).toContain(
+      "계산 방법과 한계",
+    );
     // A standing caveat must not interrupt a screen reader on every render.
     expect(partial.getAttribute("role")).toBeNull();
   });
