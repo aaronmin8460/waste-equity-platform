@@ -15,6 +15,22 @@ import { defineConfig } from "@playwright/test";
  * The dev server therefore always runs. When E2E_BACKEND_URL is set it is passed
  * through so the live specs reach real data; the responsive spec is unaffected
  * either way because it mocks at the network layer.
+ *
+ * ── DEFAULT VISITOR STATE: RETURNING, NOT FIRST-TIME ─────────────────────────────
+ * The shell mounts a first-visit navigation guide (ui/NavigationOnboarding) that
+ * covers the whole viewport until it is dismissed, and remembers the dismissal in
+ * `localStorage` under `NAV_ONBOARDING_STORAGE_KEY`. Playwright gives every test a
+ * FRESH context, so without this every test is a first visit and the guide sits on
+ * top of the surface under test — intercepting the first click and holding focus.
+ *
+ * Every spec here except `navigationOnboarding.spec.ts` is about what the app does
+ * for a reader who is already past the guide, so the returning-visitor state is the
+ * honest default: it is the state a real reader is in for all but their first page
+ * load. It seeds ONE key and nothing else, so no spec's own fixtures, routes, or
+ * assertions change meaning.
+ *
+ * The first-visit behaviour itself is NOT skipped by this — `navigationOnboarding
+ * .spec.ts` opts back out with an empty `storageState` and owns that contract.
  */
 const backendUrl = process.env.E2E_BACKEND_URL;
 
@@ -24,6 +40,7 @@ export default defineConfig({
   use: {
     // Port 3000 matches the backend's default CORS allowlist.
     baseURL: "http://localhost:3000",
+    storageState: "./e2e/storageState.returningVisitor.json",
   },
   webServer: {
     command: "npm run dev -- --port 3000",
