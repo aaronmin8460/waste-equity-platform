@@ -71,7 +71,7 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("top-navigation")).toHaveCount(1);
       await expect(page.getByTestId("mode-switch")).toHaveCount(1);
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText("폐기물 처리 현황");
+      await expect(page.locator("h1")).toHaveText("지역별 폐기물 처리 현황");
       await expect(page.locator("#main-content")).toHaveCount(1);
       await expect(page.locator("main")).toHaveCount(1);
 
@@ -445,7 +445,7 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     expect(after.y).toBe(before.y);
     expect(after.width).toBe(before.width);
     // The frozen navigation labels are unchanged.
-    await expect(page.getByTestId("mode-flow")).toHaveText("폐기물 처리 현황");
+    await expect(page.getByTestId("mode-flow")).toHaveText("지역별 폐기물 처리 현황");
     await expect(page.getByTestId("mode-flow")).toHaveAttribute("aria-pressed", "true");
   });
 

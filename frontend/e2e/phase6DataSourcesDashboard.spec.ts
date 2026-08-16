@@ -128,7 +128,7 @@ for (const vp of VIEWPORTS) {
     test("keeps the global navigation labels and position unchanged", async ({ page }) => {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
-      for (const label of ["지역 지표", "폐기물 처리 현황", "후보지 분석", "후보지 심층 분석", "후보지 심층 비교", "데이터·출처"]) {
+      for (const label of ["지역 지표", "지역별 폐기물 처리 현황", "후보지 분석", "후보지 심층 분석", "후보지 심층 비교", "데이터·출처"]) {
         await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(1);
       }
       // The nav is still THERE and still the same six labels — but the vertical

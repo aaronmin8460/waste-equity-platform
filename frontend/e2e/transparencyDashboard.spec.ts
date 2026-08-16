@@ -509,8 +509,8 @@ test.describe("cross-view regression — 1440×900", () => {
       // 후보지 심층 분석 is the SCORE destination (the one with the map). Plain
       // "후보지 분석" is now the separate cost destination, which mounts none.
       ["후보지 심층 분석", "suitability-summary", 1],
-      ["폐기물 처리 현황", "landfill-dashboard", 0],
-      // Opened over 폐기물 처리 현황, which mounts no map.
+      ["지역별 폐기물 처리 현황", "landfill-dashboard", 0],
+      // Opened over 지역별 폐기물 처리 현황, which mounts no map.
       ["데이터·출처", "transparency-sources", 0],
     ];
     for (const [label, marker, maps] of steps) {
@@ -574,7 +574,7 @@ test.describe("cross-view regression — 1440×900", () => {
     // reader leaves 데이터·출처 now; the catalogue unmounts with it.
     await page.getByTestId("data-sources-dialog-close").click();
     await expect(page.getByTestId("data-sources-dialog")).toHaveCount(0);
-    await page.getByRole("button", { name: "폐기물 처리 현황", exact: true }).click();
+    await page.getByRole("button", { name: "지역별 폐기물 처리 현황", exact: true }).click();
     await expect(page.getByTestId("landfill-dashboard")).toBeVisible();
     await expect(page.getByTestId("transparency-search")).toHaveCount(0);
     await expect(page.getByTestId("transparency-source-card")).toHaveCount(0);

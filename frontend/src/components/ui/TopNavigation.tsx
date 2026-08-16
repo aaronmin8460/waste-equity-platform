@@ -69,12 +69,19 @@
 import { Fragment } from "react";
 
 import type { NavDestination, NavDestinationKey } from "../../lib/glossary";
-import { NAV_DESTINATIONS } from "../../lib/glossary";
+import { BRAND_NAME, BRAND_SUBTITLE, NAV_DESTINATIONS } from "../../lib/glossary";
 import FigmaIcon, { type FigmaIconName } from "./FigmaIcon";
 
-/** The citizen-facing product identity (spec §1). */
-export const BRAND_NAME = "여기다";
-export const BRAND_SUBTITLE = "쓰레기 매립지 입지 추천 플랫폼";
+/**
+ * The citizen-facing product identity (spec §1).
+ *
+ * Re-exported, not defined here: `app/layout.tsx` is a SERVER module and needs the
+ * same two strings for the document title, so they live in `lib/glossary` with the
+ * rest of the global terminology. The re-export keeps every existing
+ * `from "./TopNavigation"` import (ui/NarrowScreenGate, the component tests) working
+ * and keeps the app bar the obvious place to look for them.
+ */
+export { BRAND_NAME, BRAND_SUBTITLE };
 
 /**
  * Destination → its exact Figma vector.
@@ -99,6 +106,17 @@ const DESTINATION_ICONS: Record<NavDestinationKey, FigmaIconName> = {
  * what the rule says visually.
  */
 const DIVIDED_DESTINATION: NavDestinationKey = "data-sources";
+
+/**
+ * The nav group's automation id.
+ *
+ * It was already a cross-file contract (the shell tests, the terminology audit, and
+ * a dozen Playwright specs address it), and `ui/NavigationOnboarding` now measures
+ * this element and its `button[data-destination]` children to place its spotlight.
+ * Exporting the string means that reader imports the id rather than re-typing it, so
+ * renaming the testid is a type error there instead of a silently empty overlay.
+ */
+export const NAV_GROUP_TEST_ID = "mode-switch";
 
 export interface TopNavigationProps {
   /** The destination currently rendered. */
@@ -145,7 +163,7 @@ export default function TopNavigation({ active, onNavigate }: TopNavigationProps
           className="wep-nav-track"
           role="group"
           aria-labelledby="mode-switch-label"
-          data-testid="mode-switch"
+          data-testid={NAV_GROUP_TEST_ID}
         >
           {NAV_DESTINATIONS.map((destination) => (
             <Fragment key={destination.key}>

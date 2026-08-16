@@ -1095,7 +1095,7 @@ export default function Home() {
    * (lib/glossary.NAV_DESTINATIONS), so navigating is just setting both — through
    * the existing guarded setters, which is what keeps the scenario-clearing and
    * report-closing side effects intact. `view` is only written for the suitability
-   * destinations, so moving to 지역 지표 or 폐기물 처리 현황 leaves the reader's
+   * destinations, so moving to 지역 지표 or 지역별 폐기물 처리 현황 leaves the reader's
    * last suitability sub-view alone and returning to it is not a surprise.
    */
   const navigate = useCallback(

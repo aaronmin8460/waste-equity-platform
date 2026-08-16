@@ -30,6 +30,31 @@ export interface Described {
 }
 
 // --------------------------------------------------------------------------- //
+// Brand identity.
+//
+// The citizen-facing product name and subtitle (docs/YEOGIDA_UI_REDESIGN_SPEC.md
+// §1). They live HERE rather than in ui/TopNavigation because three surfaces render
+// them and one of them is a SERVER module: the app bar, ui/NarrowScreenGate, and
+// `app/layout.tsx`'s document title. Importing them from a `"use client"` component
+// into the server layout would drag that component's whole module graph (the
+// generated Figma icon table included) into the server bundle for two strings.
+// --------------------------------------------------------------------------- //
+
+/** The citizen-facing product name. */
+export const BRAND_NAME = "여기다";
+
+/**
+ * The one-line description beside the product name.
+ *
+ * It was 쓰레기 매립지 입지 추천 플랫폼 until the six-page Figma forensic audit.
+ * 매립지 (landfill) named ONE disposal route while the six destinations analyse
+ * 소각·재활용·매립 facilities alike, so 폐기물 처리시설 is the term that actually
+ * covers what the product does. Changing it here changes the app bar, the
+ * narrow-screen gate, and the browser tab together — they cannot drift apart.
+ */
+export const BRAND_SUBTITLE = "폐기물 처리시설 입지 추천 플랫폼";
+
+// --------------------------------------------------------------------------- //
 // Top-level navigation (modes) and the one-line orientation for each.
 // --------------------------------------------------------------------------- //
 
@@ -48,7 +73,7 @@ export type DashboardArea = "equity" | "suitability" | "flow" | "transparency";
 export const MODE_LABELS: Record<DashboardArea, string> = {
   equity: "지역 지표",
   suitability: "후보지 분석",
-  flow: "폐기물 처리 현황",
+  flow: "지역별 폐기물 처리 현황",
   transparency: "데이터·출처",
 };
 
@@ -87,14 +112,29 @@ export const SUBVIEW_LABELS: Record<SuitabilitySubview, string> = {
 // between the two, and it is the reason the redesign needs no new backend mode
 // and no new URL-state version:
 //
-//   지역 지표          → mode=equity
-//   폐기물 처리 현황    → mode=flow
-//   후보지 분석         → mode=suitability & view=cost
-//   후보지 심층 분석    → mode=suitability & view=score
-//   후보지 심층 비교    → mode=suitability & view=scenario
-//   데이터·출처         → mode=transparency
+//   지역 지표              → mode=equity
+//   지역별 폐기물 처리 현황  → mode=flow
+//   후보지 분석             → mode=suitability & view=cost
+//   후보지 심층 분석        → mode=suitability & view=score
+//   후보지 심층 비교        → mode=suitability & view=scenario
+//   데이터·출처             → mode=transparency
 //
 // Every `?v=1` link that worked before resolves to exactly the same screen.
+//
+// ── 지역별 폐기물 처리 현황 (Figma forensic audit) ─────────────────────────────
+// It was 폐기물 처리 현황. The Figma frame names the destination 지역별 폐기물 처리
+// 현황, and the longer name is the truthful one: the screen is a per-region
+// breakdown of 수도권매립지 inbound quantity, not a nationwide total. The label is
+// also the view's `<h1>` (spec §2.2), so this one edit renames the tab and the page
+// title together. `mode=flow` and the `testId` are untouched, so every existing
+// link and every automation selector still resolves.
+//
+// ── 후보지 분석 is NOT renamed ────────────────────────────────────────────────
+// The same audit found a conflict INSIDE the Figma file for this destination: the
+// nav names it 후보지 분석 while the frame title reads 시설 비용 살펴보기. A design
+// source that disagrees with itself cannot settle a citizen-facing name, so the
+// shipped contract stands until the owner decides. Do not "fix" it from the frame
+// title alone.
 //
 // ── About the test IDs ───────────────────────────────────────────────────────
 // They are the PRE-EXISTING ids, deliberately kept even though four of the six
@@ -144,7 +184,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
   },
   {
     key: "waste-treatment",
-    label: "폐기물 처리 현황",
+    label: "지역별 폐기물 처리 현황",
     mode: "flow",
     view: null,
     testId: "mode-flow",

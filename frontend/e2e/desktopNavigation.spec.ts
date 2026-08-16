@@ -38,7 +38,7 @@ const MODE_TEST_IDS = [
 ];
 const MODE_LABELS = [
   "지역 지표",
-  "폐기물 처리 현황",
+  "지역별 폐기물 처리 현황",
   "후보지 분석",
   "후보지 심층 분석",
   "후보지 심층 비교",
@@ -116,7 +116,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
         { query: "/?v=1&mode=suitability&view=score", label: "후보지 심층 분석" },
         { query: "/?v=1&mode=suitability&view=scenario", label: "후보지 심층 비교" },
         { query: "/?v=1&mode=suitability&view=cost", label: "후보지 분석" },
-        { query: "/?v=1&mode=flow", label: "폐기물 처리 현황" },
+        { query: "/?v=1&mode=flow", label: "지역별 폐기물 처리 현황" },
         { query: "/?v=1&mode=transparency", label: "데이터·출처" },
       ];
 

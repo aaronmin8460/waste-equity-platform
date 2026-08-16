@@ -125,11 +125,11 @@ const VIEWS: View[] = [
     maps: 0,
   },
   {
-    name: "폐기물 처리 현황",
+    name: "지역별 폐기물 처리 현황",
     url: "/?v=1&mode=flow",
     ready: "landfill-dashboard",
-    h1: "폐기물 처리 현황",
-    navLabel: "폐기물 처리 현황",
+    h1: "지역별 폐기물 처리 현황",
+    navLabel: "지역별 폐기물 처리 현황",
     navTestId: "mode-flow",
     maps: 0,
   },
@@ -157,7 +157,7 @@ const VIEW_OWNED_TESTIDS: Record<string, string[]> = {
   "후보지 심층 분석": ["suitability-summary"],
   "후보지 심층 비교": ["scenario-lab"],
   "후보지 분석": ["facility-cost-dashboard", "facility-cost-workflow"],
-  "폐기물 처리 현황": ["landfill-dashboard", "landfill-filters"],
+  "지역별 폐기물 처리 현황": ["landfill-dashboard", "landfill-filters"],
   "데이터·출처": ["transparency-dashboard", "transparency-sources"],
 };
 

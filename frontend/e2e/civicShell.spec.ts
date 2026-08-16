@@ -25,14 +25,14 @@ const DESKTOP_VIEWPORTS = [
 /** The SIX visible destinations of 여기다, in nav order (spec §2). */
 const MODE_LABELS = [
   "지역 지표",
-  "폐기물 처리 현황",
+  "지역별 폐기물 처리 현황",
   "후보지 분석",
   "후보지 심층 분석",
   "후보지 심층 비교",
   "데이터·출처",
 ];
 const BRAND_NAME = "여기다";
-const BRAND_SUBTITLE = "쓰레기 매립지 입지 추천 플랫폼";
+const BRAND_SUBTITLE = "폐기물 처리시설 입지 추천 플랫폼";
 
 async function expectNoHorizontalOverflow(page: Page, where: string): Promise<void> {
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
@@ -144,7 +144,7 @@ for (const vp of DESKTOP_VIEWPORTS) {
         ["/?v=1&mode=suitability&view=score", "후보지 심층 분석"],
         ["/?v=1&mode=suitability&view=scenario", "후보지 심층 비교"],
         ["/?v=1&mode=suitability&view=cost", "후보지 분석"],
-        ["/?v=1&mode=flow", "폐기물 처리 현황"],
+        ["/?v=1&mode=flow", "지역별 폐기물 처리 현황"],
         ["/?v=1&mode=transparency", "데이터·출처"],
       ] as const) {
         await gotoView(page, query);

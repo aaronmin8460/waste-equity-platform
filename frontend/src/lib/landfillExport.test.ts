@@ -1,5 +1,5 @@
 /**
- * 폐기물 처리 현황 XLSX — the fee/payment separation, enforced in the workbook.
+ * 지역별 폐기물 처리 현황 XLSX — the fee/payment separation, enforced in the workbook.
  *
  * The page holds two money figures on different accounting bases. A spreadsheet
  * is where conflating them does the most damage, because two adjacent columns

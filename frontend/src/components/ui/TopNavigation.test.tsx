@@ -35,7 +35,14 @@ describe("TopNavigation", () => {
     renderNav();
     expect(NAV_DESTINATIONS.map((d) => screen.getByTestId(d.testId).textContent)).toEqual([
       "지역 지표",
-      "폐기물 처리 현황",
+      // Renamed by the Figma forensic audit: the frame names this destination
+      // 지역별 폐기물 처리 현황, and the screen genuinely is a per-region breakdown
+      // rather than a nationwide total. `mode-flow` and the URL are unchanged.
+      "지역별 폐기물 처리 현황",
+      // NOT renamed: the Figma file names this 후보지 분석 in the nav and
+      // 시설 비용 살펴보기 in the frame title. A source that disagrees with itself
+      // does not settle a citizen-facing name — the shipped contract stands until
+      // the owner decides (see lib/glossary.ts).
       "후보지 분석",
       "후보지 심층 분석",
       "후보지 심층 비교",
@@ -208,7 +215,10 @@ describe("TopNavigation", () => {
     expect(brand.textContent).toContain(BRAND_NAME);
     expect(brand.textContent).toContain(BRAND_SUBTITLE);
     expect(BRAND_NAME).toBe("여기다");
-    expect(BRAND_SUBTITLE).toBe("쓰레기 매립지 입지 추천 플랫폼");
+    // 매립지 named ONE disposal route while the six destinations analyse
+    // 소각·재활용·매립 facilities alike, so the audit replaced it with the term that
+    // covers what the product actually does.
+    expect(BRAND_SUBTITLE).toBe("폐기물 처리시설 입지 추천 플랫폼");
 
     // Never inside the labelled navigation group: the group's six controls are the
     // six destinations, and nothing else may join that count or its accessible name.
