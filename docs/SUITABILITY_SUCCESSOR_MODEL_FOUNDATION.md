@@ -2,8 +2,15 @@
 
 > **Status: foundation only. The successor model is implemented and tested but
 > NOT activated.** There is no successor policy version, no approved weight
-> vector, no persisted successor score, no migration, and no API surface. Nothing
-> in this document changes what any stored analysis run means.
+> vector, and no persisted successor score. Nothing in this document changes what
+> any stored analysis run means.
+>
+> **Update (backend phase 2).** The additive persistence and API contract this
+> document *designed* in §8 are now **applied**: two component models can coexist
+> in storage, in the API, in scenarios, and in tests. The successor model is still
+> not activated — nothing writes a successor run and none can be produced. See
+> [SUITABILITY_COMPONENT_MODEL_CONTRACT.md](SUITABILITY_COMPONENT_MODEL_CONTRACT.md)
+> for the applied contract.
 >
 > Everything here is analytical decision support. Nothing is a legal, permitting,
 > engineering, environmental-review, or final siting determination.
@@ -263,7 +270,7 @@ open, and every blocker names what it blocks and who owns it:
 | `MISSING_COMPONENT_ELIGIBILITY_POLICY_UNDECIDED` | every component's effect on candidate status |
 | `SUCCESSOR_CRITIC_STABILITY_METHOD_UNVALIDATED` | successor CRITIC weights and stability |
 | `SUCCESSOR_ELIGIBLE_POPULATION_NOT_MEASURED` | successor CRITIC, stability, rollout |
-| `SUCCESSOR_PERSISTENCE_NOT_DESIGNED` | persistence and API serialization |
+| `SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED` | producing any stored successor run, and successor scenario recombination |
 | `SUCCESSOR_DEFAULT_RUN_RESOLUTION_UNDECIDED` | rollout and default-run switchover |
 
 ### Component-model identity
@@ -288,8 +295,10 @@ label records a fact that is already true without reading or writing any
 analytical value. The successor identifier's final public name is subject to the
 same approval as activation.
 
-**Nothing writes these yet.** They are defined so guards and tests have one source
-of truth.
+These are now **persisted** on every run row (`component_model_version` +
+`component_order`) and served by every run-scoped endpoint. The backend-side source
+of truth for how they are resolved, validated, and served is
+`analysis/suitability/component_model.py`.
 
 ## 7. Cross-model reuse is refused, never approximated
 
@@ -321,12 +330,18 @@ undefined CRITIC that fails the whole build. The minimum has no default: no valu
 is approved, and inventing one would put an unreviewed threshold on the build's
 failure boundary.
 
-## 8. Persistence — designed, not applied
+## 8. Persistence — designed here, applied in backend phase 2
 
-**No migration is added by this work, and none is needed:** the foundation
-persists nothing. The recommended additive design is recorded in
-`policy.PERSISTENCE_DESIGN` (status `DESIGN_ONLY_NOT_APPLIED`) so it is reviewable
-and testable without being applied:
+The design below is recorded in `policy.PERSISTENCE_DESIGN`. It was
+`DESIGN_ONLY_NOT_APPLIED` when this document was written and is now
+**`APPLIED_ADDITIVE_SCHEMA_ONLY`**: migrations `0022` (run-level identity) and
+`0023` (candidate-level `component_scores`) are in the chain, and the API serves
+both shapes. What is still not applied is any successor *write* — nothing produces
+a successor run, so `component_scores` is `{}` and the legacy columns are populated
+on every stored row. Full details, including the API and default-run contracts, are
+in [SUITABILITY_COMPONENT_MODEL_CONTRACT.md](SUITABILITY_COMPONENT_MODEL_CONTRACT.md).
+
+The design as recorded:
 
 * **Run level** — `suitability_analysis_runs` gains `component_model_version`
   (`String(50)`, `NOT NULL`, constant server default) and `component_order`
@@ -403,4 +418,9 @@ Blocking activation, in the order they must be resolved:
    whether origin-based incinerated tonnage is the better numerator than total
    generation.
 7. **Successor weight vector**, then normalization strategy per component.
-8. **Persistence migrations**, then default-run resolution as the rollout gate.
+8. **A successor run write path** — the persistence migrations and the version-aware
+   API contract are applied, but nothing scores successor components into candidate
+   rows. That work depends on items 1–7.
+9. **Default-run switchover** as the rollout gate. The backend boundary exists and is
+   pinned to the historical model; flipping
+   `component_model.DEFAULT_COMPONENT_MODEL` is the product decision.
