@@ -168,7 +168,32 @@ export default function MunicipalCostSection({
             <p role="status" className="sr-only" data-testid="municipal-cost-live">
               시·군·구별 수집·운반 계약 지급액 {rows.length}곳을 표시합니다.
             </p>
-            <MunicipalCostTable rows={rows} />
+            {/* ── Why the 66-row comparison is now a disclosure ──────────────────
+                Expanded, this table plus its per-row detail rendered ~4,300px — 59%
+                of the whole screen, and roughly twice the height of the ENTIRE Figma
+                page-2 frame. It sits below 지역별 상세 현황, which already carries the
+                2024 계약 지급액 for these same municipalities as its own column group,
+                so a reader scrolling the dashboard met the municipal dataset twice and
+                met the second copy as a wall.
+
+                Nothing is removed and nothing is summarised away: the filters, the
+                served scope, the row count, the reference year and the methodology all
+                stay OUTSIDE the disclosure, so what the dataset covers is still legible
+                without opening anything. The count is in the summary label, so the
+                reader knows the size of what they are opening.
+
+                A native <details>: it is keyboard-operable, it is announced as a
+                disclosure, and it needs no state in a component that deliberately holds
+                none. `name` is omitted so it never forms an accordion group with
+                another disclosure on the page. */}
+            <details className="wep-card p-0" data-testid="municipal-cost-table-disclosure">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-ink marker:content-none">
+                시·군·구별 비교표 보기 ({rows.length}곳)
+              </summary>
+              <div className="border-t border-hairline p-4 pt-3">
+                <MunicipalCostTable rows={rows} />
+              </div>
+            </details>
           </>
         )}
 

@@ -136,7 +136,22 @@ export default function LandfillGenerationScatter({
   );
 }
 
-const PLOT = { width: 660, height: 340, padLeft: 46, padBottom: 30, padTop: 12, padRight: 14 };
+const PLOT = { width: 660, height: 340, padLeft: 62, padBottom: 30, padTop: 12, padRight: 14 };
+/** Where the axis ticks sit, as fractions of each axis's served maximum. */
+const AXIS_FRACTIONS = [0, 0.25, 0.5, 0.75, 1] as const;
+
+/**
+ * A tick label for the axis SCALE.
+ *
+ * Rounded to whole kg, unlike every VALUE on this screen. That is safe here and only
+ * here: a tick is a position on a ruler, not a served measurement — it is derived from
+ * the axis maximum times a fraction, it is `aria-hidden`, and no region's figure is
+ * ever read from it. The exact per-region values stay the point buttons' own labels and
+ * the 표로 보기 table, both of which print the served string unrounded.
+ */
+function axisTick(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
+}
 
 /**
  * The plot itself.
@@ -216,6 +231,87 @@ function ScatterPlot({
             strokeDasharray="4 4"
             data-testid="landfill-scatter-median-y"
           />
+        )}
+
+        {/* Axis ticks. The Figma frame (125:5162) draws a scaled plot, not a bare
+            box: without numbers on the axes a reader can see that one region sits
+            further right than another but not by how much, which is most of what a
+            scatter is for. Five evenly-spaced ticks per axis, each printed from the
+            same formatter the readout uses, so a tick and a point can never disagree.
+            Decorative for assistive tech — the exact per-region values are the point
+            buttons' own labels and the 표로 보기 table. */}
+        {AXIS_FRACTIONS.map((fraction) => {
+          const tickX = PLOT.padLeft + fraction * plotWidth;
+          const tickY = PLOT.padTop + plotHeight - fraction * plotHeight;
+          return (
+            <g key={fraction} aria-hidden>
+              {/* A horizontal guide at each y tick, behind the points. */}
+              {fraction > 0 && (
+                <line
+                  x1={PLOT.padLeft}
+                  y1={tickY}
+                  x2={PLOT.padLeft + plotWidth}
+                  y2={tickY}
+                  stroke="#eff0f6"
+                />
+              )}
+              <text
+                x={PLOT.padLeft - 5}
+                y={tickY + 3}
+                textAnchor="end"
+                className="fill-ink-subtle text-[9px]"
+                data-testid="landfill-scatter-tick-y"
+              >
+                {axisTick(maxY * fraction)}
+              </text>
+              <text
+                x={tickX}
+                y={PLOT.padTop + plotHeight + 12}
+                textAnchor="middle"
+                className="fill-ink-subtle text-[9px]"
+                data-testid="landfill-scatter-tick-x"
+              >
+                {axisTick(maxX * fraction)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* The four quadrant callouts the frame places in the corners. They name where
+            the MEDIAN LINES fall, never a verdict on a region: the wording is the same
+            `QUADRANT_LABELS` vocabulary the selected-point readout uses, which says
+            중앙값 이상 / 미만 rather than 높음 / 낮음, and the readout still appends
+            "(순위나 평가가 아닙니다)". Drawn only when both medians exist — with fewer
+            than two points there are no quadrants to name. */}
+        {dataset.generationMedian !== null && dataset.burdenMedian !== null && (
+          <g aria-hidden data-testid="landfill-scatter-quadrant-labels">
+            <text x={PLOT.padLeft + 6} y={PLOT.padTop + 11} className="fill-ink-faint text-[9px]">
+              {QUADRANT_LABELS["high-burden"]}
+            </text>
+            <text
+              x={PLOT.padLeft + plotWidth - 4}
+              y={PLOT.padTop + 11}
+              textAnchor="end"
+              className="fill-ink-faint text-[9px]"
+            >
+              {QUADRANT_LABELS["high-high"]}
+            </text>
+            <text
+              x={PLOT.padLeft + 6}
+              y={PLOT.padTop + plotHeight - 6}
+              className="fill-ink-faint text-[9px]"
+            >
+              {QUADRANT_LABELS["low-low"]}
+            </text>
+            <text
+              x={PLOT.padLeft + plotWidth - 4}
+              y={PLOT.padTop + plotHeight - 6}
+              textAnchor="end"
+              className="fill-ink-faint text-[9px]"
+            >
+              {QUADRANT_LABELS["high-generation"]}
+            </text>
+          </g>
         )}
 
         {dataset.points.map((point) => {

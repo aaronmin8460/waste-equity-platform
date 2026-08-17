@@ -77,7 +77,9 @@ const METRICS: Record<TrendMetric, MetricSpec> = {
 /** Max red, min blue, everything else a visible neutral (see the file header). */
 const BAR_MAX = "#b91c1c";
 const BAR_MIN = "#1d4ed8";
-const BAR_DEFAULT = "#ced3e0";
+/** The connecting line and its ordinary month markers (Figma draws this series navy). */
+const LINE_STROKE = "#111a56";
+const POINT_DEFAULT = "#111a56";
 
 export interface LandfillTrendSectionProps {
   trends: LandfillTrends;
@@ -168,13 +170,13 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
               </>
             ) : (
               <span className="font-normal text-ink-subtle">
-                막대에 커서를 올리거나 키보드로 이동하면 그 달의 정확한 값이 표시됩니다.
+                점에 커서를 올리거나 키보드로 이동하면 그 달의 정확한 값이 표시됩니다.
               </span>
             )}
           </p>
 
-          {/* The extremes in words. These are the primary statement; the red/blue
-              bars are a redundant echo of them. */}
+          {/* The extremes in words. These stay the PRIMARY, reachable statement; the
+              red/blue markers and their on-chart annotations are a redundant echo. */}
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
             {extremes ? (
               <>
@@ -193,7 +195,7 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
               </span>
             )}
             <span className="text-ink-subtle">
-              {points.length}개월 · 자료가 없는 달은 막대를 그리지 않으며 0으로 채우지 않습니다.
+              {points.length}개월 · 자료가 없는 달은 점을 찍지 않으며 0으로 채우지 않습니다.
             </span>
           </div>
 
@@ -272,8 +274,12 @@ function TrendChart({
   // render at zero height rather than dividing by zero.
   const scale = max > 0 ? max : 1;
   const slot = plotWidth / points.length;
-  const barWidth = Math.max(2, slot * 0.62);
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => fraction * scale);
+  /** The x centre of a month's slot — shared by the line, the markers and the labels. */
+  const centreX = (index: number, width: number) => CHART.padLeft + index * width + width / 2;
+  /** A value's y, in plot coordinates. Scales geometry only; never a displayed figure. */
+  const valueY = (value: number, denom: number, height: number) =>
+    CHART.padTop + height - (value / denom) * height;
 
   return (
     <div className="overflow-x-auto">
@@ -302,20 +308,42 @@ function TrendChart({
           );
         })}
 
+        {/* The connecting line. Figma (125:5361) draws this series as a LINE with a
+            marker per month, not as bars — a monthly series is a progression through
+            time, and a line is what lets a reader see the shape of the year rather
+            than compare twelve independent magnitudes.
+
+            It is a single `polyline` over the SAME per-month geometry the markers and
+            hit targets use, so the path can never disagree with the points. Decorative:
+            the per-month hit targets below own every accessible name. */}
+        <polyline
+          points={points
+            .map((point, index) => `${centreX(index, slot)},${valueY(spec.pick(point), scale, plotHeight)}`)
+            .join(" ")}
+          fill="none"
+          stroke={LINE_STROKE}
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          aria-hidden
+          pointerEvents="none"
+          data-testid="landfill-trend-line"
+        />
+
         {points.map((point, index) => {
           const value = spec.pick(point);
-          const height = (value / scale) * plotHeight;
-          const x = CHART.padLeft + index * slot + (slot - barWidth) / 2;
+          const cx = centreX(index, slot);
+          const cy = valueY(value, scale, plotHeight);
           const isMax = extremes?.max.reference_month === point.reference_month;
           const isMin = extremes?.min.reference_month === point.reference_month;
           const isActive = activeMonth === point.reference_month;
           const readout = `${monthLabel(point.reference_month)} · ${spec.exact(point)}`;
           return (
             <g key={point.reference_month}>
-              {/* A full-height transparent target over the bar's slot, so a short
-                  month is as easy to reach as a tall one — with the pointer and
-                  with the Tab key. It carries the focus, the hover, and the
-                  accessible name; the painted bar below stays purely visual. */}
+              {/* A full-height transparent target over the month's slot, so a low
+                  month is as easy to reach as a high one — with the pointer and with
+                  the Tab key. It carries the focus, the hover, and the accessible
+                  name; the painted marker below stays purely visual. */}
               <rect
                 x={CHART.padLeft + index * slot}
                 y={CHART.padTop}
@@ -338,24 +366,38 @@ function TrendChart({
                     the reachable versions. */}
                 <title>{readout}</title>
               </rect>
-              <rect
-                x={x}
-                y={CHART.padTop + plotHeight - height}
-                width={barWidth}
-                height={Math.max(0, height)}
-                fill={isMax ? BAR_MAX : isMin ? BAR_MIN : BAR_DEFAULT}
-                stroke={isActive ? "#111a56" : undefined}
-                strokeWidth={isActive ? 1.5 : undefined}
+              {/* A guide from the axis to the active or extreme marker, so the eye can
+                  land on the right month without a tooltip. */}
+              {(isActive || isMax || isMin) && (
+                <line
+                  x1={cx}
+                  y1={cy}
+                  x2={cx}
+                  y2={CHART.padTop + plotHeight}
+                  stroke={isMax ? BAR_MAX : isMin ? BAR_MIN : "#111a56"}
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  aria-hidden
+                  pointerEvents="none"
+                />
+              )}
+              <circle
+                cx={cx}
+                cy={cy}
+                r={isActive || isMax || isMin ? 5 : 3.5}
+                fill={isMax ? BAR_MAX : isMin ? BAR_MIN : POINT_DEFAULT}
+                stroke="#ffffff"
+                strokeWidth={1.5}
                 // Decorative: the hit target above owns the name and the focus.
                 aria-hidden
                 pointerEvents="none"
-                data-testid="landfill-trend-bar"
+                data-testid="landfill-trend-point"
                 data-month={point.reference_month}
                 data-extreme={isMax ? "max" : isMin ? "min" : undefined}
                 data-active={isActive ? "true" : undefined}
               />
               <text
-                x={x + barWidth / 2}
+                x={cx}
                 y={CHART.height - 8}
                 textAnchor="middle"
                 className="fill-ink-subtle text-[9px]"
@@ -365,6 +407,42 @@ function TrendChart({
             </g>
           );
         })}
+
+        {/* The extremes annotated ON the chart, which is where Figma puts them. The
+            words below the chart remain the primary, reachable statement — these are a
+            redundant echo, aria-hidden, and they are anchored so they can never sit
+            outside the plot even when an extreme is the first or last month. */}
+        {extremes &&
+          (
+            [
+              { point: extremes.max, kind: "max" as const, fill: BAR_MAX, label: "최고" },
+              { point: extremes.min, kind: "min" as const, fill: BAR_MIN, label: "최저" },
+            ] satisfies { point: LandfillTrendPoint; kind: "max" | "min"; fill: string; label: string }[]
+          ).map(({ point, kind, fill, label }) => {
+            const index = points.findIndex((p) => p.reference_month === point.reference_month);
+            if (index < 0) return null;
+            const cx = centreX(index, slot);
+            const cy = valueY(spec.pick(point), scale, plotHeight);
+            // Above the marker for the maximum, below it for the minimum, and clamped
+            // into the plot so neither can be clipped by the viewBox.
+            const y = kind === "max" ? Math.max(CHART.padTop + 9, cy - 12) : Math.min(CHART.padTop + plotHeight - 4, cy + 18);
+            const anchor = index === 0 ? "start" : index === points.length - 1 ? "end" : "middle";
+            return (
+              <text
+                key={kind}
+                x={cx}
+                y={y}
+                textAnchor={anchor}
+                fill={fill}
+                className="text-[9px] font-semibold"
+                aria-hidden
+                pointerEvents="none"
+                data-testid={`landfill-trend-annotation-${kind}`}
+              >
+                {label} {monthLabel(point.reference_month)} · {spec.format(spec.pick(point))}
+              </text>
+            );
+          })}
       </svg>
     </div>
   );

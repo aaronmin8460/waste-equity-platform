@@ -299,7 +299,22 @@ export default function LandfillDashboard({
             beyond the orientation are all still on the screen as VALUES rather than
             prose: the origins are the 출발 지역 filter and the three table rows, the
             fee is its own KPI, and the period is the 조회 조건 selection. */}
-        <PageHeader title={title}>{orientation}</PageHeader>
+        {/* NO orientation strip. The Figma page-2 frame opens directly on the 조회 조건
+            card — it carries no page title and no supporting sentence, because every
+            fact the sentence offered ("수도권매립지 반입량과 지역별 흐름을 확인합니다")
+            is a VALUE on the screen a moment later: the inbound total is a KPI, the
+            per-region flow is a card of its own, and the period is the 조회 조건
+            selection.
+
+            The <h1> itself STAYS, compact. Dropping it would leave the view without a
+            heading and would break the rule that the visible title always equals the
+            navigation destination name (docs/YEOGIDA_UI_REDESIGN_SPEC.md §2.2); that
+            is an accessibility floor the frame is not authoritative over. `orientation`
+            is still accepted so the page's call site is unchanged, and is rendered for
+            assistive tech only. */}
+        <PageHeader title={title}>
+          <span className="sr-only">{orientation}</span>
+        </PageHeader>
 
         {/* No standing notice panel here — see the file header. */}
 
@@ -348,22 +363,37 @@ export default function LandfillDashboard({
               priorPeriodLabel={priorPeriodLabelOf(data.summary)}
               capitalRegion={capitalRegion}
               tierNoun={tierNoun}
+              /* The municipal contract-payment dataset now lives INSIDE the KPI row's
+                 폐기물 관리비용 card, as its right-hand column — the arrangement the
+                 Figma frame draws. It used to be a separate full-width card between
+                 the KPI row and the body, which put 130px of page between two money
+                 figures a reader has to keep apart.
+
+                 It stays a SEPARATE dataset with its own badge, its own year, its own
+                 loading and failure wording, and its own link into the detail section:
+                 only the position changed. Passing it here rather than fetching it here
+                 also keeps the two independent — an official 404 (what a fresh database
+                 returns) still leaves the cost column and its section fully operable. */
+              municipalCost={municipalCostAll}
+              municipalCostError={municipalCost.error}
             />
           </>
         )}
 
-        {/* The municipal contract-payment dataset, summarised in the KPI region —
-            the position the Figma frame gives it, with its own
-            `시·군·구별 상세 보기 →` into the section at the foot of the screen.
+        {/* ── Independence fallback ───────────────────────────────────────────────
+            When the official landfill request HAS an answer, the municipal dataset is
+            the right-hand column of the KPI row's 폐기물 관리비용 card, which is where
+            the Figma frame puts it.
 
-            Rendered here, BETWEEN the KPI row and the official body, and deliberately
-            OUTSIDE the `{data && …}` branch that surrounds both: the two datasets are
-            fetched independently and must fail independently. An official 404 — what
-            a fresh database returns — leaves this card and its section fully
-            operable, and a municipal failure blanks neither the KPI row above nor
-            anything below. It summarises SCOPE only; see the component for why a
-            총 지급액 총계 is refused. */}
-        <MunicipalCostSummary data={municipalCostAll} error={municipalCost.error} />
+            When it does not — an official 404 is what a fresh database returns — that
+            whole row is absent, and folding the municipal summary into it would have
+            made a second, independently-fetched dataset disappear because a different
+            request failed. So it falls back to its own card here, in the position it
+            occupied before, with the same counts, the same wording and the same link.
+            The two datasets are fetched independently and must fail independently. */}
+        {data === null && (
+          <MunicipalCostSummary data={municipalCostAll} error={municipalCost.error} />
+        )}
 
         {data && (
           <LandfillBody

@@ -300,19 +300,20 @@ export default function LandfillRegionTable({
             </table>
           </div>
           <div className="px-4 pt-3 pb-4 text-[11px] leading-relaxed text-ink-subtle">
+            {/* Both lines are load-bearing rather than decorative: the first states the
+                affordance and then the reason a 시·군·구 row shows a phrase instead of a
+                number (and that the phrase is not a zero); the second says what the
+                local 엑셀 다운로드 beside the heading actually contains — the shared
+                landfill workbook holds only the official-fee dataset, so this table's
+                two contract-payment columns are NOT in it, which is the difference
+                between a scoped file and a file a reader thinks is the whole table. */}
             <p data-testid="landfill-region-grain-note">
               · 지역 이름을 누르면 시·군·구 단위 상세 자료가 펼쳐집니다. 수도권매립지 반입 자료는
               광역지자체(시·도) 단위로만 보고되므로 시·군·구 행에서는 「
               {LANDFILL_NOT_AT_MUNICIPAL_GRAIN}」으로 표시되며, 값이 0이라는 뜻이 아닙니다.
             </p>
-            {/* What the local 엑셀 다운로드 beside the heading actually contains. The
-                file is the shared landfill workbook, which by design holds only the
-                official-fee dataset — so the two contract-payment columns in this
-                table are NOT in it, and saying so here is the difference between a
-                scoped file and a file a reader thinks is the whole table. */}
             <p className="mt-1" data-testid="landfill-region-export-scope">
-              · 엑셀 다운로드에는 공식 반입 자료만 담기며, 회계 기준이 다른 계약 지급액은 포함되지
-              않습니다.
+              · 엑셀 다운로드에는 공식 반입 자료만 담기며, 계약 지급액은 포함되지 않습니다.
             </p>
             {contractDistinction && (
               // Served verbatim. It sits at the point of use — beside the column
