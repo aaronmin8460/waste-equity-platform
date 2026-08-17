@@ -247,13 +247,23 @@ describe("② 계산 모델 가중치 설정 — what stays primary", () => {
     expect(primaryText()).toContain(PROFILE_META.baseline.primary);
   });
 
-  it("keeps the stable-candidate indication and its rule on the primary surface", async () => {
+  // The 안정 후보 row is STRUCK from card ② (기술 참고사항 225:440: "지도 쪽에 있는
+  // 것만으로도 충분함"). This now asserts the strike held AND that the rule survived
+  // on the primary surface the annotation points at — the map legend, beside the
+  // outline it describes. The rule itself is unchanged: three bases, never four.
+  it("moves the stable-candidate rule to the map legend, and keeps it primary", async () => {
     await enterDeepAnalysis();
-    const row = within(card()).getByTestId("scoring-basis-stability");
-    expect(row.closest("details")).toBeNull();
-    // The REAL stored rule — three comparison bases, never four, never a new formula.
-    expect(row.textContent).toContain("세 계산식 모두에서 상위 10%");
-    expect(row.textContent).not.toContain("네 계산식");
+    expect(within(card()).queryByTestId("scoring-basis-stability")).toBeNull();
+    // The map legend is itself a collapsible disclosure, so "primary" here means
+    // "on the map, beside the outline it explains" — which is exactly what the
+    // annotation asks for — not "outside every <details>".
+    const legend = screen.getByTestId("stability-legend-note");
+    expect(legend.textContent).toContain("baseline·equal·critic 상위 10%");
+    expect(legend.textContent).not.toContain("네 계산식");
+    // ...and the limit that no other surface carries stays with the definition.
+    expect(screen.getByTestId("score-basis-stability-meaning").textContent).toContain(
+      "최종 입지, 허가 가능성 또는 법적 적격성을 의미하지 않습니다",
+    );
   });
 
   it("puts the factor cards ABOVE the methodology disclosure, not below it", async () => {

@@ -393,8 +393,11 @@ describe("the A/B/C bands", () => {
 
   it("keeps the official screening statuses on their OWN surface", async () => {
     await enterDeepAnalysis();
-    // The statuses still exist — in the status summary, where they belong.
-    expect(within(left()).getByTestId("candidate-counts").textContent).toContain("스크리닝 통과");
+    // The statuses still exist, and still on a surface of their own — the map's
+    // 스크리닝 내역 legend, which is where the 기술 참고사항 list says they suffice.
+    // The point of this test is unchanged: a relative A/B/C band must never be the
+    // thing carrying an official screening status.
+    expect(screen.getByTestId("status-filters").textContent).toContain("스크리닝 통과");
   });
 
   it("shows NO pass mark: there is no 60-point or 62-point rule in this model", async () => {
@@ -421,19 +424,18 @@ describe("the A/B/C bands", () => {
 // --------------------------------------------------------------------------- //
 
 describe("stability in card ②", () => {
-  it("states the THREE-profile rule and reports the canonical state", async () => {
+  // The standing 안정 후보 row is struck from card ② (기술 참고사항 225:440: the map
+  // legend suffices). The RULE it stated is not lost — it is on the legend beside the
+  // outline it describes, and the THREE-basis definition is restated in card ②'s
+  // 점수 기준 자세히 보기 together with the limit no other surface carries.
+  it("states the THREE-basis rule, and never a fourth", async () => {
     await enterDeepAnalysis();
-    const row = within(left()).getByTestId("scoring-basis-stability");
-    expect(row.textContent).toContain("세 계산식 모두에서 상위 10%");
-    expect(row.textContent).not.toContain("네 계산식");
-    expect(row.textContent).toContain("꺼져 있습니다");
-    // Flipping the ONE canonical control updates this report.
-    fireEvent.click(screen.getByTestId("stable-only-toggle"));
-    await waitFor(() =>
-      expect(
-        within(left()).getByTestId("scoring-basis-stability").textContent,
-      ).toContain("켜져 있습니다"),
-    );
+    const legend = screen.getByTestId("stability-legend-note").textContent ?? "";
+    expect(legend).toContain("baseline·equal·critic 상위 10%");
+    expect(legend).not.toContain("네 계산식");
+    const meaning = screen.getByTestId("score-basis-stability-meaning").textContent ?? "";
+    expect(meaning).toContain("세 비교 방식");
+    expect(meaning).toContain("최종 입지, 허가 가능성 또는 법적 적격성을 의미하지 않습니다");
   });
 
   it("does not add a second stable-only control", async () => {
@@ -459,9 +461,11 @@ describe("the restyled ranking", () => {
     expect(rows[0].textContent).toContain("500m 후보 구역");
     expect(rows[0].textContent).toContain("1위");
     expect(rows[0].textContent).toContain("88.1234점");
-    // Said once, in words, so the row's own compact label cannot be read as a
-    // score for the whole municipality.
-    expect(within(list).getByTestId("candidate-list-map-hint").textContent).toContain(
+    // Said once, in words. Figma closes the ranking with a single line, so this
+    // sentence moved into the 자세히 보기 disclosure — still exactly once, still on
+    // the ranking, so the row's compact label cannot be read as a score for the
+    // whole municipality.
+    expect(within(list).getByTestId("candidate-list-row-meaning").textContent).toContain(
       "시·군·구 자체가 아니라",
     );
   });

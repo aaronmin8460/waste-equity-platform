@@ -196,7 +196,12 @@ for (const vp of VIEWPORTS) {
       // ① and nothing above it, so the banner was removed and ① is what has to be
       // above the fold instead. The limitation itself is pinned in
       // app/page.suitabilityDashboard.test.tsx.
-      await expect(page.locator("h1")).toBeInViewport();
+      // The 후보지 심층 분석 heading is now sr-only: the 기술 참고사항 list (Figma
+      // 225:440) strikes "상단 소제목 … 및 관련 설명", and the frame opens the left
+      // column with ① and nothing above it. The heading is HIDDEN, never removed —
+      // it is still the view's single document heading and its landmark — so the
+      // contract is that it exists, not that it is painted.
+      await expect(page.locator("h1")).toHaveCount(1);
       await expect(page.getByTestId("suitability-scope")).toBeInViewport();
       await expect(page.getByTestId("suitability-active-basis")).toBeInViewport();
 
@@ -236,20 +241,22 @@ test.describe("suitability dashboard behaviour at 1440×900", () => {
     page,
   }) => {
     await openScore(page);
-    const counts = page.getByTestId("candidate-counts");
+    // 후보 상태 요약 is struck from the workspace; the map legend is the surface that
+    // names and counts the three statuses, and its checkbox IS the display state
+    // rather than a second report of it.
+    const counts = page.getByTestId("status-filters");
     await expect(counts).toContainText("스크리닝 통과");
     await expect(counts).toContainText("추가 검토 필요");
     await expect(counts).toContainText("프로젝트 스크리닝 제외");
-    await expect(page.getByTestId("status-summary-total")).toContainText("47,893개");
+    await expect(page.getByTestId("status-filter-count-ELIGIBLE")).toContainText("1,099");
 
-    // Exactly one control per status — the sidebar reports the state, it does not
-    // duplicate the control.
+    // Still exactly one control per status.
     for (const status of ["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"]) {
       await expect(page.getByTestId(`status-toggle-${status}`)).toHaveCount(1);
     }
-    await expect(page.getByTestId("status-display-state-EXCLUDED")).toHaveText("지도에서 숨김");
+    await expect(page.getByTestId("status-toggle-EXCLUDED")).not.toBeChecked();
     await page.getByTestId("status-toggle-EXCLUDED").check();
-    await expect(page.getByTestId("status-display-state-EXCLUDED")).toHaveText("지도 표시 중");
+    await expect(page.getByTestId("status-toggle-EXCLUDED")).toBeChecked();
     await expect(page.getByTestId("suitability-insight-visibility")).toContainText(
       "프로젝트 스크리닝 제외",
     );
@@ -274,8 +281,11 @@ test.describe("suitability dashboard behaviour at 1440×900", () => {
     page,
   }) => {
     await openScore(page);
-    // Nothing selected → an explicit instruction, never a sample candidate.
-    await expect(page.getByTestId("candidate-detail-empty")).toBeVisible();
+    // 선택한 후보 구역 moved INSIDE ③ when its own card was struck, and nested it
+    // renders nothing until a row is selected. What matters holds: with nothing
+    // selected there is no candidate detail and no sample score on the screen.
+    await expect(page.getByTestId("candidate-detail")).toHaveCount(0);
+    await expect(page.getByTestId("candidate-detail-empty")).toHaveCount(0);
 
     await page.getByTestId("top-candidate-item").first().click();
     const detail = page.getByTestId("candidate-detail");
@@ -292,9 +302,9 @@ test.describe("suitability dashboard behaviour at 1440×900", () => {
     // The selection is mirrored into the versioned URL.
     await expect(page).toHaveURL(/cand=701/);
 
-    // Clearing returns to the explicit prompt — never a zero.
+    // Clearing removes the detail entirely — never a zero, never a sample.
     await page.getByTestId("candidate-detail-clear").click();
-    await expect(page.getByTestId("candidate-detail-empty")).toBeVisible();
+    await expect(page.getByTestId("candidate-detail")).toHaveCount(0);
   });
 
   test("shows a review candidate's provisional score and its missing component as '-'", async ({

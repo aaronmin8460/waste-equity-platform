@@ -66,8 +66,15 @@ import type {
   SuitabilityPolicy,
   SuitabilityProfile,
   SuitabilityRun,
+  SuitabilitySummary,
 } from "../../lib/api";
-import { PROFILE_META, profileLabel } from "../../lib/glossary";
+import UnmodeledFactorsDisclosure from "./UnmodeledFactorsDisclosure";
+import {
+  PROFILE_META,
+  profileLabel,
+  statusExplanation,
+  statusLabel,
+} from "../../lib/glossary";
 import { formatCount } from "../../lib/metrics";
 import { namedWeights } from "../../lib/suitability";
 import SectionCard from "../ui/SectionCard";
@@ -79,6 +86,9 @@ import SuitabilityV3FactorCards, {
 import { isSuccessorRun, pendingV3Factors, v3FactorViews } from "../../lib/suitabilityV3";
 import { namedWeightRows } from "../../lib/suitability";
 import { OLD_RUN_NO_CRITIC_MESSAGE, PROFILE_OPTIONS } from "./shared";
+
+/** The three screening statuses, in the order every surface lists them. */
+const SCREENING_STATUSES = ["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"] as const;
 
 export interface SuitabilityScoringBasisProps {
   policy: SuitabilityPolicy;
@@ -94,6 +104,16 @@ export interface SuitabilityScoringBasisProps {
   selected: CandidateDetail | null;
   /** Whether the map is currently restricted to stable candidates (reported only). */
   stableOnly: boolean;
+  /**
+   * The run summary, passed ONLY in the Page-4 workspace.
+   *
+   * That shape strikes 자료 공백 안내 and 계산 방법과 가정 as standing cards (Figma
+   * 225:440), so this card takes custody of what they said and renders it behind the
+   * 점수 기준 자세히 보기 disclosure the frame draws at its own foot. `undefined` in
+   * the single-column shape, where both still exist as their own cards and a second
+   * copy here would be a duplicate.
+   */
+  summary?: SuitabilitySummary;
 }
 
 /**
@@ -117,6 +137,7 @@ export default function SuitabilityScoringBasis({
   runProfiles,
   stabilityAvailable,
   selected,
+  summary,
 }: SuitabilityScoringBasisProps) {
   // `stableOnly` stays on the props interface but is not read: it was only ever
   // consumed by the struck 안정 후보 row.
@@ -380,6 +401,122 @@ export default function SuitabilityScoringBasis({
           own 안정 후보 entry, and the ONE checkbox that drives `stableOnly` was
           always in that legend, never here — this block only ever REPORTED the
           state. The rule text lives on in the legend and in 점수 기준 자세히 보기. */}
+
+      {/* ▼ 점수 기준 자세히 보기 — the disclosure Figma 136:8684 draws at the foot of
+          card ② (48,1096), and the new home of the two cards the 기술 참고사항 list
+          strikes from the left column: 자료 공백 안내 and 계산 방법과 가정.
+
+          Their content is NOT rewritten and NOT dropped — the served coverage notes,
+          the served assumptions, the served disclaimer and the unmodeled-factor
+          disclosure all render here verbatim. The strike removes standing grey blocks
+          from the primary canvas; it does not remove the integrity statements, which
+          stay one keystroke away. Without this the coverage notes would simply be
+          absent from the workspace, which would be a real loss rather than a
+          relocation. */}
+      {summary && (
+        <details className="mt-3" data-testid="score-basis-detail">
+          <summary className="cursor-pointer text-[11px] text-ink-subtle">
+            점수 기준 자세히 보기
+          </summary>
+
+          <p className="mt-1.5 text-[11px] leading-snug text-ink-subtle">
+            각 지수는 100점 만점이며, 점수가 높을수록 그 지수에서 유리하다는 뜻입니다. 지수 점수와 합산
+            점수는 <strong>후보를 비교하기 위한 상대적 선별 값</strong>이며, 법적 입지 적합성이나 인허가
+            가능 여부를 판정한 결과가 아닙니다.
+          </p>
+
+          {summary.assumptions.length > 0 && (
+            <ul
+              className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] leading-snug text-ink-subtle"
+              data-testid="score-basis-assumptions"
+            >
+              {summary.assumptions.map((assumption) => (
+                <li key={assumption}>{assumption}</li>
+              ))}
+            </ul>
+          )}
+
+          {/* A gap is a BLANK, never a confirmed "해당 없음", and the sentence saying
+              so travels WITH the list rather than being summarised away. */}
+          {summary.coverage_notes.length > 0 && (
+            <div className="mt-2" data-testid="score-basis-coverage">
+              <p className="text-[11px] font-semibold text-ink">자료 공백</p>
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] leading-snug text-ink-subtle">
+                {summary.coverage_notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] leading-snug text-ink-subtle">
+                자료가 없는 항목은 공백이며 &quot;해당 없음&quot;을 확인한 것이 아닙니다.
+              </p>
+            </div>
+          )}
+
+          {/* WHAT EACH SCREENING STATUS MEANS, from the shared glossary — the
+              Phase-0 terminology contract. It stood in the struck 후보 상태 요약; the
+              map legend names the three statuses and counts them but never defines
+              them, so the definitions land here rather than being lost with the card.
+              Same testids, because the meaning is genuinely preserved. */}
+          <dl className="mt-2 flex flex-col gap-1" data-testid="score-basis-status-meanings">
+            {SCREENING_STATUSES.map((status) => (
+              <div key={status} data-testid={`status-explanation-${status}`}>
+                <dt className="inline text-[11px] font-semibold text-ink">
+                  {statusLabel(status)}:{" "}
+                </dt>
+                <dd className="inline text-[11px] leading-snug text-ink-subtle">
+                  {statusExplanation(status)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+
+          {/* WHAT 안정 후보 MEANS, and — the part no other surface carries — what it
+              explicitly does NOT mean. The map legend describes the outline but not
+              this limit, so striking 기준을 바꿔도 상위권을 유지하는 정도 would have
+              dropped a legal disclaimer rather than a duplicate. */}
+          {stabilityAvailable && (
+            <p
+              className="mt-2 text-[11px] leading-snug text-ink-subtle"
+              data-testid="score-basis-stability-meaning"
+            >
+              안정 후보는 세 비교 방식(baseline / equal / critic) 모두에서 상위 10%에 포함된
+              후보입니다. 가중치 변화에 덜 민감하다는 뜻이며 최종 입지, 허가 가능성 또는 법적 적격성을
+              의미하지 않습니다.
+            </p>
+          )}
+
+          {/* WHICH RUN produced everything above. Kept with the analytical identity
+              rather than in the canvas, but never dropped: a score without its run is
+              not reproducible. */}
+          <p
+            className="mt-2 text-[11px] leading-snug text-ink-subtle"
+            data-testid="suitability-run-context"
+          >
+            분석 실행 <span data-diagnostic>#{run.id}</span> · 기준연도 {run.reference_year} · 경계{" "}
+            {run.boundary_vintage} · <span data-diagnostic>{run.policy_version}</span>
+          </p>
+
+          <div className="mt-2">
+            <UnmodeledFactorsDisclosure testId="score-basis-unmodeled-factors" />
+          </div>
+        </details>
+      )}
+
+      {/* THE SCREENING LIMITATION STAYS VISIBLE — deliberately OUTSIDE the disclosure
+          above. It is the standing statement that these scores are an analytical
+          screening and not a legal determination, and the repository contracts it as
+          never-collapsed (app/page.phase0.test.tsx, page.suitabilityDashboard.test.tsx).
+          Relocating the methodology card was a copy cleanup; putting THIS behind a
+          keystroke would have been a semantic weakening, so it did not move.
+          One short line, which is a density the frame can carry. */}
+      {summary && (
+        <p
+          className="mt-3 text-[11px] font-medium leading-snug text-warn"
+          data-testid="score-basis-disclaimer"
+        >
+          {summary.disclaimer}
+        </p>
+      )}
     </SectionCard>
   );
 }

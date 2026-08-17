@@ -260,6 +260,11 @@ export default function SuitabilitySidebar({
             stabilityAvailable={stabilityAvailable}
             selected={selected}
             stableOnly={stableOnly}
+            /* The workspace strikes 자료 공백 안내 and 계산 방법과 가정 as standing
+               cards, so card ② takes custody of what they said via its
+               점수 기준 자세히 보기 disclosure. Passed only in this shape — the
+               single-column layout still renders both as their own cards below. */
+            summary={summary}
           />
         </div>
       )}
@@ -410,7 +415,10 @@ export default function SuitabilitySidebar({
         </SectionCard>
       )}
 
-      {showLeft && (
+      {/* 계산 방법과 가정 — struck from the workspace (기술 참고사항 225:440). Its
+          assumptions, its disclaimer and the unmodeled-factor disclosure all moved
+          into card ②'s 점수 기준 자세히 보기, so nothing left the product. */}
+      {singleColumn && (
       <SectionCard title="계산 방법과 가정" testId="suitability-methodology">
         <ul className="list-disc space-y-1 pl-4 text-xs text-ink-muted">
           {summary.assumptions.map((assumption) => (

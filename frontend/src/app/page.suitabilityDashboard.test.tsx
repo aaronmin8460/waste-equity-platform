@@ -410,7 +410,7 @@ describe("후보지 점수 — shell contracts", () => {
     // 2. The run's served disclaimer in 계산 방법과 가정 — not inside a <details>, so
     //    it is readable with no user interaction, and never role="alert" (standing
     //    explanatory content must not interrupt a screen reader).
-    const served = screen.getByTestId("suitability-disclaimer");
+    const served = screen.getByTestId("score-basis-disclaimer");
     expect(served.closest("details")).toBeNull();
     expect(served.getAttribute("role")).not.toBe("alert");
   });
@@ -469,36 +469,35 @@ describe("후보지 점수 — the active scoring basis", () => {
 // --------------------------------------------------------------------------- //
 
 describe("후보지 점수 — candidate-status summary", () => {
-  it("shows every status as text with its served count, and the total", async () => {
+  // 후보 상태 요약 is struck from the workspace (Figma 225:440), on the stated
+  // grounds that the map legend already carries the status breakdown. This asserts
+  // that it genuinely does — the same semantics, on the surviving surface.
+  it("shows every status as text with its served count, in the map legend", async () => {
     await enterScore();
-    const counts = screen.getByTestId("candidate-counts").textContent ?? "";
-    expect(counts).toContain("스크리닝 통과");
-    expect(counts).toContain("추가 검토 필요");
-    expect(counts).toContain("프로젝트 스크리닝 제외");
-    expect(counts).toContain("1,099개");
-    expect(counts).toContain("34,534개");
-    expect(counts).toContain("12,260개");
-    expect(screen.getByTestId("status-summary-total").textContent).toContain("47,893개");
-    // Status is never conveyed by color alone: every row carries its name as text.
+    const filters = screen.getByTestId("status-filters").textContent ?? "";
+    expect(filters).toContain("스크리닝 통과");
+    expect(filters).toContain("추가 검토 필요");
+    expect(filters).toContain("프로젝트 스크리닝 제외");
+    expect(screen.getByTestId("status-filter-count-ELIGIBLE").textContent).toContain("1,099");
+    expect(screen.getByTestId("status-filter-count-REVIEW_REQUIRED").textContent).toContain("34,534");
+    expect(screen.getByTestId("status-filter-count-EXCLUDED").textContent).toContain("12,260");
+    // Status is never conveyed by colour alone: every row carries its name as text.
     for (const status of ["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"]) {
-      expect(screen.getByTestId(`status-summary-row-${status}`)).toBeDefined();
+      expect(screen.getByTestId(`status-toggle-${status}`)).toBeDefined();
     }
   });
 
-  it("reports the map display state of each status, and updates when the filter changes", async () => {
+  // With the sidebar's mirror struck, the legend checkbox is not a second report of
+  // the display state — it IS the state. One control, one truth.
+  it("carries the map display state on the one status control, and updates it", async () => {
     await enterScore();
     // Default: eligible + review shown, excluded hidden.
-    expect(screen.getByTestId("status-display-state-ELIGIBLE").textContent).toBe("지도 표시 중");
-    expect(screen.getByTestId("status-display-state-EXCLUDED").textContent).toBe("지도에서 숨김");
+    expect((screen.getByTestId("status-toggle-ELIGIBLE") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId("status-toggle-EXCLUDED") as HTMLInputElement).checked).toBe(false);
 
-    // The ONE status control lives in the floating legend; flipping it updates the
-    // sidebar's report — one canonical state, not two.
     fireEvent.click(screen.getByTestId("status-toggle-EXCLUDED"));
     await waitFor(() =>
-      expect(screen.getByTestId("status-display-state-EXCLUDED").textContent).toBe("지도 표시 중"),
-    );
-    expect(screen.getByTestId("status-visibility-note").textContent).toContain(
-      "세 상태 모두 지도에 표시하고 있습니다",
+      expect((screen.getByTestId("status-toggle-EXCLUDED") as HTMLInputElement).checked).toBe(true),
     );
   });
 
@@ -511,28 +510,31 @@ describe("후보지 점수 — candidate-status summary", () => {
     expect(container.querySelectorAll('[data-testid="map-legend"]')).toHaveLength(1);
   });
 
-  it("reports the stable-only restriction in the sidebar when it is switched on", async () => {
+  it("carries the stable-only restriction on its one control, and states its scope", async () => {
     await enterScore();
-    expect(screen.getByTestId("status-visibility-note").textContent).not.toContain(
-      "안정 후보만 보기가 켜져",
-    );
-    fireEvent.click(screen.getByTestId("stable-only-toggle"));
-    await waitFor(() =>
-      expect(screen.getByTestId("status-visibility-note").textContent).toContain(
-        "안정 후보만 보기가 켜져",
-      ),
+    const toggle = () => screen.getByTestId("stable-only-toggle") as HTMLInputElement;
+    expect(toggle().checked).toBe(false);
+    fireEvent.click(toggle());
+    await waitFor(() => expect(toggle().checked).toBe(true));
+    // The restriction only ever narrows ELIGIBLE cells, and the legend says so.
+    expect(screen.getByTestId("stability-legend-note").textContent).toContain(
+      "검토/제외 셀은 안정성 평가 대상이 아닙니다",
     );
   });
 
+  // Both moved into card ②'s 점수 기준 자세히 보기 when 후보 상태 요약 and
+  // 자료 공백 안내 were struck. Neither left the product: a score without its run is
+  // not reproducible, and a coverage gap is never a confirmed zero.
   it("shows the run and version context, and the served coverage gap", async () => {
     await enterScore();
     const runContext = screen.getByTestId("suitability-run-context").textContent ?? "";
     expect(runContext).toContain("#47");
     expect(runContext).toContain("기준연도 2024");
     expect(runContext).toContain("suitability-policy-v2");
-    expect(screen.getByTestId("coverage-warnings").textContent).toContain(
-      "일부 시군의 시설 처리량 자료가 없습니다.",
-    );
+    const coverage = screen.getByTestId("score-basis-coverage").textContent ?? "";
+    expect(coverage).toContain("일부 시군의 시설 처리량 자료가 없습니다.");
+    // A gap is a BLANK, never a confirmed "해당 없음".
+    expect(coverage).toContain("\"해당 없음\"을 확인한 것이 아닙니다");
   });
 });
 
@@ -543,7 +545,7 @@ describe("후보지 점수 — candidate-status summary", () => {
 describe("후보지 점수 — stability presentation", () => {
   it("states stability in words and never as legal or engineering certainty", async () => {
     await enterScore();
-    const summary = screen.getByTestId("stability-summary").textContent ?? "";
+    const summary = screen.getByTestId("score-basis-stability-meaning").textContent ?? "";
     expect(summary).toContain("안정 후보");
     expect(summary).toContain("최종 입지, 허가 가능성 또는 법적 적격성을 의미하지 않습니다");
     for (const forbidden of ["안전성", "시공 가능성", "법적 안정성", "정책 확정성"]) {
@@ -578,10 +580,13 @@ describe("후보지 점수 — candidate list and selection", () => {
 
   it("selects from the list, marks the row by text and aria-current, and fills the summary", async () => {
     await enterScore();
-    // Nothing selected → an explicit instruction, never a sample candidate or a 0.
-    const empty = screen.getByTestId("candidate-detail-empty");
-    expect(empty.textContent).toContain("선택한 후보 구역이 없습니다");
-    expect(empty.textContent).not.toMatch(/\d+점/);
+    // 선택한 후보 구역 moved INSIDE ③ when its own card was struck, and nested it
+    // renders nothing at all until a row is selected — the standing empty-state card
+    // would put back exactly the always-on block the strike removes. What matters is
+    // preserved: with nothing selected there is no candidate detail and no sample
+    // score anywhere on the screen.
+    expect(screen.queryByTestId("candidate-detail")).toBeNull();
+    expect(screen.queryByTestId("candidate-detail-empty")).toBeNull();
 
     fireEvent.click(within(screen.getByTestId("top-candidates")).getAllByTestId("top-candidate-item")[0]);
     const detail = await screen.findByTestId("candidate-detail");
@@ -593,7 +598,7 @@ describe("후보지 점수 — candidate list and selection", () => {
         "aria-current",
       ),
     ).toBe("true");
-    // The empty prompt is gone — one summary, not two.
+    // Still exactly one summary, and still no empty prompt.
     expect(screen.queryByTestId("candidate-detail-empty")).toBeNull();
   });
 
@@ -724,9 +729,14 @@ describe("후보지 점수 — no raw enum on the primary surface", () => {
       if (token === "EXCLUDED" || token === "CRITIC") continue;
       expect(text.includes(token), `suitability sidebar leaks "${token}"`).toBe(false);
     }
-    // The plain status names ARE present.
-    expect(text).toContain("스크리닝 통과");
-    expect(text).toContain("프로젝트 스크리닝 제외");
+    // The plain status names ARE still present — but no longer on the panels'
+    // PRIMARY surface, because 후보 상태 요약 is struck. They now live on the map
+    // legend and in card ②'s 점수 기준 자세히 보기, both of which this scan strips.
+    // So the positive check reads the workspace as a whole; the strict no-raw-enum
+    // audit above is unchanged and still primary-surface-only.
+    const whole = container.textContent ?? "";
+    expect(whole).toContain("스크리닝 통과");
+    expect(whole).toContain("프로젝트 스크리닝 제외");
   });
 });
 

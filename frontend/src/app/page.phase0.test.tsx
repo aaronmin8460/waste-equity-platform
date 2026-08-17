@@ -24,7 +24,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   STATUS_META,
-  SUITABILITY_SCREENING_DISCLAIMER,
   SUITABILITY_SCREENING_SHORT_LABEL,
   UNMODELED_SUITABILITY_TITLE,
 } from "../lib/glossary";
@@ -95,7 +94,7 @@ describe("Phase 0 — the screening limitation is carried in every suitability s
     );
     // …and the run's OWN served disclaimer stays in 계산 방법과 가정, visible with no
     // interaction at all — not behind a <details>.
-    const served = screen.getByTestId("suitability-disclaimer");
+    const served = screen.getByTestId("score-basis-disclaimer");
     expect(served.closest("details")).toBeNull();
     expect(served.textContent).not.toBe("");
   });
@@ -163,7 +162,10 @@ describe("Phase 0 — the screening limitation is carried in every suitability s
 describe("Phase 0 — revised terminology and status meanings", () => {
   it("uses the revised status labels in the candidate counts", async () => {
     await enterSuitability();
-    const counts = screen.getByTestId("candidate-counts").textContent ?? "";
+    // 후보 상태 요약 is struck from the workspace; the map legend is the surface
+    // that now names and counts the three statuses. The terminology contract is
+    // unchanged — only which surface carries it.
+    const counts = screen.getByTestId("status-filters").textContent ?? "";
     expect(counts).toContain("스크리닝 통과");
     expect(counts).toContain("추가 검토 필요");
     expect(counts).toContain("프로젝트 스크리닝 제외");
@@ -172,6 +174,9 @@ describe("Phase 0 — revised terminology and status meanings", () => {
     expect(counts).not.toContain("EXCLUDED");
   });
 
+  // The definitions moved into card ②'s 점수 기준 자세히 보기 with 후보 상태 요약:
+  // the legend names and counts the statuses but never defines them, so striking
+  // the card without relocating these would have dropped the Phase-0 terminology.
   it("explains each status from the shared source of truth", async () => {
     await enterSuitability();
     const el = screen.getByTestId("status-explanation-ELIGIBLE").textContent ?? "";
@@ -195,9 +200,9 @@ describe("Phase 0 — revised terminology and status meanings", () => {
 
   it("discloses the not-yet-included items in the score-view methodology", async () => {
     await enterSuitability();
-    const disclosure = screen.getByTestId("suitability-unmodeled-factors");
+    const disclosure = screen.getByTestId("score-basis-unmodeled-factors");
     expect(within(disclosure).getByText(UNMODELED_SUITABILITY_TITLE)).toBeDefined();
-    const items = within(disclosure).getByTestId("suitability-unmodeled-factors-list").textContent ?? "";
+    const items = within(disclosure).getByTestId("score-basis-unmodeled-factors-list").textContent ?? "";
     expect(items).toContain("경사 및 정밀 지형");
     expect(items).toContain("필지 소유권과 취득 가능성");
     // Never fabricates a value or a completion percentage.
