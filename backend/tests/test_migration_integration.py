@@ -249,3 +249,91 @@ def test_migration_is_idempotent_at_head() -> None:
     # Upgrading an already-migrated database must be a no-op, not an error.
     _run_alembic_upgrade()
     _run_alembic_upgrade()
+
+
+def test_migration_adds_component_model_identity_on_postgres() -> None:
+    """Migrations 0022/0023 on real PostgreSQL: additive, NOT NULL, constant defaults.
+
+    The SQLite tier in ``test_migration_component_model_sqlite.py`` proves that
+    seeded pre-migration rows keep every analytical value and gain the historical
+    label. This proves the production dialect's half: the columns are ``NOT NULL``
+    with the constant server defaults that do the labelling, and the JSONB defaults
+    round-trip as real JSON documents rather than text.
+    """
+
+    _run_alembic_upgrade()
+    engine = create_engine(str(TEST_DATABASE_URL))
+    try:
+        with engine.connect() as connection:
+            run_columns = {
+                row["column_name"]: row
+                for row in connection.execute(
+                    text(
+                        "SELECT column_name, is_nullable, column_default, data_type "
+                        "FROM information_schema.columns "
+                        "WHERE table_name = 'suitability_analysis_runs' "
+                        "AND column_name IN ('component_model_version', 'component_order')"
+                    )
+                ).mappings()
+            }
+            assert set(run_columns) == {"component_model_version", "component_order"}
+            for column in run_columns.values():
+                assert column["is_nullable"] == "NO"
+                assert column["column_default"] is not None
+            assert (
+                "suitability-components-zred-v1"
+                in run_columns["component_model_version"]["column_default"]
+            )
+            assert run_columns["component_order"]["data_type"] == "jsonb"
+            for component in ("zoning", "road", "equity", "demand"):
+                assert component in run_columns["component_order"]["column_default"]
+
+            candidate_column = (
+                connection.execute(
+                    text(
+                        "SELECT is_nullable, column_default, data_type "
+                        "FROM information_schema.columns "
+                        "WHERE table_name = 'suitability_candidates' "
+                        "AND column_name = 'component_scores'"
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            assert candidate_column is not None
+            assert candidate_column["is_nullable"] == "NO"
+            assert candidate_column["data_type"] == "jsonb"
+            # Empty by default: a historical score is never copied into the
+            # version-aware map, because a second copy of an authoritative
+            # analytical value can drift from the first.
+            assert "'{}'" in candidate_column["column_default"]
+
+            # The four legacy score columns are untouched — not renamed, not
+            # dropped, not made NOT NULL.
+            legacy = {
+                row["column_name"]: row["is_nullable"]
+                for row in connection.execute(
+                    text(
+                        "SELECT column_name, is_nullable FROM information_schema.columns "
+                        "WHERE table_name = 'suitability_candidates' AND column_name IN "
+                        "('zoning_score', 'road_score', 'equity_score', 'demand_score')"
+                    )
+                ).mappings()
+            }
+            assert legacy == {
+                "zoning_score": "YES",
+                "road_score": "YES",
+                "equity_score": "YES",
+                "demand_score": "YES",
+            }
+
+            # Every stored run is labelled; none carries an unknown model.
+            unlabelled = connection.execute(
+                text(
+                    "SELECT count(*) FROM suitability_analysis_runs "
+                    "WHERE component_model_version <> 'suitability-components-zred-v1'"
+                )
+            ).scalar()
+            assert unlabelled == 0
+    finally:
+        engine.dispose()

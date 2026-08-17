@@ -9,15 +9,26 @@ weight profile), so an identical build is idempotent and a changed policy or
 input produces a distinct run without overwriting an earlier one.
 
 ``SuitabilityCandidate`` rows hold, per grid cell, the analytical status
-(ELIGIBLE / REVIEW_REQUIRED / EXCLUDED), the four dimensionless component scores
-and their raw source values, exclusion/review reasons, per-profile totals and
-ranks, full per-component provenance, and the clipped cell geometry plus its
-centroid — never a legal determination. See ``docs/SUITABILITY_POLICY_V1.md``.
+(ELIGIBLE / REVIEW_REQUIRED / EXCLUDED), the dimensionless component scores and
+their raw source values, exclusion/review reasons, per-profile totals and ranks,
+full per-component provenance, and the clipped cell geometry plus its centroid —
+never a legal determination. See ``docs/SUITABILITY_POLICY_V1.md``.
+
+Each run also records **which component model produced it**
+(``component_model_version`` + ``component_order``), because neither
+``policy_version`` nor ``derivation_version`` can answer that — both have already
+moved for reasons unrelated to component identity. The historical model's four
+``*_score`` columns stay the sole authoritative storage for the runs that used
+them; any later component model stores its scores in the version-aware
+``component_scores`` map and leaves those four columns NULL, so no successor
+quantity has a legacy column to be cross-wired into. See
+``docs/SUITABILITY_COMPONENT_MODEL_CONTRACT.md``.
 """
 
 from __future__ import annotations
 
 import datetime
+import json
 from decimal import Decimal
 from typing import Any
 
@@ -34,10 +45,15 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
+from ..analysis.suitability.component_model import (
+    COMPONENT_MODEL_HISTORICAL,
+    COMPONENT_ORDER_HISTORICAL,
+)
 from .base import Base
 
 # JSONB on PostgreSQL, generic JSON elsewhere (unit tests use SQLite).
@@ -45,6 +61,13 @@ JsonVariant = JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 # Exact-decimal storage for dimensionless [0, 100] scores (four decimals).
 Score = Numeric(precision=7, scale=4, asdecimal=True)
+
+# Constant server-side defaults that *label* every pre-existing run with the
+# component model it already used. The candidate table physically cannot hold any
+# other component model at the time these columns are added, so the label records a
+# fact that is already true — no score, rank, weight, classification, status,
+# reason, or geometry is read or written to establish it.
+_HISTORICAL_COMPONENT_ORDER_JSON = json.dumps(list(COMPONENT_ORDER_HISTORICAL))
 
 
 class SuitabilityAnalysisRun(Base):
@@ -62,6 +85,28 @@ class SuitabilityAnalysisRun(Base):
     derivation_version: Mapped[str] = mapped_column(String(50))
     policy_version: Mapped[str] = mapped_column(String(50))
     candidate_grid_version: Mapped[str] = mapped_column(String(50))
+    # Which component model produced this run, and in which order its components
+    # are enumerated. Order is stored explicitly because it is load-bearing for the
+    # CRITIC correlation matrix, the scenario hash payload, and every export column
+    # sequence — and it is NOT recoverable from a JSON object's key order.
+    #
+    # The Python-side default is the historical model, matching the server default,
+    # so an ORM-constructed run is labelled with the model it can actually hold. A
+    # writer for any other component model must set both fields explicitly; a
+    # mismatched pair is rejected by
+    # ``analysis.suitability.component_model.validate_run_model_identity``, which
+    # makes mislabelling a non-historical run as historical fail loudly rather than
+    # serve successor numbers under historical names.
+    component_model_version: Mapped[str] = mapped_column(
+        String(50),
+        default=COMPONENT_MODEL_HISTORICAL,
+        server_default=text(f"'{COMPONENT_MODEL_HISTORICAL}'"),
+    )
+    component_order: Mapped[Any] = mapped_column(
+        JsonVariant,
+        default=lambda: list(COMPONENT_ORDER_HISTORICAL),
+        server_default=text(f"'{_HISTORICAL_COMPONENT_ORDER_JSON}'"),
+    )
     reference_year: Mapped[int] = mapped_column(Integer)
     # Administrative boundary vintage (region valid_from year) the run was
     # computed against, so a spatial result is reproducible against the same
@@ -147,10 +192,22 @@ class SuitabilityCandidate(Base):
     provisional_score: Mapped[Decimal | None] = mapped_column(Score)
     # Official composite for ELIGIBLE candidates (active profile).
     total_score: Mapped[Decimal | None] = mapped_column(Score)
+    # The historical (zred-v1) component model's four scores. These remain the sole
+    # authoritative storage for every run of that model and are never rewritten,
+    # renamed, or copied elsewhere. For a run of any other component model they are
+    # NULL and are never reused to carry a different quantity.
     zoning_score: Mapped[Decimal | None] = mapped_column(Score)
     road_score: Mapped[Decimal | None] = mapped_column(Score)
     equity_score: Mapped[Decimal | None] = mapped_column(Score)
     demand_score: Mapped[Decimal | None] = mapped_column(Score)
+    # Version-aware component scores ({component: "decimal string"}) for every
+    # component model that is not the historical four-column one. ``{}`` on
+    # historical rows: their scores live in the columns above, and a second copy of
+    # an authoritative analytical value can drift from the first. The run's
+    # ``component_model_version`` says which representation to read.
+    component_scores: Mapped[Any] = mapped_column(
+        JsonVariant, default=dict, server_default=text("'{}'")
+    )
     # {profile: total} and {profile: rank} for all sensitivity profiles (including
     # the run-specific ``critic`` profile).
     profile_totals: Mapped[Any] = mapped_column(JsonVariant, default=dict)

@@ -4,8 +4,8 @@ Runs only when TEST_DATABASE_URL is set. Seeds a synthetic run + candidates in a
 rolled-back outer transaction (remote-ocean geometry), so no real analysis data is
 touched. Verifies preview ranking/scoring/rank-deltas, candidate scenario detail
 (eligible/review/excluded/mismatch/missing), custom MVT scoring + hash gating +
-cache/ETag semantics, cross-path scoring consistency, and that stored profiles /
-migration head are unchanged.
+cache/ETag semantics, cross-path scoring consistency, and that stored profiles are
+unchanged and this feature added no schema of its own.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import math
 import os
 from collections.abc import Iterator
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -23,7 +24,7 @@ from geoalchemy2 import WKTElement
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from waste_equity_backend.analysis.suitability import scenario
+from waste_equity_backend.analysis.suitability import component_model, scenario
 from waste_equity_backend.api.app import create_app
 from waste_equity_backend.db import get_session
 from waste_equity_backend.models import SuitabilityAnalysisRun, SuitabilityCandidate
@@ -639,9 +640,54 @@ def test_stored_profile_summary_unchanged(pg_client: TestClient, seeded: dict[st
     assert body["top_candidates"][0]["total_score"] == "80.0000"
 
 
-def test_migration_head_is_0016_and_no_new_migration(pg_session: Session) -> None:
-    head = pg_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert head == "0016"
+def _script_directory() -> Any:
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    # ``script_location`` in alembic.ini is ``%(here)s``-anchored, so this resolves
+    # from any working directory and needs no database URL.
+    backend_dir = Path(__file__).resolve().parents[1]
+    return ScriptDirectory.from_config(Config(str(backend_dir / "alembic.ini")))
+
+
+def test_db_is_at_the_single_script_head_and_0016_is_still_in_the_chain(
+    pg_session: Session,
+) -> None:
+    """The chain is unforked, the DB is at its head, and 0016 is still reachable.
+
+    This asserted ``version_num == "0016"`` under the name
+    ``..._and_no_new_migration``. The scenario API genuinely adds no schema — but
+    "no migration exists after 0016" is not the way to say so, because it is a
+    statement about the whole repository rather than about this feature, and every
+    unrelated additive migration (0017 … 0023) falsifies it. It began failing on a
+    release rather than on a defect, and could only be noticed once a PostGIS
+    database was available to run this tier.
+
+    Three things are asserted in its place, none of which a later migration can
+    falsify:
+
+    * the chain has exactly **one** head — a fork is what actually breaks a
+      deployment, and pinning the head's value never detected one;
+    * the database is at that head, so every other assertion in this file is made
+      against the fully-migrated schema rather than a stale one;
+    * ``0016`` is still reachable — the scenario API scores against the schema as of
+      0016, and that dependency is an immutable historical fact.
+
+    The "added no schema" claim itself is kept, and is asserted where it belongs and
+    scoped to this feature: ``test_no_scenario_tables_added``, directly below.
+    """
+
+    script = _script_directory()
+    heads = script.get_heads()
+    assert len(heads) == 1, f"forked migration chain: {heads}"
+
+    db_head = pg_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    assert db_head == heads[0], (
+        f"test database is at {db_head}, not at the script head {heads[0]} — "
+        "run `alembic upgrade head` against TEST_DATABASE_URL"
+    )
+
+    assert "0016" in {revision.revision for revision in script.walk_revisions()}
 
 
 def test_no_scenario_tables_added(pg_session: Session) -> None:
@@ -656,3 +702,167 @@ def test_no_scenario_tables_added(pg_session: Session) -> None:
         .all()
     )
     assert rows == []
+
+
+# --------------------------------------------------------------------------- #
+# Component-model isolation
+# --------------------------------------------------------------------------- #
+#
+# A scenario is a statement about which of *those* factors a user weighted. There
+# is no defensible mapping from one component model's weight vector onto another's
+# components, so every cross-model combination below must be refused — never
+# renormalized, never positionally remapped, never partially applied.
+
+SUCCESSOR_MODEL = component_model.COMPONENT_MODEL_SUCCESSOR
+SUCCESSOR_ORDER = list(component_model.COMPONENT_ORDER_SUCCESSOR)
+SUCCESSOR_BODY = dict.fromkeys(SUCCESSOR_ORDER, "0.25")
+
+
+@pytest.fixture
+def seeded_successor_shaped(pg_session: Session) -> int:
+    """A synthetic run labelled with the successor component model.
+
+    A fixture, not a produced run: nothing in this branch builds or scores a
+    successor analysis, and nothing can — the model is not activated.
+    """
+
+    return _make_run(
+        pg_session,
+        sig="scenario-int-successor-sig",
+        component_model_version=SUCCESSOR_MODEL,
+        component_order=SUCCESSOR_ORDER,
+        weight_profiles={},
+        total=0,
+        eligible=0,
+    )
+
+
+def test_a_historical_scenario_against_a_historical_run_is_valid(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    body = _preview(pg_client, seeded["run"], EQUAL_BODY).json()
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+    assert body["component_order"] == ["zoning", "road", "equity", "demand"]
+    assert set(body["canonical_weights"]) == {"zoning", "road", "equity", "demand"}
+
+
+def test_a_historical_scenario_against_a_successor_run_is_a_model_mismatch(
+    pg_client: TestClient, seeded_successor_shaped: int
+) -> None:
+    """The weights belong to a *different model*, and the error must say so.
+
+    ``COMPONENT_MODEL_SCENARIOS_UNAVAILABLE`` would be a strictly weaker answer
+    here: it describes the run, not the mismatch, and it is what a client sees when
+    its weights DO match the run's components. Collapsing the two loses the only
+    signal that distinguishes "this saved scenario belongs to another model" from
+    "this model has no scenario support yet" — and the first is a statement about
+    the user's own artifact, which the UI has to render differently.
+    """
+
+    resp = _preview(pg_client, seeded_successor_shaped, EQUAL_BODY)
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["error"] == "COMPONENT_MODEL_MISMATCH"
+    assert detail["error"] != "INVALID_SCENARIO_WEIGHTS"
+    assert detail["fields"]["submitted_component_model"] == (
+        "suitability-components-zred-v1"
+    )
+    assert detail["fields"]["run_component_order"] == SUCCESSOR_ORDER
+
+
+def test_a_successor_scenario_against_a_historical_run_is_a_model_mismatch(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    resp = _preview(pg_client, seeded["run"], SUCCESSOR_BODY)
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["error"] == "COMPONENT_MODEL_MISMATCH"
+    assert detail["fields"]["submitted_component_model"] == SUCCESSOR_MODEL
+    assert detail["fields"]["run_component_order"] == ["zoning", "road", "equity", "demand"]
+
+
+def test_successor_scenario_creation_is_disabled_not_approximated(
+    pg_client: TestClient, seeded_successor_shaped: int
+) -> None:
+    """No approved successor weight vector or normalization strategy exists, so a
+    recombination would be a fabricated result rather than the user's scenario."""
+
+    resp = _preview(pg_client, seeded_successor_shaped, SUCCESSOR_BODY)
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["error"] == "COMPONENT_MODEL_SCENARIOS_UNAVAILABLE"
+    assert detail["fields"]["run_component_model_version"] == SUCCESSOR_MODEL
+
+
+def test_a_cross_model_candidate_detail_is_refused(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    resp = pg_client.post(
+        f"/api/v1/suitability/scenarios/candidates/{seeded['a']}",
+        json={"run_id": seeded["run"], "weights": SUCCESSOR_BODY},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "COMPONENT_MODEL_MISMATCH"
+
+
+def test_a_scenario_tile_for_a_successor_run_is_refused(
+    pg_client: TestClient, seeded_successor_shaped: int
+) -> None:
+    """A scenario tile can only ever carry historical weights, so this is a mismatch.
+
+    The ``wz``/``wr``/``we``/``wd`` parameters are historical-model abbreviations
+    and are deliberately not extended to another model — ``we`` would abbreviate the
+    successor's ``existing_burden`` just as naturally as it currently abbreviates
+    ``equity``. A tile request against a run of another model is therefore always
+    carrying *another model's* weights, and the mismatch is the accurate answer.
+    """
+
+    weights = scenario.parse_and_validate_weights(EQUAL_BODY)
+    full_hash = scenario.scenario_hash(seeded_successor_shaped, weights)
+    resp = pg_client.get(
+        f"/api/v1/suitability/scenarios/tiles/{seeded_successor_shaped}/3/4/3.mvt"
+        "?wz=0.25000000&wr=0.25000000&we=0.25000000&wd=0.25000000"
+        f"&scenario_hash={full_hash}"
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "COMPONENT_MODEL_MISMATCH"
+
+
+def test_an_unpinned_scenario_preview_stays_on_the_historical_model(
+    pg_client: TestClient, seeded: dict[str, Any], seeded_successor_shaped: int
+) -> None:
+    body = pg_client.post(
+        "/api/v1/suitability/scenarios/preview", json={"weights": EQUAL_BODY}
+    ).json()
+    assert body["run_id"] == seeded["run"]
+    assert body["component_model_version"] == "suitability-components-zred-v1"
+
+
+def test_scenario_responses_carry_the_runs_component_scores_shape(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    body = _preview(pg_client, seeded["run"], EQUAL_BODY, top_n=1).json()
+    top = body["top_candidates"][0]
+    assert top["zoning_score"] is not None
+    # Historical run: the legacy fields are authoritative and nothing duplicates them.
+    assert top["component_scores"] == {}
+    detail_resp = pg_client.post(
+        f"/api/v1/suitability/scenarios/candidates/{seeded['a']}",
+        json={"run_id": seeded["run"], "weights": EQUAL_BODY},
+    )
+    detail = detail_resp.json()
+    assert detail["component_model_version"] == "suitability-components-zred-v1"
+    assert detail["component_order"] == ["zoning", "road", "equity", "demand"]
+    assert detail["component_scores"] == {}
+    assert [c["component"] for c in detail["contributions"]] == detail["component_order"]
+
+
+def test_the_scenario_method_version_and_hash_are_unchanged(
+    pg_client: TestClient, seeded: dict[str, Any]
+) -> None:
+    """Model awareness must not move a single existing scenario identity."""
+
+    body = _preview(pg_client, seeded["run"], EQUAL_BODY).json()
+    assert body["method_version"] == "user-weight-scenario-v1"
+    weights = scenario.parse_and_validate_weights(EQUAL_BODY)
+    assert body["scenario_hash"] == scenario.scenario_hash(seeded["run"], weights)

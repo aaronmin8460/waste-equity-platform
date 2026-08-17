@@ -22,6 +22,7 @@ trusted banker's-rounding fragment. See ``docs/SUITABILITY_USER_WEIGHT_SCENARIOS
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Annotated, Any
 
@@ -29,7 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Res
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ...analysis.suitability import policy, scenario
+from ...analysis.suitability import component_model, policy, scenario
 from ...db import get_session
 from ...schemas.scenario import (
     ScenarioContribution,
@@ -47,8 +48,10 @@ from .suitability import (
     MVT_MIN_ZOOM,
     TILE_SOURCE_LAYER,
     _ensure_profile_available,
+    _json_field,
     _not_found,
     _resolve_run_id,
+    _run_model_identity,
 )
 
 router = APIRouter(prefix="/api/v1/suitability/scenarios", tags=["suitability-scenarios"])
@@ -132,6 +135,7 @@ WITH raw AS (
         c.road_score AS road_score,
         c.equity_score AS equity_score,
         c.demand_score AS demand_score,
+        c.component_scores AS component_scores,
         c.stable_count AS stable_count,
         c.stability_class AS stability_class,
         (c.profile_totals ->> :profile) AS comparison_score,
@@ -247,19 +251,93 @@ WHERE t.geom IS NOT NULL
 
 _RUN_META_SQL = (
     "SELECT reference_year, policy_version, derivation_version, candidate_grid_version, "
+    "component_model_version, component_order, "
     "weight_profiles, candidate_count_total, candidate_count_eligible, "
     "candidate_count_review, candidate_count_excluded "
     "FROM suitability_analysis_runs WHERE id = :id"
 )
 
+# Successor scenario creation is deliberately disabled. The recombination SQL below
+# is defined over the historical four component columns, and a successor scenario
+# would additionally need an approved successor weight vector and normalization
+# strategy — neither of which exists (see
+# ``analysis.suitability.successor.policy.ACTIVATION_BLOCKERS``). Refusing is the
+# only honest answer: renormalizing over whichever components happen to be present,
+# or scoring with an invented weight vector, would present a fabricated analytical
+# result as a user's scenario.
+COMPONENT_MODEL_SCENARIOS_UNAVAILABLE = "COMPONENT_MODEL_SCENARIOS_UNAVAILABLE"
 
-def _validate_weights(raw: dict[str, str]) -> dict[str, Decimal]:
-    """Validate + canonicalize; a scenario weight error → structured 422."""
+
+def _validate_weights(
+    raw: dict[str, str], component_order: Sequence[str]
+) -> dict[str, Decimal]:
+    """Validate + canonicalize against the RUN's components; error → structured 422.
+
+    Weight validation is run-model-relative, not relative to a module constant, so a
+    scenario saved against one component model cannot be recombined against a run of
+    another. Well-formed weights for a different model surface as
+    ``COMPONENT_MODEL_MISMATCH``; malformed weights stay
+    ``INVALID_SCENARIO_WEIGHTS``. Neither is ever repaired, renormalized, or
+    positionally remapped.
+    """
 
     try:
-        return scenario.parse_and_validate_weights(raw)
+        return scenario.parse_and_validate_weights(raw, component_order)
     except scenario.ScenarioWeightError as exc:
         raise HTTPException(status_code=422, detail=exc.as_envelope()) from exc
+
+
+def _resolve_scenario_run(session: Session, run_id: int | None, requested_model: str | None) -> Any:
+    """Resolve the run and return ``(run_id, run_meta, model_version, component_order)``.
+
+    Deliberately does **not** refuse a run whose component model has no scenario
+    contract. That refusal belongs after the weights have been validated against
+    this run's components — see :func:`_assert_scenario_model_supported`.
+    """
+
+    resolved = _resolve_run_id(session, run_id, requested_model)
+    run_meta = _load_run_meta(session, resolved)
+    model_version, order = _run_model_identity(run_meta)
+    return resolved, run_meta, model_version, order
+
+
+def _assert_scenario_model_supported(resolved: int, model_version: str) -> None:
+    """Refuse a run whose component model has no scenario contract yet.
+
+    **Called after weight validation, not before.** The two refusals answer
+    different questions and the more specific one has to win:
+
+    * weights defined over *another* model's components → ``COMPONENT_MODEL_MISMATCH``.
+      That is a statement about the caller's own artifact — a saved scenario that is
+      still perfectly valid against a run of its own model — and the UI has to render
+      it as "belongs to a different model", never as "unsupported".
+    * weights that *do* match this run's components, on a model with no approved
+      weight vector or normalization strategy → ``COMPONENT_MODEL_SCENARIOS_UNAVAILABLE``.
+
+    Checking availability first collapsed both into the second answer and threw away
+    the only signal that distinguishes them.
+    """
+
+    if model_version != component_model.COMPONENT_MODEL_HISTORICAL:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": COMPONENT_MODEL_SCENARIOS_UNAVAILABLE,
+                "detail": (
+                    f"User-weight scenarios are not available for component model "
+                    f"{model_version!r}: no approved weight vector or normalization "
+                    "strategy exists for it, so any recombination would be a "
+                    "fabricated result rather than the user's scenario."
+                ),
+                "fields": {
+                    "run_id": resolved,
+                    "run_component_model_version": model_version,
+                    "supported_component_model_version": (
+                        component_model.COMPONENT_MODEL_HISTORICAL
+                    ),
+                },
+            },
+        )
 
 
 def _weight_params(weights: dict[str, Decimal]) -> dict[str, Decimal]:
@@ -279,11 +357,17 @@ def _score_str(value: Any) -> str | None:
     return format(Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_EVEN), "f")
 
 
-def _component_decimals(row: Any) -> dict[str, Decimal]:
-    """The present component scores as Decimals (missing components absent)."""
+def _component_decimals(row: Any, component_order: Sequence[str]) -> dict[str, Decimal]:
+    """The present component scores as Decimals (missing components absent).
+
+    Reads the run's own components in the run's own order. Only the historical
+    model reaches here today — successor runs are refused before any weight is
+    parsed — so the values come from the legacy columns; the accessor is used so
+    the reader does not hard-code which storage owns them.
+    """
 
     present: dict[str, Decimal] = {}
-    for c in policy.COMPONENTS:
+    for c in component_order:
         value = row[f"{c}_score"]
         if value is not None:
             present[c] = Decimal(str(value))
@@ -291,10 +375,20 @@ def _component_decimals(row: Any) -> dict[str, Decimal]:
 
 
 def _contributions(
-    components: dict[str, Decimal], weights: dict[str, Decimal], canonical: dict[str, str]
+    components: dict[str, Decimal],
+    weights: dict[str, Decimal],
+    canonical: dict[str, str],
+    component_order: Sequence[str],
 ) -> list[ScenarioContribution]:
+    """One contribution per component, in the RUN's component order.
+
+    Order comes from the run rather than a module constant so a stored run's
+    contribution sequence stays reproducible no matter which model the deployed
+    code happens to implement.
+    """
+
     out: list[ScenarioContribution] = []
-    for c in policy.COMPONENTS:
+    for c in component_order:
         score = components.get(c)
         contribution = (
             format((score * weights[c]).quantize(Decimal("0.0001"), rounding=ROUND_HALF_EVEN), "f")
@@ -339,6 +433,8 @@ def _build_candidate_detail(
     compare_profile: str,
     full_hash: str,
     run_meta: Any,
+    run_model_version: str,
+    run_component_order: list[str],
 ) -> UserScenarioCandidateDetailOut:
     """One candidate's scenario result. Reuses the stored candidate row + provenance.
 
@@ -377,8 +473,8 @@ def _build_candidate_detail(
     status = row["status"]
     is_excluded = status == policy.STATUS_EXCLUDED
     is_review = status == policy.STATUS_REVIEW
-    components = _component_decimals(row)
-    all_present = set(components) == set(policy.COMPONENTS)
+    components = _component_decimals(row, run_component_order)
+    all_present = set(components) == set(run_component_order)
 
     custom_score: str | None = None
     custom_provisional: str | None = None
@@ -437,7 +533,8 @@ def _build_candidate_detail(
         road_score=_score_str(row["road_score"]),
         equity_score=_score_str(row["equity_score"]),
         demand_score=_score_str(row["demand_score"]),
-        contributions=_contributions(components, weights, canonical),
+        component_scores=component_model.component_scores_field(run_model_version, row),
+        contributions=_contributions(components, weights, canonical, run_component_order),
         stable_count=row["stable_count"],
         stability_class=row["stability_class"],
         stability_membership=row["stability_membership"] or {},
@@ -465,6 +562,8 @@ def _build_candidate_detail(
         policy_version=run_meta["policy_version"],
         derivation_version=run_meta["derivation_version"],
         candidate_grid_version=run_meta["candidate_grid_version"],
+        component_model_version=run_model_version,
+        component_order=list(run_component_order),
         scenario_label=scenario.SCENARIO_LABEL_KO,
         scenario_disclaimer=scenario.SCENARIO_DISCLAIMER_KO,
         screening_disclaimer=SCREENING_DISCLAIMER,
@@ -478,12 +577,16 @@ def _build_candidate_detail(
 
 @router.post("/preview", response_model=UserWeightScenarioPreviewOut)
 def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightScenarioPreviewOut:
-    resolved = _resolve_run_id(session, req.run_id)
-    run_meta = _load_run_meta(session, resolved)
-    _ensure_profile_available(run_meta["weight_profiles"] or {}, req.compare_profile, resolved)
+    resolved, run_meta, run_model_version, run_component_order = _resolve_scenario_run(
+        session, req.run_id, req.component_model_version
+    )
+    _ensure_profile_available(
+        _json_field(run_meta["weight_profiles"], {}), req.compare_profile, resolved
+    )
 
-    weights = _validate_weights(req.weights)
-    canonical = scenario.canonical_weight_strings(weights)
+    weights = _validate_weights(req.weights, run_component_order)
+    _assert_scenario_model_supported(resolved, run_model_version)
+    canonical = scenario.canonical_weight_strings(weights, run_component_order)
     full_hash = scenario.scenario_hash(resolved, weights)
 
     rows = (
@@ -525,6 +628,7 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
                 road_score=_score_str(r["road_score"]),
                 equity_score=_score_str(r["equity_score"]),
                 demand_score=_score_str(r["demand_score"]),
+                component_scores=component_model.component_scores_field(run_model_version, r),
                 stable_count=r["stable_count"],
                 stability_class=r["stability_class"],
                 centroid_lon=(
@@ -547,6 +651,8 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
             compare_profile=req.compare_profile,
             full_hash=full_hash,
             run_meta=run_meta,
+            run_model_version=run_model_version,
+            run_component_order=run_component_order,
         )
 
     return UserWeightScenarioPreviewOut(
@@ -558,6 +664,8 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
         policy_version=run_meta["policy_version"],
         derivation_version=run_meta["derivation_version"],
         candidate_grid_version=run_meta["candidate_grid_version"],
+        component_model_version=run_model_version,
+        component_order=list(run_component_order),
         canonical_weights=canonical,
         compare_profile=req.compare_profile,
         candidate_count_total=run_meta["candidate_count_total"],
@@ -579,12 +687,16 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
 def candidate_detail(
     session: SessionDep, candidate_id: int, req: UserScenarioCandidateDetailRequest
 ) -> UserScenarioCandidateDetailOut:
-    resolved = _resolve_run_id(session, req.run_id)
-    run_meta = _load_run_meta(session, resolved)
-    _ensure_profile_available(run_meta["weight_profiles"] or {}, req.compare_profile, resolved)
+    resolved, run_meta, run_model_version, run_component_order = _resolve_scenario_run(
+        session, req.run_id, req.component_model_version
+    )
+    _ensure_profile_available(
+        _json_field(run_meta["weight_profiles"], {}), req.compare_profile, resolved
+    )
 
-    weights = _validate_weights(req.weights)
-    canonical = scenario.canonical_weight_strings(weights)
+    weights = _validate_weights(req.weights, run_component_order)
+    _assert_scenario_model_supported(resolved, run_model_version)
+    canonical = scenario.canonical_weight_strings(weights, run_component_order)
     full_hash = scenario.scenario_hash(resolved, weights)
     return _build_candidate_detail(
         session,
@@ -595,6 +707,8 @@ def candidate_detail(
         compare_profile=req.compare_profile,
         full_hash=full_hash,
         run_meta=run_meta,
+        run_model_version=run_model_version,
+        run_component_order=run_component_order,
     )
 
 
@@ -623,7 +737,21 @@ def scenario_tile(
                 "detail": f"x and y must be in [0, {max_index}] at zoom {z}",
             },
         )
-    weights = _validate_weights({"zoning": wz, "road": wr, "equity": we, "demand": wd})
+    # The run's component model is resolved before the weights are read, so a tile
+    # request against a run this scenario contract does not cover is refused for the
+    # right reason rather than failing later on a component the run does not have.
+    # The wz/wr/we/wd parameter names are historical-model abbreviations and are
+    # deliberately not extended to another model: 'we' would abbreviate the
+    # successor's ``existing_burden`` just as naturally as it currently abbreviates
+    # ``equity``, and a parameter name that can be reinterpreted is exactly how one
+    # model's weight silently becomes another's.
+    resolved, _run_meta, run_model_version, run_component_order = _resolve_scenario_run(
+        session, run_id, None
+    )
+    weights = _validate_weights(
+        {"zoning": wz, "road": wr, "equity": we, "demand": wd}, run_component_order
+    )
+    _assert_scenario_model_supported(resolved, run_model_version)
     expected_hash = scenario.scenario_hash(run_id, weights)
     if scenario_hash != expected_hash:
         raise HTTPException(
@@ -634,7 +762,6 @@ def scenario_tile(
                 "fields": {"expected": expected_hash},
             },
         )
-    resolved = _resolve_run_id(session, run_id)
 
     # ETag binds run + canonical weights (via the hash prefix) + z/x/y; the URL
     # fully determines the bytes. Bounded one-day browser cache (a temporary

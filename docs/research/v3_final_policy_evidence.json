@@ -1,0 +1,1437 @@
+{
+  "phase": "v3-policy-closure",
+  "status": "RESEARCH MEASUREMENT of the approved policy — model NOT ACTIVATED here",
+  "component_order": [
+    "existing_burden",
+    "air_impact_proxy",
+    "resident_impact",
+    "land_conversion"
+  ],
+  "dataset_snapshot": {
+    "alembic_version": "0021",
+    "run_id": 47,
+    "run_status": "SUCCEEDED",
+    "policy_version": "suitability-policy-v1",
+    "derivation_version": "suitability-screening-v2",
+    "candidate_grid_version": "capital-grid-500m-v1",
+    "run_created_at": "2026-07-13T05:05:25.079701+00:00",
+    "candidate_count": 47893,
+    "sigungu_count": 79,
+    "sido_count": 3,
+    "population_reference_year": 2024,
+    "population_definition": "SGIS_TOTAL_POPULATION",
+    "population_region_count": 79,
+    "facility_reference_year": 2024,
+    "waste_statistics_reference_year": 2024,
+    "land_cover_statistics_version_id": 1,
+    "land_cover_derivation_version": "land-cover-cell-stats-v1",
+    "land_cover_area_crs": "EPSG:5186"
+  },
+  "approved_weights": {
+    "existing_burden": "0.25",
+    "air_impact_proxy": "0.25",
+    "resident_impact": "0.25",
+    "land_conversion": "0.25"
+  },
+  "approved_registry": {
+    "registry_id": "successor-land-cover-l2-v1",
+    "class_level": 2,
+    "developed_class_codes": [
+      "110",
+      "120",
+      "130",
+      "140",
+      "150",
+      "160"
+    ],
+    "excluded_class_codes": [],
+    "ambiguous_class_codes": [
+      "230",
+      "420",
+      "620",
+      "710",
+      "720"
+    ],
+    "known_class_code_count": 22,
+    "source": "docs/LAND_COVER_DATA_CONTRACT.md §6 (published 대·중·세분류 taxonomy of the 2025 세분류 토지피복지도); classification approved by project-owner delegated policy closure 2026-08-17, recorded in docs/research/SUITABILITY_V3_FINAL_POLICY.md",
+    "approved": true,
+    "note": "Project-approved L2 land-cover classification for the Successor V3 model, adopted under the project-owner delegated policy closure of 2026-08-17. Developed = the 1xx 시가화건조지역 grouping only, read off the published 중분류 code structure. No class is excluded from the denominator: every one of the five contested classes (230, 420, 620, 710, 720) is resolved as NOT developed, the conservative direction, because land_conversion is LOWER_RAW_IS_BETTER and any other resolution would improve a candidate's score on a contested reading. Water is included on measured evidence, not by convention: excluding it made water-dominated cells 7.4x more likely to reach a near-perfect score. This is NOT an official or authoritative developed/natural designation — no such designation exists in the source or this repository. It is an explicit, versioned analytical-policy assertion, and the ranking effect of every alternative resolution is measured and published rather than assumed away."
+  },
+  "registry_variants": {
+    "approved": {
+      "registry_id": "successor-land-cover-l2-v1",
+      "class_level": 2,
+      "developed_class_codes": [
+        "110",
+        "120",
+        "130",
+        "140",
+        "150",
+        "160"
+      ],
+      "excluded_class_codes": [],
+      "ambiguous_class_codes": [
+        "230",
+        "420",
+        "620",
+        "710",
+        "720"
+      ],
+      "known_class_code_count": 22,
+      "source": "docs/LAND_COVER_DATA_CONTRACT.md §6 (published 대·중·세분류 taxonomy of the 2025 세분류 토지피복지도); classification approved by project-owner delegated policy closure 2026-08-17, recorded in docs/research/SUITABILITY_V3_FINAL_POLICY.md",
+      "approved": true,
+      "note": "Project-approved L2 land-cover classification for the Successor V3 model, adopted under the project-owner delegated policy closure of 2026-08-17. Developed = the 1xx 시가화건조지역 grouping only, read off the published 중분류 code structure. No class is excluded from the denominator: every one of the five contested classes (230, 420, 620, 710, 720) is resolved as NOT developed, the conservative direction, because land_conversion is LOWER_RAW_IS_BETTER and any other resolution would improve a candidate's score on a contested reading. Water is included on measured evidence, not by convention: excluding it made water-dominated cells 7.4x more likely to reach a near-perfect score. This is NOT an official or authoritative developed/natural designation — no such designation exists in the source or this repository. It is an explicit, versioned analytical-policy assertion, and the ranking effect of every alternative resolution is measured and published rather than assumed away.",
+      "available_cells": 40506,
+      "score_distribution": {
+        "count": 40506,
+        "mean": "18.4325",
+        "stdev": "23.6687",
+        "min": "0.0000",
+        "max": "100.0000",
+        "distinct": 33733
+      }
+    },
+    "alt_620_developed": {
+      "registry_id": "SENSITIVITY-620-developed",
+      "class_level": 2,
+      "developed_class_codes": [
+        "110",
+        "120",
+        "130",
+        "140",
+        "150",
+        "160",
+        "620"
+      ],
+      "excluded_class_codes": [],
+      "ambiguous_class_codes": [
+        "230",
+        "420",
+        "620",
+        "710",
+        "720"
+      ],
+      "known_class_code_count": 22,
+      "source": "SENSITIVITY VARIANT of successor-land-cover-l2-v1; measurement only",
+      "approved": false,
+      "note": "인공나지 counted as developed — the permissive resolution of the largest contested class (24,411 cells).",
+      "available_cells": 40506,
+      "score_distribution": {
+        "count": 40506,
+        "mean": "23.0568",
+        "stdev": "26.0566",
+        "min": "0.0000",
+        "max": "100.0000",
+        "distinct": 34782
+      }
+    },
+    "alt_230_420_620_developed": {
+      "registry_id": "SENSITIVITY-230-420-620-developed",
+      "class_level": 2,
+      "developed_class_codes": [
+        "110",
+        "120",
+        "130",
+        "140",
+        "150",
+        "160",
+        "230",
+        "420",
+        "620"
+      ],
+      "excluded_class_codes": [],
+      "ambiguous_class_codes": [
+        "230",
+        "420",
+        "620",
+        "710",
+        "720"
+      ],
+      "known_class_code_count": 22,
+      "source": "SENSITIVITY VARIANT of successor-land-cover-l2-v1; measurement only",
+      "approved": false,
+      "note": "All three non-water contested classes counted as developed — the maximally permissive resolution.",
+      "available_cells": 40506,
+      "score_distribution": {
+        "count": 40506,
+        "mean": "36.7633",
+        "stdev": "30.8750",
+        "min": "0.0000",
+        "max": "100.0000",
+        "distinct": 35109
+      }
+    },
+    "alt_water_excluded": {
+      "registry_id": "SENSITIVITY-water-excluded",
+      "class_level": 2,
+      "developed_class_codes": [
+        "110",
+        "120",
+        "130",
+        "140",
+        "150",
+        "160"
+      ],
+      "excluded_class_codes": [
+        "710",
+        "720"
+      ],
+      "ambiguous_class_codes": [
+        "230",
+        "420",
+        "620",
+        "710",
+        "720"
+      ],
+      "known_class_code_count": 22,
+      "source": "SENSITIVITY VARIANT of successor-land-cover-l2-v1; measurement only",
+      "approved": false,
+      "note": "Water removed from numerator and denominator — the Phase-3 research reading, REJECTED on evidence because it makes water-dominated cells 7.4x more likely to reach a near-perfect score.",
+      "available_cells": 40506,
+      "score_distribution": {
+        "count": 40506,
+        "mean": "21.2652",
+        "stdev": "25.5216",
+        "min": "0.0000",
+        "max": "100.0000",
+        "distinct": 34127
+      }
+    }
+  },
+  "floors": {
+    "500": {
+      "eligibility": {
+        "candidate_population": 47893,
+        "per_component_available": {
+          "existing_burden": 41804,
+          "air_impact_proxy": 38592,
+          "resident_impact": 47893,
+          "land_conversion": 40506
+        },
+        "strict_all_components_required": {
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "regions_represented": 57,
+          "residents_represented": 19958650
+        },
+        "optional_component_renormalized": {
+          "existing_burden": {
+            "optional_component": "existing_burden",
+            "eligible": 33980,
+            "eligible_share_pct": "70.95",
+            "gain_over_strict": 0,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 0
+          },
+          "air_impact_proxy": {
+            "optional_component": "air_impact_proxy",
+            "eligible": 34738,
+            "eligible_share_pct": "72.53",
+            "gain_over_strict": 758,
+            "regions_represented": 59,
+            "residents_represented": 20018228,
+            "scored_on_fewer_components": 758
+          },
+          "resident_impact": {
+            "optional_component": "resident_impact",
+            "eligible": 33980,
+            "eligible_share_pct": "70.95",
+            "gain_over_strict": 0,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 0
+          },
+          "land_conversion": {
+            "optional_component": "land_conversion",
+            "eligible": 38592,
+            "eligible_share_pct": "80.58",
+            "gain_over_strict": 4612,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 4612
+          }
+        }
+      },
+      "screening_status": {
+        "complete_case_total": 33980,
+        "complete_case_by_screening_status": {
+          "ELIGIBLE": 13734,
+          "EXCLUDED": 8933,
+          "REVIEW_REQUIRED": 11313
+        },
+        "run_total_by_screening_status": {
+          "ELIGIBLE": 17501,
+          "EXCLUDED": 12260,
+          "REVIEW_REQUIRED": 18132
+        },
+        "rankable_population": 13734,
+        "note": "The complete case is a component-AVAILABILITY set. Only ELIGIBLE candidates are ranked or scored by the historical constraint screening, so the successor ranking population is the intersection. The difference is the share of the complete case that the constraint screening had already set aside."
+      },
+      "composite_distribution": {
+        "count": 13734,
+        "mean": "31.1163",
+        "stdev": "10.1498",
+        "min": "4.5437",
+        "max": "61.0558",
+        "distinct": 13672
+      },
+      "resident_component_distribution": {
+        "count": 13734,
+        "mean": "63.2667",
+        "stdev": "21.3985",
+        "min": "0.0021",
+        "max": "98.7514",
+        "distinct": 13734
+      },
+      "top_10_regions": {
+        "KR-SGIS-31580": 10
+      },
+      "top_50_regions": {
+        "KR-SGIS-31580": 49,
+        "KR-SGIS-31220": 1
+      },
+      "phase4_comparable_unfiltered_top_50_regions": {
+        "KR-SGIS-11050": 25,
+        "KR-SGIS-11130": 22,
+        "KR-SGIS-11170": 2,
+        "KR-SGIS-31580": 1
+      },
+      "within_region_placement_artifact": {
+        "regions_measured": 16,
+        "minimum_candidates_per_region": 30,
+        "mean_within_region_score_range": "46.7137",
+        "max_within_region_score_range": "75.2735",
+        "interpretation": "Upper bound on the representative-point placement artifact, not the artifact itself: within-region spread also contains genuine variation in proximity to OTHER regions' populations. A larger floor compresses the own-region term and so lowers this bound.",
+        "per_region_score_range": {
+          "KR-SGIS-23080": "14.11",
+          "KR-SGIS-23510": "27.22",
+          "KR-SGIS-31070": "75.27",
+          "KR-SGIS-31080": "23.87",
+          "KR-SGIS-31130": "50.96",
+          "KR-SGIS-31200": "46.15",
+          "KR-SGIS-31210": "69.81",
+          "KR-SGIS-31220": "43.07",
+          "KR-SGIS-31230": "21.16",
+          "KR-SGIS-31240": "65.15",
+          "KR-SGIS-31250": "43.35",
+          "KR-SGIS-31260": "39.21",
+          "KR-SGIS-31270": "66.82",
+          "KR-SGIS-31280": "50.50",
+          "KR-SGIS-31570": "51.29",
+          "KR-SGIS-31580": "59.48"
+        }
+      }
+    },
+    "1000": {
+      "eligibility": {
+        "candidate_population": 47893,
+        "per_component_available": {
+          "existing_burden": 41804,
+          "air_impact_proxy": 38592,
+          "resident_impact": 47893,
+          "land_conversion": 40506
+        },
+        "strict_all_components_required": {
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "regions_represented": 57,
+          "residents_represented": 19958650
+        },
+        "optional_component_renormalized": {
+          "existing_burden": {
+            "optional_component": "existing_burden",
+            "eligible": 33980,
+            "eligible_share_pct": "70.95",
+            "gain_over_strict": 0,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 0
+          },
+          "air_impact_proxy": {
+            "optional_component": "air_impact_proxy",
+            "eligible": 34738,
+            "eligible_share_pct": "72.53",
+            "gain_over_strict": 758,
+            "regions_represented": 59,
+            "residents_represented": 20018228,
+            "scored_on_fewer_components": 758
+          },
+          "resident_impact": {
+            "optional_component": "resident_impact",
+            "eligible": 33980,
+            "eligible_share_pct": "70.95",
+            "gain_over_strict": 0,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 0
+          },
+          "land_conversion": {
+            "optional_component": "land_conversion",
+            "eligible": 38592,
+            "eligible_share_pct": "80.58",
+            "gain_over_strict": 4612,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 4612
+          }
+        }
+      },
+      "screening_status": {
+        "complete_case_total": 33980,
+        "complete_case_by_screening_status": {
+          "ELIGIBLE": 13734,
+          "EXCLUDED": 8933,
+          "REVIEW_REQUIRED": 11313
+        },
+        "run_total_by_screening_status": {
+          "ELIGIBLE": 17501,
+          "EXCLUDED": 12260,
+          "REVIEW_REQUIRED": 18132
+        },
+        "rankable_population": 13734,
+        "note": "The complete case is a component-AVAILABILITY set. Only ELIGIBLE candidates are ranked or scored by the historical constraint screening, so the successor ranking population is the intersection. The difference is the share of the complete case that the constraint screening had already set aside."
+      },
+      "composite_distribution": {
+        "count": 13734,
+        "mean": "31.1183",
+        "stdev": "10.1433",
+        "min": "7.3786",
+        "max": "61.0558",
+        "distinct": 13662
+      },
+      "resident_component_distribution": {
+        "count": 13734,
+        "mean": "63.2748",
+        "stdev": "21.3657",
+        "min": "3.7793",
+        "max": "98.7514",
+        "distinct": 13734
+      },
+      "top_10_regions": {
+        "KR-SGIS-31580": 10
+      },
+      "top_50_regions": {
+        "KR-SGIS-31580": 49,
+        "KR-SGIS-31220": 1
+      },
+      "phase4_comparable_unfiltered_top_50_regions": {
+        "KR-SGIS-11050": 25,
+        "KR-SGIS-11130": 22,
+        "KR-SGIS-11170": 2,
+        "KR-SGIS-31580": 1
+      },
+      "within_region_placement_artifact": {
+        "regions_measured": 16,
+        "minimum_candidates_per_region": 30,
+        "mean_within_region_score_range": "44.0640",
+        "max_within_region_score_range": "66.8651",
+        "interpretation": "Upper bound on the representative-point placement artifact, not the artifact itself: within-region spread also contains genuine variation in proximity to OTHER regions' populations. A larger floor compresses the own-region term and so lowers this bound.",
+        "per_region_score_range": {
+          "KR-SGIS-23080": "14.15",
+          "KR-SGIS-23510": "27.26",
+          "KR-SGIS-31070": "61.72",
+          "KR-SGIS-31080": "23.92",
+          "KR-SGIS-31130": "44.73",
+          "KR-SGIS-31200": "46.17",
+          "KR-SGIS-31210": "55.14",
+          "KR-SGIS-31220": "43.12",
+          "KR-SGIS-31230": "21.17",
+          "KR-SGIS-31240": "61.35",
+          "KR-SGIS-31250": "38.79",
+          "KR-SGIS-31260": "39.21",
+          "KR-SGIS-31270": "66.87",
+          "KR-SGIS-31280": "50.56",
+          "KR-SGIS-31570": "51.34",
+          "KR-SGIS-31580": "59.53"
+        }
+      }
+    },
+    "2000": {
+      "eligibility": {
+        "candidate_population": 47893,
+        "per_component_available": {
+          "existing_burden": 41804,
+          "air_impact_proxy": 38592,
+          "resident_impact": 47893,
+          "land_conversion": 40506
+        },
+        "strict_all_components_required": {
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "regions_represented": 57,
+          "residents_represented": 19958650
+        },
+        "optional_component_renormalized": {
+          "existing_burden": {
+            "optional_component": "existing_burden",
+            "eligible": 33980,
+            "eligible_share_pct": "70.95",
+            "gain_over_strict": 0,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 0
+          },
+          "air_impact_proxy": {
+            "optional_component": "air_impact_proxy",
+            "eligible": 34738,
+            "eligible_share_pct": "72.53",
+            "gain_over_strict": 758,
+            "regions_represented": 59,
+            "residents_represented": 20018228,
+            "scored_on_fewer_components": 758
+          },
+          "resident_impact": {
+            "optional_component": "resident_impact",
+            "eligible": 33980,
+            "eligible_share_pct": "70.95",
+            "gain_over_strict": 0,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 0
+          },
+          "land_conversion": {
+            "optional_component": "land_conversion",
+            "eligible": 38592,
+            "eligible_share_pct": "80.58",
+            "gain_over_strict": 4612,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 4612
+          }
+        }
+      },
+      "screening_status": {
+        "complete_case_total": 33980,
+        "complete_case_by_screening_status": {
+          "ELIGIBLE": 13734,
+          "EXCLUDED": 8933,
+          "REVIEW_REQUIRED": 11313
+        },
+        "run_total_by_screening_status": {
+          "ELIGIBLE": 17501,
+          "EXCLUDED": 12260,
+          "REVIEW_REQUIRED": 18132
+        },
+        "rankable_population": 13734,
+        "note": "The complete case is a component-AVAILABILITY set. Only ELIGIBLE candidates are ranked or scored by the historical constraint screening, so the successor ranking population is the intersection. The difference is the share of the complete case that the constraint screening had already set aside."
+      },
+      "composite_distribution": {
+        "count": 13734,
+        "mean": "31.1267",
+        "stdev": "10.1222",
+        "min": "8.9707",
+        "max": "61.0558",
+        "distinct": 13668
+      },
+      "resident_component_distribution": {
+        "count": 13734,
+        "mean": "63.3084",
+        "stdev": "21.2762",
+        "min": "14.2007",
+        "max": "98.7514",
+        "distinct": 13734
+      },
+      "top_10_regions": {
+        "KR-SGIS-31580": 10
+      },
+      "top_50_regions": {
+        "KR-SGIS-31580": 49,
+        "KR-SGIS-31220": 1
+      },
+      "phase4_comparable_unfiltered_top_50_regions": {
+        "KR-SGIS-11050": 27,
+        "KR-SGIS-11130": 21,
+        "KR-SGIS-11170": 1,
+        "KR-SGIS-31580": 1
+      },
+      "within_region_placement_artifact": {
+        "regions_measured": 16,
+        "minimum_candidates_per_region": 30,
+        "mean_within_region_score_range": "41.5178",
+        "max_within_region_score_range": "66.9089",
+        "interpretation": "Upper bound on the representative-point placement artifact, not the artifact itself: within-region spread also contains genuine variation in proximity to OTHER regions' populations. A larger floor compresses the own-region term and so lowers this bound.",
+        "per_region_score_range": {
+          "KR-SGIS-23080": "14.37",
+          "KR-SGIS-23510": "27.24",
+          "KR-SGIS-31070": "48.54",
+          "KR-SGIS-31080": "23.97",
+          "KR-SGIS-31130": "35.81",
+          "KR-SGIS-31200": "46.45",
+          "KR-SGIS-31210": "49.20",
+          "KR-SGIS-31220": "40.32",
+          "KR-SGIS-31230": "21.41",
+          "KR-SGIS-31240": "50.79",
+          "KR-SGIS-31250": "39.01",
+          "KR-SGIS-31260": "38.60",
+          "KR-SGIS-31270": "66.91",
+          "KR-SGIS-31280": "50.65",
+          "KR-SGIS-31570": "51.44",
+          "KR-SGIS-31580": "59.59"
+        }
+      }
+    },
+    "5000": {
+      "eligibility": {
+        "candidate_population": 47893,
+        "per_component_available": {
+          "existing_burden": 41804,
+          "air_impact_proxy": 38592,
+          "resident_impact": 47893,
+          "land_conversion": 40506
+        },
+        "strict_all_components_required": {
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "regions_represented": 57,
+          "residents_represented": 19958650
+        },
+        "optional_component_renormalized": {
+          "existing_burden": {
+            "optional_component": "existing_burden",
+            "eligible": 33980,
+            "eligible_share_pct": "70.95",
+            "gain_over_strict": 0,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 0
+          },
+          "air_impact_proxy": {
+            "optional_component": "air_impact_proxy",
+            "eligible": 34738,
+            "eligible_share_pct": "72.53",
+            "gain_over_strict": 758,
+            "regions_represented": 59,
+            "residents_represented": 20018228,
+            "scored_on_fewer_components": 758
+          },
+          "resident_impact": {
+            "optional_component": "resident_impact",
+            "eligible": 33980,
+            "eligible_share_pct": "70.95",
+            "gain_over_strict": 0,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 0
+          },
+          "land_conversion": {
+            "optional_component": "land_conversion",
+            "eligible": 38592,
+            "eligible_share_pct": "80.58",
+            "gain_over_strict": 4612,
+            "regions_represented": 57,
+            "residents_represented": 19958650,
+            "scored_on_fewer_components": 4612
+          }
+        }
+      },
+      "screening_status": {
+        "complete_case_total": 33980,
+        "complete_case_by_screening_status": {
+          "ELIGIBLE": 13734,
+          "EXCLUDED": 8933,
+          "REVIEW_REQUIRED": 11313
+        },
+        "run_total_by_screening_status": {
+          "ELIGIBLE": 17501,
+          "EXCLUDED": 12260,
+          "REVIEW_REQUIRED": 18132
+        },
+        "rankable_population": 13734,
+        "note": "The complete case is a component-AVAILABILITY set. Only ELIGIBLE candidates are ranked or scored by the historical constraint screening, so the successor ranking population is the intersection. The difference is the share of the complete case that the constraint screening had already set aside."
+      },
+      "composite_distribution": {
+        "count": 13734,
+        "mean": "31.1388",
+        "stdev": "10.0811",
+        "min": "9.1992",
+        "max": "61.0558",
+        "distinct": 13671
+      },
+      "resident_component_distribution": {
+        "count": 13734,
+        "mean": "63.3567",
+        "stdev": "21.2396",
+        "min": "14.5578",
+        "max": "98.7514",
+        "distinct": 13734
+      },
+      "top_10_regions": {
+        "KR-SGIS-31580": 10
+      },
+      "top_50_regions": {
+        "KR-SGIS-31580": 49,
+        "KR-SGIS-31220": 1
+      },
+      "phase4_comparable_unfiltered_top_50_regions": {
+        "KR-SGIS-11050": 27,
+        "KR-SGIS-11130": 21,
+        "KR-SGIS-11170": 1,
+        "KR-SGIS-31580": 1
+      },
+      "within_region_placement_artifact": {
+        "regions_measured": 16,
+        "minimum_candidates_per_region": 30,
+        "mean_within_region_score_range": "40.5527",
+        "max_within_region_score_range": "67.9905",
+        "interpretation": "Upper bound on the representative-point placement artifact, not the artifact itself: within-region spread also contains genuine variation in proximity to OTHER regions' populations. A larger floor compresses the own-region term and so lowers this bound.",
+        "per_region_score_range": {
+          "KR-SGIS-23080": "10.64",
+          "KR-SGIS-23510": "27.14",
+          "KR-SGIS-31070": "44.50",
+          "KR-SGIS-31080": "23.56",
+          "KR-SGIS-31130": "28.48",
+          "KR-SGIS-31200": "46.83",
+          "KR-SGIS-31210": "49.60",
+          "KR-SGIS-31220": "40.44",
+          "KR-SGIS-31230": "22.33",
+          "KR-SGIS-31240": "45.00",
+          "KR-SGIS-31250": "39.79",
+          "KR-SGIS-31260": "39.43",
+          "KR-SGIS-31270": "67.99",
+          "KR-SGIS-31280": "51.00",
+          "KR-SGIS-31570": "51.76",
+          "KR-SGIS-31580": "60.34"
+        }
+      }
+    }
+  },
+  "floor_sensitivity": {
+    "against_base": [
+      {
+        "label": "500m vs 1000m floor (approved weights)",
+        "spearman": "0.9999593014",
+        "top_10_overlap": [
+          10,
+          10
+        ],
+        "top_50_overlap": [
+          50,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        }
+      },
+      {
+        "label": "500m vs 2000m floor (approved weights)",
+        "spearman": "0.9995041662",
+        "top_10_overlap": [
+          10,
+          10
+        ],
+        "top_50_overlap": [
+          50,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        }
+      },
+      {
+        "label": "500m vs 5000m floor (approved weights)",
+        "spearman": "0.9976590515",
+        "top_10_overlap": [
+          10,
+          10
+        ],
+        "top_50_overlap": [
+          49,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        }
+      }
+    ],
+    "adjacent": [
+      {
+        "label": "500m vs 1000m floor (adjacent, approved weights)",
+        "spearman": "0.9999593014",
+        "top_10_overlap": [
+          10,
+          10
+        ],
+        "top_50_overlap": [
+          50,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        }
+      },
+      {
+        "label": "1000m vs 2000m floor (adjacent, approved weights)",
+        "spearman": "0.9996832964",
+        "top_10_overlap": [
+          10,
+          10
+        ],
+        "top_50_overlap": [
+          50,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        }
+      },
+      {
+        "label": "2000m vs 5000m floor (adjacent, approved weights)",
+        "spearman": "0.9989456890",
+        "top_10_overlap": [
+          10,
+          10
+        ],
+        "top_50_overlap": [
+          49,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        }
+      }
+    ]
+  },
+  "weight_sensitivity": {
+    "500": {
+      "approved_weights": {
+        "existing_burden": "0.25",
+        "air_impact_proxy": "0.25",
+        "resident_impact": "0.25",
+        "land_conversion": "0.25"
+      },
+      "baseline_top_50_regions": {
+        "KR-SGIS-31580": 49,
+        "KR-SGIS-31220": 1
+      },
+      "baseline_top_10_regions": {
+        "KR-SGIS-31580": 10
+      },
+      "perturbations": [
+        {
+          "label": "+0.05 -> existing_burden",
+          "spearman": "0.9972988428",
+          "top_10_overlap": [
+            10,
+            10
+          ],
+          "top_50_overlap": [
+            50,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "weights": {
+            "existing_burden": "0.30",
+            "air_impact_proxy": "0.2333333333333333333333333333",
+            "resident_impact": "0.2333333333333333333333333333",
+            "land_conversion": "0.2333333333333333333333333333"
+          }
+        },
+        {
+          "label": "+0.15 -> existing_burden",
+          "spearman": "0.9833349782",
+          "top_10_overlap": [
+            3,
+            10
+          ],
+          "top_50_overlap": [
+            31,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 30,
+            "KR-SGIS-23510": 19,
+            "KR-SGIS-31220": 1
+          },
+          "weights": {
+            "existing_burden": "0.40",
+            "air_impact_proxy": "0.20",
+            "resident_impact": "0.20",
+            "land_conversion": "0.20"
+          }
+        },
+        {
+          "label": "+0.05 -> air_impact_proxy",
+          "spearman": "0.9957902818",
+          "top_10_overlap": [
+            10,
+            10
+          ],
+          "top_50_overlap": [
+            49,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 50
+          },
+          "weights": {
+            "existing_burden": "0.2333333333333333333333333333",
+            "air_impact_proxy": "0.30",
+            "resident_impact": "0.2333333333333333333333333333",
+            "land_conversion": "0.2333333333333333333333333333"
+          }
+        },
+        {
+          "label": "+0.15 -> air_impact_proxy",
+          "spearman": "0.9704117869",
+          "top_10_overlap": [
+            10,
+            10
+          ],
+          "top_50_overlap": [
+            49,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 50
+          },
+          "weights": {
+            "existing_burden": "0.20",
+            "air_impact_proxy": "0.40",
+            "resident_impact": "0.20",
+            "land_conversion": "0.20"
+          }
+        },
+        {
+          "label": "+0.05 -> resident_impact",
+          "spearman": "0.9878944873",
+          "top_10_overlap": [
+            9,
+            10
+          ],
+          "top_50_overlap": [
+            43,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 50
+          },
+          "weights": {
+            "existing_burden": "0.2333333333333333333333333333",
+            "air_impact_proxy": "0.2333333333333333333333333333",
+            "resident_impact": "0.30",
+            "land_conversion": "0.2333333333333333333333333333"
+          }
+        },
+        {
+          "label": "+0.15 -> resident_impact",
+          "spearman": "0.9080425154",
+          "top_10_overlap": [
+            9,
+            10
+          ],
+          "top_50_overlap": [
+            38,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 50
+          },
+          "weights": {
+            "existing_burden": "0.20",
+            "air_impact_proxy": "0.20",
+            "resident_impact": "0.40",
+            "land_conversion": "0.20"
+          }
+        },
+        {
+          "label": "+0.05 -> land_conversion",
+          "spearman": "0.9951593580",
+          "top_10_overlap": [
+            6,
+            10
+          ],
+          "top_50_overlap": [
+            45,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "weights": {
+            "existing_burden": "0.2333333333333333333333333333",
+            "air_impact_proxy": "0.2333333333333333333333333333",
+            "resident_impact": "0.2333333333333333333333333333",
+            "land_conversion": "0.30"
+          }
+        },
+        {
+          "label": "+0.15 -> land_conversion",
+          "spearman": "0.9535958071",
+          "top_10_overlap": [
+            1,
+            10
+          ],
+          "top_50_overlap": [
+            25,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 36,
+            "KR-SGIS-31200": 4,
+            "KR-SGIS-31130": 3,
+            "KR-SGIS-31220": 2,
+            "KR-SGIS-31230": 2,
+            "KR-SGIS-31250": 2,
+            "KR-SGIS-31280": 1
+          },
+          "weights": {
+            "existing_burden": "0.20",
+            "air_impact_proxy": "0.20",
+            "resident_impact": "0.20",
+            "land_conversion": "0.40"
+          }
+        }
+      ]
+    },
+    "2000": {
+      "approved_weights": {
+        "existing_burden": "0.25",
+        "air_impact_proxy": "0.25",
+        "resident_impact": "0.25",
+        "land_conversion": "0.25"
+      },
+      "baseline_top_50_regions": {
+        "KR-SGIS-31580": 49,
+        "KR-SGIS-31220": 1
+      },
+      "baseline_top_10_regions": {
+        "KR-SGIS-31580": 10
+      },
+      "perturbations": [
+        {
+          "label": "+0.05 -> existing_burden",
+          "spearman": "0.9973122694",
+          "top_10_overlap": [
+            10,
+            10
+          ],
+          "top_50_overlap": [
+            50,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "weights": {
+            "existing_burden": "0.30",
+            "air_impact_proxy": "0.2333333333333333333333333333",
+            "resident_impact": "0.2333333333333333333333333333",
+            "land_conversion": "0.2333333333333333333333333333"
+          }
+        },
+        {
+          "label": "+0.15 -> existing_burden",
+          "spearman": "0.9834118152",
+          "top_10_overlap": [
+            3,
+            10
+          ],
+          "top_50_overlap": [
+            31,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 30,
+            "KR-SGIS-23510": 19,
+            "KR-SGIS-31220": 1
+          },
+          "weights": {
+            "existing_burden": "0.40",
+            "air_impact_proxy": "0.20",
+            "resident_impact": "0.20",
+            "land_conversion": "0.20"
+          }
+        },
+        {
+          "label": "+0.05 -> air_impact_proxy",
+          "spearman": "0.9958416299",
+          "top_10_overlap": [
+            10,
+            10
+          ],
+          "top_50_overlap": [
+            49,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 50
+          },
+          "weights": {
+            "existing_burden": "0.2333333333333333333333333333",
+            "air_impact_proxy": "0.30",
+            "resident_impact": "0.2333333333333333333333333333",
+            "land_conversion": "0.2333333333333333333333333333"
+          }
+        },
+        {
+          "label": "+0.15 -> air_impact_proxy",
+          "spearman": "0.9705480322",
+          "top_10_overlap": [
+            10,
+            10
+          ],
+          "top_50_overlap": [
+            49,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 50
+          },
+          "weights": {
+            "existing_burden": "0.20",
+            "air_impact_proxy": "0.40",
+            "resident_impact": "0.20",
+            "land_conversion": "0.20"
+          }
+        },
+        {
+          "label": "+0.05 -> resident_impact",
+          "spearman": "0.9877813307",
+          "top_10_overlap": [
+            9,
+            10
+          ],
+          "top_50_overlap": [
+            43,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 50
+          },
+          "weights": {
+            "existing_burden": "0.2333333333333333333333333333",
+            "air_impact_proxy": "0.2333333333333333333333333333",
+            "resident_impact": "0.30",
+            "land_conversion": "0.2333333333333333333333333333"
+          }
+        },
+        {
+          "label": "+0.15 -> resident_impact",
+          "spearman": "0.9074139607",
+          "top_10_overlap": [
+            9,
+            10
+          ],
+          "top_50_overlap": [
+            38,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 50
+          },
+          "weights": {
+            "existing_burden": "0.20",
+            "air_impact_proxy": "0.20",
+            "resident_impact": "0.40",
+            "land_conversion": "0.20"
+          }
+        },
+        {
+          "label": "+0.05 -> land_conversion",
+          "spearman": "0.9951275993",
+          "top_10_overlap": [
+            6,
+            10
+          ],
+          "top_50_overlap": [
+            45,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "weights": {
+            "existing_burden": "0.2333333333333333333333333333",
+            "air_impact_proxy": "0.2333333333333333333333333333",
+            "resident_impact": "0.2333333333333333333333333333",
+            "land_conversion": "0.30"
+          }
+        },
+        {
+          "label": "+0.15 -> land_conversion",
+          "spearman": "0.9534251432",
+          "top_10_overlap": [
+            1,
+            10
+          ],
+          "top_50_overlap": [
+            25,
+            50
+          ],
+          "baseline_top_50_regions": {
+            "KR-SGIS-31580": 49,
+            "KR-SGIS-31220": 1
+          },
+          "variant_top_50_regions": {
+            "KR-SGIS-31580": 36,
+            "KR-SGIS-31200": 4,
+            "KR-SGIS-31130": 3,
+            "KR-SGIS-31220": 2,
+            "KR-SGIS-31230": 2,
+            "KR-SGIS-31250": 2,
+            "KR-SGIS-31280": 1
+          },
+          "weights": {
+            "existing_burden": "0.20",
+            "air_impact_proxy": "0.20",
+            "resident_impact": "0.20",
+            "land_conversion": "0.40"
+          }
+        }
+      ]
+    }
+  },
+  "class_sensitivity": {
+    "500": [
+      {
+        "label": "approved registry vs alt_620_developed",
+        "spearman": "0.9837895753",
+        "top_10_overlap": [
+          1,
+          10
+        ],
+        "top_50_overlap": [
+          25,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 50
+        },
+        "variant": "alt_620_developed",
+        "eligible_under_approved": 13734,
+        "eligible_under_variant": 13734,
+        "eligible_delta": 0,
+        "compared_on_shared_units": 13734
+      },
+      {
+        "label": "approved registry vs alt_230_420_620_developed",
+        "spearman": "0.9278335153",
+        "top_10_overlap": [
+          3,
+          10
+        ],
+        "top_50_overlap": [
+          26,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 50
+        },
+        "variant": "alt_230_420_620_developed",
+        "eligible_under_approved": 13734,
+        "eligible_under_variant": 13734,
+        "eligible_delta": 0,
+        "compared_on_shared_units": 13734
+      },
+      {
+        "label": "approved registry vs alt_water_excluded",
+        "spearman": "0.9915323995",
+        "top_10_overlap": [
+          0,
+          10
+        ],
+        "top_50_overlap": [
+          16,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 47,
+          "KR-SGIS-23510": 1,
+          "KR-SGIS-31130": 1,
+          "KR-SGIS-31220": 1
+        },
+        "variant": "alt_water_excluded",
+        "eligible_under_approved": 13734,
+        "eligible_under_variant": 13734,
+        "eligible_delta": 0,
+        "compared_on_shared_units": 13734
+      }
+    ],
+    "2000": [
+      {
+        "label": "approved registry vs alt_620_developed",
+        "spearman": "0.9837888607",
+        "top_10_overlap": [
+          1,
+          10
+        ],
+        "top_50_overlap": [
+          25,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 50
+        },
+        "variant": "alt_620_developed",
+        "eligible_under_approved": 13734,
+        "eligible_under_variant": 13734,
+        "eligible_delta": 0,
+        "compared_on_shared_units": 13734
+      },
+      {
+        "label": "approved registry vs alt_230_420_620_developed",
+        "spearman": "0.9276863105",
+        "top_10_overlap": [
+          3,
+          10
+        ],
+        "top_50_overlap": [
+          26,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 50
+        },
+        "variant": "alt_230_420_620_developed",
+        "eligible_under_approved": 13734,
+        "eligible_under_variant": 13734,
+        "eligible_delta": 0,
+        "compared_on_shared_units": 13734
+      },
+      {
+        "label": "approved registry vs alt_water_excluded",
+        "spearman": "0.9914425837",
+        "top_10_overlap": [
+          0,
+          10
+        ],
+        "top_50_overlap": [
+          16,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-31580": 49,
+          "KR-SGIS-31220": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 47,
+          "KR-SGIS-23510": 1,
+          "KR-SGIS-31130": 1,
+          "KR-SGIS-31220": 1
+        },
+        "variant": "alt_water_excluded",
+        "eligible_under_approved": 13734,
+        "eligible_under_variant": 13734,
+        "eligible_delta": 0,
+        "compared_on_shared_units": 13734
+      }
+    ]
+  }
+}

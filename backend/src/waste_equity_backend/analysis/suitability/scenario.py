@@ -33,11 +33,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from typing import Any
 
-from . import policy
+from . import component_model, policy
 
 # --------------------------------------------------------------------------- #
 # Method version (independent of stored-run derivation versions)
@@ -48,10 +48,24 @@ from . import policy
 # method version and never increments the run/policy/critic/stability/grid
 # versions. Bumping this only signals a change to the *scenario recombination
 # contract itself* (weight model, hashing payload, or scoring/quantization).
+#
+# Deliberately NOT bumped by making weight validation run-model-relative. For every
+# run that can exist today the rule resolves to exactly the historical four keys, so
+# no producible scenario's weight model, hash payload, or quantization has changed,
+# and every stored scenario hash stays byte-identical. The bump to
+# ``user-weight-scenario-v2`` — together with adding the component model to
+# :func:`canonical_hash_payload` so a successor scenario hash can never collide with
+# a historical one — is required at the moment successor scenarios become
+# producible, i.e. when the successor run write path and an approved successor
+# weight vector land. Until then a bump would change every existing hash for a
+# contract change that has not actually happened.
 USER_WEIGHT_SCENARIO_METHOD_VERSION = "user-weight-scenario-v1"
 
-# Fixed criterion order for every scenario weight vector, hash payload, and
-# serialization (identical to policy.COMPONENTS / critic.CRITERION_ORDER).
+# Fixed criterion order for the *historical* scenario weight vector, hash payload,
+# and serialization (identical to policy.COMPONENTS / critic.CRITERION_ORDER). It is
+# the default for every function below; a run of another component model supplies
+# its own ``component_order``, which is why none of them read this constant when an
+# order is passed in.
 COMPONENT_ORDER: tuple[str, ...] = policy.COMPONENTS
 
 # Canonical scenario-weight precision: 8 decimal places (matches the CRITIC
@@ -63,6 +77,15 @@ _CANONICAL_ONE = Decimal("1.00000000")
 
 # Structured error code surfaced as a 422 by the API layer.
 INVALID_SCENARIO_WEIGHTS = "INVALID_SCENARIO_WEIGHTS"
+
+# A weight vector that is well-formed for a *different* component model gets its own
+# code, deliberately distinct from INVALID_SCENARIO_WEIGHTS, because the remedy is
+# completely different: malformed weights are a correctable input error, whereas a
+# model mismatch means this scenario cannot be applied to this run at all. Collapsing
+# the two would push a client toward "fix your weights", which is the wrong
+# instruction and nudges precisely toward remapping one model's weights onto
+# another's components.
+COMPONENT_MODEL_MISMATCH = component_model.COMPONENT_MODEL_MISMATCH
 
 # Citizen-facing scenario label + disclaimer (kept here so backend responses and
 # the docs share one source of truth; the frontend mirrors these strings).
@@ -96,6 +119,20 @@ class ScenarioWeightError(ValueError):
 
     def as_envelope(self) -> dict[str, Any]:
         return {"error": self.error, "detail": self.detail, "fields": self.fields}
+
+
+class ScenarioComponentModelMismatchError(ScenarioWeightError):
+    """Well-formed weights for one component model, submitted against another's run.
+
+    A subclass of :class:`ScenarioWeightError` so every existing ``except`` clause
+    still catches it and still produces a 422, but with its own stable ``error``
+    code so a client can present "this scenario belongs to a different analytical
+    model" instead of "your weights are wrong". The scenario is not broken — it is
+    valid for a different model, and remains fully usable against a run of that
+    model.
+    """
+
+    error = COMPONENT_MODEL_MISMATCH
 
 
 def _parse_one(component: str, raw: Any) -> Decimal:
@@ -144,39 +181,78 @@ def _parse_one(component: str, raw: Any) -> Decimal:
     return value
 
 
-def parse_and_validate_weights(raw: Mapping[str, Any]) -> dict[str, Decimal]:
+def parse_and_validate_weights(
+    raw: Mapping[str, Any], components: Sequence[str] | None = None
+) -> dict[str, Decimal]:
     """Validate a raw weight mapping and return canonical 8-dp Decimal weights.
+
+    ``components`` is the component order the weights must be defined over — pass
+    the *resolved run's* ``component_order`` so validation is run-model-relative
+    rather than relative to a module constant. It defaults to the historical
+    :data:`COMPONENT_ORDER`, which is what every existing caller already meant.
 
     Enforces, with no silent repair:
 
-    * exactly the four required keys (``zoning``/``road``/``equity``/``demand``),
-      no unknown keys;
+    * exactly the model's component keys, no missing and no unknown keys;
     * each value a finite decimal in ``[0, 1]`` inclusive (zero allowed);
     * not all zero;
     * the canonical (8-dp-quantized) sum equals exactly ``Decimal("1.00000000")``.
 
-    Raises :class:`ScenarioWeightError` (→ 422) otherwise. Prefer passing decimal
-    strings; floats are rejected upstream in :func:`_parse_one`.
+    Strictness here is the load-bearing safety property of the whole scenario path:
+    it is the only thing standing between a saved weight vector and a silent
+    cross-model recombination. It must never be loosened to "accept any subset and
+    renormalize".
+
+    A key set that is *exactly another known component model's* components raises
+    :class:`ScenarioComponentModelMismatchError` (a ``ScenarioWeightError`` subclass
+    carrying the distinct ``COMPONENT_MODEL_MISMATCH`` code), so a client can tell
+    "this scenario belongs to a different analytical model" apart from "your weights
+    are malformed". Anything else raises :class:`ScenarioWeightError` (→ 422) as
+    before. Prefer passing decimal strings; floats are rejected upstream in
+    :func:`_parse_one`.
     """
 
+    order = tuple(COMPONENT_ORDER if components is None else components)
     if not isinstance(raw, Mapping):
-        raise ScenarioWeightError("Scenario weights must be an object of four components.")
+        raise ScenarioWeightError(
+            f"Scenario weights must be an object of {len(order)} components."
+        )
     keys = set(raw)
-    expected = set(COMPONENT_ORDER)
+    expected = set(order)
     missing = expected - keys
     unknown = keys - expected
+    if missing or unknown:
+        # Well-formed weights for a different component model are refused with a
+        # distinct code and are NEVER translated: the components are different
+        # measured quantities with different derivations, resolutions, and
+        # directions, and a positional or name-similarity mapping would carry a
+        # justification written about one quantity onto another.
+        submitted_model = component_model.classify_weight_components(raw)
+        if submitted_model is not None:
+            raise ScenarioComponentModelMismatchError(
+                "These scenario weights are defined over the components of "
+                f"{submitted_model!r} ({sorted(keys)}) and cannot be applied to a run "
+                f"whose components are {list(order)}. A scenario is only valid against "
+                "a run of its own component model; weights are never remapped between "
+                "models.",
+                {
+                    "submitted_component_model": submitted_model,
+                    "submitted_components": sorted(keys),
+                    "run_component_order": list(order),
+                },
+            )
     if missing:
         raise ScenarioWeightError(
-            "Scenario weights must include exactly zoning, road, equity, demand.",
-            {"missing": sorted(missing)},
+            "Scenario weights must include exactly " + ", ".join(order) + ".",
+            {"missing": sorted(missing), "expected": list(order)},
         )
     if unknown:
         raise ScenarioWeightError(
             "Scenario weights contain unknown components.",
-            {"unknown": sorted(unknown)},
+            {"unknown": sorted(unknown), "expected": list(order)},
         )
 
-    parsed = {c: _parse_one(c, raw[c]) for c in COMPONENT_ORDER}
+    parsed = {c: _parse_one(c, raw[c]) for c in order}
     for c, value in parsed.items():
         if value < _ZERO or value > _ONE:
             raise ScenarioWeightError(
@@ -184,9 +260,7 @@ def parse_and_validate_weights(raw: Mapping[str, Any]) -> dict[str, Decimal]:
                 {"component": c, "value": format(value, "f")},
             )
 
-    canonical = {
-        c: parsed[c].quantize(WEIGHT_QUANT, rounding=ROUND_HALF_EVEN) for c in COMPONENT_ORDER
-    }
+    canonical = {c: parsed[c].quantize(WEIGHT_QUANT, rounding=ROUND_HALF_EVEN) for c in order}
 
     if all(v == _ZERO for v in canonical.values()):
         raise ScenarioWeightError(
@@ -203,12 +277,20 @@ def parse_and_validate_weights(raw: Mapping[str, Any]) -> dict[str, Decimal]:
     return canonical
 
 
-def canonical_weight_strings(weights: Mapping[str, Decimal]) -> dict[str, str]:
-    """Fixed-point 8-dp strings in fixed criterion order (never exponent form)."""
+def canonical_weight_strings(
+    weights: Mapping[str, Decimal], components: Sequence[str] | None = None
+) -> dict[str, str]:
+    """Fixed-point 8-dp strings in fixed criterion order (never exponent form).
 
+    ``components`` defaults to the historical :data:`COMPONENT_ORDER`; pass the
+    run's ``component_order`` for any other model. Order is explicit rather than
+    taken from the mapping's key order, because key order is not a stable property
+    of anything that round-trips through JSON.
+    """
+
+    order = COMPONENT_ORDER if components is None else components
     return {
-        c: format(weights[c].quantize(WEIGHT_QUANT, rounding=ROUND_HALF_EVEN), "f")
-        for c in COMPONENT_ORDER
+        c: format(weights[c].quantize(WEIGHT_QUANT, rounding=ROUND_HALF_EVEN), "f") for c in order
     }
 
 

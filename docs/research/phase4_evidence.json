@@ -1,0 +1,1018 @@
+{
+  "phase": "phase-4-explicit-policy-gate",
+  "status": "RESEARCH ONLY — successor model NOT ACTIVATED",
+  "component_contract_version": "successor-component-contract-v1",
+  "component_order": [
+    "existing_burden",
+    "air_impact_proxy",
+    "resident_impact",
+    "land_conversion"
+  ],
+  "dataset_snapshot": {
+    "alembic_version": "0021",
+    "run_id": 47,
+    "run_status": "SUCCEEDED",
+    "policy_version": "suitability-policy-v1",
+    "derivation_version": "suitability-screening-v2",
+    "candidate_grid_version": "capital-grid-500m-v1",
+    "run_created_at": "2026-07-13T05:05:25.079701+00:00",
+    "candidate_count": 47893,
+    "sigungu_count": 79,
+    "sido_count": 3,
+    "population_reference_year": 2024,
+    "population_definition": "SGIS_TOTAL_POPULATION",
+    "population_region_count": 79,
+    "facility_reference_year": 2024,
+    "waste_statistics_reference_year": 2024,
+    "land_cover_statistics_version_id": 1,
+    "land_cover_derivation_version": "land-cover-cell-stats-v1",
+    "land_cover_area_crs": "EPSG:5186"
+  },
+  "b17_existing_burden": {
+    "unmapped_facility_groups": [
+      {
+        "rcis_sido_name": "경기",
+        "rcis_sigungu_name": "고양시",
+        "source_geographic_level": "SIGUNGU",
+        "facility_count": 19,
+        "throughput_tons_per_year": "222457.100000",
+        "covered_region_codes": [
+          "KR-SGIS-31101",
+          "KR-SGIS-31103",
+          "KR-SGIS-31104"
+        ],
+        "covered_region_count": 3
+      },
+      {
+        "rcis_sido_name": "경기",
+        "rcis_sigungu_name": "부천시",
+        "source_geographic_level": "SIGUNGU",
+        "facility_count": 6,
+        "throughput_tons_per_year": "151117.200000",
+        "covered_region_codes": [
+          "KR-SGIS-31051",
+          "KR-SGIS-31052",
+          "KR-SGIS-31053"
+        ],
+        "covered_region_count": 3
+      },
+      {
+        "rcis_sido_name": "경기",
+        "rcis_sigungu_name": "성남시",
+        "source_geographic_level": "SIGUNGU",
+        "facility_count": 8,
+        "throughput_tons_per_year": "335085.900000",
+        "covered_region_codes": [
+          "KR-SGIS-31021",
+          "KR-SGIS-31022",
+          "KR-SGIS-31023"
+        ],
+        "covered_region_count": 3
+      },
+      {
+        "rcis_sido_name": "경기",
+        "rcis_sigungu_name": "수원시",
+        "source_geographic_level": "SIGUNGU",
+        "facility_count": 5,
+        "throughput_tons_per_year": "326301.500000",
+        "covered_region_codes": [
+          "KR-SGIS-31011",
+          "KR-SGIS-31012",
+          "KR-SGIS-31013",
+          "KR-SGIS-31014"
+        ],
+        "covered_region_count": 4
+      },
+      {
+        "rcis_sido_name": "경기",
+        "rcis_sigungu_name": "안산시",
+        "source_geographic_level": "SIGUNGU",
+        "facility_count": 12,
+        "throughput_tons_per_year": "411241.100000",
+        "covered_region_codes": [
+          "KR-SGIS-31091",
+          "KR-SGIS-31092"
+        ],
+        "covered_region_count": 2
+      },
+      {
+        "rcis_sido_name": "경기",
+        "rcis_sigungu_name": "안양시",
+        "source_geographic_level": "SIGUNGU",
+        "facility_count": 3,
+        "throughput_tons_per_year": "110851.800000",
+        "covered_region_codes": [
+          "KR-SGIS-31041",
+          "KR-SGIS-31042"
+        ],
+        "covered_region_count": 2
+      },
+      {
+        "rcis_sido_name": "경기",
+        "rcis_sigungu_name": "용인시",
+        "source_geographic_level": "SIGUNGU",
+        "facility_count": 46,
+        "throughput_tons_per_year": "350662.700000",
+        "covered_region_codes": [
+          "KR-SGIS-31191",
+          "KR-SGIS-31192",
+          "KR-SGIS-31193"
+        ],
+        "covered_region_count": 3
+      }
+    ],
+    "unmapped_facility_rows": 99,
+    "unmapped_throughput_tons_per_year": "1907717.300000",
+    "coverage_basis": "DERIVED_FROM_REGION_NAME: the source reports this unit at CITY grain and no CITY geography exists in `regions` (SIDO and SIGUNGU only); the covered SIGUNGU are those whose official region_name contains the CITY name as a leading name component within the same SIDO",
+    "observation_count": 79,
+    "before_available_regions": 79,
+    "after_available_regions": 59,
+    "withdrawn_regions": [
+      "KR-SGIS-31011",
+      "KR-SGIS-31012",
+      "KR-SGIS-31013",
+      "KR-SGIS-31014",
+      "KR-SGIS-31021",
+      "KR-SGIS-31022",
+      "KR-SGIS-31023",
+      "KR-SGIS-31041",
+      "KR-SGIS-31042",
+      "KR-SGIS-31051",
+      "KR-SGIS-31052",
+      "KR-SGIS-31053",
+      "KR-SGIS-31091",
+      "KR-SGIS-31092",
+      "KR-SGIS-31101",
+      "KR-SGIS-31103",
+      "KR-SGIS-31104",
+      "KR-SGIS-31191",
+      "KR-SGIS-31192",
+      "KR-SGIS-31193"
+    ],
+    "withdrawn_region_count": 20,
+    "flagged_undercount_regions": [],
+    "remaining_observed_zero_regions": [
+      "KR-SGIS-11010",
+      "KR-SGIS-11050",
+      "KR-SGIS-11130",
+      "KR-SGIS-11190",
+      "KR-SGIS-11220",
+      "KR-SGIS-23090",
+      "KR-SGIS-23510"
+    ],
+    "remaining_observed_zero_count": 7
+  },
+  "b16_land_conversion": {
+    "registry_id": "RESEARCH-ONLY-l2-first-digit-v0-NOT-PRODUCTION-POLICY",
+    "registry_approved": false,
+    "relative_tolerance": "0.000000001",
+    "area_unit": "m2",
+    "observation_count": 47893,
+    "before_available": 28853,
+    "before_available_share_pct": "60.24",
+    "after_available": 40506,
+    "after_available_share_pct": "84.58",
+    "recovered_candidates": 11653,
+    "clamped_to_unit_interval": 2114,
+    "remaining_unavailable": 7387,
+    "remaining_unavailable_reasons": {
+      "NO_EVALUATED_AREA": 7387,
+      "NO_LAND_COVER_COVERAGE": 7387
+    }
+  },
+  "b6_air_impact_grain": {
+    "regions_total": 79,
+    "regions_with_component": 57,
+    "regions_without_component": [
+      "KR-SGIS-23520",
+      "KR-SGIS-31011",
+      "KR-SGIS-31012",
+      "KR-SGIS-31013",
+      "KR-SGIS-31014",
+      "KR-SGIS-31021",
+      "KR-SGIS-31022",
+      "KR-SGIS-31023",
+      "KR-SGIS-31041",
+      "KR-SGIS-31042",
+      "KR-SGIS-31051",
+      "KR-SGIS-31052",
+      "KR-SGIS-31053",
+      "KR-SGIS-31091",
+      "KR-SGIS-31092",
+      "KR-SGIS-31101",
+      "KR-SGIS-31103",
+      "KR-SGIS-31104",
+      "KR-SGIS-31191",
+      "KR-SGIS-31192",
+      "KR-SGIS-31193",
+      "KR-SGIS-31550"
+    ],
+    "option_a_strict_sigungu_only": {
+      "excluded": {
+        "regions": 22,
+        "candidates": 8748,
+        "residents": 6349306
+      },
+      "note": "no derived value; the 22 regions simply lose the component"
+    },
+    "option_b_city_grain_projection": {
+      "city_units": [
+        {
+          "rcis_sido_name": "경기",
+          "rcis_sigungu_name": "고양시",
+          "reporting_geography_type": "DERIVED_CITY_UNION",
+          "stream_count": 4,
+          "streams": {
+            "BUSINESS_NON_FACILITY": "503651.200000",
+            "CONSTRUCTION": "1669110.900000",
+            "HOUSEHOLD": "451322.500000",
+            "INDUSTRIAL_FACILITY": "810534.487000"
+          },
+          "quantity_units": [
+            "톤/년"
+          ],
+          "total_generation_tons_per_year": "3434619.087000",
+          "covered_region_codes": [
+            "KR-SGIS-31101",
+            "KR-SGIS-31103",
+            "KR-SGIS-31104"
+          ],
+          "covered_region_count": 3,
+          "covered_population": 1044968,
+          "derived_city_per_capita_kg_per_year": "3286.8175",
+          "all_four_streams_present": true
+        },
+        {
+          "rcis_sido_name": "경기",
+          "rcis_sigungu_name": "부천시",
+          "reporting_geography_type": "DERIVED_CITY_UNION",
+          "stream_count": 4,
+          "streams": {
+            "BUSINESS_NON_FACILITY": "67915.300000",
+            "CONSTRUCTION": "550921.100000",
+            "HOUSEHOLD": "243044.200000",
+            "INDUSTRIAL_FACILITY": "236741.806000"
+          },
+          "quantity_units": [
+            "톤/년"
+          ],
+          "total_generation_tons_per_year": "1098622.406000",
+          "covered_region_codes": [
+            "KR-SGIS-31051",
+            "KR-SGIS-31052",
+            "KR-SGIS-31053"
+          ],
+          "covered_region_count": 3,
+          "covered_population": 794082,
+          "derived_city_per_capita_kg_per_year": "1383.5125",
+          "all_four_streams_present": true
+        },
+        {
+          "rcis_sido_name": "경기",
+          "rcis_sigungu_name": "성남시",
+          "reporting_geography_type": "DERIVED_CITY_UNION",
+          "stream_count": 4,
+          "streams": {
+            "BUSINESS_NON_FACILITY": "65164.600000",
+            "CONSTRUCTION": "1375691.000000",
+            "HOUSEHOLD": "299171.900000",
+            "INDUSTRIAL_FACILITY": "186940.577000"
+          },
+          "quantity_units": [
+            "톤/년"
+          ],
+          "total_generation_tons_per_year": "1926968.077000",
+          "covered_region_codes": [
+            "KR-SGIS-31021",
+            "KR-SGIS-31022",
+            "KR-SGIS-31023"
+          ],
+          "covered_region_count": 3,
+          "covered_population": 900867,
+          "derived_city_per_capita_kg_per_year": "2139.0151",
+          "all_four_streams_present": true
+        },
+        {
+          "rcis_sido_name": "경기",
+          "rcis_sigungu_name": "수원시",
+          "reporting_geography_type": "DERIVED_CITY_UNION",
+          "stream_count": 4,
+          "streams": {
+            "BUSINESS_NON_FACILITY": "64171.500000",
+            "CONSTRUCTION": "870909.900000",
+            "HOUSEHOLD": "359693.700000",
+            "INDUSTRIAL_FACILITY": "133331.022000"
+          },
+          "quantity_units": [
+            "톤/년"
+          ],
+          "total_generation_tons_per_year": "1428106.122000",
+          "covered_region_codes": [
+            "KR-SGIS-31011",
+            "KR-SGIS-31012",
+            "KR-SGIS-31013",
+            "KR-SGIS-31014"
+          ],
+          "covered_region_count": 4,
+          "covered_population": 1224979,
+          "derived_city_per_capita_kg_per_year": "1165.8209",
+          "all_four_streams_present": true
+        },
+        {
+          "rcis_sido_name": "경기",
+          "rcis_sigungu_name": "안산시",
+          "reporting_geography_type": "DERIVED_CITY_UNION",
+          "stream_count": 4,
+          "streams": {
+            "BUSINESS_NON_FACILITY": "51629.800000",
+            "CONSTRUCTION": "442982.500000",
+            "HOUSEHOLD": "231179.300000",
+            "INDUSTRIAL_FACILITY": "684717.532000"
+          },
+          "quantity_units": [
+            "톤/년"
+          ],
+          "total_generation_tons_per_year": "1410509.132000",
+          "covered_region_codes": [
+            "KR-SGIS-31091",
+            "KR-SGIS-31092"
+          ],
+          "covered_region_count": 2,
+          "covered_population": 701551,
+          "derived_city_per_capita_kg_per_year": "2010.5582",
+          "all_four_streams_present": true
+        },
+        {
+          "rcis_sido_name": "경기",
+          "rcis_sigungu_name": "안양시",
+          "reporting_geography_type": "DERIVED_CITY_UNION",
+          "stream_count": 4,
+          "streams": {
+            "BUSINESS_NON_FACILITY": "30037.800000",
+            "CONSTRUCTION": "887993.000000",
+            "HOUSEHOLD": "147268.500000",
+            "INDUSTRIAL_FACILITY": "182318.261000"
+          },
+          "quantity_units": [
+            "톤/년"
+          ],
+          "total_generation_tons_per_year": "1247617.561000",
+          "covered_region_codes": [
+            "KR-SGIS-31041",
+            "KR-SGIS-31042"
+          ],
+          "covered_region_count": 2,
+          "covered_population": 545800,
+          "derived_city_per_capita_kg_per_year": "2285.8512",
+          "all_four_streams_present": true
+        },
+        {
+          "rcis_sido_name": "경기",
+          "rcis_sigungu_name": "용인시",
+          "reporting_geography_type": "DERIVED_CITY_UNION",
+          "stream_count": 4,
+          "streams": {
+            "BUSINESS_NON_FACILITY": "108336.000000",
+            "CONSTRUCTION": "1035586.800000",
+            "HOUSEHOLD": "256460.100000",
+            "INDUSTRIAL_FACILITY": "1110471.875000"
+          },
+          "quantity_units": [
+            "톤/년"
+          ],
+          "total_generation_tons_per_year": "2510854.775000",
+          "covered_region_codes": [
+            "KR-SGIS-31191",
+            "KR-SGIS-31192",
+            "KR-SGIS-31193"
+          ],
+          "covered_region_count": 3,
+          "covered_population": 1077481,
+          "derived_city_per_capita_kg_per_year": "2330.3007",
+          "all_four_streams_present": true
+        }
+      ],
+      "recoverable": {
+        "regions": 20,
+        "candidates": 5536,
+        "residents": 6289728
+      },
+      "still_excluded": {
+        "regions": 2,
+        "candidates": 3212,
+        "residents": 59578
+      },
+      "still_excluded_regions": [
+        "KR-SGIS-23520",
+        "KR-SGIS-31550"
+      ],
+      "assumption": "projecting a CITY per-capita generation rate onto its child districts asserts that per-capita generation is uniform within the city; the value is a coarser-geography derivation, not a child-district observation"
+    },
+    "regions_missing_for_other_reasons": [
+      "KR-SGIS-23520",
+      "KR-SGIS-31550"
+    ]
+  },
+  "b19_candidate_region_mapping": {
+    "candidate_count": 47893,
+    "with_sigungu_code": 47340,
+    "without_sigungu_code": 553,
+    "note": "Traced in the report: all unmapped centroids fall inside their SIDO polygon but outside every SIGUNGU polygon — an inter-layer boundary gap, already flagged by the historical engine as AMBIGUOUS_OR_MISSING_SIGUNGU. No code is fabricated."
+  },
+  "eligibility": {
+    "500": {
+      "candidate_population": 47893,
+      "per_component_available": {
+        "existing_burden": 41804,
+        "air_impact_proxy": 38592,
+        "resident_impact": 47893,
+        "land_conversion": 40506
+      },
+      "strict_all_components_required": {
+        "eligible": 33980,
+        "eligible_share_pct": "70.95",
+        "regions_represented": 57,
+        "residents_represented": 19958650
+      },
+      "optional_component_renormalized": {
+        "existing_burden": {
+          "optional_component": "existing_burden",
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "gain_over_strict": 0,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 0
+        },
+        "air_impact_proxy": {
+          "optional_component": "air_impact_proxy",
+          "eligible": 34738,
+          "eligible_share_pct": "72.53",
+          "gain_over_strict": 758,
+          "regions_represented": 59,
+          "residents_represented": 20018228,
+          "scored_on_fewer_components": 758
+        },
+        "resident_impact": {
+          "optional_component": "resident_impact",
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "gain_over_strict": 0,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 0
+        },
+        "land_conversion": {
+          "optional_component": "land_conversion",
+          "eligible": 38592,
+          "eligible_share_pct": "80.58",
+          "gain_over_strict": 4612,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 4612
+        }
+      }
+    },
+    "1000": {
+      "candidate_population": 47893,
+      "per_component_available": {
+        "existing_burden": 41804,
+        "air_impact_proxy": 38592,
+        "resident_impact": 47893,
+        "land_conversion": 40506
+      },
+      "strict_all_components_required": {
+        "eligible": 33980,
+        "eligible_share_pct": "70.95",
+        "regions_represented": 57,
+        "residents_represented": 19958650
+      },
+      "optional_component_renormalized": {
+        "existing_burden": {
+          "optional_component": "existing_burden",
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "gain_over_strict": 0,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 0
+        },
+        "air_impact_proxy": {
+          "optional_component": "air_impact_proxy",
+          "eligible": 34738,
+          "eligible_share_pct": "72.53",
+          "gain_over_strict": 758,
+          "regions_represented": 59,
+          "residents_represented": 20018228,
+          "scored_on_fewer_components": 758
+        },
+        "resident_impact": {
+          "optional_component": "resident_impact",
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "gain_over_strict": 0,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 0
+        },
+        "land_conversion": {
+          "optional_component": "land_conversion",
+          "eligible": 38592,
+          "eligible_share_pct": "80.58",
+          "gain_over_strict": 4612,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 4612
+        }
+      }
+    },
+    "2000": {
+      "candidate_population": 47893,
+      "per_component_available": {
+        "existing_burden": 41804,
+        "air_impact_proxy": 38592,
+        "resident_impact": 47893,
+        "land_conversion": 40506
+      },
+      "strict_all_components_required": {
+        "eligible": 33980,
+        "eligible_share_pct": "70.95",
+        "regions_represented": 57,
+        "residents_represented": 19958650
+      },
+      "optional_component_renormalized": {
+        "existing_burden": {
+          "optional_component": "existing_burden",
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "gain_over_strict": 0,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 0
+        },
+        "air_impact_proxy": {
+          "optional_component": "air_impact_proxy",
+          "eligible": 34738,
+          "eligible_share_pct": "72.53",
+          "gain_over_strict": 758,
+          "regions_represented": 59,
+          "residents_represented": 20018228,
+          "scored_on_fewer_components": 758
+        },
+        "resident_impact": {
+          "optional_component": "resident_impact",
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "gain_over_strict": 0,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 0
+        },
+        "land_conversion": {
+          "optional_component": "land_conversion",
+          "eligible": 38592,
+          "eligible_share_pct": "80.58",
+          "gain_over_strict": 4612,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 4612
+        }
+      }
+    },
+    "5000": {
+      "candidate_population": 47893,
+      "per_component_available": {
+        "existing_burden": 41804,
+        "air_impact_proxy": 38592,
+        "resident_impact": 47893,
+        "land_conversion": 40506
+      },
+      "strict_all_components_required": {
+        "eligible": 33980,
+        "eligible_share_pct": "70.95",
+        "regions_represented": 57,
+        "residents_represented": 19958650
+      },
+      "optional_component_renormalized": {
+        "existing_burden": {
+          "optional_component": "existing_burden",
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "gain_over_strict": 0,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 0
+        },
+        "air_impact_proxy": {
+          "optional_component": "air_impact_proxy",
+          "eligible": 34738,
+          "eligible_share_pct": "72.53",
+          "gain_over_strict": 758,
+          "regions_represented": 59,
+          "residents_represented": 20018228,
+          "scored_on_fewer_components": 758
+        },
+        "resident_impact": {
+          "optional_component": "resident_impact",
+          "eligible": 33980,
+          "eligible_share_pct": "70.95",
+          "gain_over_strict": 0,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 0
+        },
+        "land_conversion": {
+          "optional_component": "land_conversion",
+          "eligible": 38592,
+          "eligible_share_pct": "80.58",
+          "gain_over_strict": 4612,
+          "regions_represented": 57,
+          "residents_represented": 19958650,
+          "scored_on_fewer_components": 4612
+        }
+      }
+    }
+  },
+  "weight_sensitivity": {
+    "neutral_reference_weights": {
+      "existing_burden": "0.25",
+      "air_impact_proxy": "0.25",
+      "resident_impact": "0.25",
+      "land_conversion": "0.25"
+    },
+    "complete_case_population": 33980,
+    "baseline_top_50_regions": {
+      "KR-SGIS-11050": 29,
+      "KR-SGIS-11130": 20,
+      "KR-SGIS-31580": 1
+    },
+    "comparisons": [
+      {
+        "label": "equal-weights vs research CRITIC",
+        "spearman": "0.9221844066",
+        "top_10_overlap": [
+          0,
+          10
+        ],
+        "top_50_overlap": [
+          12,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-11050": 29,
+          "KR-SGIS-11130": 20,
+          "KR-SGIS-31580": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-31580": 37,
+          "KR-SGIS-11050": 6,
+          "KR-SGIS-11130": 5,
+          "KR-SGIS-31220": 2
+        }
+      },
+      {
+        "label": "+0.05 onto existing_burden",
+        "spearman": "0.9959561906",
+        "top_10_overlap": [
+          10,
+          10
+        ],
+        "top_50_overlap": [
+          49,
+          50
+        ]
+      },
+      {
+        "label": "+0.15 onto existing_burden",
+        "spearman": "0.9731050027",
+        "top_10_overlap": [
+          10,
+          10
+        ],
+        "top_50_overlap": [
+          49,
+          50
+        ]
+      },
+      {
+        "label": "+0.05 onto air_impact_proxy",
+        "spearman": "0.9936274290",
+        "top_10_overlap": [
+          9,
+          10
+        ],
+        "top_50_overlap": [
+          49,
+          50
+        ]
+      },
+      {
+        "label": "+0.15 onto air_impact_proxy",
+        "spearman": "0.9535005344",
+        "top_10_overlap": [
+          5,
+          10
+        ],
+        "top_50_overlap": [
+          44,
+          50
+        ]
+      },
+      {
+        "label": "+0.05 onto resident_impact",
+        "spearman": "0.9834696097",
+        "top_10_overlap": [
+          7,
+          10
+        ],
+        "top_50_overlap": [
+          41,
+          50
+        ]
+      },
+      {
+        "label": "+0.15 onto resident_impact",
+        "spearman": "0.8522975406",
+        "top_10_overlap": [
+          0,
+          10
+        ],
+        "top_50_overlap": [
+          1,
+          50
+        ]
+      },
+      {
+        "label": "+0.05 onto land_conversion",
+        "spearman": "0.9918684221",
+        "top_10_overlap": [
+          9,
+          10
+        ],
+        "top_50_overlap": [
+          48,
+          50
+        ]
+      },
+      {
+        "label": "+0.15 onto land_conversion",
+        "spearman": "0.9338400200",
+        "top_10_overlap": [
+          8,
+          10
+        ],
+        "top_50_overlap": [
+          44,
+          50
+        ]
+      }
+    ]
+  },
+  "critic": {
+    "label": "RESEARCH DIAGNOSTIC ONLY — NOT PRODUCTION WEIGHTS — NOT ACTIVATED",
+    "complete_case_population": 33980,
+    "distinct_value_counts": {
+      "existing_burden": 51,
+      "air_impact_proxy": 57,
+      "resident_impact": 33980,
+      "land_conversion": 28667
+    },
+    "constant_components": [],
+    "viable": true,
+    "criterion_order": [
+      "existing_burden",
+      "air_impact_proxy",
+      "resident_impact",
+      "land_conversion"
+    ],
+    "population_count": 33980,
+    "means": {
+      "existing_burden": "0.3328610009",
+      "air_impact_proxy": "0.3195077681",
+      "resident_impact": "0.4979482335",
+      "land_conversion": "0.2025555683"
+    },
+    "standard_deviations": {
+      "existing_burden": "0.2478450057",
+      "air_impact_proxy": "0.2428171354",
+      "resident_impact": "0.2825879389",
+      "land_conversion": "0.2491524413"
+    },
+    "correlation_matrix": {
+      "existing_burden": {
+        "existing_burden": "1.0000000000",
+        "air_impact_proxy": "0.5308787890",
+        "resident_impact": "-0.1544144508",
+        "land_conversion": "0.0899396662"
+      },
+      "air_impact_proxy": {
+        "existing_burden": "0.5308787890",
+        "air_impact_proxy": "1.0000000000",
+        "resident_impact": "-0.3850191390",
+        "land_conversion": "0.1615050782"
+      },
+      "resident_impact": {
+        "existing_burden": "-0.1544144508",
+        "air_impact_proxy": "-0.3850191390",
+        "resident_impact": "1.0000000000",
+        "land_conversion": "-0.4776490171"
+      },
+      "land_conversion": {
+        "existing_burden": "0.0899396662",
+        "air_impact_proxy": "0.1615050782",
+        "resident_impact": "-0.4776490171",
+        "land_conversion": "1.0000000000"
+      }
+    },
+    "information_values": {
+      "existing_burden": "0.6279391139",
+      "air_impact_proxy": "0.6538179833",
+      "resident_impact": "1.1351790942",
+      "land_conversion": "0.8038166706"
+    },
+    "weights": {
+      "existing_burden": "0.19496656",
+      "air_impact_proxy": "0.20300160",
+      "resident_impact": "0.35245768",
+      "land_conversion": "0.24957415"
+    },
+    "zero_variance_criteria": [],
+    "activation_status": "NOT ACTIVATED — no successor weight vector is approved"
+  },
+  "normalization": {
+    "component": "land_conversion",
+    "population": 33980,
+    "bounded_ratio": {
+      "observation_count": 33980,
+      "available_count": 33980,
+      "null_count": 0,
+      "zero_count": 3921,
+      "unique_count": 28667,
+      "min": "0.0000000000",
+      "p10": "0.0000000000",
+      "p25": "1.8234000000",
+      "median": "10.0987500000",
+      "p75": "28.6444500000",
+      "p90": "61.1274900000",
+      "max": "100.0000000000",
+      "mean": "20.2555568275",
+      "stdev": "24.9152441298",
+      "variance": "620.7693900457",
+      "skewness": "1.5160458765",
+      "warnings": []
+    },
+    "percentile_rank": {
+      "observation_count": 33980,
+      "available_count": 33980,
+      "null_count": 0,
+      "zero_count": 0,
+      "unique_count": 29976,
+      "min": "11.5307000000",
+      "p10": "11.5307000000",
+      "p25": "24.9999750000",
+      "median": "50.0000000000",
+      "p75": "75.0000250000",
+      "p90": "89.9999900000",
+      "max": "100.0000000000",
+      "mean": "50.6652593261",
+      "stdev": "27.8693535537",
+      "variance": "776.7008675038",
+      "skewness": "0.0941638152",
+      "warnings": []
+    },
+    "spearman_between_strategies": "0.9999988231",
+    "top_50_overlap": [
+      50,
+      50
+    ]
+  },
+  "partial_scoring_comparability": {
+    "existing_burden": {
+      "optional_component": "existing_burden",
+      "complete_case_units": 33980,
+      "units_missing_only_the_optional_component": 0,
+      "retained_component_means": {}
+    },
+    "air_impact_proxy": {
+      "optional_component": "air_impact_proxy",
+      "complete_case_units": 33980,
+      "units_missing_only_the_optional_component": 758,
+      "retained_component_means": {
+        "existing_burden": {
+          "complete_case_mean": "33.2861",
+          "missing_optional_mean": "42.2482",
+          "difference": "8.9621"
+        },
+        "resident_impact": {
+          "complete_case_mean": "49.7948",
+          "missing_optional_mean": "81.0999",
+          "difference": "31.3051"
+        },
+        "land_conversion": {
+          "complete_case_mean": "20.2556",
+          "missing_optional_mean": "9.4130",
+          "difference": "-10.8426"
+        }
+      }
+    },
+    "resident_impact": {
+      "optional_component": "resident_impact",
+      "complete_case_units": 33980,
+      "units_missing_only_the_optional_component": 0,
+      "retained_component_means": {}
+    },
+    "land_conversion": {
+      "optional_component": "land_conversion",
+      "complete_case_units": 33980,
+      "units_missing_only_the_optional_component": 4612,
+      "retained_component_means": {
+        "existing_burden": {
+          "complete_case_mean": "33.2861",
+          "missing_optional_mean": "56.6790",
+          "difference": "23.3929"
+        },
+        "air_impact_proxy": {
+          "complete_case_mean": "31.9508",
+          "missing_optional_mean": "29.8011",
+          "difference": "-2.1497"
+        },
+        "resident_impact": {
+          "complete_case_mean": "49.7948",
+          "missing_optional_mean": "53.8350",
+          "difference": "4.0402"
+        }
+      }
+    }
+  },
+  "floor_sensitivity": {
+    "baseline_floor_m": 500,
+    "complete_case_population": 33980,
+    "comparisons": [
+      {
+        "label": "500m vs 1000m floor (equal weights)",
+        "spearman": "0.9998949882",
+        "top_10_overlap": [
+          10,
+          10
+        ],
+        "top_50_overlap": [
+          50,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-11050": 29,
+          "KR-SGIS-11130": 20,
+          "KR-SGIS-31580": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-11050": 29,
+          "KR-SGIS-11130": 20,
+          "KR-SGIS-31580": 1
+        }
+      },
+      {
+        "label": "500m vs 2000m floor (equal weights)",
+        "spearman": "0.9994458718",
+        "top_10_overlap": [
+          9,
+          10
+        ],
+        "top_50_overlap": [
+          49,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-11050": 29,
+          "KR-SGIS-11130": 20,
+          "KR-SGIS-31580": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-11050": 29,
+          "KR-SGIS-11130": 20,
+          "KR-SGIS-31580": 1
+        }
+      },
+      {
+        "label": "500m vs 5000m floor (equal weights)",
+        "spearman": "0.9981548587",
+        "top_10_overlap": [
+          9,
+          10
+        ],
+        "top_50_overlap": [
+          49,
+          50
+        ],
+        "baseline_top_50_regions": {
+          "KR-SGIS-11050": 29,
+          "KR-SGIS-11130": 20,
+          "KR-SGIS-31580": 1
+        },
+        "variant_top_50_regions": {
+          "KR-SGIS-11050": 30,
+          "KR-SGIS-11130": 20
+        }
+      }
+    ]
+  }
+}

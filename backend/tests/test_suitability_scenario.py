@@ -13,7 +13,7 @@ from decimal import Decimal
 
 import pytest
 
-from waste_equity_backend.analysis.suitability import policy, scenario
+from waste_equity_backend.analysis.suitability import component_model, policy, scenario
 
 BASELINE = {"zoning": "0.35", "road": "0.25", "equity": "0.25", "demand": "0.15"}
 EQUAL = {"zoning": "0.25", "road": "0.25", "equity": "0.25", "demand": "0.25"}
@@ -277,3 +277,127 @@ def test_rank_delta_direction() -> None:
     # unavailable when either rank is None
     assert scenario.rank_delta(None, 5) is None
     assert scenario.rank_change_direction(None) is None
+
+
+# --------------------------------------------------------------------------- #
+# Component-model isolation
+# --------------------------------------------------------------------------- #
+#
+# Weight validation is the load-bearing safety property of the whole scenario path:
+# it is the only thing standing between a saved weight vector and a silent
+# cross-model recombination. These tests pin that it is strict, that it is relative
+# to the RUN's components rather than a module constant, and that a cross-model
+# submission is refused with its own code instead of being repaired.
+
+SUCCESSOR_ORDER = list(component_model.COMPONENT_ORDER_SUCCESSOR)
+SUCCESSOR_WEIGHTS = dict.fromkeys(SUCCESSOR_ORDER, "0.25")
+
+
+def test_validation_defaults_to_the_historical_components() -> None:
+    """Every existing caller meant the historical four, and still gets them."""
+
+    canonical = scenario.parse_and_validate_weights(BASELINE)
+    assert list(canonical) == ["zoning", "road", "equity", "demand"]
+
+
+def test_a_historical_scenario_is_valid_against_a_historical_run() -> None:
+    canonical = scenario.parse_and_validate_weights(BASELINE, policy.COMPONENTS)
+    assert canonical["zoning"] == Decimal("0.35000000")
+
+
+def test_a_successor_scenario_is_valid_against_a_successor_component_order() -> None:
+    canonical = scenario.parse_and_validate_weights(SUCCESSOR_WEIGHTS, SUCCESSOR_ORDER)
+    assert list(canonical) == SUCCESSOR_ORDER
+    assert sum(canonical.values()) == Decimal("1.00000000")
+
+
+def test_a_historical_scenario_against_a_successor_run_is_a_model_mismatch() -> None:
+    """Not INVALID_SCENARIO_WEIGHTS: the weights are fine, the run is a different
+    analytical model, and telling the user to "fix your weights" would nudge them
+    toward exactly the remapping this boundary forbids."""
+
+    with pytest.raises(scenario.ScenarioComponentModelMismatchError) as excinfo:
+        scenario.parse_and_validate_weights(BASELINE, SUCCESSOR_ORDER)
+    assert excinfo.value.error == "COMPONENT_MODEL_MISMATCH"
+    envelope = excinfo.value.as_envelope()
+    assert envelope["error"] == "COMPONENT_MODEL_MISMATCH"
+    assert (
+        envelope["fields"]["submitted_component_model"]
+        == component_model.COMPONENT_MODEL_HISTORICAL
+    )
+    assert envelope["fields"]["run_component_order"] == SUCCESSOR_ORDER
+
+
+def test_a_successor_scenario_against_a_historical_run_is_a_model_mismatch() -> None:
+    with pytest.raises(scenario.ScenarioComponentModelMismatchError) as excinfo:
+        scenario.parse_and_validate_weights(SUCCESSOR_WEIGHTS, policy.COMPONENTS)
+    assert (
+        excinfo.value.fields["submitted_component_model"]
+        == component_model.COMPONENT_MODEL_SUCCESSOR
+    )
+
+
+def test_a_model_mismatch_is_still_a_scenario_weight_error() -> None:
+    """Subclassing keeps every existing ``except`` clause (and the 422 mapping)
+    working, while giving the client a distinguishable code."""
+
+    assert issubclass(
+        scenario.ScenarioComponentModelMismatchError, scenario.ScenarioWeightError
+    )
+    with pytest.raises(scenario.ScenarioWeightError):
+        scenario.parse_and_validate_weights(SUCCESSOR_WEIGHTS, policy.COMPONENTS)
+
+
+def test_malformed_weights_stay_invalid_scenario_weights() -> None:
+    """A key set that is nobody's component model is a correctable input error."""
+
+    with pytest.raises(scenario.ScenarioWeightError) as excinfo:
+        scenario.parse_and_validate_weights({"a": "0.5", "b": "0.5"}, policy.COMPONENTS)
+    assert excinfo.value.error == "INVALID_SCENARIO_WEIGHTS"
+    assert type(excinfo.value) is scenario.ScenarioWeightError
+
+
+def test_a_partial_historical_vector_is_never_renormalized_into_validity() -> None:
+    """If this ever became "accept any subset and renormalize", every cross-model
+    rejection below would turn into a silent recombination."""
+
+    with pytest.raises(scenario.ScenarioWeightError) as excinfo:
+        scenario.parse_and_validate_weights({"zoning": "1.0"}, policy.COMPONENTS)
+    assert excinfo.value.error == "INVALID_SCENARIO_WEIGHTS"
+    assert excinfo.value.fields["missing"] == ["demand", "equity", "road"]
+
+
+def test_a_mixed_model_vector_is_refused() -> None:
+    mixed = {"zoning": "0.25", "road": "0.25", "existing_burden": "0.25", "resident_impact": "0.25"}
+    with pytest.raises(scenario.ScenarioWeightError) as excinfo:
+        scenario.parse_and_validate_weights(mixed, policy.COMPONENTS)
+    # Belongs to no single model, so it is malformed input, not a model mismatch.
+    assert excinfo.value.error == "INVALID_SCENARIO_WEIGHTS"
+
+
+def test_canonical_weight_strings_follow_the_supplied_component_order() -> None:
+    canonical = scenario.parse_and_validate_weights(SUCCESSOR_WEIGHTS, SUCCESSOR_ORDER)
+    assert list(scenario.canonical_weight_strings(canonical, SUCCESSOR_ORDER)) == SUCCESSOR_ORDER
+
+
+def test_the_historical_scenario_hash_is_unchanged_by_model_awareness() -> None:
+    """Making validation run-relative must not move a single existing hash.
+
+    Nothing about a producible scenario's weight model, hash payload, or
+    quantization has changed, so bumping the method version — and with it every
+    stored hash — would signal a contract change that has not happened. The bump,
+    together with putting the component model in the payload, belongs to the moment
+    successor scenarios become producible.
+    """
+
+    weights = scenario.parse_and_validate_weights(BASELINE)
+    assert scenario.canonical_hash_payload(7, weights) == (
+        '{"method_version":"user-weight-scenario-v1","run_id":7,"weights":'
+        '{"zoning":"0.35000000","road":"0.25000000","equity":"0.25000000",'
+        '"demand":"0.15000000"}}'
+    )
+    assert scenario.scenario_hash(7, weights) == (
+        __import__("hashlib")
+        .sha256(scenario.canonical_hash_payload(7, weights).encode("utf-8"))
+        .hexdigest()
+    )

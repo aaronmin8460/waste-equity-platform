@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+import random
+import time
+from decimal import ROUND_HALF_EVEN, Decimal
 
 import pytest
 
@@ -148,3 +150,119 @@ def test_policy_snapshot_serializable() -> None:
     assert set(snap["weight_profiles"]) == set(policy.WEIGHT_PROFILES)
     assert "UD801" in snap["hard_exclusion_codes"]
     assert "not legal eligibility" in snap["disclaimer"]
+
+
+# --------------------------------------------------------------------------- #
+# B18 — percentile_ranks is O(n log n), and provably the same function
+#
+# The historical definition ranks 79 SIGUNGU; a candidate-level successor
+# component ranks 47,893 cells, where the original per-key linear scan cost 267
+# seconds per call. The implementation was replaced with a bisect over the sorted
+# values. Because this function feeds the historical equity/demand scores on every
+# stored run, "faster" is only acceptable if it is also *identical* — so the
+# original body is kept here verbatim as the oracle and the two are compared
+# directly rather than against hand-written expectations.
+# --------------------------------------------------------------------------- #
+
+
+def _original_percentile_ranks(values: dict[str, Decimal]) -> dict[str, Decimal]:
+    """The pre-B18 O(n²) body, verbatim. The oracle, not a reimplementation."""
+
+    n = len(values)
+    if n == 0:
+        return {}
+    if n == 1:
+        return {k: Decimal("0.5") for k in values}
+    ordered = sorted(values.values())
+    ranks: dict[str, Decimal] = {}
+    denom = Decimal(n - 1)
+    for key, v in values.items():
+        less = sum(1 for other in ordered if other < v)
+        ranks[key] = (Decimal(less) / denom).quantize(Decimal("0.000001"), rounding=ROUND_HALF_EVEN)
+    return ranks
+
+
+@pytest.mark.parametrize(
+    ("label", "values"),
+    [
+        ("empty", {}),
+        ("singleton", {"a": Decimal("42")}),
+        ("two distinct", {"a": Decimal("1"), "b": Decimal("2")}),
+        ("all identical", {k: Decimal("5") for k in "abcdef"}),
+        ("two-way tie at the bottom", {"a": Decimal("1"), "b": Decimal("1"), "c": Decimal("9")}),
+        ("two-way tie at the top", {"a": Decimal("1"), "b": Decimal("9"), "c": Decimal("9")}),
+        ("negatives", {"a": Decimal("-5"), "b": Decimal("0"), "c": Decimal("5")}),
+        ("all negative", {"a": Decimal("-5"), "b": Decimal("-3"), "c": Decimal("-1")}),
+        (
+            # Equal numeric value, different Decimal exponents. Both bisect and the
+            # original scan compare numerically, and Decimal hashes by value, so the
+            # per-value cache must not split these into different ranks.
+            "mixed exponents of equal values",
+            {"a": Decimal("1.0"), "b": Decimal("1.00"), "c": Decimal("1"), "d": Decimal("2")},
+        ),
+        (
+            "high precision neighbours",
+            {
+                "a": Decimal("0.1000000000000000001"),
+                "b": Decimal("0.1000000000000000002"),
+                "c": Decimal("0.1000000000000000003"),
+            },
+        ),
+        (
+            # A rank that lands mid-quantum, exercising ROUND_HALF_EVEN at 6 dp.
+            "seven values forcing a repeating rank",
+            {f"k{i}": Decimal(i) for i in range(7)},
+        ),
+        ("zeros and positives", {"a": Decimal("0"), "b": Decimal("0"), "c": Decimal("0.0001")}),
+    ],
+)
+def test_percentile_ranks_is_identical_to_the_original_implementation(
+    label: str, values: dict[str, Decimal]
+) -> None:
+    assert policy.percentile_ranks(values) == _original_percentile_ranks(values), label
+
+
+def test_percentile_ranks_matches_the_original_on_a_large_tied_population() -> None:
+    # Deterministic pseudo-random with heavy tie mass — the shape the real
+    # components actually have — at a size the original can still be run at.
+    rng = random.Random(20260817)
+    values = {f"k{i}": Decimal(rng.randint(0, 60)) / Decimal(7) for i in range(1500)}
+
+    assert policy.percentile_ranks(values) == _original_percentile_ranks(values)
+
+
+def test_percentile_ranks_preserves_the_documented_properties() -> None:
+    values = {"lo": Decimal("1"), "mid": Decimal("5"), "hi": Decimal("9")}
+    ranks = policy.percentile_ranks(values)
+
+    assert ranks["lo"] == Decimal("0.000000")
+    assert ranks["hi"] == Decimal("1.000000")
+    assert all(Decimal(0) <= r <= Decimal(1) for r in ranks.values())
+    # Ties share a rank; a key with no value is absent rather than zero-filled.
+    assert policy.percentile_ranks({"a": Decimal("3"), "b": Decimal("3")}) == {
+        "a": Decimal("0.000000"),
+        "b": Decimal("0.000000"),
+    }
+    assert "missing" not in policy.percentile_ranks(values)
+
+
+def test_percentile_ranks_ignores_insertion_order() -> None:
+    forward = {"a": Decimal("3"), "b": Decimal("1"), "c": Decimal("2")}
+    reverse = {"c": Decimal("2"), "b": Decimal("1"), "a": Decimal("3")}
+
+    assert policy.percentile_ranks(forward) == policy.percentile_ranks(reverse)
+
+
+def test_percentile_ranks_is_no_longer_quadratic() -> None:
+    # A behavioural guard on the complexity itself: the original needed ~267 s at
+    # 47,893 values. Doubling n must not quadruple the work. Generous bounds keep
+    # this from flaking on a loaded machine while still failing an O(n²) body,
+    # which would need minutes here rather than milliseconds.
+    values = {f"k{i}": Decimal(i % 5000) for i in range(40_000)}
+
+    started = time.perf_counter()
+    ranks = policy.percentile_ranks(values)
+    elapsed = time.perf_counter() - started
+
+    assert len(ranks) == 40_000
+    assert elapsed < 30, f"percentile_ranks took {elapsed:.1f}s at n=40,000"

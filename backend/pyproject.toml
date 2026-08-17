@@ -24,6 +24,11 @@ dev = [
   "httpx>=0.27",
   "ruff>=0.5",
   "mypy>=1.10",
+  # Decodes the MVT bodies the tile endpoints return. Nine tests reach for it via
+  # `pytest.importorskip`, so leaving it undeclared did not fail anything — it just
+  # silently dropped 23 tile assertions from every environment installed the
+  # documented way. The production image installs `.`, never `.[dev]`.
+  "mapbox-vector-tile>=2.0",
 ]
 
 [tool.setuptools.packages.find]

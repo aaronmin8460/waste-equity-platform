@@ -42,7 +42,7 @@ from ..per_capita import (
     ZeroPopulationError,
     per_capita_kg_per_year,
 )
-from . import critic, policy
+from . import component_model, critic, policy
 
 ACCOUNTING_BASIS_ORIGIN_TREATMENT = "ORIGIN_BASED_TREATMENT_OUTCOME"
 DEMAND_WASTE_STREAM = "HOUSEHOLD"
@@ -225,7 +225,11 @@ def _resolve_inputs(session: Session, reference_year: int) -> ResolvedInputs:
     )
 
 
-def _analysis_signature(inputs: ResolvedInputs, profile: str) -> str:
+def _analysis_signature(
+    inputs: ResolvedInputs,
+    profile: str,
+    component_model_version: str = component_model.COMPONENT_MODEL_HISTORICAL,
+) -> str:
     # The derived CRITIC weight vector is intentionally NOT part of the signature:
     # it is a deterministic function of the signed inputs (data versions, reference
     # periods, grid) and the CRITIC method version, so signing those inputs +
@@ -250,6 +254,14 @@ def _analysis_signature(inputs: ResolvedInputs, profile: str) -> str:
         "waste_reference_period": inputs.waste_reference_period,
         "facility_reference_period": inputs.facility_reference_period,
         "weight_profile": profile,
+        # Component-model identity is a *signed* input, so the signature never has
+        # to rely on the convention that policy_version and the component model
+        # always move together. It contributes nothing for the historical model,
+        # which keeps every historical signature byte-identical: the signature is
+        # the run's idempotency key, and changing it unconditionally would make an
+        # identical historical rebuild write a duplicate run instead of reusing the
+        # existing succeeded one. Stored signatures are never recomputed.
+        **component_model.signature_identity(component_model_version),
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
@@ -890,6 +902,12 @@ def _stability_definition(eligible_count: int, cutoff_rank: int) -> dict[str, An
     return {
         "method": "weight_sensitivity_top_fraction",
         "method_version": policy.STABILITY_METHOD_VERSION,
+        # A stability class is top-fraction membership across ranks computed from a
+        # particular component vector, so the stored classification records which
+        # component model it describes. The *method* is unchanged by a component
+        # model change (same three profiles, same 0.10 fraction, same thresholds),
+        # so STABILITY_METHOD_VERSION is deliberately not bumped.
+        "component_model_version": component_model.COMPONENT_MODEL_HISTORICAL,
         "compared_profiles": list(policy.STABILITY_PROFILES),
         "top_fraction": str(policy.STABILITY_TOP_FRACTION),
         "eligible_candidate_count": eligible_count,
@@ -993,6 +1011,17 @@ def _apply_critic_and_stability(
     weight_derivation["reference_year"] = reference_year
     weight_derivation["policy_version"] = policy.POLICY_VERSION
     weight_derivation["derivation_version"] = policy.DERIVATION_VERSION
+    # A CRITIC vector is a statement about *these* criteria in *this* run's data, so
+    # it records which component model those criteria belong to. The guard refuses to
+    # stamp a vector whose criterion order is not the model's component order — the
+    # failure mode where an engine scores one component matrix while CRITIC computes
+    # over another.
+    component_model.assert_criterion_order_matches_model(
+        component_model.COMPONENT_MODEL_HISTORICAL,
+        weight_derivation.get("criterion_order"),
+        context="CRITIC weight derivation",
+    )
+    weight_derivation["component_model_version"] = component_model.COMPONENT_MODEL_HISTORICAL
 
     run_weight_profiles: dict[str, dict[str, str]] = {
         p: {c: str(w) for c, w in weights.items()}
@@ -1320,15 +1349,48 @@ def run_suitability_build(
         session.close()
 
 
+def _policy_snapshot_with_component_model(
+    component_model_version: str, component_order: list[str]
+) -> dict[str, Any]:
+    """The policy snapshot, stamped with the component model that produced the run.
+
+    ``policy_snapshot`` exists so a run stays interpretable without the code, and
+    "which components produced this, in which order" is the first-order question a
+    reader asks. The snapshot records both alongside the policy versions; the
+    per-component weights it already carries recover the component *set* but not
+    the *order*, because a JSON object does not preserve key order.
+
+    Stamped here rather than inside ``policy.policy_snapshot`` because the component
+    -model registry imports the policy module, so the reverse import would be a
+    cycle — the same constraint that keeps ``critic.CRITERION_ORDER`` a literal.
+    """
+
+    snapshot = policy.policy_snapshot()
+    snapshot["component_model_version"] = component_model_version
+    snapshot["component_order"] = list(component_order)
+    return snapshot
+
+
 def _new_run_row(
     inputs: ResolvedInputs, signature: str, profile: str, now: datetime.datetime
 ) -> Any:
     from ...models import SuitabilityAnalysisRun
 
+    # The engine builds the historical component model. Both identity fields are
+    # written explicitly rather than left to the column defaults, so the run row
+    # states its model as a fact the writer asserted; a writer for any other
+    # component model must assert its own, and a mismatched pair is refused by
+    # component_model.validate_run_model_identity.
+    component_model_version, component_order = component_model.validate_run_model_identity(
+        component_model.COMPONENT_MODEL_HISTORICAL,
+        list(component_model.COMPONENT_ORDER_HISTORICAL),
+    )
     return SuitabilityAnalysisRun(
         derivation_version=policy.DERIVATION_VERSION,
         policy_version=policy.POLICY_VERSION,
         candidate_grid_version=policy.CANDIDATE_GRID_VERSION,
+        component_model_version=component_model_version,
+        component_order=component_order,
         reference_year=inputs.reference_year,
         boundary_vintage=inputs.boundary_vintage,
         weight_profile=profile,
@@ -1341,7 +1403,9 @@ def _new_run_row(
             "waste_reference_period": inputs.waste_reference_period,
             "facility_reference_period": inputs.facility_reference_period,
         },
-        policy_snapshot=policy.policy_snapshot(),
+        policy_snapshot=_policy_snapshot_with_component_model(
+            component_model_version, component_order
+        ),
         # RUNNING row is initialized with the fixed static profiles only; the
         # actual run weight_profiles (incl. the run-specific critic vector) and the
         # derivation/stability metadata are written by _finalize_run before the run

@@ -143,12 +143,29 @@ def _table_definition(engine: Engine, table: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def test_single_alembic_head_is_0021() -> None:
+def test_the_alembic_chain_has_a_single_head_and_0021_sits_in_it() -> None:
+    """The migration chain is linear, and 0021 is still where it was.
+
+    Two separate invariants, kept separate on purpose. The load-bearing one is that
+    there is exactly **one** head: a forked chain is what actually breaks a
+    deployment. Which revision that head happens to be is not an invariant — every
+    additive migration legitimately moves it — so pinning the head's *value* here
+    made this test fail on the next release rather than on a real defect, and it
+    could only be noticed when a PostGIS database was available to run it.
+
+    This is the same correction ``docs/PRE_DEPLOYMENT_QA.md`` records for the
+    identical anti-pattern in the population-monthly file, where a hard-coded
+    ``0014`` went unnoticed until Docker was available again.
+
+    What this file is actually entitled to assert is that **its own** migration,
+    0021, is unchanged and still chains from 0020. That is asserted below and is
+    unaffected by anything appended after it.
+    """
+
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(_alembic_config())
-    heads = script.get_heads()
-    assert list(heads) == ["0021"]
+    assert len(script.get_heads()) == 1, f"forked migration chain: {script.get_heads()}"
     revision = script.get_revision("0021")
     assert revision.down_revision == "0020"
 
