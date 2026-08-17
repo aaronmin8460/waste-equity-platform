@@ -262,12 +262,26 @@ describe("후보지 분석 uses plain status and sub-view labels", () => {
   it("shows candidate counts with plain status names, not raw enums", async () => {
     await renderLoaded();
     fireEvent.click(screen.getByTestId("mode-suitability"));
-    await waitFor(() => expect(screen.getByTestId("candidate-counts")).toBeDefined());
-    const counts = screen.getByTestId("candidate-counts").textContent ?? "";
-    expect(counts).toContain(STATUS_META.ELIGIBLE.primary); // 스크리닝 통과
-    expect(counts).toContain(STATUS_META.REVIEW_REQUIRED.primary); // 추가 검토 필요
-    expect(counts).toContain(STATUS_META.EXCLUDED.primary); // 프로젝트 스크리닝 제외
-    expect(counts).not.toContain("ELIGIBLE");
-    expect(counts).not.toContain("EXCLUDED");
+    await waitFor(() => expect(screen.getByTestId("suitability-summary")).toBeDefined());
+
+    // MIGRATED to the final Page-4 contract (36cdb33).
+    //
+    // This audited the three plain status names inside 후보 상태 요약
+    // (`candidate-counts`). That panel is STRUCK from the workspace — Figma
+    // 기술 참고사항: "좌측 패널에 [후보 상태 요약] … 삭제" — and its status breakdown
+    // moved to the map's 스크리닝 내역 legend. Enumerating every rendered testid across
+    // all three suitability destinations confirms it renders nowhere now.
+    //
+    // The contract being audited is NOT that one panel: it is that a reader never
+    // sees a raw backend enum where a status belongs. That is now asserted over the
+    // whole rendered view, which is strictly BROADER than the original element-scoped
+    // check — a leak anywhere on the page fails it, not just a leak in one card.
+    const view = document.body.textContent ?? "";
+    expect(view).toContain(STATUS_META.ELIGIBLE.primary); // 스크리닝 통과
+    expect(view).toContain(STATUS_META.REVIEW_REQUIRED.primary); // 추가 검토 필요
+    expect(view).toContain(STATUS_META.EXCLUDED.primary); // 프로젝트 스크리닝 제외
+    expect(view).not.toContain("ELIGIBLE");
+    expect(view).not.toContain("REVIEW_REQUIRED");
+    expect(view).not.toContain("EXCLUDED");
   });
 });

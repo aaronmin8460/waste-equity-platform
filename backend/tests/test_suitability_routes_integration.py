@@ -841,6 +841,15 @@ def seeded_successor_shaped(pg_session: Session) -> dict[str, int]:
     )
     pg_session.add(run)
     pg_session.flush()
+    # FAITHFUL TO THE REAL WRITE RULE. ``profile_totals``/``profile_ranks`` are the
+    # HISTORICAL model's per-profile storage; a successor run has one approved profile
+    # and stores rank/score in the first-class ``rank``/``total_score`` columns,
+    # leaving both JSONB maps EMPTY (see successor.runtime._persist_candidates).
+    #
+    # This fixture used to seed both, which made it strictly more generous than any
+    # real successor run — and that is precisely why four endpoints reading only the
+    # JSONB path passed their tests while returning a null rank, a null score, an
+    # unstyled tile and an empty ranking against real successor data.
     candidate = _candidate(
         run.id,
         "capital-grid-500m-v1:9_9",
@@ -849,8 +858,10 @@ def seeded_successor_shaped(pg_session: Session) -> dict[str, int]:
         rank=1,
         total_score=Decimal("51.6250"),
         component_scores=SUCCESSOR_SCORES,
-        profile_totals={"baseline": "51.6250"},
-        profile_ranks={"baseline": 1},
+        profile_totals={},
+        profile_ranks={},
+        stability_class="STABLE",
+        stable_count=4,
     )
     pg_session.add(candidate)
     pg_session.flush()
@@ -888,6 +899,45 @@ def test_a_successor_shaped_run_serves_component_scores_and_null_legacy_fields(
     for legacy in ("zoning_score", "road_score", "equity_score", "demand_score"):
         assert legacy in props
         assert props[legacy] is None
+
+
+def test_a_successor_run_serves_its_rank_and_score_from_its_own_storage(
+    pg_client: TestClient, seeded_successor_shaped: dict[str, int]
+) -> None:
+    """Rank and score must come from the storage THIS model uses.
+
+    A successor run leaves ``profile_ranks``/``profile_totals`` empty, so any path
+    that reads only the historical JSONB maps serves a null rank and a null score
+    beside fully populated component scores — a candidate that looks unranked and
+    unscored while the counts beside it say otherwise. Four separate endpoints had
+    this defect. Every one of them is asserted here.
+    """
+
+    run = seeded_successor_shaped["run"]
+
+    # 1. The candidate LIST.
+    listing = pg_client.get(f"/api/v1/suitability/candidates?run_id={run}").json()
+    props = listing["features"][0]["properties"]
+    assert props["rank"] == 1
+    assert props["total_score"] == "51.6250"
+
+    # 2. The candidate DETAIL.
+    detail = pg_client.get(
+        f"/api/v1/suitability/candidates/{seeded_successor_shaped['candidate']}"
+    ).json()
+    assert detail["rank"] == 1
+    assert detail["total_score"] == "51.6250"
+
+    # 3. The summary's PRIMARY ranking, and 4. its stable short-list. Both selected
+    #    on the historical rank path before; both returned zero rows.
+    summary = pg_client.get(f"/api/v1/suitability/summary?run_id={run}").json()
+    assert len(summary["top_candidates"]) == 1
+    assert summary["top_candidates"][0]["rank"] == 1
+    assert summary["top_candidates"][0]["total_score"] == "51.6250"
+    # STABLE is tested by CLASS, not by a count whose denominator is model-specific.
+    assert len(summary["top_stable_candidates"]) == 1
+    assert summary["top_stable_candidates"][0]["stability_class"] == "STABLE"
+    assert summary["top_stable_candidates"][0]["stable_count"] == 4
 
 
 def test_a_successor_shaped_candidate_detail_keeps_the_two_shapes_apart(

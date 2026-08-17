@@ -29,7 +29,6 @@
 
 import type { CandidateDetail, SuitabilityProfile } from "../../lib/api";
 import {
-  COMPONENT_META,
   COMPONENT_ORDER,
   accountingBasisLabel,
   codeWithName,
@@ -37,7 +36,12 @@ import {
   statusExplanation,
   statusLabel,
 } from "../../lib/glossary";
-import { classifyEquityRaw, weightPercent } from "../../lib/suitability";
+import { classifyEquityRaw, stabilityTotalForModel, weightPercent } from "../../lib/suitability";
+import {
+  V3_COMPONENT_META,
+  V3_COMPONENT_ORDER,
+  isSuccessorRun,
+} from "../../lib/suitabilityV3";
 import LandCoverCellPanel from "../LandCoverCellPanel";
 import EmptyState from "../ui/EmptyState";
 import SectionCard from "../ui/SectionCard";
@@ -62,13 +66,34 @@ export interface SuitabilityCandidateSummaryProps {
   nested?: boolean;
 }
 
-/** Served component scores in the shared Z·R·E·D order. `null` stays `null`. */
-function componentScores(detail: CandidateDetail): {
-  component: (typeof COMPONENT_ORDER)[number];
+/** One row of the served component table, whichever model produced the run. */
+interface ComponentScoreRow {
+  component: string;
   label: string;
   score: string | null;
   weight: string;
-}[] {
+}
+
+/**
+ * Served component scores for THIS candidate's component model. `null` stays `null`.
+ *
+ * MODEL-AWARE. This read the four legacy `*_score` fields unconditionally, which on
+ * a successor run meant four Z·R·E·D labels with `-` in every score cell — one
+ * model's component names over another model's run, while the successor scores the
+ * run actually carries sat unread in `component_scores`. That is the exact
+ * mislabelling the component-model boundary exists to prevent, and it is worse than
+ * a blank panel because the labels look authoritative.
+ */
+function componentScores(detail: CandidateDetail): ComponentScoreRow[] {
+  if (isSuccessorRun(detail.component_model_version)) {
+    const served = detail.component_scores ?? {};
+    return V3_COMPONENT_ORDER.map((component) => ({
+      component,
+      label: V3_COMPONENT_META[component].label,
+      score: served[component] ?? null,
+      weight: weightPercent(detail.weights[component]),
+    }));
+  }
   const scores: Record<(typeof COMPONENT_ORDER)[number], string | null> = {
     zoning: detail.zoning_score,
     road: detail.road_score,
@@ -205,7 +230,10 @@ export default function SuitabilityCandidateSummary({
               <tbody>
                 {componentScores(detail).map((row) => (
                   <tr key={row.component} data-testid={`candidate-component-${row.component}`}>
-                    <td className="py-0.5">{COMPONENT_META[row.component].primary}</td>
+                    {/* The row already carries the label for ITS model, so the
+                        historical COMPONENT_META lookup is not applied to a
+                        successor component name. */}
+                    <td className="py-0.5">{row.label}</td>
                     <td className="py-0.5 text-right tabular-nums text-ink">
                       {row.score ?? "-"}
                     </td>
@@ -305,6 +333,7 @@ export default function SuitabilityCandidateSummary({
                   <StabilityBadge
                     stabilityClass={String(detail.stability_class)}
                     stableCount={detail.stable_count}
+                    stabilityTotal={stabilityTotalForModel(detail.component_model_version)}
                   />
                 </p>
                 <ul className="mt-0.5 pl-2">

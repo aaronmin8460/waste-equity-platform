@@ -300,8 +300,20 @@ describe("suitability map uses vector tiles, not a limited GeoJSON slice", () =>
     expect(screen.queryByTestId("candidate-viewport-count")).toBeNull();
     expect(document.body.textContent).not.toContain("뷰포트 제한");
 
-    // The complete latest-run totals (from the summary) are shown.
-    expect(screen.getByTestId("candidate-counts").textContent).toContain("47,893");
+    // MIGRATED to the final Page-4 contract (36cdb33).
+    //
+    // This previously also read the whole-run total out of 후보 상태 요약
+    // (`candidate-counts`). That panel is deliberately STRUCK from the 후보지 심층
+    // 분석 workspace — Figma 기술 참고사항: "좌측 패널에 [후보 상태 요약] … 삭제" — and
+    // its status breakdown moved to the map's own 스크리닝 내역 legend, so there is no
+    // longer a whole-run total rendered in THIS view to read.
+    //
+    // Nothing is weakened by dropping that one read: the contract this test exists
+    // to protect is "the reader is not shown a viewport-limited subset", and it is
+    // still asserted three independent ways above — the note says 전체 후보 구역 and
+    // 전체 자료, `candidate-viewport-count` is absent, and the string 뷰포트 제한 does
+    // not appear anywhere in the document. The whole-run total itself is covered
+    // where it still renders, by terminology.audit.test.tsx.
   });
 
   it("never calls the limited candidate GeoJSON endpoint for map rendering", async () => {

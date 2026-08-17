@@ -6,7 +6,10 @@ import {
   isDegenerateBounds,
   namedWeightRows,
   namedWeights,
+  HISTORICAL_STABILITY_TOTAL,
+  SUCCESSOR_STABILITY_TOTAL,
   stabilityBadgeLabel,
+  stabilityTotalForModel,
   topCandidateCellLabel,
   weightPercent,
 } from "./suitability";
@@ -148,6 +151,45 @@ describe("stabilityBadgeLabel (text-first stability badges)", () => {
     expect(stabilityBadgeLabel("STABLE", null)).toBeNull();
     expect(stabilityBadgeLabel(null, 3)).toBeNull();
     expect(stabilityBadgeLabel("UNKNOWN", 3)).toBeNull();
+  });
+
+  it("states the SUCCESSOR model's denominator, not the historical three", () => {
+    // The denominator is the number of comparisons the class came from, and it
+    // differs by component model: 3 compared weight profiles historically, 4
+    // symmetric perturbations under the successor model. Hardcoding 3 rendered a
+    // factually wrong count on every successor run — STABLE is 4/4 there.
+    const four = SUCCESSOR_STABILITY_TOTAL;
+    expect(stabilityBadgeLabel("STABLE", 4, four)).toBe("안정 후보 4/4");
+    expect(stabilityBadgeLabel("WEIGHT_SENSITIVE", 1, four)).toBe("가중치 민감 0–1/4");
+    // The successor CONDITIONAL band spans two values (2 or 3 of 4), so it is a
+    // range: a single number would be wrong half the time.
+    expect(stabilityBadgeLabel("CONDITIONALLY_STABLE", 2, four)).toBe("조건부 안정 2–3/4");
+    expect(stabilityBadgeLabel("CONDITIONALLY_STABLE", 3, four)).toBe("조건부 안정 2–3/4");
+  });
+
+  it("defaults to the historical denominator so existing call sites are unchanged", () => {
+    expect(stabilityBadgeLabel("STABLE", 3)).toBe(
+      stabilityBadgeLabel("STABLE", 3, HISTORICAL_STABILITY_TOTAL),
+    );
+  });
+});
+
+describe("stabilityTotalForModel", () => {
+  it("maps each component model to the comparisons its class came from", () => {
+    expect(stabilityTotalForModel("suitability-components-successor-v1")).toBe(
+      SUCCESSOR_STABILITY_TOTAL,
+    );
+    expect(stabilityTotalForModel("suitability-components-zred-v1")).toBe(
+      HISTORICAL_STABILITY_TOTAL,
+    );
+  });
+
+  it("treats an absent or unknown model as historical, never as successor", () => {
+    // A pre-contract backend serves no model. Guessing "successor" there would
+    // relabel a historical run's stability with the wrong denominator.
+    expect(stabilityTotalForModel(undefined)).toBe(HISTORICAL_STABILITY_TOTAL);
+    expect(stabilityTotalForModel(null)).toBe(HISTORICAL_STABILITY_TOTAL);
+    expect(stabilityTotalForModel("something-else-v9")).toBe(HISTORICAL_STABILITY_TOTAL);
   });
 });
 

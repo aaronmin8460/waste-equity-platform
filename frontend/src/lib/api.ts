@@ -660,6 +660,14 @@ export interface SuitabilityRun {
 
 export interface SuitabilitySummary {
   run_id: number;
+  /**
+   * THE RUN'S own component-model identity, served on this shape too. Optional for a
+   * pre-contract backend; `undefined` is treated as historical, never as successor.
+   * Needed here because the stability class's denominator depends on the model (3
+   * compared profiles historically, 4 perturbations under the successor model).
+   */
+  component_model_version?: string;
+  component_order?: string[];
   reference_year: number;
   policy_version: string;
   derivation_version: string;
@@ -723,6 +731,14 @@ export interface CandidateFeature {
 
 export interface SuitabilityCandidateCollection {
   type: "FeatureCollection";
+  /**
+   * THE RUN'S own component-model identity, served on this shape too. Optional for a
+   * pre-contract backend; `undefined` is treated as historical, never as successor.
+   * Needed here because the stability class's denominator depends on the model (3
+   * compared profiles historically, 4 perturbations under the successor model).
+   */
+  component_model_version?: string;
+  component_order?: string[];
   indicator: string;
   derivation_version: string;
   policy_version: string;

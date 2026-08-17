@@ -161,7 +161,36 @@ def _tile_sql(component_model_version: str) -> str:
     map styles only on ``score`` / ``status`` / ``stable_count`` /
     ``sigungu_region_code``, never on a component score, so component properties are
     inspection payload and adding model-specific ones cannot change rendering.
+
+    ``rank``/``score``/``provisional_score`` come from the storage this model uses.
+    The historical model keeps per-profile values in ``profile_ranks`` /
+    ``profile_totals``; a successor run has one approved profile and stores its rank
+    and score in the first-class ``rank`` / ``total_score`` columns, leaving the JSONB
+    maps empty. Since the map STYLES on ``score``, reading the JSONB path for a
+    successor run emitted a NULL score for every cell — an unstyled grid, not a
+    cosmetic difference. ``provisional_score`` stays historical-only: a successor run
+    scores only its ranking population, so there is no provisional value to offer and
+    none is invented.
     """
+
+    if component_model.uses_legacy_score_columns(component_model_version):
+        rank_expr = "(c.profile_ranks ->> :profile)::int AS rank"
+        score_expr = (
+            "CASE WHEN c.status = 'ELIGIBLE'\n"
+            "             THEN (c.profile_totals ->> :profile)::double precision END AS score"
+        )
+        provisional_expr = (
+            "CASE WHEN c.status = 'REVIEW_REQUIRED'\n"
+            "             THEN (c.profile_totals ->> :profile)::double precision END "
+            "AS provisional_score"
+        )
+    else:
+        rank_expr = "c.rank AS rank"
+        score_expr = (
+            "CASE WHEN c.status = 'ELIGIBLE'\n"
+            "             THEN c.total_score::double precision END AS score"
+        )
+        provisional_expr = "NULL::double precision AS provisional_score"
 
     return f"""
 WITH tile AS (
@@ -174,11 +203,9 @@ WITH tile AS (
         c.id AS candidate_id,
         c.candidate_key AS candidate_key,
         c.status AS status,
-        (c.profile_ranks ->> :profile)::int AS rank,
-        CASE WHEN c.status = 'ELIGIBLE'
-             THEN (c.profile_totals ->> :profile)::double precision END AS score,
-        CASE WHEN c.status = 'REVIEW_REQUIRED'
-             THEN (c.profile_totals ->> :profile)::double precision END AS provisional_score,
+        {rank_expr},
+        {score_expr},
+        {provisional_expr},
 {component_model.tile_component_columns_sql(component_model_version)},
         c.stable_count AS stable_count,
         c.stability_class AS stability_class,
@@ -965,18 +992,25 @@ def list_candidates(
     # lowest-scoring one. candidate_key is the deterministic tie-break, so paging is
     # stable in both directions (ranks are already unique per profile, so this only
     # orders the unranked tail).
+    #
+    # MODEL-AWARE. `profile_ranks`/`profile_totals` are the HISTORICAL model's
+    # per-profile storage and are `{}` on a successor run, which stores its single
+    # approved profile's rank in the first-class `rank` column and its score in
+    # `total_score`. Ordering or reading a successor run through the JSONB path
+    # yields NULL for every row, which presented the whole successor grid as
+    # unranked and unscored.
+    legacy_rank_storage = component_model.uses_legacy_score_columns(run_model_version)
     rank_direction = "ASC" if sort == "score_desc" else "DESC"
-    order = (
-        f"ORDER BY (profile_ranks->>:profile)::int {rank_direction}, candidate_key ASC"
-        if top is not None
-        else f"ORDER BY rank {rank_direction} NULLS LAST, candidate_key ASC"
-    )
+    if top is not None and legacy_rank_storage:
+        order = f"ORDER BY (profile_ranks->>:profile)::int {rank_direction}, candidate_key ASC"
+    else:
+        order = f"ORDER BY rank {rank_direction} NULLS LAST, candidate_key ASC"
     params.update({"limit": effective_limit, "offset": offset})
     rows = (
         session.execute(
             text(
                 f"""
-                SELECT id, candidate_key, status, rank,
+                SELECT id, candidate_key, status, rank, total_score::text AS run_total,
                        (profile_ranks->>:profile)::int AS profile_rank,
                        profile_totals->>:profile AS profile_total,
                        zoning_score, road_score, equity_score, demand_score,
@@ -1009,8 +1043,14 @@ def list_candidates(
             )
         is_excluded = r["status"] == "EXCLUDED"
         is_review = r["status"] == "REVIEW_REQUIRED"
-        total = None if is_review or is_excluded else r["profile_total"]
-        provisional = r["profile_total"] if is_review else None
+        # Read rank and score from the storage THIS run's component model uses.
+        row_rank = r["profile_rank"] if legacy_rank_storage else r["rank"]
+        row_total = r["profile_total"] if legacy_rank_storage else r["run_total"]
+        total = None if is_review or is_excluded else row_total
+        # A successor run scores only its ranking population, so an unranked
+        # candidate has no provisional score to offer either — provisional stays a
+        # historical concept and is left None rather than invented.
+        provisional = r["profile_total"] if (is_review and legacy_rank_storage) else None
         features.append(
             CandidateFeature(
                 geometry=json.loads(r["geojson"]),
@@ -1020,7 +1060,7 @@ def list_candidates(
                     status=r["status"],
                     profile=profile,
                     is_excluded=is_excluded,
-                    rank=r["profile_rank"],
+                    rank=row_rank,
                     total_score=total,
                     provisional_score=provisional,
                     **component_model.legacy_score_fields(run_model_version, r),
@@ -1177,9 +1217,24 @@ def candidate_detail(
     is_review = row["status"] == "REVIEW_REQUIRED"
     profile_totals = row["profile_totals"] or {}
     profile_ranks = row["profile_ranks"] or {}
-    value = profile_totals.get(profile)
+    # MODEL-AWARE, same rule as the list and tile paths: the historical model keeps
+    # per-profile rank/score in these JSONB maps, while a successor run has one
+    # approved profile and stores rank/score in the first-class columns, leaving the
+    # maps empty. Reading only the maps served a successor candidate's detail panel
+    # with a null rank and a null score beside fully populated component scores.
+    legacy_rank_storage = component_model.uses_legacy_score_columns(run_model_version)
+    if legacy_rank_storage:
+        value = profile_totals.get(profile)
+        detail_rank = (
+            int(profile_ranks[profile]) if profile_ranks.get(profile) is not None else None
+        )
+    else:
+        value = str(row["total_score"]) if row["total_score"] is not None else None
+        detail_rank = int(row["rank"]) if row["rank"] is not None else None
     total = None if is_review or is_excluded else value
-    provisional = value if is_review else None
+    # provisional_score stays historical-only: a successor run scores only its
+    # ranking population, so there is no provisional value and none is invented.
+    provisional = value if (is_review and legacy_rank_storage) else None
     # Serve the *actual* run weights for the selected profile. Never use
     # policy.WEIGHT_PROFILES[profile] — that would fabricate weights for the
     # data-derived ``critic`` profile. Static profiles fall back to the policy
@@ -1209,7 +1264,7 @@ def candidate_detail(
         profile=profile,
         status=row["status"],
         is_excluded=is_excluded,
-        rank=(int(profile_ranks[profile]) if profile_ranks.get(profile) is not None else None),
+        rank=detail_rank,
         total_score=total,
         provisional_score=provisional,
         zoning_score=legacy_scores["zoning_score"],

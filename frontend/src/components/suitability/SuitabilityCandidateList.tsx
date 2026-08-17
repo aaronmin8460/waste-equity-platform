@@ -32,6 +32,7 @@ import { formatCount } from "../../lib/metrics";
 import EmptyState from "../ui/EmptyState";
 import InfoBanner from "../ui/InfoBanner";
 import SectionCard from "../ui/SectionCard";
+import { stabilityTotalForModel } from "../../lib/suitability";
 import StabilityBadge from "./StabilityBadge";
 import { SCORE_RANK_FRAMING } from "./shared";
 
@@ -152,6 +153,7 @@ function CandidateRow({
   score,
   stabilityClass,
   stableCount,
+  stabilityTotal,
   isSelected,
   onSelect,
   testId,
@@ -162,6 +164,8 @@ function CandidateRow({
   score: string;
   stabilityClass: string | null;
   stableCount: number | null;
+  /** Comparisons the class came from: 3 historical profiles, 4 successor perturbations. */
+  stabilityTotal: number;
   isSelected: boolean;
   onSelect: () => void;
   testId: string;
@@ -204,7 +208,11 @@ function CandidateRow({
             </span>
           )}
           {stabilityClass != null && stableCount != null && (
-            <StabilityBadge stabilityClass={stabilityClass} stableCount={stableCount} />
+            <StabilityBadge
+              stabilityClass={stabilityClass}
+              stableCount={stableCount}
+              stabilityTotal={stabilityTotal}
+            />
           )}
         </span>
         <span className="flex-none text-[15px] font-bold tabular-nums text-ink">{score}점</span>
@@ -230,6 +238,11 @@ export default function SuitabilityCandidateList({
   section = "both",
   onOpenFullRanking,
 }: SuitabilityCandidateListProps) {
+  // The stability class's denominator belongs to the RUN's component model: 3
+  // compared profiles historically, 4 perturbations under the successor model.
+  // Taken from the served summary rather than assumed, so a successor run's badge
+  // reads 4/4 instead of a historical 3/3 that would be simply untrue.
+  const stabilityTotal = stabilityTotalForModel(summary.component_model_version);
   const stableCandidates =
     stabilityAvailable && section !== "ranking" ? summary.top_stable_candidates : [];
   const showRanking = section !== "stable";
@@ -308,6 +321,7 @@ export default function SuitabilityCandidateList({
                       score={String(c.total_score)}
                       stabilityClass={c.stability_class != null ? String(c.stability_class) : null}
                       stableCount={c.stable_count != null ? Number(c.stable_count) : null}
+                      stabilityTotal={stabilityTotal}
                       isSelected={selected?.candidate_id === Number(c.candidate_id)}
                       onSelect={() => onSelect(Number(c.candidate_id))}
                       testId="top-candidate-item"
@@ -437,7 +451,11 @@ export default function SuitabilityCandidateList({
       {stableCandidates.length > 0 && (
         <SectionCard
           title="기준을 바꿔도 상위권인 후보지"
-          description="세 비교 방식 모두에서 상위 10%에 포함된 구역"
+          /* The comparison COUNT belongs to the run's component model — 3 compared
+             weight profiles historically, 4 perturbations under the successor model
+             — so it is stated from `stabilityTotal` rather than hardcoded to 세. A
+             fixed "세 비교 방식" was simply untrue on a successor run. */
+          description={`${stabilityTotal}개 비교 방식 모두에서 상위 10%에 포함된 구역`}
           testId="stable-candidates"
           className={nested ? "wep-figma-card" : undefined}
         >
@@ -450,6 +468,7 @@ export default function SuitabilityCandidateList({
                 score={String(c.total_score)}
                 stabilityClass={String(c.stability_class)}
                 stableCount={Number(c.stable_count)}
+                stabilityTotal={stabilityTotal}
                 isSelected={selected?.candidate_id === Number(c.candidate_id)}
                 onSelect={() => onSelect(Number(c.candidate_id))}
                 testId="stable-candidate-item"

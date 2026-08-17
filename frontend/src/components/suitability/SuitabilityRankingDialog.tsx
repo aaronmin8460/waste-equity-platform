@@ -66,6 +66,7 @@ import { scopeKey } from "../../lib/suitabilityScope";
 import Dialog from "../ui/Dialog";
 import EmptyState from "../ui/EmptyState";
 import InfoBanner from "../ui/InfoBanner";
+import { stabilityTotalForModel } from "../../lib/suitability";
 import StabilityBadge from "./StabilityBadge";
 
 /** The two ranking directions — the same values and wording the card uses. */
@@ -400,6 +401,9 @@ export default function SuitabilityRankingDialog({
                           <StabilityBadge
                             stabilityClass={String(c.stability_class)}
                             stableCount={Number(c.stable_count)}
+                            stabilityTotal={stabilityTotalForModel(
+                              collection?.component_model_version,
+                            )}
                           />
                         )}
                       </td>
