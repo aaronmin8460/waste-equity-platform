@@ -532,8 +532,15 @@ function candidateScopeFilter(
 
 // Candidate fill filter. The canonical statusVisibility state is always honored;
 // `stableOnly` is an independent, additive restriction that limits ELIGIBLE cells
-// to weight-stable ones (stable_count = 3) without touching how REVIEW_REQUIRED /
-// EXCLUDED are governed — those never get reclassified as "unstable".
+// to weight-stable ones without touching how REVIEW_REQUIRED / EXCLUDED are
+// governed — those never get reclassified as "unstable".
+//
+// The restriction tests `stability_class`, NOT `stable_count`. The count's
+// denominator differs by component model — 3 compared profiles historically, 4
+// perturbations under the successor model — so the previous `stable_count == 3`
+// matched nothing at all on a successor run, silently hiding every cell the user
+// asked to see. The class carries the same meaning in both models, which is
+// exactly why it is the thing to filter on.
 function candidateFillFilter(
   visibility: StatusVisibility,
   stableOnly: boolean,
@@ -547,7 +554,7 @@ function candidateFillFilter(
     clauses.push([
       "any",
       ["!=", ["get", "status"], "ELIGIBLE"],
-      ["==", ["get", "stable_count"], 3],
+      ["==", ["get", "stability_class"], "STABLE"],
     ]);
   }
   if (scope !== null) clauses.push(scope);
@@ -579,7 +586,7 @@ function stableOutlineFilter(
   return [
     "all",
     ["==", ["get", "status"], "ELIGIBLE"],
-    ["==", ["get", "stable_count"], 3],
+    ["==", ["get", "stability_class"], "STABLE"],
     ...(scope !== null ? [scope] : []),
   ] as unknown as maplibregl.FilterSpecification;
 }

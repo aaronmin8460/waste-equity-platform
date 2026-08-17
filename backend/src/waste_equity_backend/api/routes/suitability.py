@@ -697,22 +697,48 @@ def summary(
     ).mappings():
         stability_counts[r["stability_class"]] = r["c"]
 
-    # Top stable candidates: ELIGIBLE with stable_count = 3, ordered by the requested
-    # profile rank then candidate_key (deterministic tie-break).
+    # Top stable candidates: ELIGIBLE and classified STABLE, ordered by rank then
+    # candidate_key (deterministic tie-break).
+    #
+    # Two things here are component-model-aware rather than hardcoded to the
+    # historical shape:
+    #
+    # * **STABLE is tested by class, not by count.** ``stable_count = 3`` was the
+    #   historical definition; the successor model derives its class from 4
+    #   perturbations, so a count test silently excluded every genuinely stable
+    #   successor candidate. The class means the same thing in both models.
+    # * **Rank comes from the model's own storage.** Historical runs rank per weight
+    #   profile in ``profile_ranks``; a successor run has one approved profile and
+    #   stores its rank in the ``rank`` column, leaving ``profile_ranks`` empty. The
+    #   historical branch is kept byte-identical so no stored historical answer
+    #   moves.
+    if component_model.uses_legacy_score_columns(run_model_version):
+        top_stable_sql = (
+            f"SELECT id, candidate_key, sigungu_region_name, {_SUMMARY_SCORE_COLUMNS}, "
+            "stable_count, stability_class, stability_membership, "
+            "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
+            "(profile_ranks->>:profile)::int AS rank, profile_totals->>:profile AS total "
+            "FROM suitability_candidates "
+            "WHERE analysis_run_id = :id AND status = 'ELIGIBLE' "
+            "AND stability_class = 'STABLE' "
+            "AND (profile_ranks->>:profile) IS NOT NULL "
+            "ORDER BY (profile_ranks->>:profile)::int ASC, candidate_key ASC LIMIT 10"
+        )
+    else:
+        top_stable_sql = (
+            f"SELECT id, candidate_key, sigungu_region_name, {_SUMMARY_SCORE_COLUMNS}, "
+            "stable_count, stability_class, stability_membership, "
+            "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
+            "rank AS rank, total_score::text AS total "
+            "FROM suitability_candidates "
+            "WHERE analysis_run_id = :id AND status = 'ELIGIBLE' "
+            "AND stability_class = 'STABLE' AND rank IS NOT NULL "
+            "ORDER BY rank ASC, candidate_key ASC LIMIT 10"
+        )
     top_stable = [
         _summary_candidate(r, run_model_version)
         for r in session.execute(
-            text(
-                f"SELECT id, candidate_key, sigungu_region_name, {_SUMMARY_SCORE_COLUMNS}, "
-                "stable_count, stability_class, stability_membership, "
-                "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
-                "(profile_ranks->>:profile)::int AS rank, profile_totals->>:profile AS total "
-                "FROM suitability_candidates "
-                "WHERE analysis_run_id = :id AND status = 'ELIGIBLE' AND stable_count = 3 "
-                "AND (profile_ranks->>:profile) IS NOT NULL "
-                "ORDER BY (profile_ranks->>:profile)::int ASC, candidate_key ASC LIMIT 10"
-            ),
-            {"id": resolved, "profile": profile},
+            text(top_stable_sql), {"id": resolved, "profile": profile}
         ).mappings()
     ]
 

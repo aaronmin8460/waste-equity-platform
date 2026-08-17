@@ -17,10 +17,20 @@ import { stabilityBadgeLabel } from "../../lib/suitability";
 export interface StabilityBadgeProps {
   stabilityClass: string;
   stableCount: number;
+  /**
+   * How many comparisons the class was derived from — 3 for the historical model,
+   * 4 for the successor model. Omitted means historical, which is what every run
+   * stored before the successor model existed.
+   */
+  stabilityTotal?: number;
 }
 
-export default function StabilityBadge({ stabilityClass, stableCount }: StabilityBadgeProps) {
-  const label = stabilityBadgeLabel(stabilityClass, stableCount);
+export default function StabilityBadge({
+  stabilityClass,
+  stableCount,
+  stabilityTotal,
+}: StabilityBadgeProps) {
+  const label = stabilityBadgeLabel(stabilityClass, stableCount, stabilityTotal);
   if (label === null) return null;
   const styles: Record<string, string> = {
     STABLE: "border-pink-600 bg-pink-50 text-pink-800",

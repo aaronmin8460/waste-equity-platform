@@ -99,21 +99,51 @@ export function classifyEquityRaw(
  * by color alone — the returned string always carries the count and meaning.
  * Returns null for candidates that are not stability-classified (REVIEW_REQUIRED,
  * EXCLUDED, or a run without stability data), so the caller shows no badge.
+ *
+ * The denominator is the number of comparisons the class was derived from, and it
+ * DIFFERS BY COMPONENT MODEL: the historical model compares 3 weight profiles, the
+ * successor model 4 symmetric perturbations (one per component). This used to be
+ * hardcoded to 3, which rendered a factually wrong count the moment a successor run
+ * was served — `STABLE` is 4/4 there, not 3/3. It is now supplied by the caller via
+ * {@link stabilityTotalForModel}, and defaults to the historical 3 so every existing
+ * historical call site keeps its exact current output.
  */
 export type StabilityBadgeClass = "STABLE" | "CONDITIONALLY_STABLE" | "WEIGHT_SENSITIVE";
+
+/** Historical model: baseline/equal/critic. */
+export const HISTORICAL_STABILITY_TOTAL = 3;
+/** Successor model: one perturbation per component. */
+export const SUCCESSOR_STABILITY_TOTAL = 4;
+
+/**
+ * How many comparisons the served run's stability class was derived from.
+ * An unknown or absent model falls back to the historical total, which is what
+ * every stored run used before the successor model existed.
+ */
+export function stabilityTotalForModel(componentModelVersion: string | null | undefined): number {
+  return componentModelVersion === "suitability-components-successor-v1"
+    ? SUCCESSOR_STABILITY_TOTAL
+    : HISTORICAL_STABILITY_TOTAL;
+}
 
 export function stabilityBadgeLabel(
   stabilityClass: string | null | undefined,
   stableCount: number | null | undefined,
+  stabilityTotal: number = HISTORICAL_STABILITY_TOTAL,
 ): string | null {
   if (stabilityClass == null || stableCount == null) return null;
   switch (stabilityClass) {
     case "STABLE":
-      return "안정 후보 3/3";
+      return `안정 후보 ${stabilityTotal}/${stabilityTotal}`;
     case "CONDITIONALLY_STABLE":
-      return "조건부 안정 2/3";
+      // Historical: exactly 2 of 3. Successor: 2 or 3 of 4 — so the band is
+      // rendered as a range rather than a single value that would be wrong half
+      // the time.
+      return stabilityTotal > 3
+        ? `조건부 안정 2–${stabilityTotal - 1}/${stabilityTotal}`
+        : `조건부 안정 ${stabilityTotal - 1}/${stabilityTotal}`;
     case "WEIGHT_SENSITIVE":
-      return "가중치 민감 0–1/3";
+      return `가중치 민감 0–1/${stabilityTotal}`;
     default:
       return null;
   }
