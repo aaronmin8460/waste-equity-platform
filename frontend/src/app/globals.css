@@ -1935,13 +1935,26 @@ body {
    section below them share one left edge. They previously did not: the head sat at
    20px and the body at 24px.
 
-   The close control is deliberately NOT resized to the frame's 36px. It stays at the
-   44px target the rest of the application uses. */
+   The frame also draws NO rule under the head — the title, its supporting line and
+   한눈에 보기 sit on one uninterrupted surface — and draws the close control as a
+   borderless filled circle rather than an outlined square.
+
+   The close control's SIZE is deliberately not the frame's 36px. It stays at the 44px
+   target the rest of the application uses; only its shape and fill are adopted. */
 [data-testid="data-sources-dialog"] .wep-dialog-head {
   padding: 1.625rem 2rem;
+  border-bottom: 0;
 }
 [data-testid="data-sources-dialog"] .wep-dialog-title {
   font-size: 1.3125rem;
+}
+[data-testid="data-sources-dialog"] .wep-dialog-close {
+  border: 0;
+  border-radius: 9999px;
+  background: var(--color-surface-sunken);
+}
+[data-testid="data-sources-dialog"] .wep-dialog-close:hover {
+  background: var(--color-primary-soft);
 }
 /* (A `max-width: 639px` block used to give phones the full screen here — a centred
    card with margins wastes the little room a long catalogue has. The app no longer
