@@ -270,8 +270,18 @@ Environment notes worth carrying forward:
 ## 28. Backend untouched — confirmed
 
 `git diff --name-only` matches no path under `backend/`, `ingestion/`, or `infra/`. No migration was created,
-edited, or run: the rendering backend was started with `uvicorn` only, explicitly **without** `alembic upgrade
-head`, and the database remained at `0021` throughout. `package.json` and `package-lock.json` are untouched.
+edited, or run **by this lane**: the rendering backend was started with an explicit `uvicorn` command that
+overrode the image's default, so `alembic upgrade head` never executed, and the container was removed at the
+end of the lane.
+
+One correction, recorded because it would otherwise read as this lane's doing: the shared local dev database
+was at alembic `0021` when the lane started and reported `0023` when it finished. That change is **not** from
+here. `0022` (`suitability_component_model_identity`) and `0023` (`suitability_candidate_component_scores`)
+are the Suitability V3 backend lanes' migrations, dated 2026-08-16, and neither file exists on this branch —
+this worktree's `backend/alembic/versions/` still tops out at `0021`. A concurrent backend lane on the same
+machine migrated the shared database. No production database was involved at any point.
+
+`package.json` and `package-lock.json` are untouched.
 Pages 3–6 have no source changes; the only shared file touched is `lib/metrics.ts`, whose edit is confined to
 Page-1 metric descriptions, and the full suite covering every page is green.
 
