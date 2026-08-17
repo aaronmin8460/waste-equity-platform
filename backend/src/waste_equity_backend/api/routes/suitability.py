@@ -659,20 +659,37 @@ def summary(
     # uniform zoning/road/equity). The centroid lets the UI give each tied cell a
     # concrete location distinction and move the map to it, without deduplicating or
     # altering any score.
+    # Rank storage is component-model-specific, exactly as it is for top_stable
+    # below. A historical run ranks per weight profile in ``profile_ranks``; a
+    # successor run has one approved profile and stores its rank in the ``rank``
+    # column, leaving ``profile_ranks`` empty. Reading only ``profile_ranks`` here
+    # returned an EMPTY top-candidate list for every successor run — the primary
+    # ranking the page is built around. The historical branch is unchanged.
+    if component_model.uses_legacy_score_columns(run_model_version):
+        top_sql = (
+            f"SELECT id, candidate_key, sigungu_region_name, {_SUMMARY_SCORE_COLUMNS}, "
+            "stable_count, stability_class, stability_membership, "
+            "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
+            "(profile_ranks->>:profile)::int AS rank, profile_totals->>:profile AS total "
+            "FROM suitability_candidates "
+            "WHERE analysis_run_id = :id AND status = 'ELIGIBLE' "
+            "AND (profile_ranks->>:profile) IS NOT NULL "
+            "ORDER BY (profile_ranks->>:profile)::int ASC LIMIT 10"
+        )
+    else:
+        top_sql = (
+            f"SELECT id, candidate_key, sigungu_region_name, {_SUMMARY_SCORE_COLUMNS}, "
+            "stable_count, stability_class, stability_membership, "
+            "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
+            "rank AS rank, total_score::text AS total "
+            "FROM suitability_candidates "
+            "WHERE analysis_run_id = :id AND status = 'ELIGIBLE' AND rank IS NOT NULL "
+            "ORDER BY rank ASC, candidate_key ASC LIMIT 10"
+        )
     top = [
         _summary_candidate(r, run_model_version)
         for r in session.execute(
-            text(
-                f"SELECT id, candidate_key, sigungu_region_name, {_SUMMARY_SCORE_COLUMNS}, "
-                "stable_count, stability_class, stability_membership, "
-                "ST_X(centroid) AS centroid_lon, ST_Y(centroid) AS centroid_lat, "
-                "(profile_ranks->>:profile)::int AS rank, profile_totals->>:profile AS total "
-                "FROM suitability_candidates "
-                "WHERE analysis_run_id = :id AND status = 'ELIGIBLE' "
-                "AND (profile_ranks->>:profile) IS NOT NULL "
-                "ORDER BY (profile_ranks->>:profile)::int ASC LIMIT 10"
-            ),
-            {"id": resolved, "profile": profile},
+            text(top_sql), {"id": resolved, "profile": profile}
         ).mappings()
     ]
 
