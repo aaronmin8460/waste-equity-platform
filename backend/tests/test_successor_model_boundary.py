@@ -58,10 +58,22 @@ def test_the_successor_model_reuses_the_existing_candidate_grid_identity() -> No
 # --------------------------------------------------------------------------- #
 
 
-def test_the_successor_model_is_not_activated() -> None:
+def test_an_approved_policy_is_still_not_an_activated_model() -> None:
+    # The distinction the whole gate rests on, and the one the policy closure did
+    # NOT erase: minting a policy identity says an approved analytical policy
+    # exists. Activation additionally requires a runtime that can write a run.
+    # Engineering blockers remain, so the model stays inactive.
+    assert policy.SUCCESSOR_POLICY_VERSION == "suitability-successor-policy-v1"
+    assert policy.SUCCESSOR_DERIVATION_VERSION == "suitability-successor-derivation-v1"
+    assert policy.ACTIVATION_BLOCKERS
     assert policy.is_activated() is False
-    assert policy.SUCCESSOR_POLICY_VERSION is None
-    assert policy.SUCCESSOR_DERIVATION_VERSION is None
+
+
+def test_policy_identity_is_minted_as_a_pair() -> None:
+    # A run row must never carry one half of the identity.
+    assert (policy.SUCCESSOR_POLICY_VERSION is None) == (
+        policy.SUCCESSOR_DERIVATION_VERSION is None
+    )
 
 
 def test_activation_raises_and_names_every_open_blocker() -> None:
@@ -74,26 +86,82 @@ def test_activation_raises_and_names_every_open_blocker() -> None:
         assert blocker.blocker_id in message
 
 
-def test_the_open_research_dependencies_are_all_recorded() -> None:
+def test_only_engineering_blockers_remain_open() -> None:
     ids = {b.blocker_id for b in policy.activation_blockers()}
-    assert {
-        "RESIDENT_IMPACT_DISTANCE_FLOOR_UNAPPROVED",
-        "LAND_COVER_DEVELOPED_CLASS_REGISTRY_UNAVAILABLE",
-        "SUCCESSOR_WEIGHT_VECTOR_UNAPPROVED",
-        "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING",
-        "SUCCESSOR_DEFAULT_RUN_RESOLUTION_UNDECIDED",
-    } <= ids
-    # Phase 4 answered the eligibility question against measured data, so its
-    # blocker is gone rather than restated — a closed question must not keep
-    # blocking, and an open one must not disappear.
+    assert ids == {
+        "SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED",
+        "SUCCESSOR_STABILITY_THRESHOLDS_UNVALIDATED",
+        "SUCCESSOR_MODEL_AWARE_DEFAULT_RUN_NOT_IMPLEMENTED",
+    }
+    # A closed question must not keep blocking, and an open one must not vanish.
     assert "MISSING_COMPONENT_ELIGIBILITY_POLICY_UNDECIDED" not in ids
     assert "SUCCESSOR_ELIGIBLE_POPULATION_NOT_MEASURED" not in ids
     for blocker in policy.activation_blockers():
         assert blocker.summary and blocker.blocks and blocker.resolution_owner
 
 
-def test_no_successor_weight_profile_is_registered() -> None:
-    assert policy.SUCCESSOR_WEIGHT_PROFILES == {}
+def test_every_closed_blocker_records_the_basis_it_closed_on() -> None:
+    # A blocker is never silently deleted: closing one is itself part of the
+    # policy record, so the reason survives in the repository.
+    closed = {b.blocker_id: b for b in policy.CLOSED_BLOCKERS}
+    assert {
+        "SUCCESSOR_WEIGHT_VECTOR_UNAPPROVED",
+        "RESIDENT_IMPACT_DISTANCE_FLOOR_UNAPPROVED",
+        "LAND_COVER_DEVELOPED_CLASS_REGISTRY_UNAVAILABLE",
+        "LAND_CONVERSION_DIRECTION_UNAPPROVED",
+        "SUCCESSOR_NORMALIZATION_STRATEGY_UNAPPROVED",
+        "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING",
+    } <= set(closed)
+    for blocker in policy.CLOSED_BLOCKERS:
+        assert blocker.basis and blocker.closed_by
+    open_ids = {b.blocker_id for b in policy.ACTIVATION_BLOCKERS}
+    assert not open_ids & set(closed)
+
+
+def test_the_approval_basis_claims_no_more_than_it_should() -> None:
+    # The approval is a project-owner judgement under delegation. It must not be
+    # dressed up as expert review or as an empirically optimal result.
+    approval = policy.POLICY_CLOSURE_APPROVAL
+    assert "project-owner" in approval.lower()
+    assert "NOT external expert review" in approval
+    assert "NOT a claim of empirical optimality" in approval
+
+
+def test_accepted_limitations_are_published_not_closed() -> None:
+    # These two are not solved and not blockers. They are limits on what the model
+    # claims, and each must carry its measured cost.
+    ids = {limitation.limitation_id for limitation in policy.ACCEPTED_LIMITATIONS}
+    assert ids == {
+        "AIR_IMPACT_PROXY_GRAIN_AND_COVERAGE_UNRESOLVED",
+        "RESIDENT_IMPACT_POPULATION_RESOLUTION_UNRESOLVED",
+    }
+    for limitation in policy.ACCEPTED_LIMITATIONS:
+        assert limitation.measured_cost and limitation.why_not_blocking
+    blocker_ids = {b.blocker_id for b in policy.ACTIVATION_BLOCKERS}
+    closed_ids = {b.blocker_id for b in policy.CLOSED_BLOCKERS}
+    assert not ids & (blocker_ids | closed_ids)
+
+
+def test_the_approved_weight_profile_is_equal_total_and_documented() -> None:
+    profiles = policy.SUCCESSOR_WEIGHT_PROFILES
+    assert set(profiles) == {"baseline"}
+    weights = profiles["baseline"]
+    assert set(weights) == set(policy.COMPONENTS)
+    assert all(value == "0.25" for value in weights.values())
+    assert sum(Decimal(v) for v in weights.values()) == Decimal("1")
+    # Weighting Policy item 1: a written rationale per weight, before it is served.
+    assert set(policy.SUCCESSOR_WEIGHT_RATIONALE) == set(policy.COMPONENTS)
+    for component, rationale in policy.SUCCESSOR_WEIGHT_RATIONALE.items():
+        assert len(rationale) > 80, component
+
+
+def test_the_successor_ranks_only_what_the_constraint_screening_ranks() -> None:
+    # The successor re-scores; it never re-screens. Ranking a candidate the
+    # constraint screening excluded would present burden and impact indicators as
+    # siting suitability (ANALYTICAL_METHODS.md, Weighting Policy item 2).
+    assert policy.SCREENING_STATUS_RANKABLE == "ELIGIBLE"
+    assert "ELIGIBLE" in policy.RANKING_POPULATION_RULE
+    assert "complete case" in policy.RANKING_POPULATION_RULE
 
 
 # --------------------------------------------------------------------------- #
@@ -111,13 +179,14 @@ def test_the_missing_component_policy_is_strict_and_admits_nothing_optional() ->
     assert policy.MISSING_POLICY_ZERO_FILL in policy.FORBIDDEN_MISSING_COMPONENT_POLICIES
 
 
-def test_deciding_the_missing_component_policy_did_not_activate_anything() -> None:
-    # A decided policy is not an activated model. This is the distinction the whole
-    # gate rests on.
+def test_deciding_every_policy_question_did_not_activate_anything() -> None:
+    # A fully decided policy is still not an activated model: nothing writes a
+    # successor run yet. This is the distinction the whole gate rests on.
+    assert not policy.open_phase4_decisions()
+    assert policy.SUCCESSOR_WEIGHT_PROFILES
     assert policy.is_activated() is False
-    assert policy.SUCCESSOR_POLICY_VERSION is None
-    assert policy.SUCCESSOR_DERIVATION_VERSION is None
-    assert policy.SUCCESSOR_WEIGHT_PROFILES == {}
+    with pytest.raises(SuccessorActivationBlockedError):
+        policy.assert_activated()
 
 
 def test_every_phase4_question_carries_an_explicit_status() -> None:
@@ -137,15 +206,25 @@ def test_every_phase4_question_carries_an_explicit_status() -> None:
     assert len({d.decision_id for d in decisions}) == len(decisions)
 
 
-def test_the_open_decisions_are_the_ones_that_block_phase_five() -> None:
-    open_ids = {d.decision_id for d in policy.open_phase4_decisions()}
-    assert {
+def test_the_four_gating_decisions_are_closed_with_evidence() -> None:
+    decided = {
+        d.decision_id: d
+        for d in policy.phase4_decisions()
+        if d.status == policy.DECISION_DECIDED
+    }
+    for decision_id in (
         "FINAL_WEIGHT_VECTOR",
         "RESIDENT_DISTANCE_FLOOR",
         "LAND_COVER_CLASS_REGISTRY",
         "AMBIGUOUS_LAND_CLASSES",
-    } <= open_ids
-    # An open question and an activated model are mutually exclusive.
+        "SUCCESSOR_RANKING_POPULATION",
+    ):
+        assert decision_id in decided, decision_id
+        assert decided[decision_id].evidence, decision_id
+    assert not policy.open_phase4_decisions()
+    # The invariant survives closure: an open question and an activated model stay
+    # mutually exclusive.
+    open_ids = {d.decision_id for d in policy.open_phase4_decisions()}
     assert not (open_ids and policy.is_activated())
 
 
@@ -153,9 +232,17 @@ def test_critic_is_diagnostic_only_for_the_successor_model() -> None:
     decision = next(d for d in policy.phase4_decisions() if d.decision_id == "CRITIC_SUITABILITY")
     assert decision.status == policy.DECISION_DECIDED
     assert "DIAGNOSTIC ONLY" in decision.summary
-    assert "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING" in {
+    # The finding stopped blocking because the approved vector is not data-derived,
+    # so it is recorded as CLOSED rather than deleted. The guarantee it protects —
+    # that no CRITIC vector weights a successor run — is unchanged.
+    closed = {b.blocker_id: b for b in policy.CLOSED_BLOCKERS}
+    assert "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING" in closed
+    assert "not data-derived" in closed["SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING"].basis
+    assert "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING" not in {
         b.blocker_id for b in policy.activation_blockers()
     }
+    # No CRITIC vector may ever be registered as a successor weight profile.
+    assert "critic" not in policy.SUCCESSOR_WEIGHT_PROFILES
 
 
 def test_the_stability_contract_is_defined_but_has_no_thresholds() -> None:
@@ -356,14 +443,23 @@ def test_the_snapshot_is_json_serializable_and_states_it_is_not_activated() -> N
 
     snapshot = policy.successor_snapshot()
     json.dumps(snapshot, ensure_ascii=False)  # must not raise
+    # An approved, fully decided policy that is still not an activated model.
     assert snapshot["activated"] is False
-    assert snapshot["policy_version"] is None
-    assert snapshot["derivation_version"] is None
-    assert snapshot["weight_profiles"] == {}
+    assert snapshot["activation_blockers"]
+    assert snapshot["policy_version"] == policy.SUCCESSOR_POLICY_VERSION
+    assert snapshot["derivation_version"] == policy.SUCCESSOR_DERIVATION_VERSION
+    assert snapshot["weight_profiles"] == dict(policy.SUCCESSOR_WEIGHT_PROFILES)
     assert snapshot["missing_component_policy"]["selected"] == policy.MISSING_POLICY_STRICT
-    assert snapshot["open_phase4_decisions"]
+    assert snapshot["open_phase4_decisions"] == []
     assert snapshot["component_model_version"] == policy.COMPONENT_MODEL_VERSION_SUCCESSOR
     assert snapshot["component_order"] == list(policy.COMPONENT_ORDER_SUCCESSOR)
+    # The closure is self-describing: approval basis, what closed, what is still a
+    # published limitation, and the ranking-population rule all travel with it.
+    assert snapshot["policy_closure_approval"] == policy.POLICY_CLOSURE_APPROVAL
+    assert snapshot["closed_blockers"]
+    assert snapshot["accepted_limitations"]
+    assert snapshot["weight_rationale"]
+    assert "ELIGIBLE" in snapshot["ranking_population_rule"]
 
 
 def test_the_snapshot_records_the_historical_model_unchanged() -> None:

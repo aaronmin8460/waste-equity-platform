@@ -70,8 +70,77 @@ def _cell(
 # --------------------------------------------------------------------------- #
 
 
-def test_no_production_registry_is_shipped() -> None:
-    assert land_conversion.PRODUCTION_REGISTRY is None
+def test_the_approved_production_registry_is_shipped_and_total() -> None:
+    """The approved registry is present, complete, and classifies nothing by accident.
+
+    Replaces the pre-closure assertion that no registry shipped. The guarantee is
+    now stronger, not weaker: the registry must exist, be approved, cover the whole
+    published L2 taxonomy, and resolve every code into exactly one bucket.
+    """
+
+    registry = land_conversion.PRODUCTION_REGISTRY
+    assert registry is not None
+    assert registry.registry_id == "successor-land-cover-l2-v1"
+    assert registry.approved is True
+    assert registry.class_level == 2
+
+    # Total: every known code lands in exactly one of developed / excluded /
+    # non-developed, so no observed class can fall through unclassified.
+    known = registry.known_class_codes
+    assert len(known) == 22
+    buckets = (
+        registry.developed_class_codes,
+        registry.excluded_class_codes,
+        registry.non_developed_class_codes(),
+    )
+    assert set().union(*buckets) == known
+    for left, right in ((0, 1), (0, 2), (1, 2)):
+        assert not buckets[left] & buckets[right]
+
+
+def test_only_the_1xx_grouping_is_developed() -> None:
+    """Developed is the source's own 시가화건조지역 grouping and nothing else."""
+
+    registry = land_conversion.PRODUCTION_REGISTRY
+    assert registry is not None
+    assert registry.developed_class_codes == frozenset({"110", "120", "130", "140", "150", "160"})
+    assert all(code.startswith("1") for code in registry.developed_class_codes)
+
+
+def test_every_contested_class_is_resolved_conservatively() -> None:
+    """Ambiguity must never improve a candidate's score.
+
+    ``land_conversion`` is LOWER_RAW_IS_BETTER, so a class counted as *developed*
+    leaves the conversion-exposed numerator and raises the score. The three
+    contested land classes must therefore be resolved NOT developed, and they must
+    stay flagged so the contested call is visible in provenance.
+    """
+
+    registry = land_conversion.PRODUCTION_REGISTRY
+    assert registry is not None
+    contested = {"230", "420", "620", "710", "720"}
+    assert contested <= registry.ambiguous_class_codes
+    assert not contested & registry.developed_class_codes
+    assert contested <= registry.non_developed_class_codes()
+
+
+def test_no_class_is_excluded_from_the_denominator() -> None:
+    """Water stays in the denominator, on measured evidence.
+
+    Excluding water judged a mostly-river or mostly-sea cell only on its small land
+    remainder, making water-dominated cells 7.4x more likely to reach a near-perfect
+    score (45 of 679 cells at >=50% water, against 351 of 39,089 below 20%). That is
+    ambiguity improving a score, so the exclusion was rejected.
+    """
+
+    registry = land_conversion.PRODUCTION_REGISTRY
+    assert registry is not None
+    assert registry.excluded_class_codes == frozenset()
+    # Every known class therefore contributes to the denominator.
+    assert (
+        registry.developed_class_codes | registry.non_developed_class_codes()
+        == registry.known_class_codes
+    )
 
 
 def test_a_registry_must_classify_every_code_it_calls_developed() -> None:

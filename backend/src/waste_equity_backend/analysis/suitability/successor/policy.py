@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from .. import critic as historical_critic
@@ -114,17 +115,84 @@ COMPONENT_METHOD_VERSIONS: dict[str, str] = {
     COMPONENT_LAND_CONVERSION: LAND_CONVERSION_METHOD_VERSION,
 }
 
-# The model-level analytical identity is intentionally UNASSIGNED. A successor
-# policy/derivation version may only be minted once every activation blocker below
-# is closed; until then there is no value a run row could legitimately carry, and
-# ``None`` makes that impossible to fake by accident.
-SUCCESSOR_POLICY_VERSION: str | None = None
-SUCCESSOR_DERIVATION_VERSION: str | None = None
+# The model-level analytical identity, minted by the project-owner delegated policy
+# closure of 2026-08-17 (docs/research/SUITABILITY_V3_FINAL_POLICY.md).
+#
+# Minting the policy identity is NOT activation. The identity says "an approved
+# analytical policy exists and this is its version"; activation additionally
+# requires the engineering blockers below to close. ``is_activated()`` therefore
+# still returns False, and no run row can carry these values until a runtime
+# writes one.
+SUCCESSOR_POLICY_VERSION: str | None = "suitability-successor-policy-v1"
+SUCCESSOR_DERIVATION_VERSION: str | None = "suitability-successor-derivation-v1"
 
-# No successor weight profile exists. Inventing one — including "equal weights as
-# a placeholder" — would be an unapproved analytical policy assumption, so the
-# registry is empty rather than provisional.
-SUCCESSOR_WEIGHT_PROFILES: dict[str, dict[str, str]] = {}
+# --------------------------------------------------------------------------- #
+# Approved weight vector
+# --------------------------------------------------------------------------- #
+
+# EQUAL WEIGHTING, adopted as the governance-neutral Successor-V3 baseline.
+#
+# What this is: a project-approved analytical-policy assertion, versioned and
+# revisable, made under explicit project-owner delegation on 2026-08-17.
+#
+# What it is NOT, stated plainly because the distinction is the whole point:
+#   * it is NOT claimed to be empirically optimal, and no evidence says it is;
+#   * it is NOT an expert, AHP, or stakeholder-elicited result;
+#   * it is NOT data-derived — Phase 4 closed that route by establishing CRITIC
+#     measures normalization and analytical grain rather than information
+#     (Spearman 0.9999988 across a change that moved a component's sigma 11.9%);
+#   * it has NOT been through external expert review.
+#
+# Why equal rather than an asymmetric vector: every asymmetric vector available
+# here would assert a *preference ordering over the four considerations* that
+# nothing in the repository, the source data, or the measured evidence supports.
+# Equal weighting is the one vector that declines to assert such an ordering. It
+# is chosen for that property, not because it scored well.
+#
+# The measured consequence is recorded rather than hidden: the ranking head is
+# resident_impact-determined (moving 0.15 onto it retains 1 of the top 50, while
+# the same shift onto any other component retains 44-49), so this vector's
+# stability is asymmetric and later policy versions may reasonably change it.
+SUCCESSOR_WEIGHT_PROFILE_BASELINE = "baseline"
+
+SUCCESSOR_WEIGHT_PROFILES: dict[str, dict[str, str]] = {
+    SUCCESSOR_WEIGHT_PROFILE_BASELINE: {
+        COMPONENT_EXISTING_BURDEN: "0.25",
+        COMPONENT_AIR_IMPACT_PROXY: "0.25",
+        COMPONENT_RESIDENT_IMPACT: "0.25",
+        COMPONENT_LAND_CONVERSION: "0.25",
+    },
+}
+
+# One sentence per weight, stating what the weight asserts — the form
+# docs/ANALYTICAL_METHODS.md "Weighting Policy" item 1 requires before any
+# weighted composite is served.
+SUCCESSOR_WEIGHT_RATIONALE: dict[str, str] = {
+    COMPONENT_EXISTING_BURDEN: (
+        "0.25 asserts that the waste-facility throughput a district already carries per "
+        "resident weighs neither more nor less than the other three considerations — the "
+        "platform's equity premise is that existing burden must count, and this weight "
+        "declines to claim how much more than the rest it should count."
+    ),
+    COMPONENT_AIR_IMPACT_PROXY: (
+        "0.25 asserts that the district's waste-generation-derived air-impact proxy counts "
+        "equally with the others, and deliberately does not elevate it, because the proxy is "
+        "a generation rate rather than a measured emission or dispersion result."
+    ),
+    COMPONENT_RESIDENT_IMPACT: (
+        "0.25 asserts that population-weighted proximity counts equally, and specifically "
+        "declines to elevate it: Phase 4 measured that moving 0.15 onto this component "
+        "retains 1 of the top 50, so any elevation would rewrite the ranking head, and no "
+        "evidence supports doing so. Its underlying geography is also the coarsest of the "
+        "four (one value per SIGUNGU at one representative point), which is a reason not to "
+        "let it dominate."
+    ),
+    COMPONENT_LAND_CONVERSION: (
+        "0.25 asserts that the share of the candidate cell not already in a developed class "
+        "counts equally — siting on already-converted land is preferable, and this weight "
+        "does not claim that preference outranks existing burden, air impact, or proximity."
+    ),
+}
 
 # The successor model reuses the *existing* candidate grid identity rather than
 # inventing a second geography. It is recorded here as a read-only reference; the
@@ -213,6 +281,31 @@ SELECTED_MISSING_COMPONENT_POLICY: str | None = MISSING_POLICY_STRICT
 # Empty under STRICT by definition: no component is optional.
 OPTIONAL_COMPONENTS: tuple[str, ...] = ()
 
+# --------------------------------------------------------------------------- #
+# Ranking population — eligibility is NOT the same thing as a score
+# --------------------------------------------------------------------------- #
+
+# The successor model re-scores; it does not re-screen. The historical constraint
+# screening (zoning, protected areas, road access) stays authoritative, and the
+# successor ranks only what that screening already ranks.
+#
+# Measured on run 47, which is why this is a rule and not a preference: only
+# ELIGIBLE candidates carry a rank or a score at all — 17,501 ranked, while all
+# 18,132 REVIEW_REQUIRED and 12,260 EXCLUDED carry neither. The strict complete
+# case of 33,980 is a component-AVAILABILITY set and contains 8,933 EXCLUDED and
+# 11,313 REVIEW_REQUIRED candidates. Ranking it whole would publish a siting
+# recommendation over locations the constraint screening had already set aside,
+# which docs/ANALYTICAL_METHODS.md "Weighting Policy" item 2 forbids: burden and
+# demand indicators alone must never be presented as siting suitability.
+SCREENING_STATUS_RANKABLE = "ELIGIBLE"
+
+RANKING_POPULATION_RULE = (
+    "successor ranking population = historical screening status ELIGIBLE INTERSECT strict "
+    "complete case over all four successor components. Run 47: 13,734 of 33,980 complete "
+    "cases and of 17,501 ELIGIBLE candidates. A candidate outside this set is not scored, "
+    "not ranked, and never zero-filled."
+)
+
 
 def resolve_missing_component_policy(policy_name: str) -> str:
     """Validate a proposed missing-component policy, refusing the forbidden one.
@@ -254,148 +347,200 @@ class ActivationBlocker:
         }
 
 
+# Only ENGINEERING blockers remain. Every analytical-policy blocker was closed by
+# the project-owner delegated policy closure of 2026-08-17 — see CLOSED_BLOCKERS
+# for what closed and on what basis, and ACCEPTED_LIMITATIONS for the two data
+# defects that are carried in published scope rather than blocking activation.
 ACTIVATION_BLOCKERS: tuple[ActivationBlocker, ...] = (
-    ActivationBlocker(
-        blocker_id="RESIDENT_IMPACT_DISTANCE_FLOOR_UNAPPROVED",
-        summary=(
-            "The resident_impact distance floor has no approved production value. It is a "
-            "required explicit input with no default, so no production scoring profile can "
-            "be derived from this component yet."
-        ),
-        blocks="resident_impact production activation",
-        resolution_owner="analytical-method research lane",
-    ),
-    ActivationBlocker(
-        blocker_id="LAND_COVER_DEVELOPED_CLASS_REGISTRY_UNAVAILABLE",
-        summary=(
-            "No official developed/artificial land-cover class registry is stored in this "
-            "repository; class codes and names are preserved verbatim from the source with no "
-            "developed/natural classification. The registry must be supplied explicitly and is "
-            "under audit by a separate research lane."
-        ),
-        blocks="land_conversion production activation",
-        resolution_owner="land-cover class registry research lane",
-    ),
-    ActivationBlocker(
-        blocker_id="SUCCESSOR_WEIGHT_VECTOR_UNAPPROVED",
-        summary=(
-            "No approved weight vector exists over the successor components, and the "
-            "historical vectors describe a different component matrix. Phase 4 closed the "
-            "data-derived route: CRITIC is unsuitable as a successor weighting method (see "
-            "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING), so no weight vector can be derived "
-            "from the data and any vector is an explicit analytical-policy assertion. The "
-            "ranking head is also not uniformly weight-sensitive: on the corrected population "
-            "moving 0.15 of weight onto resident_impact retains 1 of the top 50, while the "
-            "same shift onto any other component retains 44-49. A weight vector is therefore "
-            "acceptable only with an argued interpretation, never because it scored well."
-        ),
-        blocks="successor composite scoring and profile registration",
-        resolution_owner="analytical-policy owner",
-    ),
-    ActivationBlocker(
-        blocker_id="SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING",
-        summary=(
-            "Phase 4 established that CRITIC cannot weight the successor components. Its "
-            "standard-deviation term measures normalization and analytical grain rather than "
-            "information: the four components reach a candidate-level distribution by three "
-            "different mechanisms (candidate-grain percentile rank, region-grain percentile "
-            "rank projected onto candidates, and bounded ratio), and on run 47 the two "
-            "strategies applied to the same component are rank-equivalent (Spearman "
-            "0.9999988, top-50 overlap 50/50) while differing in standard deviation by 11.9% "
-            "— so the choice moves the derived weight without moving the ranking. CRITIC "
-            "remains usable as a diagnostic. No replacement weighting method is approved."
-        ),
-        blocks="any data-derived successor weight vector",
-        resolution_owner="analytical-method research lane",
-    ),
-    ActivationBlocker(
-        blocker_id="LAND_CONVERSION_DIRECTION_UNAPPROVED",
-        summary=(
-            "land_conversion is implemented with the documented assumption that a larger "
-            "not-already-developed (conversion-exposed) share is the worse screening outcome. "
-            "That direction is an analytical-policy assumption and needs explicit approval."
-        ),
-        blocks="land_conversion production activation",
-        resolution_owner="analytical-policy owner",
-    ),
-    ActivationBlocker(
-        blocker_id="SUCCESSOR_CRITIC_STABILITY_METHOD_UNVALIDATED",
-        summary=(
-            "The stored CRITIC and stability methods are defined over the historical "
-            "component matrix. Whether either is valid over the successor components has not "
-            "been established, and the historical derivations must not be reused."
-        ),
-        blocks="successor CRITIC weights and stability classification",
-        resolution_owner="analytical-method research lane",
-    ),
     ActivationBlocker(
         blocker_id="SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED",
         summary=(
             "The additive persistence schema and the version-aware API contract are applied "
             "(run-level component_model_version + component_order, candidate-level "
             "component_scores, legacy columns untouched and NULL for successor runs), but "
-            "nothing writes a successor run: no engine stage scores the successor "
-            "components into candidate rows, and doing so requires the missing-component "
-            "eligibility policy, an approved weight vector, and a normalization strategy "
-            "first. Successor user-weight scenarios are refused for the same reason."
+            "nothing writes a successor run: no engine stage scores the successor components "
+            "into candidate rows. The policy inputs it needs — eligibility rule, weight "
+            "vector, normalization, distance floor, class registry — are now all approved, so "
+            "what remains is implementation."
         ),
         blocks="producing any stored successor run, and successor scenario recombination",
         resolution_owner="backend owner",
     ),
     ActivationBlocker(
-        blocker_id="AIR_IMPACT_PROXY_GRAIN_AND_COVERAGE_UNRESOLVED",
+        blocker_id="SUCCESSOR_STABILITY_THRESHOLDS_UNVALIDATED",
         summary=(
-            "Phase 4 decided the scoring-time behaviour — strict SIGUNGU, no projection — and "
-            "rejected the CITY-grain projection as a remedy on arithmetic: projecting the "
-            "seven Gyeonggi cities' per-capita rates onto their 20 child districts recovers "
-            "the component for 5,536 candidates but *zero eligible candidates*, because those "
-            "same 20 districts independently lose existing_burden to the identical reporting-"
-            "grain gap and facility throughput cannot be projected (a facility sits in one "
-            "district, not spread per capita). The root cause is one ingestion-level defect "
-            "affecting two components and it is unfixed: 22 regions and 6,349,306 residents "
-            "(24.13%) stay outside the model. The numerator basis (total generation vs "
-            "origin-based incinerated tonnage) is a second open choice on the same component."
+            "The stability contract's metrics and perturbation axes are defined "
+            "(STABILITY_CONTRACT_DESIGN) and an approved reference vector now exists to "
+            "perturb around, but the acceptance thresholds have not been validated against it "
+            "on real data. The historical stability class must not be reused: it is defined "
+            "over zoning/road/equity/demand and the historical profile registry."
         ),
-        blocks="air_impact_proxy production activation and the excluded 24.13% of residents",
-        resolution_owner=(
-            "ingestion lane (geocoding / district-grain source), then analytical-policy owner"
-        ),
+        blocks="successor stability classification",
+        resolution_owner="backend owner",
     ),
     ActivationBlocker(
-        blocker_id="SUCCESSOR_NORMALIZATION_STRATEGY_UNAPPROVED",
+        blocker_id="SUCCESSOR_MODEL_AWARE_DEFAULT_RUN_NOT_IMPLEMENTED",
         summary=(
-            "Each component's normalization strategy (run-relative percentile rank vs "
-            "run-independent bounded ratio) is implemented and selectable but not approved. "
-            "The choice is analytically load-bearing: percentile-ranking a component hands "
-            "CRITIC a near-uniform distribution whose standard deviation sits near the "
-            "theoretical maximum, mechanically inflating that component's derived weight."
-        ),
-        blocks="successor component scoring and any CRITIC derivation over successor scores",
-        resolution_owner="analytical-method research lane",
-    ),
-    ActivationBlocker(
-        blocker_id="RESIDENT_IMPACT_POPULATION_RESOLUTION_UNRESOLVED",
-        summary=(
-            "The finest population geography available is one value per SIGUNGU, represented "
-            "by a single point per region. The component therefore varies smoothly per cell "
-            "while its information content remains one number per region, and every proposed "
-            "distance floor is smaller than the average region's own equivalent-circle "
-            "radius — so the floor would be calibrated against the arbitrary placement of a "
-            "representative point rather than against anything on the ground."
-        ),
-        blocks="resident_impact production activation",
-        resolution_owner="analytical-method research lane",
-    ),
-    ActivationBlocker(
-        blocker_id="SUCCESSOR_DEFAULT_RUN_RESOLUTION_UNDECIDED",
-        summary=(
-            "Default-run resolution selects the latest succeeded run regardless of component "
-            "model, so the first successful successor run would silently switch every default "
-            "view and every un-pinned shared link to a different model. How the default run is "
-            "chosen once two component models coexist is a product decision that gates rollout."
+            "The rollout sequence is DECIDED (SUCCESSOR_RUNTIME_DESIGN['switchover']): "
+            "model-aware default-run resolution ships with the default pinned to the "
+            "historical model, a successor run is then written reachable only by explicit run "
+            "id, and the default moves later by explicit configuration change. The resolution "
+            "itself is not implemented yet, and it must ship BEFORE the first successor run is "
+            "written — today's resolver takes the latest succeeded run regardless of component "
+            "model, so a successor write would silently switch every default view and every "
+            "un-pinned shared link."
         ),
         blocks="successor rollout and default-run switchover",
-        resolution_owner="product owner",
+        resolution_owner="backend owner",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class ClosedBlocker:
+    """An activation blocker that has been closed, and the basis for closing it."""
+
+    blocker_id: str
+    closed_by: str
+    basis: str
+
+    def sanitized_summary(self) -> dict[str, Any]:
+        return {"blocker_id": self.blocker_id, "closed_by": self.closed_by, "basis": self.basis}
+
+
+# The audit trail. A closed blocker is not deleted — the reason it stopped
+# blocking is part of the policy record and is asserted by tests.
+POLICY_CLOSURE_APPROVAL = (
+    "Project-owner delegated policy closure, 2026-08-17, recorded in "
+    "docs/research/SUITABILITY_V3_FINAL_POLICY.md. This is an explicit project-owner "
+    "judgement made under delegation. It is NOT external expert review, NOT an AHP or "
+    "elicitation result, and NOT a claim of empirical optimality."
+)
+
+CLOSED_BLOCKERS: tuple[ClosedBlocker, ...] = (
+    ClosedBlocker(
+        blocker_id="SUCCESSOR_WEIGHT_VECTOR_UNAPPROVED",
+        closed_by=POLICY_CLOSURE_APPROVAL,
+        basis=(
+            "Equal weighting (0.25 each) approved as the governance-neutral baseline, with a "
+            "written rationale per weight in SUCCESSOR_WEIGHT_RATIONALE. Chosen because it is "
+            "the one vector that asserts no unsupported preference ordering, not because it "
+            "scored well; the asymmetric weight-sensitivity of the ranking head is recorded "
+            "rather than resolved."
+        ),
+    ),
+    ClosedBlocker(
+        blocker_id="SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING",
+        closed_by=POLICY_CLOSURE_APPROVAL,
+        basis=(
+            "Satisfied rather than overturned: CRITIC is confirmed DIAGNOSTIC ONLY and the "
+            "approved vector is not data-derived, so no CRITIC weight is persisted, served, or "
+            "used to score a successor run."
+        ),
+    ),
+    ClosedBlocker(
+        blocker_id="RESIDENT_IMPACT_DISTANCE_FLOOR_UNAPPROVED",
+        closed_by=POLICY_CLOSURE_APPROVAL,
+        basis=(
+            "500 m approved (resident_impact.PRODUCTION_DISTANCE_FLOOR), on the basis that it "
+            "is exactly one candidate grid cell — the model does not resolve distance below "
+            "its own spatial resolution. Measured as near-inert in the composite: adjacent "
+            "floors retain 50/50, 50/50 and 49/50 of the top 50."
+        ),
+    ),
+    ClosedBlocker(
+        blocker_id="LAND_COVER_DEVELOPED_CLASS_REGISTRY_UNAVAILABLE",
+        closed_by=POLICY_CLOSURE_APPROVAL,
+        basis=(
+            "land_conversion.PRODUCTION_REGISTRY populated with successor-land-cover-l2-v1: "
+            "22 published L2 codes, developed = the 1xx 시가화건조지역 grouping only. It is an "
+            "approved project reading of the published code structure, explicitly NOT an "
+            "authority's developed/natural designation — none exists."
+        ),
+    ),
+    ClosedBlocker(
+        blocker_id="LAND_CONVERSION_DIRECTION_UNAPPROVED",
+        closed_by=POLICY_CLOSURE_APPROVAL,
+        basis=(
+            "Direction approved as implemented: a larger not-already-developed share is the "
+            "worse screening outcome, because siting on already-converted land converts less."
+        ),
+    ),
+    ClosedBlocker(
+        blocker_id="SUCCESSOR_NORMALIZATION_STRATEGY_UNAPPROVED",
+        closed_by=POLICY_CLOSURE_APPROVAL,
+        basis=(
+            "Phase 4's measured choice approved: BOUNDED_RATIO where the raw value is a "
+            "bounded ratio (land_conversion only), percentile rank elsewhere because the other "
+            "three raws are unbounded rates. Percentile-ranking a bounded ratio was measured "
+            "to buy no ranking change (Spearman 0.9999988, top-50 50/50) while inflating its "
+            "standard deviation 11.9%."
+        ),
+    ),
+)
+
+
+@dataclass(frozen=True)
+class AcceptedLimitation:
+    """A known defect carried in published scope instead of blocking activation."""
+
+    limitation_id: str
+    summary: str
+    measured_cost: str
+    why_not_blocking: str
+
+    def sanitized_summary(self) -> dict[str, Any]:
+        return {
+            "limitation_id": self.limitation_id,
+            "summary": self.summary,
+            "measured_cost": self.measured_cost,
+            "why_not_blocking": self.why_not_blocking,
+        }
+
+
+# These two are NOT closed and NOT solved. They are accepted, published limits on
+# what the model claims. Neither can be closed by a decision — both need data that
+# does not exist locally — and neither is made better by refusing to ship.
+ACCEPTED_LIMITATIONS: tuple[AcceptedLimitation, ...] = (
+    AcceptedLimitation(
+        limitation_id="AIR_IMPACT_PROXY_GRAIN_AND_COVERAGE_UNRESOLVED",
+        summary=(
+            "One ingestion-level defect affects two components: 99 facility rows carrying "
+            "1,907,717.3 t/yr are ungeocoded, and RCIS reports seven large Gyeonggi cities at "
+            "CITY grain while regions holds only their child 구. Scoring-time behaviour is "
+            "strict SIGUNGU with no projection. The numerator basis stays total generation, "
+            "as implemented and measured; origin-based incinerated tonnage is a candidate for "
+            "a later policy version, not a silent alternative."
+        ),
+        measured_cost=(
+            "22 regions and 6,349,306 residents (24.13% of the capital region) stay outside "
+            "the model."
+        ),
+        why_not_blocking=(
+            "The remedy is upstream geocoding or district-grain statistics, neither available "
+            "locally. The CITY-grain projection was evaluated numerically and rejected: it "
+            "recovers the component for 5,536 candidates but ZERO eligible ones, because the "
+            "same districts independently lose existing_burden to the identical gap. Refusing "
+            "to activate would not recover a single resident; publishing the exclusion does."
+        ),
+    ),
+    AcceptedLimitation(
+        limitation_id="RESIDENT_IMPACT_POPULATION_RESOLUTION_UNRESOLVED",
+        summary=(
+            "The finest population geography available is one value per SIGUNGU at a single "
+            "representative point, so within-region variation in resident_impact reflects that "
+            "point's placement as much as anything on the ground."
+        ),
+        measured_cost=(
+            "The within-region score range — an upper bound on the placement artifact — only "
+            "falls from 46.71 to 40.55 as the floor rises from 500 m to 5 km, so no available "
+            "floor controls it."
+        ),
+        why_not_blocking=(
+            "Closing it needs finer-than-SIGUNGU population geography, which does not exist in "
+            "this dataset. The approved floor does not claim to fix it, and the component's "
+            "coarse grain is a published property of the model rather than a hidden one."
+        ),
     ),
 )
 
@@ -1081,51 +1226,87 @@ PHASE4_DECISIONS: tuple[PolicyDecision, ...] = (
     ),
     PolicyDecision(
         decision_id="FINAL_WEIGHT_VECTOR",
-        status=DECISION_OPEN,
+        status=DECISION_DECIDED,
         summary=(
-            "No weight vector is approved. Equal weights are used in this phase strictly as a "
-            "neutral reference for perturbation, never as a proposal or default."
+            "Equal weighting, 0.25 to each of the four components, approved as the "
+            "governance-neutral Successor-V3 baseline with a written rationale per weight "
+            "(SUCCESSOR_WEIGHT_RATIONALE). Explicitly not claimed to be empirically optimal "
+            "and not data-derived; versioned and revisable."
         ),
         evidence=(
-            "The data-derived route is closed (CRITIC_SUITABILITY) and the ranking head is "
-            "asymmetrically weight-determined: +0.15 onto resident_impact retains 1/50 of the "
-            "top 50 while the same shift onto any other component retains 44-49/50. A vector "
-            "chosen now would be choosing a ranking."
+            "The data-derived route is closed (CRITIC_SUITABILITY), and no evidence supports "
+            "any asymmetric preference ordering over the four components. Equal weighting is "
+            "the only vector that asserts none. The measured consequence is carried rather "
+            "than hidden: +0.15 onto resident_impact retains 1/50 of the top 50 while the same "
+            "shift onto any other component retains 44-49/50."
         ),
     ),
     PolicyDecision(
         decision_id="RESIDENT_DISTANCE_FLOOR",
-        status=DECISION_OPEN,
-        summary="No floor is approved. 2 km remains explicitly not a default.",
+        status=DECISION_DECIDED,
+        summary=(
+            "500 m approved (resident_impact.PRODUCTION_DISTANCE_FLOOR): exactly one candidate "
+            "grid cell, so the model does not resolve distance below its own spatial "
+            "resolution. The smallest option with a coherent interpretation."
+        ),
         evidence=(
-            "The floor's importance depends on the unapproved weight: decisive on the "
-            "component alone (500 m vs 5 km retains 33/50, max move 20,979 ranks), nearly "
-            "inert inside an equal-weighted composite (49/50). Underneath sits an unresolved "
-            "defect — one population value per region at a single representative point, with "
-            "every proposed floor smaller than the average region's equivalent-circle radius — "
-            "so no floor is calibrated against anything on the ground."
+            "Near-inert in the approved composite on the ranking population: adjacent floors "
+            "retain 50/50, 50/50 and 49/50 of the top 50 at Spearman 0.99996 / 0.99966 / "
+            "0.99886. No floor controls the underlying placement artifact — the within-region "
+            "score range only falls 46.71 -> 40.55 across a tenfold floor increase — so the "
+            "tie was broken toward the simplest interpretation, and the artifact is carried as "
+            "an accepted limitation."
         ),
     ),
     PolicyDecision(
         decision_id="LAND_COVER_CLASS_REGISTRY",
-        status=DECISION_OPEN,
+        status=DECISION_DECIDED,
         summary=(
-            "PRODUCTION_REGISTRY stays None. The Phase-3 L2 registry remains research-only and "
-            "must not produce, rank, or publish any candidate result."
+            "successor-land-cover-l2-v1 approved: 22 published L2 codes, developed = the 1xx "
+            "시가화건조지역 grouping only, no class excluded from the denominator. An approved "
+            "project reading of the published code structure, not an authority's designation."
         ),
         evidence=(
-            "92.87% of measurable cells touch at least one class whose developed/not-developed "
-            "assignment is contested. 620 인공나지 alone affects 24,411 cells and is arguably "
-            "the most developed non-1xx class while being classified not-developed."
+            "1xx is the one grouping the source taxonomy itself labels built-up, so it is the "
+            "only boundary readable from the published structure rather than asserted. "
+            "Measured ranking cost of the alternatives is published, not assumed away."
         ),
     ),
     PolicyDecision(
         decision_id="AMBIGUOUS_LAND_CLASSES",
-        status=DECISION_OPEN,
-        summary="Unresolved: 230, 420, 620, 710, 720 all remain contested.",
+        status=DECISION_DECIDED,
+        summary=(
+            "All five contested classes (230, 420, 620, 710, 720) resolved NOT developed and "
+            "kept in the denominator — the conservative direction, since land_conversion is "
+            "LOWER_RAW_IS_BETTER so any other resolution improves a candidate's score. All "
+            "five stay flagged in ambiguous_class_codes and travel in every provenance record."
+        ),
         evidence=(
-            "Exposure is near-total (92.87%), so the ambiguity is a primary driver of the "
-            "component's values rather than a rounding detail."
+            "Exposure is near-total (92.87% of measurable cells touch a contested class), so "
+            "each resolution is measured on real data: 620 as developed retains 38/50 of the "
+            "top 50 (Spearman 0.9842); all three land classes as developed retains 26/50 "
+            "(0.9300); excluding water retains 16/50 (0.9915). Water exclusion was rejected on "
+            "evidence — it made water-dominated cells 7.4x more likely to reach a near-perfect "
+            "score (45 of 679 cells at >=50% water against 351 of 39,089 below 20%), which is "
+            "ambiguity improving a score."
+        ),
+    ),
+    PolicyDecision(
+        decision_id="SUCCESSOR_RANKING_POPULATION",
+        status=DECISION_DECIDED,
+        summary=(
+            "The successor model ranks the historical constraint screening's ELIGIBLE set "
+            "intersected with its own strict complete case. It never re-litigates, overrides, "
+            "or bypasses the constraint screening."
+        ),
+        evidence=(
+            "Measured on run 47: only ELIGIBLE candidates carry a rank or score at all "
+            "(17,501 ranked; REVIEW_REQUIRED and EXCLUDED carry neither). The strict complete "
+            "case of 33,980 is a component-AVAILABILITY set that contains 8,933 EXCLUDED and "
+            "11,313 REVIEW_REQUIRED candidates, leaving a rankable population of 13,734. "
+            "Ranking the unfiltered complete case would present burden and impact indicators "
+            "as siting suitability over locations the constraint screening had already set "
+            "aside, which docs/ANALYTICAL_METHODS.md 'Weighting Policy' item 2 forbids."
         ),
     ),
     PolicyDecision(
@@ -1142,15 +1323,21 @@ PHASE4_DECISIONS: tuple[PolicyDecision, ...] = (
     ),
     PolicyDecision(
         decision_id="RUNTIME_AND_VERSION_BEHAVIOUR",
-        status=DECISION_DEFERRED,
+        status=DECISION_DECIDED,
         summary=(
-            "Designed in SUCCESSOR_RUNTIME_DESIGN and not activated. Component-model-aware "
-            "default-run resolution must ship before the first successor run is written."
+            "The four-step switchover in SUCCESSOR_RUNTIME_DESIGN['switchover'] is approved as "
+            "the rollout contract: model-aware default-run resolution ships FIRST with the "
+            "default pinned to the historical model; a successor run is then written and is "
+            "reachable only by explicit run id; it is reviewed against the historical run on "
+            "the same grid; and only then does an explicit configuration change move the "
+            "default. Historical runs are never deleted and rollback is a configuration "
+            "change, not a data migration."
         ),
         evidence=(
             "Default-run resolution currently picks the latest succeeded run regardless of "
             "component model, so a successor write would silently switch every default view "
-            "and un-pinned shared link."
+            "and un-pinned shared link. Pinning first makes the switch an explicit act. "
+            "Implementation remains open as SUCCESSOR_MODEL_AWARE_DEFAULT_RUN_NOT_IMPLEMENTED."
         ),
     ),
 )
@@ -1180,10 +1367,56 @@ def validate_successor_policy() -> None:
                 "method_versions": sorted(COMPONENT_METHOD_VERSIONS),
             },
         )
-    if SUCCESSOR_WEIGHT_PROFILES:
+    # A weight profile may exist only alongside a minted policy identity, and every
+    # registered profile must be total over the successor components, carry a
+    # written rationale per component, and sum to exactly 1.
+    if SUCCESSOR_WEIGHT_PROFILES and SUCCESSOR_POLICY_VERSION is None:
         raise CrossModelReuseError(
-            "no successor weight profile may be registered before an approved weight vector",
+            "no successor weight profile may be registered before an approved policy version",
             {"profiles": sorted(SUCCESSOR_WEIGHT_PROFILES)},
+        )
+    for profile_name, weights in SUCCESSOR_WEIGHT_PROFILES.items():
+        assert_successor_component_set(weights.keys())
+        total = sum(Decimal(value) for value in weights.values())
+        if total != Decimal("1"):
+            raise CrossModelReuseError(
+                f"successor weight profile {profile_name!r} must sum to exactly 1; got {total}",
+                {"profile": profile_name, "total": format(total, "f")},
+            )
+        if any(Decimal(value) < 0 for value in weights.values()):
+            raise CrossModelReuseError(
+                f"successor weight profile {profile_name!r} may not carry a negative weight",
+                {"profile": profile_name},
+            )
+    if SUCCESSOR_WEIGHT_PROFILES and set(SUCCESSOR_WEIGHT_RATIONALE) != set(COMPONENTS):
+        raise CrossModelReuseError(
+            "every successor component must carry a written weight rationale before any "
+            "weighted composite is served (docs/ANALYTICAL_METHODS.md, Weighting Policy item 1)",
+            {"documented": sorted(SUCCESSOR_WEIGHT_RATIONALE)},
+        )
+    # Policy identity moves as a pair: a run row must never carry one half of it.
+    if (SUCCESSOR_POLICY_VERSION is None) != (SUCCESSOR_DERIVATION_VERSION is None):
+        raise CrossModelReuseError(
+            "successor policy_version and derivation_version must be minted together",
+            {
+                "policy_version": SUCCESSOR_POLICY_VERSION,
+                "derivation_version": SUCCESSOR_DERIVATION_VERSION,
+            },
+        )
+    # A blocker cannot be both open and closed.
+    closed_ids = {b.blocker_id for b in CLOSED_BLOCKERS}
+    open_ids = {b.blocker_id for b in ACTIVATION_BLOCKERS}
+    if closed_ids & open_ids:
+        raise CrossModelReuseError(
+            "a blocker cannot be both open and closed",
+            {"both": sorted(closed_ids & open_ids)},
+        )
+    # An accepted limitation is not a closed blocker: it stays a published limit.
+    limitation_ids = {limitation.limitation_id for limitation in ACCEPTED_LIMITATIONS}
+    if limitation_ids & (closed_ids | open_ids):
+        raise CrossModelReuseError(
+            "an accepted limitation must not be recorded as a blocker, open or closed",
+            {"both": sorted(limitation_ids & (closed_ids | open_ids))},
         )
     if COMPONENT_MODEL_VERSION_HISTORICAL == COMPONENT_MODEL_VERSION_SUCCESSOR:
         raise CrossModelReuseError(
@@ -1255,6 +1488,13 @@ def successor_snapshot() -> dict[str, Any]:
         "policy_version": SUCCESSOR_POLICY_VERSION,
         "derivation_version": SUCCESSOR_DERIVATION_VERSION,
         "weight_profiles": dict(SUCCESSOR_WEIGHT_PROFILES),
+        "weight_rationale": dict(SUCCESSOR_WEIGHT_RATIONALE),
+        "policy_closure_approval": POLICY_CLOSURE_APPROVAL,
+        "closed_blockers": [b.sanitized_summary() for b in CLOSED_BLOCKERS],
+        "accepted_limitations": [
+            limitation.sanitized_summary() for limitation in ACCEPTED_LIMITATIONS
+        ],
+        "ranking_population_rule": RANKING_POPULATION_RULE,
         "candidate_grid_version_reference": CANDIDATE_GRID_VERSION_REFERENCE,
         "missing_component_policy": {
             "selected": SELECTED_MISSING_COMPONENT_POLICY,

@@ -160,14 +160,19 @@ def test_perturbation_keeps_the_weights_summing_to_one() -> None:
     assert perturbed[contract.COMPONENT_EXISTING_BURDEN] == Decimal("0.20")
 
 
-def test_the_neutral_reference_is_equal_weights_and_is_not_a_registered_profile() -> None:
+def test_the_phase4_neutral_reference_matches_the_approved_baseline() -> None:
     from waste_equity_backend.analysis.suitability.successor import policy
 
     assert set(gate.NEUTRAL_REFERENCE_WEIGHTS) == set(contract.SUCCESSOR_COMPONENTS)
     assert sum(gate.NEUTRAL_REFERENCE_WEIGHTS.values()) == Decimal("1")
-    # It is a research reference only — registering it would be exactly the
-    # unapproved weight vector the activation gate forbids.
-    assert policy.SUCCESSOR_WEIGHT_PROFILES == {}
+    # Phase 4 used equal weights strictly as a neutral perturbation reference, and
+    # the policy closure later adopted that same vector as the approved baseline.
+    # They must stay numerically identical, because every Phase-4 sensitivity figure
+    # is calibrated against this reference and is cited as evidence for the approved
+    # vector. If the approved baseline ever changes, that citation stops holding and
+    # this test is where it fails.
+    approved = policy.SUCCESSOR_WEIGHT_PROFILES[policy.SUCCESSOR_WEIGHT_PROFILE_BASELINE]
+    assert {c: Decimal(w) for c, w in approved.items()} == dict(gate.NEUTRAL_REFERENCE_WEIGHTS)
 
 
 def test_composite_is_the_weighted_sum_of_the_component_scores() -> None:

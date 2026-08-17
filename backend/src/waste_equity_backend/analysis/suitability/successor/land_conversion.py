@@ -6,13 +6,18 @@ its per-class child rows ``environmental_land_cover_cell_class_areas``, derivati
 ``land-cover-cell-stats-v1``). This component consumes **those existing derived
 statistics**; it does not re-measure geometry and does not re-label classes.
 
-What it deliberately does **not** contain is the official developed/artificial
-class list. Class codes and names are stored verbatim from the source with no
-developed/natural classification anywhere in this repository, and a separate
-research lane is auditing the official registry. Hard-coding a guessed code list
-here would be exactly the kind of invented classification the project's data
-rules forbid, so the registry is a **required explicit input**
-(:class:`LandCoverClassRegistry`) and :data:`PRODUCTION_REGISTRY` is ``None``.
+The registry remains a **required explicit input** (:class:`LandCoverClassRegistry`)
+— this module still classifies no class code on its own, and every observation
+carries the registry it was measured against in its provenance.
+
+:data:`PRODUCTION_REGISTRY` is now populated with
+``successor-land-cover-l2-v1``, approved under the project-owner delegated policy
+closure of 2026-08-17 (``docs/research/SUITABILITY_V3_FINAL_POLICY.md``). It is
+**not** an authority's classification and does not claim to be: no official
+developed/natural designation exists in the source or anywhere in this repository.
+It is a project-approved reading of the published 중분류 code structure, with every
+contested class resolved in the conservative direction and flagged in
+``ambiguous_class_codes`` so the contested calls stay visible in provenance.
 
 Raw metric (over the evaluated-area denominator by default)::
 
@@ -135,10 +140,10 @@ AREA_UNIT = "m2"
 # explicitly, and neither choice is yet approved successor policy.
 DEFAULT_NORMALIZATION_STRATEGY = contract.NORMALIZATION_BOUNDED_RATIO
 
-# No official developed/artificial class registry exists in this repository. This
-# stays None until the class-registry research lane delivers an audited one; a
-# guessed list would be an invented official classification.
-PRODUCTION_REGISTRY: LandCoverClassRegistry | None = None
+# The approved production registry is constructed after LandCoverClassRegistry is
+# defined (see PRODUCTION_REGISTRY at the end of the registry section below). It
+# cannot be built here because the dataclass does not exist yet at this point in
+# the module.
 
 METHOD_NOTE = (
     "Share of the measured cell area that is not in a developed/artificial land-cover class, "
@@ -254,6 +259,146 @@ class LandCoverClassRegistry:
             "approved": self.approved,
             "note": self.note,
         }
+
+
+# --------------------------------------------------------------------------- #
+# The approved production registry — successor-land-cover-l2-v1
+# --------------------------------------------------------------------------- #
+
+PRODUCTION_REGISTRY_ID = "successor-land-cover-l2-v1"
+
+# Every L2 (중분류) code published by the source taxonomy
+# (docs/LAND_COVER_DATA_CONTRACT.md §6) and observed in
+# environmental_land_cover_cell_class_areas for candidate grid
+# capital-grid-500m-v1. Enumerated from the data and cross-checked against the
+# published taxonomy; no code is invented and none is dropped.
+PRODUCTION_L2_CLASS_NAMES: dict[str, str] = {
+    "110": "주거지역",
+    "120": "공업지역",
+    "130": "상업지역",
+    "140": "문화·체육·휴양지역",
+    "150": "교통지역",
+    "160": "공공시설지역",
+    "210": "논",
+    "220": "밭",
+    "230": "시설재배지",
+    "240": "과수원",
+    "250": "기타재배지",
+    "310": "활엽수림",
+    "320": "침엽수림",
+    "330": "혼효림",
+    "410": "자연초지",
+    "420": "인공초지",
+    "510": "내륙습지",
+    "520": "연안습지",
+    "610": "자연나지",
+    "620": "인공나지",
+    "710": "내륙수",
+    "720": "해양수",
+}
+
+# DEVELOPED = the 1xx 시가화건조지역 grouping, and only that grouping.
+#
+# This is the single grouping the source taxonomy itself labels as urbanised /
+# built-up, so it is the one developed/not-developed boundary that can be read
+# off the published structure rather than asserted. Every 1xx child (주거·공업·
+# 상업·문화체육휴양·교통·공공시설) is a built land use by the source's own
+# definition, so the grouping is adopted whole rather than split.
+PRODUCTION_DEVELOPED_CLASS_CODES: frozenset[str] = frozenset(
+    {"110", "120", "130", "140", "150", "160"}
+)
+
+# EXCLUDED = nothing. No class is removed from the denominator.
+#
+# The Phase-3 research registry excluded 7xx 수역 from both numerator and
+# denominator, so the metric read "share of the *land* that is not developed".
+# That reading was measured on the real dataset and **rejected on evidence**: it
+# systematically improves the score of water-dominated cells, because a cell that
+# is mostly river or sea is judged only on its small land remainder, and if that
+# remainder happens to be built the cell scores as though there were nothing left
+# to convert.
+#
+#   water share of cell   cells    mean developed-share-of-land   scoring >= 0.95
+#   < 20%                 39,089   0.1894                         351  (0.90%)
+#   20-50%                   738   0.2217                           8  (1.08%)
+#   >= 50%                   679   0.2951                          45  (6.63%)
+#
+# A water-dominated cell is 7.4x more likely to reach a near-perfect
+# land_conversion score under the exclusion rule, and flipping the rule replaces
+# 34 of the composite's top 50. Ambiguity must never improve a candidate's score,
+# so water stays in the denominator and counts as conversion-exposed: a facility
+# cannot use open water without converting it, and reclamation is conversion of a
+# particularly consequential kind.
+#
+# Keeping the set empty also removes a whole axis of configuration — there is one
+# denominator, the evaluated area, and no class silently leaves it.
+PRODUCTION_EXCLUDED_CLASS_CODES: frozenset[str] = frozenset()
+
+# AMBIGUOUS = the five classes whose treatment is a contested policy call.
+#
+# Flagging never leaves a hole — each is resolved into exactly one bucket below,
+# so the registry stays total — but the flag travels in every observation's
+# provenance so the contested calls remain auditable and reversible.
+#
+# The conservative rule applied to all three non-water ambiguous classes:
+# ``land_conversion`` is LOWER_RAW_IS_BETTER, so counting a class as *developed*
+# shrinks the conversion-exposed numerator and **improves** a candidate's score.
+# Ambiguity must never improve a score, so every contested class is resolved to
+# NOT developed — the direction that leaves the candidate looking worse, not
+# better.
+#
+#   230 시설재배지 — protected/greenhouse cultivation. Artificial structures over
+#                    a continuing agricultural land use; the source files it under
+#                    2xx 농업지역. Resolved NOT developed.
+#   420 인공초지   — artificial grassland. Managed, but not built-up. Resolved
+#                    NOT developed.
+#   620 인공나지   — artificial bare ground: construction sites, earthworks,
+#                    quarries, cleared land. Arguably the most developed non-1xx
+#                    class, and the single largest exposure (24,411 cells). It is
+#                    still resolved NOT developed, because calling it developed is
+#                    the direction that would improve scores on a contested
+#                    reading. Its sensitivity is measured and published rather
+#                    than assumed away.
+#   710/720 수역   — inland and marine water. Kept in the denominator and counted
+#                    as conversion-exposed (see the exclusion evidence above).
+#                    Still flagged, because "water is conversion-exposed land" is
+#                    a contested reading even though it is the conservative one.
+PRODUCTION_AMBIGUOUS_CLASS_CODES: frozenset[str] = frozenset({"230", "420", "620", "710", "720"})
+
+PRODUCTION_REGISTRY_NOTE = (
+    "Project-approved L2 land-cover classification for the Successor V3 model, adopted under "
+    "the project-owner delegated policy closure of 2026-08-17. Developed = the 1xx "
+    "시가화건조지역 grouping only, read off the published 중분류 code structure. No class is "
+    "excluded from the denominator: every one of the five contested classes (230, 420, 620, "
+    "710, 720) is resolved as NOT developed, the conservative direction, because "
+    "land_conversion is LOWER_RAW_IS_BETTER and any other resolution would improve a "
+    "candidate's score on a contested reading. Water is included on measured evidence, not by "
+    "convention: excluding it made water-dominated cells 7.4x more likely to reach a "
+    "near-perfect score. This is NOT an official or authoritative developed/natural "
+    "designation — no such designation exists in the source or this repository. It is an "
+    "explicit, versioned analytical-policy assertion, and the ranking effect of every "
+    "alternative resolution is measured and published rather than assumed away."
+)
+
+# The registry every production successor derivation of this component must use.
+# ``approved=True`` records the project-owner delegated approval described above;
+# it does not claim external expert review, an authority's classification, or
+# empirical optimality.
+PRODUCTION_REGISTRY: LandCoverClassRegistry | None = LandCoverClassRegistry(
+    registry_id=PRODUCTION_REGISTRY_ID,
+    class_level=2,
+    developed_class_codes=PRODUCTION_DEVELOPED_CLASS_CODES,
+    known_class_codes=frozenset(PRODUCTION_L2_CLASS_NAMES),
+    excluded_class_codes=PRODUCTION_EXCLUDED_CLASS_CODES,
+    ambiguous_class_codes=PRODUCTION_AMBIGUOUS_CLASS_CODES,
+    source=(
+        "docs/LAND_COVER_DATA_CONTRACT.md §6 (published 대·중·세분류 taxonomy of the 2025 "
+        "세분류 토지피복지도); classification approved by project-owner delegated policy "
+        "closure 2026-08-17, recorded in docs/research/SUITABILITY_V3_FINAL_POLICY.md"
+    ),
+    approved=True,
+    note=PRODUCTION_REGISTRY_NOTE,
+)
 
 
 # --------------------------------------------------------------------------- #

@@ -204,6 +204,48 @@ class DistanceFloor:
 
 
 # --------------------------------------------------------------------------- #
+# The approved production floor
+# --------------------------------------------------------------------------- #
+
+# 500 m, adopted by the project-owner delegated policy closure of 2026-08-17.
+#
+# Basis — the model's own spatial resolution. The candidate grid is
+# ``capital-grid-500m-v1`` with ``GRID_CELL_METERS = 500``, so 500 m is exactly one
+# cell. The floor says: this model does not resolve distance below the size of the
+# thing it is scoring. That is a reproducible, in-repo fact rather than a tuned
+# value, and it is the smallest floor with a coherent interpretation.
+#
+# Measured basis for preferring the smallest option (run 47, approved weights, on
+# the ranking population): the floor is nearly inert in the composite. Adjacent
+# steps retain 50/50, 50/50 and 49/50 of the top 50, at Spearman 0.99996, 0.99966
+# and 0.99886. No floor is materially more stable than its neighbour, so the tie
+# is broken toward the simplest local interpretation.
+#
+# LIMITATION, carried in writing rather than solved. The floor does NOT fix the
+# component's underlying geography defect. Population is one value per SIGUNGU held
+# at a single representative point, and every candidate floor is smaller than the
+# average region's own equivalent-circle radius. The within-region score range —
+# an upper bound on the placement artifact — only falls from 46.71 to 40.55 across
+# a tenfold increase in the floor, so no available floor controls that artifact.
+# Choosing 500 m does not claim otherwise; see
+# RESIDENT_IMPACT_POPULATION_RESOLUTION_UNRESOLVED in the accepted-limitation
+# register.
+PRODUCTION_DISTANCE_FLOOR_M = Decimal("500")
+
+PRODUCTION_DISTANCE_FLOOR = DistanceFloor(
+    distance_floor_m=PRODUCTION_DISTANCE_FLOOR_M,
+    basis=(
+        "One candidate grid cell: capital-grid-500m-v1 has GRID_CELL_METERS = 500, so the "
+        "model does not resolve distance below its own spatial resolution. Approved by "
+        "project-owner delegated policy closure 2026-08-17 "
+        "(docs/research/SUITABILITY_V3_FINAL_POLICY.md). Does not resolve the SIGUNGU-grain "
+        "population geography limitation, which no available floor controls."
+    ),
+    approved=True,
+)
+
+
+# --------------------------------------------------------------------------- #
 # Inputs
 # --------------------------------------------------------------------------- #
 

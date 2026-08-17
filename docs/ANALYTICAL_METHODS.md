@@ -271,6 +271,45 @@ the review workflow recorded in its PR, a distinct `derivation_version`, and
 honest UI labeling as analytical screening (never a legal/permit determination).
 All other served indicators remain single-derivation.
 
+A **second** weighted composite is approved but **not yet served**: the Successor
+V3 model (`suitability-successor-policy-v1` /
+`suitability-successor-derivation-v1`, component model
+`suitability-components-successor-v1`), over `existing_burden`,
+`air_impact_proxy`, `resident_impact`, and `land_conversion`. Its weights are
+**equal — 0.25 each** — adopted as a governance-neutral baseline, and it satisfies
+the requirements below as follows:
+
+1. **Per-weight rationale and sensitivity** —
+   `docs/research/SUITABILITY_V3_FINAL_POLICY.md` §1.2 and §1.4, mirrored in code
+   as `successor.policy.SUCCESSOR_WEIGHT_RATIONALE`. Equal weighting is explicitly
+   **not** claimed to be empirically optimal and is **not** data-derived: Phase 4
+   established that CRITIC measures normalization and analytical grain rather than
+   information, so it is diagnostic only and no CRITIC vector may be persisted,
+   served, or used to score a run.
+2. **Constraint layers** — satisfied by construction rather than separately: the
+   successor model **re-scores and never re-screens**. Its ranking population is
+   the historical constraint screening's `ELIGIBLE` set intersected with its own
+   strict complete case, so no candidate the zoning/protected-area/road screening
+   set aside can ever appear in a successor ranking. Burden and impact indicators
+   are therefore never presented as siting suitability on their own.
+3. **Review recorded** — project-owner delegated policy closure, 2026-08-17,
+   recorded in `docs/research/SUITABILITY_V3_FINAL_POLICY.md` §0 and in
+   `successor.policy.POLICY_CLOSURE_APPROVAL`. This is an explicit project-owner
+   judgement under delegation; it is **not** external expert review and makes no
+   claim of empirical optimality.
+4. **Distinct version and labeling** — a distinct `derivation_version`, plus a
+   separate `component_model_version` because `policy_version` and
+   `derivation_version` have each already moved for reasons unrelated to component
+   identity. Any served successor result must be labeled with its component model,
+   and must publish the model's accepted limitations (24.13% of residents outside
+   the model; SIGUNGU-grain population geography) and its regional concentration
+   caveat.
+
+Approving this policy did **not** activate the model: `is_activated()` remains
+`False` while the run write path, stability thresholds, and model-aware default-run
+resolution are unimplemented. The default run stays pinned to the historical model
+until an explicit configuration change moves it.
+
 Adopting any weighted composite requires, before it is served:
 
 1. A written rationale per weight in this document, including what the weight

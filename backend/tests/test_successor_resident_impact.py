@@ -11,6 +11,7 @@ from decimal import Decimal
 
 import pytest
 
+from waste_equity_backend.analysis.suitability import policy as historical_policy
 from waste_equity_backend.analysis.suitability.successor import contract, resident_impact
 from waste_equity_backend.analysis.suitability.successor.resident_impact import (
     DISTANCE_MEASUREMENT_GEOGRAPHY_METERS,
@@ -143,12 +144,37 @@ def test_a_binary_float_floor_is_rejected() -> None:
         DistanceFloor(distance_floor_m=100.0, basis="synthetic")  # type: ignore[arg-type]
 
 
-def test_no_production_floor_is_shipped_by_the_module() -> None:
+def test_the_approved_production_floor_is_500m_and_states_its_basis() -> None:
+    """The floor is approved, but it is still never an implicit default.
+
+    Replaces the pre-closure assertion that no production floor shipped. The
+    property that mattered — no caller ever gets a floor it did not ask for —
+    is preserved and asserted below: there is no DEFAULT_* constant, and
+    ``observe`` still takes the floor as a required explicit argument.
+    """
+
     exported = [name for name in dir(resident_impact) if "FLOOR" in name.upper()]
-    # Only the reason-agnostic machinery is exported; no default value constant.
     assert "DEFAULT_DISTANCE_FLOOR_M" not in exported
-    assert "PRODUCTION_DISTANCE_FLOOR_M" not in exported
+
+    floor = resident_impact.PRODUCTION_DISTANCE_FLOOR
+    assert floor.distance_floor_m == Decimal("500")
+    assert floor.approved is True
+    # The basis must point at the grid, which is what makes 500 m reproducible
+    # rather than tuned, and must not overclaim on the unresolved geography.
+    assert "capital-grid-500m-v1" in floor.basis
+    assert "GRID_CELL_METERS" in floor.basis
+    assert "Does not resolve" in floor.basis
+
+    # A synthetic floor is still unapproved: approval belongs to the one value.
     assert SYNTHETIC_FLOOR.approved is False
+
+
+def test_the_production_floor_matches_the_candidate_grid_cell() -> None:
+    # The whole basis for 500 m: one grid cell. If the grid ever changes, this
+    # fails rather than silently leaving the floor at a stale resolution.
+    assert resident_impact.PRODUCTION_DISTANCE_FLOOR_M == Decimal(
+        historical_policy.GRID_CELL_METERS
+    )
 
 
 # --------------------------------------------------------------------------- #
