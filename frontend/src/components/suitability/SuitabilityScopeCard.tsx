@@ -96,7 +96,10 @@ export default function SuitabilityScopeCard({
 
   return (
     <SectionCard
-      title="① 분석 범위"
+      /* 지역 선택, not 분석 범위: Figma 136:8684 titles the card ① 지역 선택 and the
+         page-4 기술 참고사항 list (225:440) calls the rename out explicitly
+         ("탭 소제목 확인: ① 지역 선택"). The control and its state are unchanged. */
+      title="① 지역 선택"
       description="공식 폐기물 자료가 있는 지역만 선택할 수 있습니다."
       testId="suitability-scope"
       className="wep-figma-card wep-numbered-card"
@@ -262,21 +265,20 @@ export default function SuitabilityScopeCard({
             : `선택한 지역 ${selected.length + unknownCodes.length}개`}
       </p>
 
-      {/* The standing limit, in ONE line. Everything else the card used to state up
-          front — the 시·도 breakdown and why the two region filters are never
-          combined — moved into the disclosure below when ① became a real control:
-          the pills, the search and the chips have to fit above the 1024×768 fold
-          alongside ② 계산 모델 가중치 설정 (e2e/suitabilityDashboard.spec.ts), and a
-          card of prose ahead of them would push the scoring basis off screen. */}
-      <p className="mt-1 text-[11px] leading-snug text-ink-subtle" data-testid="suitability-scope-note">
-        범위는 순위에 넣을 500m 후보 구역을 고를 뿐이며, 시·군·구 자체를 점수로 매기거나 하나로
-        합치지 않습니다.
-      </p>
-
-      <details className="mt-0.5" data-testid="suitability-scope-detail">
-        <summary className="cursor-pointer text-[11px] font-medium text-ink-muted">
-          분석 실행 범위와 시·도별 후보 구역 수 보기
+      {/* 기술 참고사항 225:440: "[① 지역 선택] 하단의 작은 글씨들 삭제". Figma closes ①
+          at the count line, so the standing limitation sentence that stood here moves
+          INTO the disclosure below rather than out of the product — it is a real
+          caveat (a scope picks 구역, it does not score a 시·군·구) and still one
+          keystroke away. */}
+      <details className="mt-1" data-testid="suitability-scope-detail">
+        <summary className="cursor-pointer text-[11px] text-ink-subtle">
+          분석 범위 자세히 보기
         </summary>
+
+        <p className="mt-1 text-[11px] leading-snug text-ink-subtle" data-testid="suitability-scope-note">
+          범위는 순위에 넣을 500m 후보 구역을 고를 뿐이며, 시·군·구 자체를 점수로 매기거나 하나로
+          합치지 않습니다.
+        </p>
 
         {rows.length === 0 ? (
           <p className="mt-1 text-[11px] leading-relaxed text-ink-muted" data-testid="suitability-scope-empty">

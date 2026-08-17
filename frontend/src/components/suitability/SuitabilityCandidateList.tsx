@@ -319,11 +319,16 @@ export default function SuitabilityCandidateList({
             )}
           </>
         )}
+        {/* Figma 136:8684 closes the ranking with ONE short line — "목록을 누르면
+            지도에서 위치가 강조됩니다." — and the 기술 참고사항 list strikes the small
+            print the frame does not draw. The three sentences that stood here are
+            reduced to that line; the two DESCRIPTIVE ones (a row is a 구역 not a
+            시·군·구, and the rank is run-wide rather than re-numbered inside a scope)
+            are not lost — they move into the 자세히 보기 disclosure below, which is
+            where the frame puts every explanation. */}
         {rows.length > 0 && (
-          <p className="mt-1.5 text-[10px] leading-snug text-ink-subtle" data-testid="candidate-list-map-hint">
-            각 행은 시·군·구 자체가 아니라 그 안에 있는 500m 후보 구역 한 곳입니다. 순위 번호는 분석
-            실행 전체에서의 순위이며, 고른 범위 안에서 다시 매긴 번호가 아닙니다. 목록에서 후보를
-            누르면 지도에서 해당 구역이 선택됩니다.
+          <p className="mt-1.5 text-[11px] leading-snug text-ink-subtle" data-testid="candidate-list-map-hint">
+            목록을 누르면 지도에서 위치가 강조됩니다.
           </p>
         )}
         {/* Figma 136:8684 closes the ranking with ONE line — "목록을 누르면 지도에서
@@ -346,6 +351,13 @@ export default function SuitabilityCandidateList({
           )}
           <details className="mt-1">
             <summary className="cursor-pointer text-ink-subtle">자세히 보기</summary>
+            {/* The two descriptive sentences struck from the standing hint above.
+                Kept verbatim — what a row IS, and what its number means, are exactly
+                the things a reader most easily gets wrong about a ranking. */}
+            <p className="mt-1" data-testid="candidate-list-row-meaning">
+              각 행은 시·군·구 자체가 아니라 그 안에 있는 500m 후보 구역 한 곳입니다. 순위 번호는 분석
+              실행 전체에서의 순위이며, 고른 범위 안에서 다시 매긴 번호가 아닙니다.
+            </p>
             <p className="mt-1">
               전체 후보 구역 {formatCount(summary.candidate_count_total)}개가 모두 지도에 표시됩니다.
               표시 개수 제한 없이 전체 자료를 볼 수 있고, 화면에 보이는 부분만 빠르게 불러옵니다. 지도는

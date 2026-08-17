@@ -161,12 +161,24 @@ export default function SuitabilityScenarioSaveCard({
           </p>
         </InfoBanner>
       ) : (
-        // The label already carries its own noun (`profileLabel` returns e.g.
-        // "기본 기준"), so the sentence must not append another one.
-        <p className="text-[10px] leading-snug text-ink-subtle" data-testid="scenario-save-weights">
-          <span className="font-medium text-ink">{weightsSourceLabel}</span>의 가중치를 저장합니다 ·{" "}
-          {namedWeights(weights)}
-        </p>
+        // DEMOTED TO A DISCLOSURE. Figma 136:8684 draws ④ as heading → 시나리오 이름 →
+        // field → buttons → 저장목록 보기, with no weight recap; the 기술 참고사항 list
+        // strikes the small print the frame does not draw.
+        //
+        // It is not deleted, for two reasons: what a scenario stores is the one thing
+        // a reader must know BEFORE naming it, and the vector is the audit trail for a
+        // saved scenario. So it moves one keystroke away rather than off the card.
+        // (The label already carries its own noun — `profileLabel` returns e.g.
+        // "기본 기준" — so the sentence must not append another one.)
+        <details data-testid="scenario-save-weights-detail">
+          <summary className="cursor-pointer text-[11px] text-ink-subtle">
+            저장되는 가중치 보기
+          </summary>
+          <p className="mt-1 text-[10px] leading-snug text-ink-subtle" data-testid="scenario-save-weights">
+            <span className="font-medium text-ink">{weightsSourceLabel}</span>의 가중치를 저장합니다 ·{" "}
+            {namedWeights(weights)}
+          </p>
+        </details>
       )}
 
       <div className="mt-3">

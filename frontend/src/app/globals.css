@@ -965,13 +965,23 @@ body {
   gap: 0.5rem;
   padding: 0 0 0.5rem;
 }
+/* 분석 조건 / 후보지 결과 — VISUALLY STRUCK, still announced.
+   Figma 136:8684 has no rail heading above either column: the canvas opens straight
+   into card ① on the left and card ③ on the right, and the 기술 참고사항 list strikes
+   "해당 피그마에 구현되어 있지 않은 작은 글씨들". The collapse control itself is NOT
+   removed — it is real functionality the frame simply does not draw, and
+   e2e/deepAnalysisPanels.spec.ts measures both rails — so only the label is hidden,
+   and the toggle keeps the full accessible name either way. */
 .wep-panel-title {
-  color: var(--color-ink);
-  font-size: 0.8125rem;
-  font-weight: 700;
-  white-space: nowrap;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 .wep-panel-body {
   display: flex;

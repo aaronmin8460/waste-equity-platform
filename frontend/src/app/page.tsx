@@ -2304,12 +2304,22 @@ export default function Home() {
             docs/ui-refresh/regression-contract.md §10. ModeOrientation stays a
             SIBLING so it still follows the h1 in document order (shell.test.tsx)
             while keeping the column's gap-3 rhythm. */}
-        <PageHeader
-          title={destination.label}
-          description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
-        />
+        {/* STRUCK FROM THE CANVAS, KEPT IN THE DOCUMENT.
+            기술 참고사항 225:440: "상단 소제목 '후보지 심층 분석' 및 관련 설명 삭제".
+            Figma 136:8684 opens the left column with card ① and nothing above it.
 
-        <ModeOrientation destination={destination} />
+            The <h1> is NOT deleted, only hidden: it is the view's single document
+            heading and its landmark, so removing it would be an accessibility
+            regression that no visual note asks for. `sr-only` keeps it — and the
+            orientation line — in DOM order for shell.test.tsx while giving the
+            canvas the frame's clean opening. */}
+        <div className="sr-only">
+          <PageHeader
+            title={destination.label}
+            description="서울 · 인천 · 경기 공공자료로 보는 지역 부담과 후보지"
+          />
+          <ModeOrientation destination={destination} />
+        </div>
           {/* NO standing disclaimer BANNER here. Figma 136:8684 opens the left
               column with ① and nothing above it, and a full-width notice card of
               three lines of prose ahead of the controls is exactly the wall of

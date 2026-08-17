@@ -641,6 +641,21 @@ export interface SuitabilityRun {
   candidate_count_excluded: number;
   input_dataset_version_ids: number[];
   input_provenance: Record<string, unknown>;
+  /**
+   * THE RUN'S OWN component-model identity (backend contract:
+   * docs/SUITABILITY_COMPONENT_MODEL_CONTRACT.md).
+   *
+   * Reported per RUN, never taken from the client's own constants, so a reader can
+   * never see one model's numbers under another model's labels. Two values exist
+   * today: `suitability-components-zred-v1` (historical Z/R/E/D) and
+   * `suitability-components-successor-v1` (Successor V3).
+   *
+   * OPTIONAL on this type because a response served by a pre-contract backend
+   * carries neither field; `undefined` therefore means "this backend does not
+   * report a model", which is treated as historical rather than as successor.
+   */
+  component_model_version?: string;
+  component_order?: string[];
   // Actual run weight profiles (static + run-specific critic), {} on old runs.
   weight_profiles: Record<string, Record<string, string>>;
   weight_derivation: Record<string, unknown>;
@@ -758,6 +773,23 @@ export interface CandidateDetail extends CandidateProperties {
   candidate_grid_version: string;
   weights: Record<string, string>;
   disclaimer: string;
+  /** This candidate's run's own component-model identity. See `SuitabilityRun`. */
+  component_model_version?: string;
+  component_order?: string[];
+  /**
+   * VERSION-AWARE component scores, keyed by the run's own component names.
+   *
+   * The backend contract is strict and this type mirrors it exactly:
+   *   - historical runs populate `zoning_score`/`road_score`/`equity_score`/
+   *     `demand_score` and emit `component_scores` as `{}`;
+   *   - every other model emits its scores HERE and the four legacy fields as
+   *     explicit `null` — present, never omitted, never reused for another quantity.
+   *
+   * Nothing is dual-emitted, so there is exactly one authoritative copy of any
+   * component score and the two representations can never drift apart. A `null`
+   * VALUE inside the map is a served missing score and stays missing — never 0.
+   */
+  component_scores?: Record<string, string | null>;
 }
 
 /**
