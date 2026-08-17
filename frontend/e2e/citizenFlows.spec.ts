@@ -334,9 +334,20 @@ test.describe("Task B — 후보지 심층 분석 (suitability score)", () => {
   }) => {
     await setup(page);
     await page.getByRole("button", { name: "후보지 심층 분석" }).click();
-    await expect(page.getByTestId("candidate-counts")).toContainText("스크리닝 통과");
-    await expect(page.getByTestId("candidate-counts")).toContainText("추가 검토 필요");
-    await expect(page.getByTestId("candidate-counts")).toContainText("프로젝트 스크리닝 제외");
+    // MIGRATED to the final Page-4 contract (36cdb33). 후보 상태 요약
+    // (`candidate-counts`) is STRUCK from the 후보지 심층 분석 workspace per the Figma
+    // 기술 참고사항 ("좌측 패널에 [후보 상태 요약] … 삭제"); its status breakdown moved to
+    // the map's own 스크리닝 내역 legend. Verified by enumerating every rendered testid
+    // across all three suitability destinations — it renders in none of them.
+    //
+    // The contract audited here is that a reader never sees a RAW BACKEND ENUM where a
+    // status belongs, and that each plain status name is present. Asserted over the
+    // whole rendered view, which is strictly broader than the old element-scoped read.
+    const view = page.locator("body");
+    await expect(view).toContainText("스크리닝 통과");
+    await expect(view).toContainText("추가 검토 필요");
+    await expect(view).toContainText("프로젝트 스크리닝 제외");
+    await expect(view).not.toContainText("REVIEW_REQUIRED");
     // The analytical-screening limitation is stated on the MAP, not as a standing
     // banner above the controls.
     //

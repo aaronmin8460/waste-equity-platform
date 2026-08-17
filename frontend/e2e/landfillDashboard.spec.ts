@@ -143,26 +143,48 @@ for (const vp of VIEWPORTS) {
       await mockLandfillBackend(page);
       await gotoLandfill(page);
 
-      const hero = page.getByTestId("landfill-kpi-quantity");
+      // MIGRATED to the deployed f01d3bf design. The Figma frame MOVES which card is
+      // the hero: 총 폐기물 발생량 (`landfill-kpi-generation`) is now the filled navy
+      // card carrying the largest figure, where this row previously made
+      // 수도권매립지 반입량 the hero. That is stated in
+      // LandfillHeadlineResults.tsx beside the `text-3xl` rule, and f01d3bf is the
+      // build already running in production.
+      //
+      // The CONTRACT is unchanged and still asserted: exactly one hero, and its value
+      // is larger than every other card's primary value. Only the identity of the
+      // hero card moved.
+      const hero = page.getByTestId("landfill-kpi-generation");
       await expect(hero).toBeVisible();
-      await expect(hero.locator("dd").first()).toContainText(" t");
-      // The headline is bigger than every other value on the screen. Measured on
-      // each card's PRIMARY value — the 수수료 card carries two further <dd>s for the
-      // conversions derived from it (Figma 234:441), which are deliberately smaller
-      // still and are not what the hero is being compared against.
+      // 반입량 is still shown, just no longer as the hero.
+      await expect(page.getByTestId("landfill-kpi-quantity").locator("dd").first()).toContainText(
+        " t",
+      );
+      // Measured on each card's PRIMARY value — the 수수료 card carries two further
+      // <dd>s for the conversions derived from it (Figma 234:441), which are
+      // deliberately smaller still and are not what the hero is compared against.
       const sizeOf = async (testId: string) =>
         page
           .getByTestId(testId)
           .locator("dd")
           .first()
           .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-      const heroSize = await sizeOf("landfill-kpi-quantity");
+      const heroSize = await sizeOf("landfill-kpi-generation");
       expect(heroSize).toBeGreaterThan(await sizeOf("landfill-kpi-fee"));
+      expect(heroSize).toBeGreaterThan(await sizeOf("landfill-kpi-quantity"));
 
       // Reported values and derived values are labelled apart, in text. The 수수료
       // card holds BOTH kinds (Figma 234:441): its own reported amount, and the two
       // conversions derived from it.
-      await expect(hero.locator("dt [data-status='reported']")).toHaveText("공식 값");
+      //
+      // The hero is now a DERIVED total (총 폐기물 발생량 is a DerivedTotalKpi), so the
+      // reported-value labelling is asserted where a reported value actually lives —
+      // 수도권매립지 반입량. Asserting "공식 값" on the hero would have quietly claimed
+      // a derived figure was an official one, which is the precise distinction this
+      // dashboard exists to keep.
+      await expect(
+        page.getByTestId("landfill-kpi-quantity").locator("dt [data-status='reported']"),
+      ).toHaveText("공식 값");
+      await expect(hero.locator("[data-status='derived']").first()).toHaveText("계산값");
       await expect(
         page.getByTestId("landfill-kpi-fee").locator("[data-status='derived']").first(),
       ).toHaveText("계산값");
@@ -205,18 +227,26 @@ for (const vp of VIEWPORTS) {
       // And the monthly chart agrees with its own accessible table: one bar per
       // served month, one row per served month, never a zero-filled twelve.
       await page.getByTestId("landfill-trend-exact-summary").click();
-      // Bars only. Every month also carries a transparent full-height hit target —
-      // what the hover/focus readout listens on — which is a second <rect> that
-      // paints nothing and encodes no value, so a raw <rect> count double-counts.
-      const bars = await page
+      // MIGRATED to the f01d3bf design: the trend is a LINE, not bars. The Figma
+      // remediation replaced `landfill-trend-bar` with `landfill-trend-line` plus one
+      // `landfill-trend-point` per served month, so a bar count is now always 0 and
+      // the old assertion compared 12 rows against nothing.
+      //
+      // The contract is unchanged and still the point of the test: one plotted month
+      // per served month, and the table says exactly the same months — never a
+      // zero-filled twelve. Points, not the transparent `landfill-trend-hit` targets,
+      // which paint nothing and encode no value.
+      await expect(page.getByTestId("landfill-trend-line")).toBeVisible();
+      const points = await page
         .getByTestId("landfill-trend-chart")
-        .getByTestId("landfill-trend-bar")
+        .getByTestId("landfill-trend-point")
         .count();
       const trendRows = await page
         .getByTestId("landfill-trend-table")
         .locator("tbody tr")
         .count();
-      expect(trendRows).toBe(bars);
+      expect(points).toBeGreaterThan(0);
+      expect(trendRows).toBe(points);
 
       await expectNoHorizontalOverflow(page, "table open");
     });
@@ -232,9 +262,17 @@ test.describe("1440×900 — the refreshed workflow", () => {
 
     const selection = page.getByTestId("landfill-selection");
     await expect(selection).toBeVisible();
-    // Defaults are named, never left blank or invented.
-    await expect(selection).toContainText("최신 완결연도");
+    // MIGRATED to the f01d3bf copy. The summary no longer says "최신 완결연도" — the
+    // Page-2 copy remediation removed that phrasing by owner decision, and removed
+    // Page-2 caveat text must STAY removed. It now names the served period directly:
+    // "기준 기간 2024년 연간의 공식 반입 자료를 표시합니다."
+    //
+    // The contract is unchanged: the default selection is NAMED, never blank and
+    // never invented. Asserted on the concrete served period rather than the old
+    // label for it.
+    await expect(selection).toContainText("2024년");
     await expect(selection).toContainText("연간");
+    await expect(selection).not.toContainText("최신 완결연도");
     // The outcome is stated as official provenance plus the served period.
     await expect(page.getByTestId("landfill-selection-badge")).toHaveAttribute(
       "data-status",
@@ -242,16 +280,22 @@ test.describe("1440×900 — the refreshed workflow", () => {
     );
     await expect(page.getByTestId("landfill-selection-status")).toContainText("기준 기간");
 
-    // Changing a filter updates the summary and the values together.
+    // Changing a filter updates the DATA. MIGRATED: the summary no longer echoes the
+    // chosen origin/waste back. LandfillFilterPanel documents that removal — the echo
+    // was redundant with the controls themselves, and the sentence now carries only
+    // what is NOT readable from them (request state, official-record presence, and the
+    // served period). So the filter's effect is asserted where it is now observable:
+    // on the control's own value and on the rows the backend returned for it.
     await page.getByTestId("landfill-origin-select").selectOption("11");
-    await expect(selection).toContainText("서울시");
+    await expect(page.getByTestId("landfill-origin-select")).toHaveValue("11");
     await expect(page.getByTestId("landfill-region-row")).toHaveCount(1);
 
     await page.getByTestId("landfill-waste-select").selectOption("생활폐기물");
-    await expect(selection).toContainText("생활폐기물");
+    await expect(page.getByTestId("landfill-waste-select")).toHaveValue("생활폐기물");
 
-    // The summary is a report, not a second set of controls.
+    // The summary reports STATE, not a result: no control, and no served count/total.
     await expect(selection.locator("select, input, button")).toHaveCount(0);
+    await expect(selection).toContainText("공식 반입 자료");
     await expectNoHorizontalOverflow(page, "filtered");
   });
 
@@ -264,12 +308,25 @@ test.describe("1440×900 — the refreshed workflow", () => {
     await expect(partial).toBeVisible();
     await expect(partial).toContainText("2026-05");
     await expect(partial).toContainText("연간 합계가 아닙니다");
-    // It sits inside the headline section, above the numbers it qualifies.
+    // MIGRATED to the f01d3bf placement. The notice used to sit above the whole KPI
+    // row; LandfillHeadlineResults now renders it INSIDE the 반입량 card, directly
+    // under the value, and says why: "A partial year is a WARNING about the value
+    // directly above it, not a period restatement" — the plain period moved to the
+    // 조회 조건 line, so this stays attached to the one number it qualifies.
+    //
+    // The contract is therefore stronger than before, and still asserted: exactly one
+    // notice, inside the headline, adjacent to the quantity it qualifies rather than
+    // floating above an unrelated row.
     const headline = page.getByTestId("landfill-headline");
     expect(await headline.locator("[data-testid='landfill-partial-year']").count()).toBe(1);
     const partialBox = (await partial.boundingBox())!;
     const kpiBox = (await page.getByTestId("landfill-kpis").boundingBox())!;
-    expect(partialBox.y).toBeLessThan(kpiBox.y);
+    // Inside the KPI row's vertical span, not above it.
+    expect(partialBox.y).toBeGreaterThanOrEqual(kpiBox.y);
+    expect(partialBox.y).toBeLessThanOrEqual(kpiBox.y + kpiBox.height);
+    // And directly below the quantity value it qualifies.
+    const quantityBox = (await page.getByTestId("landfill-kpi-quantity").boundingBox())!;
+    expect(partialBox.y).toBeGreaterThan(quantityBox.y);
   });
 
   test("methodology and provenance stay reachable and openable", async ({ page }) => {
@@ -384,12 +441,12 @@ test.describe("1440×900 — the refreshed workflow", () => {
     await expect(page.getByTestId("landfill-origin-select")).toHaveValue("11");
     await expect(page.getByTestId("landfill-waste-select")).toHaveValue("생활폐기물");
 
-    // The summary reports the restored selection back, in words.
+    // The summary reports the restored SERVED PERIOD back, in words. The origin and
+    // waste are restored on their own controls (asserted above) rather than echoed
+    // here — see LandfillFilterPanel, which removed that echo deliberately.
     const selection = page.getByTestId("landfill-selection");
     await expect(selection).toContainText("2024");
     await expect(selection).toContainText("3월");
-    await expect(selection).toContainText("서울시");
-    await expect(selection).toContainText("생활폐기물");
     await expectNoHorizontalOverflow(page, "restored link");
   });
 });

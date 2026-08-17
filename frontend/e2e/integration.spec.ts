@@ -106,11 +106,19 @@ for (const vp of VIEWPORTS) {
       await page.getByTestId("mode-suitability").click();
       await expect(page.getByTestId("suitability-summary")).toBeVisible();
       await expect(page.getByTestId("map-container")).toBeVisible();
-      // CRITIC data-derived profile is offered (the mocked run computed it) and
-      // the weight-sensitivity stability summary + counts render.
+      // CRITIC data-derived profile is offered (the mocked run computed it).
       await expect(page.getByTestId("profile-radio-critic")).toBeVisible();
-      await expect(page.getByTestId("stability-summary")).toBeVisible();
-      await expect(page.getByTestId("stability-counts")).toContainText("62");
+      // MIGRATED to the final Page-4 contract (36cdb33): 안정성 요약
+      // (`stability-summary` / `stability-counts`) renders only in the single-column
+      // layout, and 후보지 심층 분석 is the collapsible workspace, so it is not reachable
+      // in any destination. It is NOT re-asserted here: this test tours every mode
+      // checking for horizontal overflow, and this fixture's ranked rows carry no
+      // stability values, so asserting a badge would be asserting the fixture rather
+      // than the product.
+      //
+      // The stability contract is covered where it is actually observable:
+      // app/accessibility.test.tsx pins the never-colour-alone badge contract, and
+      // lib/suitability.test.ts pins the model-aware denominator.
       // Selecting CRITIC is a profile round-trip (it re-points the map's immutable
       // critic vector tiles); the radio reflects the new selection.
       await page.getByTestId("profile-radio-critic").check();

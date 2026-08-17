@@ -408,11 +408,133 @@ function scopeFixture(origin: string | null, wasteName: string | null): ScopedFi
  * one spec can exercise both the complete and partial presentations through the
  * real filter control rather than a second fixture install.
  */
+/**
+ * SYNTHETIC capital-region reporting fixtures, in the real endpoints' shape.
+ *
+ * Same rule as everything else in this file: the shape is real, every number is
+ * invented, and the marker rides in `official_dataset_name` so it is visible at
+ * runtime. Internally consistent on purpose — one region set, one population per
+ * region shared by both envelopes, and generation totals that sum to a round figure
+ * the specs can assert against without asserting that the figure is *correct*.
+ *
+ * 총 폐기물 발생량 (the f01d3bf hero) = 1,000,000 t across the three metropolitan
+ * reporting regions: 500,000 + 200,000 + 300,000.
+ */
+const SYNTHETIC_REGIONS = [
+  { code: "KR-SGIS-11", name: "서울특별시", generationTons: 500_000, population: 9_000_000 },
+  { code: "KR-SGIS-23", name: "인천광역시", generationTons: 200_000, population: 3_000_000 },
+  { code: "KR-SGIS-31", name: "경기도", generationTons: 300_000, population: 13_000_000 },
+] as const;
+
+/** The hero total the specs assert, derived from SYNTHETIC_REGIONS, never hardcoded twice. */
+export const SYNTHETIC_GENERATION_TOTAL_TONS = SYNTHETIC_REGIONS.reduce(
+  (sum, r) => sum + r.generationTons,
+  0,
+);
+
+function syntheticReportingStatistics() {
+  return {
+    reference_year: 2024,
+    count: SYNTHETIC_REGIONS.length,
+    unavailable_regions: [],
+    items: SYNTHETIC_REGIONS.map((r) => ({
+      reporting_region_code: r.code,
+      reporting_region_name: r.name,
+      reporting_geography_type: "NATIVE_SGIS",
+      geometry_kind: "NATIVE",
+      source_reporting_level: "SIDO",
+      child_region_codes: [],
+      waste_stream: "HOUSEHOLD",
+      waste_category_name: "총계",
+      generation_quantity: `${r.generationTons}.000000`,
+      recycling_quantity: null,
+      incineration_quantity: null,
+      landfill_quantity: null,
+      other_treatment_quantity: null,
+      total_treatment_quantity: null,
+      total_treatment_is_derived: false,
+      quantity_unit: "t/년",
+      accounting_basis: "ORIGIN_BASED_GENERATION",
+      reference_year: 2024,
+      reference_period: "2024",
+      official_dataset_name: `폐기물 발생량 (${SYNTHETIC})`,
+      source_id: "synthetic-reporting-stats",
+      source_pid: "synthetic",
+    })),
+  };
+}
+
+function syntheticReportingPerCapita() {
+  return {
+    reference_year: 2024,
+    count: SYNTHETIC_REGIONS.length,
+    unit: "kg/인/년",
+    excluded_regions: [],
+    items: SYNTHETIC_REGIONS.map((r) => ({
+      reporting_region_code: r.code,
+      reporting_region_name: r.name,
+      reporting_geography_type: "NATIVE_SGIS",
+      source_reporting_level: "SIDO",
+      numerator_reporting_level: "SIDO",
+      child_region_codes: [],
+      generation_quantity: `${r.generationTons}.000000`,
+      quantity_unit: "t/년",
+      accounting_basis: "ORIGIN_BASED_GENERATION",
+      population: r.population,
+      population_is_derived: false,
+      population_derivation: null,
+      population_definition: "MOIS_RESIDENT_REGISTRATION_TOTAL",
+      population_reference_period: "2024-12",
+      population_source_id: "synthetic-population",
+      per_capita_kg_per_year: (r.generationTons * 1000) / r.population,
+      per_capita_unit: "kg/인/년",
+      reference_year: 2024,
+      official_dataset_name: `1인당 발생량 (${SYNTHETIC})`,
+    })),
+  };
+}
+
 export async function mockLandfillBackend(page: Page): Promise<void> {
   await mockBackend(page);
+
+  // THE CAPITAL-REGION TOTALS THE HEADLINE ROW IS BUILT FROM.
+  //
+  // `mockBackend` serves EMPTY envelopes for these three, which was fine while
+  // 수도권매립지 반입량 was the hero — that figure comes from /landfill/summary. The
+  // f01d3bf Figma remediation makes 총 폐기물 발생량 the hero, and that total is
+  // derived by `buildCapitalRegionWaste()` from these three endpoints. With empty
+  // envelopes the hero renders its honest "unavailable" state, so every assertion
+  // about the headline's value and its typography was silently measuring the empty
+  // card rather than the hero.
+  //
+  // These follow this file's rule exactly as the landfill fixtures above do: the
+  // SHAPE is the real endpoints' shape, every NUMBER is synthetic, and the
+  // marker travels in the rendered `official_dataset_name`. Real captured values
+  // were deliberately NOT used — they would render under
+  // `OFFICIAL_REPORTED_VALUE` labels, which is the one thing the header of this
+  // file forbids.
+  //
+  // Registered AFTER mockBackend so these win: Playwright resolves the most
+  // recently registered matching route first.
+  await page.route("**/api/v1/waste-reporting/statistics**", (route) =>
+    json(route, syntheticReportingStatistics()),
+  );
+  await page.route("**/api/v1/waste-reporting/per-capita**", (route) =>
+    json(route, syntheticReportingPerCapita()),
+  );
+
   await page.route("**/api/v1/landfill/summary**", (route) => {
     const params = new URL(route.request().url()).searchParams;
     const partial = params.get("year") === "2026";
+    // Honour `month` the way the real backend does. Without this the fixture always
+    // served an ANNUAL period, so a month-scoped request (including a shared link
+    // carrying `month=3`) restored its month control correctly while the summary
+    // still reported 연간 — the control and the sentence disagreeing. The summary
+    // reports the SERVED period, so the fixture has to serve the month it was asked
+    // for or the disagreement is the fixture's, not the product's.
+    const monthParam = params.get("month");
+    const month = monthParam === null || monthParam === "" ? null : Number(monthParam);
+    const yearParam = Number(params.get("year") ?? 2024);
     // Honour `origin` and `waste_name` the way the real backend does. Without this
     // the fixture returned all three origins whatever was selected, so a spec could
     // "verify" the origin filter with an assertion that held before and after the
@@ -433,6 +555,20 @@ export async function mockLandfillBackend(page: Page): Promise<void> {
         // The partial year re-dates the period and the per-capita reference months.
         // It spreads AFTER the scoped values but rebuilds `fee_per_capita` from the
         // scoped one, so re-dating never discards the origin/waste scoping.
+        // A month-scoped selection is neither the complete year nor the 2026 partial
+        // year: it is one served month.
+        // Shape taken from the real endpoint: `month` is the STRING "YYYY-MM", and
+        // `is_complete_year` stays true (it describes the YEAR's completeness, not the
+        // selection's). Using a numeric month and flipping that flag broke rendering
+        // outright, which is exactly the kind of drift a shape-faithful fixture avoids.
+        ...(month !== null && !partial
+          ? {
+              period: period({
+                year: yearParam,
+                month: `${yearParam}-${String(month).padStart(2, "0")}`,
+              }),
+            }
+          : {}),
         ...(partial
           ? {
               period: period({

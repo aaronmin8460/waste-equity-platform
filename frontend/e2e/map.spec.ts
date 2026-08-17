@@ -166,7 +166,10 @@ test("suitability mode screens candidates with provenance and no government API 
   const summary = page.getByTestId("suitability-summary");
   await expect(summary).toBeVisible({ timeout: 20_000 });
   await expect(summary).toContainText("suitability-policy-v1");
-  await expect(page.getByTestId("candidate-counts")).toContainText("스크리닝 통과");
+  // MIGRATED: 후보 상태 요약 (`candidate-counts`) is struck from this workspace by the
+  // final Page-4 Figma contract; the status breakdown lives on the map legend now. The
+  // plain status name is still asserted, over the rendered view.
+  await expect(page.locator("body")).toContainText("스크리닝 통과");
 
   // The analytical-screening disclaimer is prominent (never a legal claim).
   await expect(page.getByTestId("suitability-disclaimer")).toContainText("legal");
