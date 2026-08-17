@@ -1,6 +1,8 @@
 # Page 5 — Successor-V3 final frontend lane
 
-**Status: complete against the V3 contract preview. The single most important
+**Status: SIGNED OFF against the authoritative backend contract. The release
+branch resolves to the same commit as the preview, so the authoritative delta is
+ZERO and no implementation change was required (§3.4). The single most important
 finding is that Page 5 is a HISTORICAL-model page by contract — the successor
 model serves no user scenario at all. See §3.**
 
@@ -10,8 +12,9 @@ model serves no user scenario at all. See §3.**
 | Branch | `feat/page5-successor-v3-final` |
 | Worktree | `/Volumes/WASTE_QA2/worktrees/page5-v3-final` |
 | Figma | `hETmPv3N31IJeW8XdLwoiS` node `167:10554` |
-| Backend handoff SHA | `b93393a015d6d9d579ff4619e092d545e690f388` (`origin/integration/backend-v3-contract-preview-20260817`) — **provisional, non-production** |
-| Authoritative branch | `origin/release/backend-v3-ready-20260817` — **still absent**, see §3.4 |
+| Backend contract SHA | `b93393a015d6d9d579ff4619e092d545e690f388` |
+| Authoritative branch | `origin/release/backend-v3-ready-20260817` @ `b93393a` — **verified, zero delta** (§3.4) |
+| Preview branch | `origin/integration/backend-v3-contract-preview-20260817` @ `b93393a` — the SAME commit |
 | Deployed | no |
 | Merged | no |
 | Backend modified | no |
@@ -69,8 +72,10 @@ two required fields.
 
 ## 3. Backend handoff — the V3 contract preview
 
-Consumed `b93393a` (`integration/backend-v3-contract-preview-20260817`), read as
-**provisional and non-production**. Nothing was deployed from it.
+Consumed `b93393a`. It was first read from
+`integration/backend-v3-contract-preview-20260817` as a provisional preview and
+has since been **confirmed authoritative**: `release/backend-v3-ready-20260817`
+resolves to the identical commit (§3.4). Nothing was deployed from either.
 
 Sources read: `docs/research/SUITABILITY_V3_FINAL_POLICY.md`,
 `docs/research/SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md`,
@@ -145,21 +150,38 @@ three-profile wording is the correct labelling here. If Page 5 ever became
 successor-capable, that mapping — not this page's layout — is what would have to
 change.
 
-### 3.4 Diff against the authoritative branch — still pending
+### 3.4 Authoritative sign-off — ZERO contract delta
 
-`origin/release/backend-v3-ready-20260817` did not exist at any poll up to
-16:39 KST. The preview contract is therefore unconfirmed. **Before final
-integration, diff `b93393a`'s `schemas/scenario.py` and
-`api/routes/suitability_scenarios.py` against the release branch.** The three
-things that would force a Page-5 change:
+`origin/release/backend-v3-ready-20260817` was fetched and resolves to
+**`b93393a015d6d9d579ff4619e092d545e690f388`** — byte-identical to the preview
+branch already consumed:
 
-1. scenarios becoming available for the successor model — would make Z/R/E/D
-   insufficient and require a component-model-driven weight table;
-2. either error code being renamed, merged, or re-scoped;
-3. `component_model_version` changing shape or leaving the scenario responses —
-   the guard in `buildSide` reads it directly.
+```
+release/backend-v3-ready-20260817                 b93393a…f388
+integration/backend-v3-contract-preview-20260817  b93393a…f388
+tree                                              b918441187a4bf6b62557903f0ff957edb8fa189
+git diff release preview                          (0 lines)
+```
 
-If none of the three changed, this branch needs no edit.
+Same commit → same tree → the delta is zero by construction, not by inspection.
+The three conditions §3.4 previously flagged were nevertheless re-verified
+directly against the release tree rather than inferred from the SHA:
+
+| # | condition | authoritative state | verdict |
+|---|---|---|---|
+| 1 | successor-model user scenarios still unavailable | `suitability_scenarios.py:321` — `if model_version != component_model.COMPONENT_MODEL_HISTORICAL:` → 422 `COMPONENT_MODEL_SCENARIOS_UNAVAILABLE` | **unchanged** |
+| 2 | the two error codes | `COMPONENT_MODEL_SCENARIOS_UNAVAILABLE` at `suitability_scenarios.py:268`; `COMPONENT_MODEL_MISMATCH` at `component_model.py:124`; still raised for the two distinct situations | **unchanged** |
+| 3 | `component_model_version` in scenario responses | `schemas/scenario.py` — preview `164–165`, candidate detail `146–147`, both `str` + `component_order: list[str]`; optional request selector at `34`/`45`; `component_scores` at `81`/`116` | **unchanged** |
+
+One further constant was checked because the frontend pins it literally:
+`component_model.py:62` `COMPONENT_MODEL_HISTORICAL = "suitability-components-zred-v1"`
+matches `lib/api.ts:1354` exactly, and `component_model.py:111`
+`DEFAULT_COMPONENT_MODEL = COMPONENT_MODEL_HISTORICAL` confirms that omitting the
+request selector — which this page does deliberately — resolves the historical
+model.
+
+**No implementation change was made at sign-off**, because none was warranted.
+The wiring committed at `297778f` is the authoritative wiring.
 
 ## 4. Figma forensic transcription
 
@@ -271,6 +293,15 @@ statements, not three floating ones.
 - No horizontal overflow at 1440 (e2e-asserted).
 - Remaining divergence is §7 only.
 
+### Pass 5 — at authoritative sign-off
+
+Captured again after the release branch was verified. Structurally identical to
+Pass 4 — same three bands, same card geometry and spacing, same one-line KPI
+captions, 실행 안정성 still rendering all three classes, one scope strip, one
+table footnote, and the page-level method note once at the foot. Byte-level
+equality is not expected (the map canvas is non-deterministic), and sign-off
+touched no component, so this is a confirmation rather than a comparison.
+
 ### Pass 4 — after the V3 contract wiring
 
 Re-captured once the model identity, the guard and the two error codes were in.
@@ -339,9 +370,9 @@ prints 자료 없음 — never a substituted number, never a zero, never a defau
 
 ## 7. Remaining limitations
 
-1. **The contract is the PREVIEW, not the release** (§3.4).
-   `origin/release/backend-v3-ready-20260817` has not appeared, so the wired
-   contract is provisional and must be diffed before final integration.
+1. ~~The contract is provisional~~ — **closed at sign-off.** The release branch
+   resolves to the same commit as the preview, all three flagged conditions were
+   re-verified against it, and the authoritative delta is zero (§3.4).
 2. **The successor model's own results are unreachable from Page 5** — by
    contract, not by omission (§3.1). A reader who wants successor scores needs
    Page 4/6; this page shows historical-model scenarios only. If the project
@@ -382,7 +413,13 @@ run, per the lane brief.
 | `vitest src/components/suitability/page5` + `lib/scenarioRankingComparison` | **106/106** |
 | `vitest src/lib src/components src/app` (whole unit suite) | **2165 passed / 2173**, 7 skipped, 1 contention flake |
 | `playwright` Page-5A + 5B + 5C + integration, isolated port | **39/39** |
-| 1440×900 visual | four capture passes, §5 |
+| 1440×900 visual | five capture passes, §5 |
+
+Re-run in full at authoritative sign-off (§3.4), on the same isolated port:
+typecheck clean, lint clean over `src/lib` + `src/components/suitability`,
+**381/381** across the Page-5, scenario, accessibility and terminology suites
+(16 files), **39/39** Page-5 e2e, and a fifth 1440×900 capture confirming the
+sign-off changed nothing visually. The global Playwright suite was not run.
 
 The single unit failure was `FacilityCostDashboard.test.tsx > toggles a calculable
 region from the map` under a 4-lane parallel run; it **passes 86/86 in isolation**
