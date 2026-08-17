@@ -68,12 +68,14 @@ import type {
   SuitabilityRun,
 } from "../../lib/api";
 import { PROFILE_META, profileLabel } from "../../lib/glossary";
-import { CANDIDATE_STABLE_OUTLINE_COLOR, formatCount } from "../../lib/metrics";
-import { namedWeightRows, namedWeights } from "../../lib/suitability";
+import { formatCount } from "../../lib/metrics";
+import { namedWeights } from "../../lib/suitability";
 import SectionCard from "../ui/SectionCard";
-import SuitabilityFactorCards from "./SuitabilityFactorCards";
-import SuitabilityWeightBar from "./SuitabilityWeightBar";
-import { OLD_RUN_NO_CRITIC_MESSAGE, PROFILE_OPTIONS, STABILITY_RULE_SHORT } from "./shared";
+import SuitabilityV3FactorCards, {
+  SuitabilityV3WeightBar,
+} from "./SuitabilityV3FactorCards";
+import { pendingV3Factors } from "../../lib/suitabilityV3";
+import { OLD_RUN_NO_CRITIC_MESSAGE, PROFILE_OPTIONS } from "./shared";
 
 export interface SuitabilityScoringBasisProps {
   policy: SuitabilityPolicy;
@@ -111,17 +113,31 @@ export default function SuitabilityScoringBasis({
   onSelectProfile,
   runProfiles,
   stabilityAvailable,
-  selected,
-  stableOnly,
 }: SuitabilityScoringBasisProps) {
-  const activeWeights = weightsFor(run, policy, profile);
-  const activeRows = namedWeightRows(activeWeights);
+  // `selected` and `stableOnly` stay on the props interface but are not read today:
+  // the V3 wiring will consume `selected` to fill each factor card's per-candidate
+  // score, and `stableOnly` was only ever read by the struck 안정 후보 row.
   const activeMeta = PROFILE_META[profile];
+
+  /**
+   * THE SUCCESSOR-V3 FACTOR STATE.
+   *
+   * Sourced from the adapter, NOT from the run's Z/R/E/D weight vector: V3 is not a
+   * rename of Z/R/E/D (lib/suitabilityV3.ts documents why the crosswalk does not
+   * exist). Until a V3 run is served every value is null, and the cards render their
+   * unavailable state rather than borrowing a legacy number.
+   *
+   * When the backend handoff lands this is the ONE line that changes: build the
+   * views from the served components instead of `pendingV3Factors()`.
+   */
+  const v3Factors = pendingV3Factors();
+  const v3Pending = v3Factors.every((f) => f.score === null && f.weightPercent === null);
 
   return (
     <SectionCard
+      /* No description line: Figma 136:8684 draws card ② as heading → bar → four
+         factor cards → 점수 기준 자세히 보기, with no prose between them. */
       title="② 계산 모델 가중치 설정"
-      description="네 항목을 어떤 비율로 반영해 후보 점수를 계산할지 결정합니다."
       testId="scoring-basis"
       className="wep-figma-card wep-numbered-card"
     >
@@ -131,7 +147,9 @@ export default function SuitabilityScoringBasis({
           tinted panel instead of with the distribution it is about. It is drawn
           from the SAME served rows the factor cards print: it adds a shape, never
           a number. */}
-      <SuitabilityWeightBar rows={activeRows} />
+      {/* THE SUCCESSOR-V3 BAR. Draws served V3 weights only — see the component for
+          why the frame's four equal segments are not reproduced while unserved. */}
+      <SuitabilityV3WeightBar factors={v3Factors} />
 
       {/* WHICH basis those proportions belong to — the NAME, and nothing else.
           This row used to carry three more standing lines, all of which said again
@@ -181,14 +199,21 @@ export default function SuitabilityScoringBasis({
           actually be read side by side instead of scattered down a radio list. */}
       <fieldset className="mt-3 m-0 border-0 p-0" data-testid="profile-selector">
         <legend className="mb-1 text-[11px] font-semibold text-ink-subtle">점수 반영 기준</legend>
-        <div className="flex flex-col gap-1">
+        {/* COMPACT PILL ROW, not five stacked full-width rows.
+            Figma card ② has no radio list at all — its control is the per-factor
+            weight input. That input is disabled while the run is a stored one, so
+            removing the basis selector would leave the card with NO working control:
+            a functional regression, not a copy cleanup. It stays, wrapped inline so
+            it costs roughly one third of the height it did, and the inputs stay
+            VISIBLE because e2e/integration.spec.ts asserts exactly that. */}
+        <div className="flex flex-wrap gap-1">
           {PROFILE_OPTIONS.filter((option) => runProfiles.includes(option.key)).map((option) => {
             const selected = profile === option.key;
             return (
               <label
                 key={option.key}
                 title={option.method}
-                className={`flex items-center gap-2 rounded-control border px-2.5 py-1.5 text-xs ${
+                className={`inline-flex items-center gap-1.5 rounded-control border px-2 py-1 text-[11px] ${
                   selected
                     ? "border-primary-border bg-primary-soft font-semibold text-ink"
                     : "border-hairline bg-surface text-ink-muted"
@@ -201,7 +226,7 @@ export default function SuitabilityScoringBasis({
                   onChange={() => onSelectProfile(option.key)}
                   data-testid={`profile-radio-${option.key}`}
                 />
-                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                <span className="whitespace-nowrap">{option.label}</span>
               </label>
             );
           })}
@@ -227,9 +252,17 @@ export default function SuitabilityScoringBasis({
         </details>
       </fieldset>
 
-      {/* THE FOUR FACTORS, one card each (Figma card ②). Same weights, same order,
-          same glossary names — this is the active basis broken out per factor. */}
-      <SuitabilityFactorCards weights={activeRows} selected={selected} />
+      {/* THE FOUR SUCCESSOR-V3 FACTOR CARDS (Figma card ②, expanded form 356:582).
+          Final presentation, honestly empty values — never Z/R/E/D numbers under a
+          V3 heading. See SuitabilityV3FactorCards and lib/suitabilityV3.ts. */}
+      <SuitabilityV3FactorCards
+        factors={v3Factors}
+        pendingReason={
+          v3Pending
+            ? "네 지수의 점수와 가중치는 해당 분석 모델이 연결되면 실제 계산 결과로 표시됩니다. 값이 없는 항목은 0으로 채우지 않습니다."
+            : undefined
+        }
+      />
 
       {/* THE METHODOLOGY, BEHIND ONE DISCLOSURE. Both blocks below are unchanged in
           wording and both used to stand open in the primary card: a reader had to
@@ -281,42 +314,14 @@ export default function SuitabilityScoringBasis({
         </p>
       )}
 
-      {/* 안정 후보 — the Figma frame closes card ② with this. It is a REPORT of the
-          canonical `stableOnly` state, not a second control: the one checkbox that
-          drives it lives in the map's own legend, beside the outline it explains,
-          and the screen is contracted to have exactly one
-          (app/page.suitabilityDashboard.test.tsx). Duplicating it here would give a
-          reader two switches for one state.
+      {/* 안정 후보 — STRUCK. The page-4 기술 참고사항 list (Figma 225:440) says
+          "[② 계산 모델 가중치 설정] 하단에 '안정 후보'에 대한 설명은 삭제. 지도 쪽에
+          있는 것만으로도 충분함."
 
-          The rule is stated as the production definition actually is: THREE
-          comparison bases (기본 · 모두 똑같이 · 데이터 분포), not four. Nothing is
-          recomputed here — the classification comes from the stored run. */}
-      {stabilityAvailable && (
-        <div
-          className="mt-3 flex items-start gap-2.5 rounded-control border border-hairline bg-surface-muted px-4 py-3.5"
-          data-testid="scoring-basis-stability"
-        >
-          {/* The stable-candidate OUTLINE, not a checkbox: the swatch is the same
-              signal the map draws, so the row reads as the legend entry it is. */}
-          <span
-            aria-hidden
-            className="mt-0.5 h-3.5 w-3.5 flex-none rounded-[3px] border-2"
-            style={{ borderColor: CANDIDATE_STABLE_OUTLINE_COLOR }}
-          />
-          <p className="min-w-0 text-[11px] leading-snug text-ink-muted">
-            <span className="text-[13px] font-bold text-ink">안정 후보 표시</span>
-            <span className="mt-0.5 block">
-              {STABILITY_RULE_SHORT} 현재{" "}
-              <span className="font-semibold text-ink">
-                {stableOnly
-                  ? "안정 후보만 보기가 켜져 있습니다"
-                  : "안정 후보만 보기가 꺼져 있습니다"}
-              </span>
-              . 표시 설정은 지도 왼쪽 아래 범례에서 바꿀 수 있으며, 후보 수와 점수는 바뀌지 않습니다.
-            </span>
-          </p>
-        </div>
-      )}
+          Nothing is lost: the map legend still draws the stable outline beside its
+          own 안정 후보 entry, and the ONE checkbox that drives `stableOnly` was
+          always in that legend, never here — this block only ever REPORTED the
+          state. The rule text lives on in the legend and in 점수 기준 자세히 보기. */}
     </SectionCard>
   );
 }

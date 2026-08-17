@@ -66,6 +66,19 @@ export function RelativeGradeChip({ grade }: { grade: RelativeGrade }) {
  * as its first block, which is where the Figma hierarchy puts it. The testids, the
  * copy, and every served value are identical in both shapes.
  */
+/**
+ * The row tints of Figma 136:8684's A/B/C block, sampled from the frame.
+ *
+ * A TINT, never the only signal: each row also carries its letter chip, its full
+ * Korean band name as the chip's accessible name, its share label, and its served
+ * numeric boundary — so the block reads identically in grayscale.
+ */
+const GRADE_ROW_TINT: Record<RelativeGrade, string> = {
+  A: "#EAF5EF",
+  B: "#FBF3E2",
+  C: "#FDEEED",
+};
+
 export function RelativeGradePanel({
   distribution,
   scopeName,
@@ -97,11 +110,23 @@ export function RelativeGradePanel({
           share (상위 25% · 중간 50% · 하위 25%) rides in the row instead of in a
           paragraph above it, which is what let the paragraph shrink to the single
           caveat line below. */}
+      {/* THE FIGMA A/B/C TREATMENT (136:8684, 304×36 rows at r=10).
+          The frame fills each row with its band colour and leads with a circular
+          letter badge, which is adopted here.
+
+          THE FRAME'S LABELS ARE NOT. It writes "점 이상 → 스크리닝 통과" and
+          "미만 → 스크리닝 제외" beside these bands, which would state a screening
+          OUTCOME. A/B/C is a relative position inside the current population — the
+          top quarter of a scope can still be entirely ineligible — so those words
+          would convert a distribution into a pass/fail verdict the analysis never
+          made. The truthful band labels and the caveat below stay; only the shape
+          is taken from the frame. */}
       <dl className="flex flex-col gap-2" data-testid="relative-grade-bands">
         {rows.map((row) => (
           <div
             key={row.grade}
-            className="flex h-9 items-center gap-2 rounded-control border border-hairline bg-surface-muted px-2.5 text-xs"
+            className="flex h-9 items-center gap-2 rounded-[10px] px-2.5 text-xs"
+            style={{ backgroundColor: GRADE_ROW_TINT[row.grade] }}
             data-testid={`relative-grade-row-${row.grade}`}
           >
             {/* The band's SHARE is the left-hand identity — "상위 25%" is what the
@@ -115,8 +140,15 @@ export function RelativeGradePanel({
             {/* The numeric boundary and the exact count, so the band is legible
                 without relying on the chip's fill at all. */}
             <dd className="flex min-w-0 flex-1 items-baseline justify-end gap-1.5 text-right text-ink-muted">
+              {/* The served boundary sits in the frame's white value slot. It is a
+                  READ-OUT, not the frame's editable input: the boundary is derived
+                  from the run's own score distribution, so a reader cannot retype it
+                  without asking the backend to re-cut the population. The editable
+                  form the 기술 참고사항 asks for ("ABC 등급 나누는 점수 기준 사용자가
+                  선택할 수 있도록") needs a served threshold contract that does not
+                  exist yet. */}
               <span
-                className="min-w-0 truncate tabular-nums"
+                className="min-w-0 truncate rounded-[5px] bg-surface px-1.5 py-0.5 tabular-nums"
                 data-testid={`relative-grade-range-${row.grade}`}
               >
                 {row.range}

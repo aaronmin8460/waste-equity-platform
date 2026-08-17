@@ -102,6 +102,44 @@ export const V3_COMPONENT_META: Record<V3Component, V3ComponentMeta> = {
   },
 };
 
+/**
+ * ONE factor card's worth of state, as card ② renders it.
+ *
+ * Every field is nullable ON PURPOSE. `null` means "the backend did not serve this",
+ * and the card renders an explicit unavailable state for it — never 0, never a
+ * placeholder digit, never a value borrowed from the Z/R/E/D model. This is the
+ * boundary the mandate's "missing != zero" rule is enforced at.
+ */
+export interface V3FactorView {
+  component: V3Component;
+  /** Served index score on the policy's 0–100 scale. */
+  score: number | null;
+  /**
+   * The served qualitative label beside the score (the frame shows 우수 / 미흡).
+   * POLICY-OWNED: the thresholds that turn a score into a word belong to the
+   * backend, so this layer prints what it is given and derives nothing.
+   */
+  gradeLabel: string | null;
+  /** Served weight for this component, as a whole percent. */
+  weightPercent: number | null;
+}
+
+/**
+ * The four cards in their pre-handoff state: correct components, correct order,
+ * correct labels — and no values, because none have been served.
+ *
+ * This is what makes the visual slot completable ahead of the backend without
+ * fabricating anything: the card is FINAL, its data is honestly absent.
+ */
+export function pendingV3Factors(): V3FactorView[] {
+  return V3_COMPONENT_ORDER.map((component) => ({
+    component,
+    score: null,
+    gradeLabel: null,
+    weightPercent: null,
+  }));
+}
+
 /** True when `value` is one of the four V3 component keys. */
 export function isV3Component(value: unknown): value is V3Component {
   return (

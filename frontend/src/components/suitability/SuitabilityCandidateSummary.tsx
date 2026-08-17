@@ -49,6 +49,17 @@ const TITLE = "선택한 후보 구역";
 export interface SuitabilityCandidateSummaryProps {
   detail: CandidateDetail | null;
   clearSelected: () => void;
+  /**
+   * Rendered INSIDE card ③ rather than as its own card.
+   *
+   * The page-4 기술 참고사항 list strikes 선택한 후보 구역 from the right column, but it
+   * is the only surface carrying a selected candidate's per-component detail, so it
+   * moves under the ranking instead of being deleted. Nested, it renders NOTHING
+   * until a candidate is selected: the standing empty-state card would otherwise put
+   * back exactly the always-on block the strike removes, and would sit between the
+   * ranking and ④ on every unselected load.
+   */
+  nested?: boolean;
 }
 
 /** Served component scores in the shared Z·R·E·D order. `null` stays `null`. */
@@ -75,8 +86,11 @@ function componentScores(detail: CandidateDetail): {
 export default function SuitabilityCandidateSummary({
   detail,
   clearSelected,
+  nested = false,
 }: SuitabilityCandidateSummaryProps) {
   if (detail === null) {
+    // Nested inside ③, an unselected state renders nothing at all — see `nested`.
+    if (nested) return null;
     return (
       <SectionCard title={TITLE} testId="candidate-detail-empty">
         <EmptyState

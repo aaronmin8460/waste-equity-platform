@@ -182,6 +182,15 @@ export default function SuitabilitySidebar({
   const summary = suit.summary;
   const showLeft = part === "left" || part === "all";
   const showRight = part === "right" || part === "all";
+  /**
+   * The Page-4 three-column workspace versus the single-column shape 후보지 심층 비교
+   * still renders. The page-4 기술 참고사항 list (Figma 225:440) strikes the
+   * supporting cards from THIS screen only, so the strikes are scoped rather than
+   * applied unconditionally — removing them from `part="all"` would regress a screen
+   * no annotation asks to change.
+   */
+  const workspace = part === "left" || part === "right";
+  const singleColumn = part === "all";
   // The scope/sort props every SuitabilityCandidateList below shares. One object so
   // the ranking cannot be rendered with a different scope from the one ① is showing.
   const rankingProps = {
@@ -220,7 +229,42 @@ export default function SuitabilitySidebar({
         />
       )}
 
-      {showLeft && (
+      {/* ── THE READINESS SENTINEL ──────────────────────────────────────────────
+          `suitability-summary` is the "후보지 심층 분석 has loaded" gate for nine e2e
+          specs across five OTHER pages (publicRelease, transparencyDashboard,
+          responsive, scenario, desktopNavigation, facilityCost, suitabilityDashboard).
+          It used to live on 후보 상태 요약 — a card the 기술 참고사항 list strikes from
+          this workspace — so the strike would have deleted the sentinel everywhere.
+
+          It is MIGRATED here rather than dropped: a transparent wrapper around card ②,
+          which is present and visible for the whole life of the view. The specs gate on
+          visibility, which this satisfies, and the id now marks "the analysis column is
+          up" rather than "one particular supporting card exists".
+
+          Exactly ONE element carries the id in any shape: the wrapper is workspace-only
+          and 후보 상태 요약 (which still carries it) is single-column-only, so
+          transparencyDashboard's count-of-1 assertion holds either way.
+
+          NOT `display: contents` — that leaves the wrapper with no bounding box, and
+          Playwright's toBeVisible() requires one. A plain div is a single flex child
+          of .wep-panel-body exactly as the bare card was, so the column's 20px
+          rhythm is unchanged. */}
+      {workspace && showLeft && (
+        <div data-testid="suitability-summary">
+          <SuitabilityScoringBasis
+            policy={suit.policy}
+            run={suit.run}
+            profile={profile}
+            onSelectProfile={setProfile}
+            runProfiles={runProfiles}
+            stabilityAvailable={stabilityAvailable}
+            selected={selected}
+            stableOnly={stableOnly}
+          />
+        </div>
+      )}
+
+      {singleColumn && (
       <SuitabilityScoringBasis
         policy={suit.policy}
         run={suit.run}
@@ -233,7 +277,11 @@ export default function SuitabilitySidebar({
       />
       )}
 
-      {showLeft && (
+      {/* 후보 상태 요약 — STRUCK from the workspace (기술 참고사항: "좌측 패널에
+          [후보 상태 요약] … 삭제"). The status breakdown it carried is still on the
+          map's own 스크리닝 내역 legend, which is where the annotation says it
+          suffices. Its readiness sentinel moved to card ② above. */}
+      {singleColumn && (
       <SuitabilityStatusSummary
         summary={summary}
         policy={suit.policy}
@@ -273,6 +321,11 @@ export default function SuitabilitySidebar({
               nested
               section="ranking"
             />
+            {/* 선택한 후보 구역, relocated INTO ③ from its own struck card. It renders
+                nothing until a row is selected, so the closed state of ③ is exactly
+                the frame's three-card right column; selecting a rank row then reveals
+                that candidate's detail directly beneath the row that produced it. */}
+            <SuitabilityCandidateSummary detail={selected} clearSelected={clearSelected} nested />
           </div>
         </SectionCard>
       ) : (
@@ -305,37 +358,38 @@ export default function SuitabilitySidebar({
       {showRight && part === "right" && scenarioSavePanel}
       {showRight && part === "right" && scenarioComparePanel}
 
-      {/* 기준을 바꿔도 상위권인 후보지 — a DIFFERENT population from the ranking
-          above, so it stays its own card beside ③ rather than inside it. */}
-      {showRight && part === "right" && (
-        <SuitabilityCandidateList
-          summary={summary}
-          profile={profile}
-          selected={selected}
-          onSelect={onSelect}
-          stabilityAvailable={stabilityAvailable}
-          {...rankingProps}
-          nested
-          section="stable"
-        />
-      )}
+      {/* ── THE RIGHT-COLUMN STRIKE LIST (기술 참고사항 225:440) ──────────────────
+          "우측 패널에 [기준을 바꿔도 상위권인 후보지], [선택한 후보 구역],
+           [기준을 바꿔도 상위권을 유지하는 정도], [현재 기준에서 제외된 사유],
+           [추가 확인이 필요한 사유] 삭제"
 
-      {showRight && (
+          Four of the five are struck outright here — they are reporting surfaces
+          whose signal survives elsewhere: every ranking row still carries its own
+          안정 후보 badge, and the map legend still draws the stable outline.
+
+          The fifth, 선택한 후보 구역, is NOT deleted. It is the only surface showing a
+          selected candidate's per-component detail, so deleting the card would delete
+          working functionality rather than a duplicate label. It MOVES INSIDE ③,
+          directly under the ranking that produces it — which keeps the frame's
+          right column at exactly three cards (③④⑤) while selecting a rank row still
+          shows its candidate. */}
+
+      {singleColumn && (
       <SuitabilityCandidateSummary detail={selected} clearSelected={clearSelected} />
       )}
 
-      {showRight && (
+      {singleColumn && (
       <SuitabilityStabilitySummary summary={summary} available={stabilityAvailable} />
       )}
 
-      {showRight && (
+      {singleColumn && (
       <ReasonSummary
         title="현재 기준에서 제외된 사유"
         counts={summary.exclusion_reason_counts}
         testId="exclusion-reason-summary"
       />
       )}
-      {showRight && (
+      {singleColumn && (
       <ReasonSummary
         title="추가 확인이 필요한 사유"
         counts={summary.review_reason_counts}
@@ -343,7 +397,7 @@ export default function SuitabilitySidebar({
       />
       )}
 
-      {showLeft && summary.coverage_notes.length > 0 && (
+      {singleColumn && summary.coverage_notes.length > 0 && (
         <SectionCard title="자료 공백 안내" testId="coverage-warnings">
           <ul className="list-disc space-y-1 pl-4 text-xs text-ink-muted">
             {summary.coverage_notes.map((note) => (
