@@ -62,6 +62,8 @@ function preview(overrides: Partial<UserScenarioPreview> = {}): UserScenarioPrev
     policy_version: "suitability-policy-v2",
     derivation_version: "suitability-screening-v3",
     candidate_grid_version: "capital-grid-500m-v1",
+    component_model_version: "suitability-components-zred-v1",
+    component_order: ["zoning", "road", "equity", "demand"],
     canonical_weights: WEIGHTS_A,
     compare_profile: "baseline",
     candidate_count_total: 100,
@@ -202,6 +204,39 @@ describe("buildScenarioComparison — the server is authoritative", () => {
     expect(c.sideB.canonicalWeights).toBeNull();
     expect(c.sideB.runId).toBeNull();
     expect(c.sideB.preview).toBeNull();
+  });
+
+  /**
+   * The V3 component-model contract. `canonical_weights` is keyed by the RUN's own
+   * components, so a preview from another component model would make every Z/R/E/D
+   * lookup on this page read `undefined` — printing one model's numbers under
+   * another model's labels instead of failing. The backend refuses such a request
+   * outright (`COMPONENT_MODEL_SCENARIOS_UNAVAILABLE`), so this is the second line.
+   */
+  it("refuses a preview from another component model instead of mislabelling it", () => {
+    const successor = preview({
+      component_model_version: "suitability-components-successor-v1",
+      component_order: [
+        "existing_burden",
+        "air_impact_proxy",
+        "resident_impact",
+        "land_conversion",
+      ],
+    });
+    const c = buildScenarioComparison(pair("sc-a", "sc-b"), RUN_47, {
+      a: { preview: successor, errorMessage: null },
+      b: OK_B,
+    });
+    expect(c.sideA.state).toBe("PREVIEW_ERROR");
+    expect(c.sideA.canonicalWeights).toBeNull();
+    expect(c.sideA.preview).toBeNull();
+    expect(c.sideA.errorMessage).toContain("가중치를 바꿔 보는 기능을 제공하지 않습니다");
+  });
+
+  it("accepts the historical model, which is the only one scenarios exist for", () => {
+    const c = buildScenarioComparison(pair("sc-a", "sc-b"), RUN_47, { a: OK_A, b: OK_B });
+    expect(c.sideA.preview?.component_model_version).toBe("suitability-components-zred-v1");
+    expect(c.status).toBe("READY");
   });
 });
 

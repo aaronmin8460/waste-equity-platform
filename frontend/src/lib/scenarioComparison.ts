@@ -25,6 +25,15 @@
  * back into a `SavedScenario`, and never encoded into the URL. A reload recomputes
  * it — which is the entire reason the run id is the thing that gets stored.
  *
+ * ── PAGE 5 IS A HISTORICAL-MODEL PAGE, AND THAT IS THE CONTRACT ──────────────────
+ * User-weight scenarios exist for the historical Z/R/E/D component model ONLY. The
+ * Successor-V3 model scores runs but serves no scenario: it has no approved weight
+ * vector or normalization strategy for recombination, so the backend refuses with
+ * `COMPONENT_MODEL_SCENARIOS_UNAVAILABLE` rather than returning a fabricated
+ * result (`SUITABILITY_V3_FINAL_POLICY.md`; `api/routes/suitability_scenarios.py`
+ * `_assert_scenario_model_supported`). Z/R/E/D here is therefore CORRECT, not
+ * legacy — it is the only component set this page can ever be asked about.
+ *
  * ── NO NEW ANALYTICS ─────────────────────────────────────────────────────────────
  * This module derives no score, no rank, no band, no threshold and no pass/fail. It
  * resolves, it validates, it labels states, and it formats two already-served weight
@@ -36,8 +45,9 @@
  * `components/suitability/useScenarioComparison.ts`.
  */
 
+import { COMPONENT_MODEL_HISTORICAL } from "./api";
 import type { SuitabilityProfile, UserScenarioPreview, UserScenarioWeights } from "./api";
-import { COMPONENT_META, COMPONENT_ORDER, type ScoreComponent } from "./glossary";
+import { COMPONENT_META, COMPONENT_ORDER, plainError, type ScoreComponent } from "./glossary";
 import type { ComparisonResolution, ComparisonSlot, SavedScenario } from "./savedScenarios";
 import { scenarioRunState } from "./savedScenarios";
 
@@ -278,6 +288,23 @@ function buildSide(
       ...base,
       state: "PREVIEW_ERROR",
       errorMessage: outcome.errorMessage ?? PREVIEW_FAILED_MESSAGE,
+    };
+  }
+
+  // ── The component model must be the one these weights are DEFINED OVER ──────
+  // The backend refuses a scenario on any non-historical model before it computes
+  // anything (`COMPONENT_MODEL_SCENARIOS_UNAVAILABLE`), so this should be
+  // unreachable. It is checked anyway because the failure it prevents is silent
+  // and total: `canonical_weights` is keyed by the RUN's own components, so a
+  // successor preview would carry existing_burden / air_impact_proxy /
+  // resident_impact / land_conversion, and every Z/R/E/D lookup on this page would
+  // read `undefined` — printing one model's numbers under another model's four
+  // labels rather than failing. A wrong-model comparison is not a comparison.
+  if (outcome.preview.component_model_version !== COMPONENT_MODEL_HISTORICAL) {
+    return {
+      ...base,
+      state: "PREVIEW_ERROR",
+      errorMessage: plainError("COMPONENT_MODEL_SCENARIOS_UNAVAILABLE").primary,
     };
   }
 

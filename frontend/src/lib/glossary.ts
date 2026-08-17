@@ -532,6 +532,22 @@ const ERROR_MESSAGES: Record<string, Omit<PlainError, "code">> = {
     primary: "가중치 설정이 만료되었습니다. 다시 적용해 주세요.",
     detail: "브라우저에 저장된 가중치가 최신 계산과 일치하지 않습니다.",
   },
+  // The next two must NOT read alike. The backend raises them for different
+  // situations and says so explicitly (`_assert_scenario_model_supported`): a
+  // mismatch is a statement about the reader's own scenario, which stays perfectly
+  // usable against a run of its own model, while unavailable is a statement about
+  // the run on screen. Collapsing them would tell a reader to fix a scenario that
+  // is not broken — and nudge toward remapping one model's weights onto another's
+  // components, which is the one thing neither error may invite.
+  COMPONENT_MODEL_MISMATCH: {
+    primary: "이 시나리오는 다른 분석 모델에서 만든 것이라 지금 실행에 적용할 수 없습니다.",
+    detail: "시나리오를 만들 때 쓴 모델의 분석 실행에서는 그대로 사용할 수 있습니다.",
+  },
+  COMPONENT_MODEL_SCENARIOS_UNAVAILABLE: {
+    primary: "현재 분석 실행에서는 가중치를 바꿔 보는 기능을 제공하지 않습니다.",
+    detail:
+      "이 실행의 평가 모델에는 승인된 가중치 기준이 없어, 가중치를 다시 조합하면 실제 분석이 아닌 값이 만들어집니다.",
+  },
   NO_ANALYSIS_AVAILABLE: {
     primary: "아직 표시할 후보지 분석 결과가 없습니다.",
   },

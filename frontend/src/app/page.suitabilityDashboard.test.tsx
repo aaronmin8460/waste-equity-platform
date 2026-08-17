@@ -172,6 +172,8 @@ function scenarioPreview(
   over: Partial<api.UserScenarioPreview> = {},
 ): api.UserScenarioPreview {
   return {
+    component_model_version: "suitability-components-zred-v1",
+    component_order: ["zoning", "road", "equity", "demand"],
     scenario_hash: "hash-scenario",
     scenario_hash_short: "hash-scena",
     method_version: "user-weight-scenario-v1",
@@ -196,6 +198,7 @@ function scenarioPreview(
       {
         candidate_id: 701,
         candidate_key: "cap500-000701",
+        component_scores: {},
         sido_region_code: "28",
         sido_region_name: "인천광역시",
         sigungu_region_code: "28710",
@@ -228,6 +231,9 @@ function scenarioPreview(
 }
 
 const SCENARIO_CANDIDATE: api.UserScenarioCandidateDetail = {
+  component_scores: {},
+  component_model_version: "suitability-components-zred-v1",
+  component_order: ["zoning", "road", "equity", "demand"],
   candidate_id: 701,
   run_id: 47,
   candidate_key: "cap500-000701",

@@ -1341,8 +1341,27 @@ export interface UserScenarioWeights {
   demand: string;
 }
 
+/**
+ * The component model a run was scored under.
+ *
+ * `suitability-components-zred-v1` is the historical Z/R/E/D model and is the
+ * DEFAULT for every unpinned request. `suitability-components-successor-v1` is the
+ * Successor-V3 model (existing_burden / air_impact_proxy / resident_impact /
+ * land_conversion), which scores runs but — see
+ * `COMPONENT_MODEL_SCENARIOS_UNAVAILABLE` — has no approved weight vector or
+ * normalization strategy for user scenarios, so it serves none.
+ */
+export const COMPONENT_MODEL_HISTORICAL = "suitability-components-zred-v1";
+
 export interface UserScenarioRequest {
   run_id?: number | null;
+  /**
+   * Optional component-model selector. Omitted → the default (historical) model,
+   * which is the behaviour every existing caller relies on. When `run_id` is also
+   * given the run must belong to this model, or the request fails with
+   * `COMPONENT_MODEL_MISMATCH`.
+   */
+  component_model_version?: string | null;
   weights: UserScenarioWeights;
   compare_profile: SuitabilityProfile;
   top_n?: number;
@@ -1370,10 +1389,20 @@ export interface UserScenarioTopCandidate {
   comparison_rank: number | null;
   rank_delta: number | null;
   rank_change_direction: UserScenarioRankDirection | null;
+  /** Legacy (zred-v1) component scores: populated for historical runs, null otherwise. */
   zoning_score: string | null;
   road_score: string | null;
   equity_score: string | null;
   demand_score: string | null;
+  /**
+   * Version-aware component scores keyed by the run's OWN component names.
+   * `{}` for historical runs, whose scores are the four fields above.
+   */
+  component_scores: Record<string, string | null>;
+  /**
+   * The STORED RUN's weight-sensitivity stability — never recomputed under the
+   * scenario, and therefore identical in both sides of an A/B comparison.
+   */
   stable_count: number | null;
   stability_class: StabilityClass | null;
   centroid_lon: number | null;
@@ -1398,11 +1427,16 @@ export interface UserScenarioCandidateDetail {
   comparison_rank: number | null;
   rank_delta: number | null;
   rank_change_direction: UserScenarioRankDirection | null;
+  /** Legacy (zred-v1) component scores: populated for historical runs, null otherwise. */
   zoning_score: string | null;
   road_score: string | null;
   equity_score: string | null;
   demand_score: string | null;
+  /** Version-aware component scores keyed by the run's own names; `{}` for historical runs. */
+  component_scores: Record<string, string | null>;
+  /** `component_score × scenario weight`, ordered by the run's `component_order`. */
   contributions: UserScenarioContribution[];
+  /** The STORED RUN's stability. Not recomputed under the scenario. */
   stable_count: number | null;
   stability_class: StabilityClass | null;
   stability_membership: Record<string, boolean>;
@@ -1426,6 +1460,13 @@ export interface UserScenarioCandidateDetail {
   policy_version: string;
   derivation_version: string;
   candidate_grid_version: string;
+  /**
+   * The RUN's own component-model identity. A scenario is only ever valid against
+   * a run of the component model its weights are defined over.
+   */
+  component_model_version: string;
+  /** The run's components, in the order `contributions` and the weights follow. */
+  component_order: string[];
   scenario_label: string;
   scenario_disclaimer: string;
   screening_disclaimer: string;
@@ -1440,6 +1481,12 @@ export interface UserScenarioPreview {
   policy_version: string;
   derivation_version: string;
   candidate_grid_version: string;
+  /**
+   * The RUN's own component-model identity; `canonical_weights` below is defined
+   * over exactly these components, in `component_order`.
+   */
+  component_model_version: string;
+  component_order: string[];
   canonical_weights: UserScenarioWeights;
   compare_profile: string;
   candidate_count_total: number;

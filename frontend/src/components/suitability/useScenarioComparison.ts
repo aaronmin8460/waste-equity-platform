@@ -36,6 +36,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, previewUserWeightScenario } from "../../lib/api";
 import type { UserScenarioWeights } from "../../lib/api";
+import { plainError } from "../../lib/glossary";
 import {
   PREVIEW_FAILED_MESSAGE,
   SCENARIO_COMPARISON_COMPARE_PROFILE,
@@ -57,9 +58,34 @@ interface Outcomes {
 
 const NOTHING_LOADED: Outcomes = { key: "", a: null, b: null };
 
-/** Prefer the backend's own message: it names the offending value. */
+/**
+ * The citizen-facing reason one side could not be previewed.
+ *
+ * ── A KNOWN CODE OUTRANKS THE BACKEND'S PROSE ────────────────────────────────────
+ * `detail.detail` is written for an API consumer and is English
+ * ("User-weight scenarios are not available for component model …"). It is still
+ * preferred where it names the offending value the reader can act on — a bad weight
+ * sum — but the component-model refusals must not reach the screen that way.
+ *
+ * Those two in particular have to stay distinguishable. The backend raises
+ * COMPONENT_MODEL_MISMATCH about the reader's OWN scenario, which remains valid
+ * against a run of its own model, and COMPONENT_MODEL_SCENARIOS_UNAVAILABLE about
+ * the RUN on screen, whose model has no approved weight vector. `plainError` holds
+ * one Korean sentence for each; falling through to the shared English detail would
+ * merge two different situations into one unactionable line.
+ */
+const MODEL_REFUSALS = new Set([
+  "COMPONENT_MODEL_MISMATCH",
+  "COMPONENT_MODEL_SCENARIOS_UNAVAILABLE",
+]);
+
 function messageFor(cause: unknown): string {
-  return cause instanceof ApiError && cause.detail ? cause.detail.detail : PREVIEW_FAILED_MESSAGE;
+  if (!(cause instanceof ApiError) || cause.detail === null) return PREVIEW_FAILED_MESSAGE;
+  // ONLY the two model refusals are overridden. Everything else keeps the backend's
+  // own sentence, which names the offending value — "가중치 합이 1이 아닙니다: 1.05"
+  // tells a reader what to fix; the glossary's generic line does not.
+  if (MODEL_REFUSALS.has(cause.detail.error)) return plainError(cause.detail.error).primary;
+  return cause.detail.detail;
 }
 
 /**

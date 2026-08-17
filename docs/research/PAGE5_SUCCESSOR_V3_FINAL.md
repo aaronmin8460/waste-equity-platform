@@ -1,7 +1,8 @@
 # Page 5 — Successor-V3 final frontend lane
 
-**Status: complete for everything that does not depend on the backend handoff.
-The handoff never arrived, so no V3 policy value is wired. See §3.**
+**Status: complete against the V3 contract preview. The single most important
+finding is that Page 5 is a HISTORICAL-model page by contract — the successor
+model serves no user scenario at all. See §3.**
 
 | | |
 |---|---|
@@ -9,7 +10,8 @@ The handoff never arrived, so no V3 policy value is wired. See §3.**
 | Branch | `feat/page5-successor-v3-final` |
 | Worktree | `/Volumes/WASTE_QA2/worktrees/page5-v3-final` |
 | Figma | `hETmPv3N31IJeW8XdLwoiS` node `167:10554` |
-| Backend handoff SHA | **none — see §3** |
+| Backend handoff SHA | `b93393a015d6d9d579ff4619e092d545e690f388` (`origin/integration/backend-v3-contract-preview-20260817`) — **provisional, non-production** |
+| Authoritative branch | `origin/release/backend-v3-ready-20260817` — **still absent**, see §3.4 |
 | Deployed | no |
 | Merged | no |
 | Backend modified | no |
@@ -40,50 +42,124 @@ which was left untouched throughout. While blocked, the Figma forensic pass
 | `frontend/src/components/suitability/page5/SuitabilityScenarioRankingAnalytics.test.tsx` | movement-list suite replaced by the movement-card and stability-column contracts; `ranked()` gained a per-row override |
 | `frontend/e2e/page5bRankingAnalytics.spec.ts` | movement-list test replaced; one KPI caption assertion updated |
 
+V3 contract wiring (§3):
+
+| File | Change |
+|---|---|
+| `frontend/src/lib/api.ts` | `component_model_version` / `component_order` on the two scenario responses; `component_scores` on both candidate shapes; optional request selector; `COMPONENT_MODEL_HISTORICAL` |
+| `frontend/src/lib/glossary.ts` | the two component-model error codes, worded apart |
+| `frontend/src/lib/scenarioComparison.ts` | wrong-model guard in `buildSide`; the historical-only contract documented |
+| `frontend/src/components/suitability/useScenarioComparison.ts` | `messageFor` overrides the two model refusals only |
+| `frontend/src/lib/scenarioComparison.test.ts` | two tests for the guard |
+
+Fixture-only updates, forced by the two now-required response fields (mechanical,
+no assertion changed): `page.page5a.test.tsx`, `page.suitabilityDashboard.test.tsx`,
+`SuitabilityScenarioLab.test.tsx`, `SuitabilityScenarioCandidateComparison.test.tsx`,
+`SuitabilityScenarioAnalysisSections.test.tsx`, `scenarioCandidateComparison.test.ts`,
+`scenarioComparisonExport.test.ts`, `scenarioRankingComparison.test.ts`,
+`e2e/mockBackend.ts`, `e2e/page4dScenarios.spec.ts`, `e2e/page5aComparison.spec.ts`,
+`e2e/page5cCandidateComparison.spec.ts`, `e2e/page5Integration.spec.ts`.
+
 No backend file, no migration, no policy module, no shared shell component, and
-no file belonging to Pages 1/2/3/4/6 was touched.
+no Page-1/2/3/4/6 *component* was touched. The fixture updates above are the only
+files outside Page 5, and they exist solely because a shared response type gained
+two required fields.
 
 ---
 
-## 3. Backend handoff — did not arrive
+## 3. Backend handoff — the V3 contract preview
 
-Polled throughout the session:
+Consumed `b93393a` (`integration/backend-v3-contract-preview-20260817`), read as
+**provisional and non-production**. Nothing was deployed from it.
 
-```
-origin/release/backend-v3-ready-20260817          absent
-origin/integration/backend-v3-contract-preview-20260817   absent
-```
+Sources read: `docs/research/SUITABILITY_V3_FINAL_POLICY.md`,
+`docs/research/SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md`,
+`schemas/scenario.py`, `schemas/suitability.py`,
+`api/routes/suitability_scenarios.py`.
 
-Last poll 15:14 KST. `git ls-remote --heads origin` shows the V3 work still
-sitting on `feat/suitability-v3-phase4-policy-gate` (30926eb),
-`research/suitability-v3-phase3-real-data-validation` (b915901) and
-`docs/suitability-v3-phase5-activation-decision` (a21e907) — none of which is
-the frozen contract this lane was told to consume.
+### 3.1 The finding that governs this page
 
-**Consequently NOTHING in this branch encodes a V3 value.** No final weight
-vector, no eligibility floor, no layer registry, no model version, no scenario
-version, no stability policy constant appears in any changed file. Neither
-`docs/research/SUITABILITY_V3_FINAL_POLICY.md` nor
-`docs/research/SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md` exists to be read.
+**User-weight scenarios exist for the historical component model ONLY.**
 
-### The adapter boundary the wiring will use
+`_assert_scenario_model_supported` refuses any run whose component model is not
+`suitability-components-zred-v1` with **422
+`COMPONENT_MODEL_SCENARIOS_UNAVAILABLE`**, because the successor model has no
+approved weight vector or normalization strategy for recombination — so any
+recombination "would be a fabricated result rather than the user's scenario".
 
-No new indirection was invented for a contract that has not been published.
-The boundary already exists and is clean:
+Page 5 is the A/B *scenario* page. It therefore remains a historical-model page
+by contract, and **Z/R/E/D on this screen is correct rather than legacy**: it is
+the only component set this page can ever be asked about. The successor
+components (`existing_burden`, `air_impact_proxy`, `resident_impact`,
+`land_conversion`) are never reachable here, and nothing was renamed to them.
 
-- `lib/api.ts` — `UserScenarioWeights`, `UserScenarioTopCandidate`,
-  `UserScenarioPreview`: the only place the wire shape is named.
-- `lib/glossary.ts` — `COMPONENT_ORDER` / `COMPONENT_META` / `STABILITY_META`:
-  the only place a factor or a stability class acquires a Korean label.
-- `lib/scenarioComparison.ts` + `lib/scenarioRankingComparison.ts` — the only
-  place a served field becomes a displayed quantity.
+That is also why no V3 policy number appears in Page-5 copy. The approved
+vector (0.25 × 4), the 500 m `resident_impact` floor, the
+`successor-land-cover-l2-v1` registry and the `suitability-successor-policy-v1`
+identity all govern the *successor* model's own runs, which this page cannot
+display. Putting any of them on Page 5 would attach a successor policy value to
+a historical-model result.
 
-Every Page-5 component reads the derived model, never the response. A V3
-factor-set change (per the Page-4 lane's finding, `land_conversion` and
-`resident_impact` are new and `road` dies — a re-shape, not a rename) lands in
-those three files; the six Page-5 components need no edit to follow it.
+### 3.2 What was wired
 
----
+| contract element | value | where it went |
+|---|---|---|
+| model identity | `component_model_version`, `component_order` on preview **and** candidate detail | typed in `lib/api.ts`; enforced in `lib/scenarioComparison.ts` |
+| version-aware scores | `component_scores: dict[str, str \| null]` — `{}` for historical runs, whose scores stay in the four legacy fields | typed; unread by Page 5, which uses `custom_score`/`custom_rank` |
+| model selector | optional request field `component_model_version` | typed; deliberately **not sent** — omitting it resolves the default (historical) model, which is what this page wants |
+| `COMPONENT_MODEL_MISMATCH` | the reader's own scenario belongs to another model and stays valid against a run of that model | distinct Korean message in `glossary.ts` |
+| `COMPONENT_MODEL_SCENARIOS_UNAVAILABLE` | the run on screen has no approved weight vector | separate Korean message |
+| stability | "Stored-run weight-sensitivity stability (**NOT recomputed under the scenario**)" | confirms §6 — the implementation already matched |
+| eligibility | successor "re-scores; it never re-screens"; 0 of 47,893 statuses differ from the source run | confirms the existing invariant; no change needed |
+| missingness | `STRICT_ALL_COMPONENTS_REQUIRED`, zero-fill permanently forbidden | confirms the existing rule; no change needed |
+
+**The two error codes must not read alike**, and the route says so explicitly: a
+mismatch is a statement about the reader's artifact, unavailable is a statement
+about the run. `useScenarioComparison.messageFor` overrides **only** those two
+with Korean; every other failure keeps the backend's own sentence, which names
+the offending value ("가중치 합이 1이 아닙니다: 1.05") in a way a generic line
+cannot.
+
+A defence-in-depth guard was added: a READY side whose preview declares any
+non-historical component model is downgraded to `PREVIEW_ERROR`. The backend
+refuses such a request before computing, so it should be unreachable — but the
+failure it prevents is silent and total. `canonical_weights` is keyed by the
+run's own components, so a successor preview would make every Z/R/E/D lookup
+read `undefined`, printing one model's numbers under another model's four
+labels instead of failing.
+
+### 3.3 What was NOT wired, and why
+
+`component_model_version` / `component_order` / `component_scores` are also now
+served by every run-scoped and candidate-bearing **suitability** response (run,
+summary, candidate, candidate detail). Those types drive Pages 4 and 6 and are
+left to those lanes; this branch types only the two scenario endpoints Page 5
+consumes. Wiring them here would have forced unrelated fixtures and pre-empted
+another lane's design decisions.
+
+No successor stability semantics were adopted. The successor defines its own
+(four symmetric per-component perturbations, step 0.06, STABLE = survives all
+four) and it is deliberately *not* the historical three-profile definition. Page
+5 can only ever show a historical run, so `STABILITY_META`'s existing
+three-profile wording is the correct labelling here. If Page 5 ever became
+successor-capable, that mapping — not this page's layout — is what would have to
+change.
+
+### 3.4 Diff against the authoritative branch — still pending
+
+`origin/release/backend-v3-ready-20260817` did not exist at any poll up to
+16:39 KST. The preview contract is therefore unconfirmed. **Before final
+integration, diff `b93393a`'s `schemas/scenario.py` and
+`api/routes/suitability_scenarios.py` against the release branch.** The three
+things that would force a Page-5 change:
+
+1. scenarios becoming available for the successor model — would make Z/R/E/D
+   insufficient and require a component-model-driven weight table;
+2. either error code being renamed, merged, or re-scoped;
+3. `component_model_version` changing shape or leaving the scenario responses —
+   the guard in `buildSide` reads it directly.
+
+If none of the three changed, this branch needs no edit.
 
 ## 4. Figma forensic transcription
 
@@ -195,6 +271,15 @@ statements, not three floating ones.
 - No horizontal overflow at 1440 (e2e-asserted).
 - Remaining divergence is §7 only.
 
+### Pass 4 — after the V3 contract wiring
+
+Re-captured once the model identity, the guard and the two error codes were in.
+The wiring is behavioural, and the capture confirms it changed nothing visual:
+same three bands, same card geometry, 실행 안정성 still rendering all three
+classes, one scope strip, one table footnote, and the page-level method note
+still stated exactly once at the foot. The 39 Page-5 e2e tests render the same
+page at 1440×900 against fixtures carrying the new required fields.
+
 ---
 
 ## 6. Stability semantics as actually implemented
@@ -254,19 +339,31 @@ prints 자료 없음 — never a substituted number, never a zero, never a defau
 
 ## 7. Remaining limitations
 
-1. **No V3 contract wired** (§3). This is the lane's one incomplete objective
-   and it is entirely upstream.
-2. **Page title band retained.** The frame gives Page 5 no title, but the band
+1. **The contract is the PREVIEW, not the release** (§3.4).
+   `origin/release/backend-v3-ready-20260817` has not appeared, so the wired
+   contract is provisional and must be diffed before final integration.
+2. **The successor model's own results are unreachable from Page 5** — by
+   contract, not by omission (§3.1). A reader who wants successor scores needs
+   Page 4/6; this page shows historical-model scenarios only. If the project
+   later wants A/B on successor runs, that needs a backend decision (an approved
+   weight vector for recombination), not a frontend change.
+3. **Regional concentration is handed to this lane and is NOT addressed here.**
+   The final policy (§6.3) records the successor top-50 as 49/50 양평군 and says
+   the correct response is presentational — read the ranking at region grain
+   and/or cap candidates per region — explicitly assigning it to "the Page 4/5
+   lanes". That concerns the *successor* ranking, which Page 5 cannot display,
+   so it is out of scope here and belongs to Page 4.
+4. **Page title band retained.** The frame gives Page 5 no title, but the band
    is the app-wide `PageHeader` and carries the page's `h1`. Removing it for
    this page alone would break shell consistency with Pages 1–4/6 and cost the
    document its heading. Accepted deviation: content starts ~87px below the
    frame's y=99.
-3. **Row4-left exceeds the frame's 458px.** The real per-factor contribution
+5. **Row4-left exceeds the frame's 458px.** The real per-factor contribution
    table, its 주요 영향 요인 line and the export scope note do not compress into
    the comp's height. Row4 therefore stretches taller than the frame, evenly.
-4. **The frame's 후보 결과 변화 지도 legend counts** (신규 통과 32 / 통과 유지 296 /
+6. **The frame's 후보 결과 변화 지도 legend counts** (신규 통과 32 / 통과 유지 296 /
    통과 → 제외 28 / 양쪽 제외 144) remain unimplementable for the reason in §4.1.2.
-5. The map is unpainted in QA captures (no tile server in the mock); map
+7. The map is unpainted in QA captures (no tile server in the mock); map
    rendering was not re-verified by this lane and is unchanged from base.
 
 ---
@@ -283,10 +380,15 @@ run, per the lane brief.
 | `tsc --noEmit` | pass |
 | `eslint` (changed files) | pass, 0 findings |
 | `vitest src/components/suitability/page5` + `lib/scenarioRankingComparison` | **106/106** |
-| `vitest src/lib/scenario* src/components/suitability src/app/page.page5a` | **352/352** (14 files) |
-| `vitest accessibility + terminology.audit + page5a` | **58/58** |
-| `playwright e2e/page5bRankingAnalytics.spec.ts` | **9/9** |
-| 1440×900 visual | three capture passes, §5 |
+| `vitest src/lib src/components src/app` (whole unit suite) | **2165 passed / 2173**, 7 skipped, 1 contention flake |
+| `playwright` Page-5A + 5B + 5C + integration, isolated port | **39/39** |
+| 1440×900 visual | four capture passes, §5 |
+
+The single unit failure was `FacilityCostDashboard.test.tsx > toggles a calculable
+region from the map` under a 4-lane parallel run; it **passes 86/86 in isolation**
+and is in a file this branch does not touch (the known vitest lane-contention
+flake). Every scenario, Page-5, accessibility and terminology suite passed in the
+same run.
 
 Accessibility: the new column is a real `<th scope="col">` inside the existing
 table semantics and is picked up by the table's `<caption>`; the removed list
