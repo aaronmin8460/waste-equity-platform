@@ -37,7 +37,10 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
   // The denominator every movement KPI is measured against, named once so the four
   // cards cannot drift into quoting different populations.
   const commonCount = comparableRows.length;
-  const commonScope = `A안·B안 양쪽 상위 목록에 모두 있는 ${commonCount.toLocaleString("ko-KR")}개 후보 구역 기준`;
+  // The frame's captions are ONE short line. The full denominator sentence is stated
+  // once in the scope strip directly below this row, so each tile names the
+  // population in the fewest words that stay true rather than repeating it in full.
+  const commonScope = `양쪽 공통 ${commonCount.toLocaleString("ko-KR")}개 기준`;
 
   const retentionLabel = topNRetention.reduced
     ? `상위 ${topNRetention.denominator} 유지 후보 구역`
@@ -89,10 +92,10 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
               {topNRetention.percent}% 유지 ·{" "}
               {topNRetention.reduced
                 ? // The shortfall is stated, not silently absorbed into the ratio.
-                  `양쪽에서 확인된 상위 후보가 ${topNRetention.denominator}개뿐이라 ${topNRetention.denominator}개 기준으로 계산했습니다`
+                  `양쪽 상위 후보가 ${topNRetention.denominator}개뿐이라 그 기준으로 계산`
                 : // What the ratio counts, said plainly. "집합 일치" would read as
                   // "the two sets match", which is what a 10/10 means, not a 5/10.
-                  `A안 상위 ${topNRetention.n}개와 B안 상위 ${topNRetention.n}개에 함께 든 후보 구역 수`}
+                  `양쪽 상위 ${topNRetention.n}개에 함께 든 수`}
             </span>
           )
         }
@@ -107,7 +110,7 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
         {...(commonCount === 0
           ? { unavailableReason: "양쪽에 모두 있는 후보가 없습니다" }
           : { value: `${roseCount.toLocaleString("ko-KR")}개` })}
-        caption={commonCount === 0 ? null : `B안에서 순위가 앞당겨진 후보 · ${commonScope}`}
+        caption={commonCount === 0 ? null : `B안에서 순위가 앞당겨짐 · ${commonScope}`}
       />
 
       <ScenarioKpiCard
@@ -118,7 +121,7 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
         {...(commonCount === 0
           ? { unavailableReason: "양쪽에 모두 있는 후보가 없습니다" }
           : { value: `${fellCount.toLocaleString("ko-KR")}개` })}
-        caption={commonCount === 0 ? null : `B안에서 순위가 밀린 후보 · ${commonScope}`}
+        caption={commonCount === 0 ? null : `B안에서 순위가 밀림 · ${commonScope}`}
       />
 
       {/* ── 공통 후보 수 ──────────────────────────────────────────────────────── */}

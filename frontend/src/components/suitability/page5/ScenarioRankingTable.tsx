@@ -20,6 +20,14 @@
  * The frame's footnote "통과 기준은 종합 점수 60점 이상" describes a threshold this
  * analysis does not have.
  *
+ * ── WHAT STANDS WHERE THE FRAME'S TWO RESULT COLUMNS WERE ────────────────────────
+ * One 실행 안정성 column, carrying the backend's frozen `stability_class`. It is the
+ * honest occupant of that space for the same reason the two result columns are not:
+ * it is a property of the RUN, identical under A안 and B안, so it is printed ONCE
+ * rather than as a pair pretending to differ. It is styled flat — no arrow, no
+ * colour ramp — so it does not read as a third comparison next to the rank columns,
+ * and an unserved class prints 자료 없음 rather than defaulting to "안정적".
+ *
  * ── SORTING REORDERS; IT NEVER RE-POPULATES ──────────────────────────────────────
  * Every option sorts the rows already derived from the two loaded previews. No sort
  * issues a request, widens the top-N cut, or changes which candidates are compared —
@@ -29,6 +37,7 @@
 
 import { useMemo, useState } from "react";
 
+import { STABILITY_META } from "../../../lib/glossary";
 import {
   formatRankMovement,
   formatUnavailableRank,
@@ -82,8 +91,17 @@ export default function ScenarioRankingTable({ model }: ScenarioRankingTableProp
 
   return (
     <div data-testid="scenario-ranking-table">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      {/* ONE strip, not three. The scope sentence, the row count and the sort control
+          used to stack into three full-width lines above a table the frame gives a
+          single caption. The count is kept VISIBLE rather than folded into the
+          caption — the body scrolls, so a reader has to be told how many rows the
+          scroll contains — but it now shares the strip with the scope it qualifies. */}
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <p className="text-[11px] leading-snug text-ink-subtle" data-testid="scenario-ranking-table-scope">
+          <span data-testid="scenario-ranking-table-count">
+            비교 대상 {model.candidateRows.length.toLocaleString("ko-KR")}개 후보 구역
+          </span>
+          {" · "}
           {model.scopeDescription} 정렬을 바꿔도 비교 대상 후보 구역은 달라지지 않습니다.
         </p>
         <label className="flex flex-none items-center gap-2 text-[11px] text-ink-muted">
@@ -102,14 +120,6 @@ export default function ScenarioRankingTable({ model }: ScenarioRankingTableProp
           </select>
         </label>
       </div>
-
-      {/* The row count is VISIBLE, not only in the caption: the body scrolls, so a
-          reader has to be told how many rows the scroll contains. Nothing is
-          truncated — every row of the compared population is present and reachable. */}
-      <p className="mb-1 text-[11px] text-ink-muted" data-testid="scenario-ranking-table-count">
-        비교 대상 {model.candidateRows.length.toLocaleString("ko-KR")}개 후보 구역 · 표 안에서 스크롤해
-        모두 볼 수 있습니다.
-      </p>
 
       <div className="max-h-[420px] overflow-auto">
         <table className="w-full min-w-[880px] border-collapse text-left">
@@ -136,8 +146,13 @@ export default function ScenarioRankingTable({ model }: ScenarioRankingTableProp
               <th scope="col" className="py-2 pr-3 text-right font-semibold">
                 B안 점수
               </th>
-              <th scope="col" className="py-2 text-right font-semibold">
+              <th scope="col" className="py-2 pr-3 text-right font-semibold">
                 점수 변화
+              </th>
+              {/* The frame's A안 결과 / B안 결과 pair, answered with the one column
+                  that is actually available here. See the note below the table. */}
+              <th scope="col" className="py-2 text-right font-semibold">
+                실행 안정성
               </th>
             </tr>
           </thead>
@@ -174,18 +189,23 @@ export default function ScenarioRankingTable({ model }: ScenarioRankingTableProp
                 </td>
                 <ScoreCell score={row.aScore} />
                 <ScoreCell score={row.bScore} />
-                <td className="py-2.5 text-right text-[13px] tabular-nums text-ink">
+                <td className="py-2.5 pr-3 text-right text-[13px] tabular-nums text-ink">
                   {formatScoreChange(row) ?? "—"}
                 </td>
+                <StabilityCell row={row} />
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
+      {/* The screening-independence clause is NOT repeated here. The page closes with
+          it once (`scenario-comparison-method-note`), and this footnote sat ~100px
+          above that line saying the same thing in different words. What is left is
+          the part only this table can state: what its two unfamiliar columns are. */}
       <p className="mt-3 text-[11px] leading-snug text-ink-subtle">
-        · 점수는 분석 실행이 계산한 값을 그대로 표기합니다. 순위는 스크리닝을 통과한 후보 구역 전체를
-        대상으로 매겨지며, 표에는 두 시나리오의 상위 목록에 포함된 구역만 나옵니다.
+        · 순위는 스크리닝을 통과한 후보 구역 전체를 대상으로 매겨집니다. 실행 안정성은 분석 실행이
+        미리 계산해 둔 값으로 A안·B안에서 같습니다.
       </p>
     </div>
   );
@@ -208,4 +228,33 @@ function ScoreCell({ score }: { score: string | null }) {
     return <td className="py-2.5 pr-3 text-right text-[11px] text-ink-subtle">자료 없음</td>;
   }
   return <td className="py-2.5 pr-3 text-right text-[13px] tabular-nums text-ink">{score}점</td>;
+}
+
+/**
+ * The RUN's stability class for this cell — the same value under A안 and B안.
+ *
+ * Deliberately NOT styled as a movement: no arrow, no colour scale, no A/B pairing.
+ * A reader scanning the two rank columns must not read this as a third comparison.
+ * An unserved class prints as 자료 없음, never as "안정적".
+ */
+function StabilityCell({ row }: { row: RankedCandidateRow }) {
+  if (row.stabilityClass === null) {
+    return (
+      <td
+        className="py-2.5 text-right text-[11px] text-ink-subtle"
+        data-testid="scenario-ranking-table-stability"
+      >
+        자료 없음
+      </td>
+    );
+  }
+  return (
+    <td
+      className="py-2.5 text-right text-[12px] leading-snug text-ink-secondary"
+      data-testid="scenario-ranking-table-stability"
+      data-stability-class={row.stabilityClass}
+    >
+      {STABILITY_META[row.stabilityClass].primary}
+    </td>
+  );
 }

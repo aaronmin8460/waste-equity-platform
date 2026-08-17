@@ -52,9 +52,19 @@
  * a "newly passed" count would be a fabricated finding. This module derives no
  * status, no threshold and no pass/fail, and the preview's own
  * `candidate_count_eligible` family is deliberately not read here.
+ *
+ * ── THE ONE ROBUSTNESS FIGURE THAT IS NOT DERIVED HERE ───────────────────────────
+ * The frame's Row4-right card is captioned 가중치 민감도 (결과 안정성). This module
+ * cannot compute that: a sensitivity finding needs the ranking re-run under many
+ * weight vectors, and Page 5 has exactly two — the reader's own. So no stability is
+ * DERIVED here. What is carried through instead is the backend's own frozen
+ * `stability_class` / `stable_count`, read verbatim off the served candidate rows.
+ * It is a property of the RUN (the same value in both previews, unchanged by either
+ * scenario's weights), which is precisely why it may be shown next to an A/B
+ * movement without becoming a claim about it.
  */
 
-import type { UserScenarioPreview, UserScenarioTopCandidate } from "./api";
+import type { StabilityClass, UserScenarioPreview, UserScenarioTopCandidate } from "./api";
 import type { ComparisonSide, ScenarioComparison } from "./scenarioComparison";
 
 // --------------------------------------------------------------------------- //
@@ -193,6 +203,23 @@ export interface RankedCandidateRow {
   /** Within this side's `RANKING_COMPARISON_TOP_N`. False when the rank is not EXACT. */
   inTopA: boolean;
   inTopB: boolean;
+
+  /**
+   * The RUN's frozen stability class for this cell — NOT an A/B quantity.
+   *
+   * The backend computes it once per run: whether the cell is in the top decile
+   * under each of the three stability profiles, classified by how many of them it
+   * clears (`analysis/suitability/engine.py` `_stability_class`). It is served
+   * identically inside both previews because it is a property of the run, not of
+   * the reader's weights — which is exactly what makes it the one robustness
+   * statement on this page that an A/B comparison is not entitled to make itself.
+   *
+   * `null` whenever the run did not serve it, or — see {@link agreedStability} —
+   * whenever the two sides somehow disagreed about it.
+   */
+  stabilityClass: StabilityClass | null;
+  /** How many stability profiles the cell cleared. `null` with `stabilityClass`. */
+  stableCount: number | null;
 }
 
 /**
@@ -209,6 +236,30 @@ function locationLabelOf(candidate: UserScenarioTopCandidate): string | null {
   const named = (value: string | null): string | null =>
     typeof value === "string" && value.trim() !== "" ? value : null;
   return named(candidate.sigungu_region_name) ?? named(candidate.sido_region_name);
+}
+
+/**
+ * The stability the two sides AGREE on, or `null`.
+ *
+ * Both previews read the same frozen run, so a cell's stability is the same value
+ * in both responses. That is asserted rather than assumed: if the two sides ever
+ * served different classes for one cell, the page has no basis for choosing one,
+ * and printing either would be picking a winner between two contradicting servers.
+ * A side that served nothing is not a disagreement — it simply defers to the other.
+ */
+function agreedStability(
+  a: UserScenarioTopCandidate | null,
+  b: UserScenarioTopCandidate | null,
+): { stabilityClass: StabilityClass | null; stableCount: number | null } {
+  const aClass = a?.stability_class ?? null;
+  const bClass = b?.stability_class ?? null;
+  if (aClass !== null && bClass !== null && aClass !== bClass) {
+    return { stabilityClass: null, stableCount: null };
+  }
+  const stabilityClass = aClass ?? bClass;
+  if (stabilityClass === null) return { stabilityClass: null, stableCount: null };
+  const source = aClass !== null ? a : b;
+  return { stabilityClass, stableCount: source?.stable_count ?? null };
 }
 
 function indexByKey(preview: UserScenarioPreview | null): Map<string, UserScenarioTopCandidate> {
@@ -444,6 +495,7 @@ function joinCandidate(
     direction: rankDelta === null ? null : directionOf(rankDelta),
     inTopA: aRank !== null && aRank <= RANKING_COMPARISON_TOP_N,
     inTopB: bRank !== null && bRank <= RANKING_COMPARISON_TOP_N,
+    ...agreedStability(a, b),
   };
 }
 

@@ -31,6 +31,17 @@
  * candidate state and issues no request; it only decides where a finished card sits.
  * Without the slots (the standalone Page-5B view) the ranking cards simply take the
  * full width, so the lane remains renderable on its own.
+ *
+ * ── THE MOVEMENT CARD HOLDS THE SCATTER AND NOTHING ELSE ─────────────────────────
+ * It used to also carry a 순위 변화가 큰 후보 구역 list of up to ten rows. That list
+ * was the comparison table below it, minus the score columns and under a different
+ * heading: the table's DEFAULT sort is `movement_desc` — literally "순위 변화가 큰
+ * 순" — so the two printed the same cells in the same order. Carrying it also made
+ * Row4 ragged, where the frame draws two EQUAL 688×458 cards: the list pushed the
+ * right card to roughly two and a half times the height of the left, leaving the
+ * left column ending in ~400px of white. Removed — the scatter shows the shape and
+ * the table carries the numbers. `topRankMovements` survives in `lib/` (still
+ * exported, still tested) for the export sheet and any later consumer.
  */
 
 import { useMemo, type ReactNode } from "react";
@@ -38,13 +49,10 @@ import { useMemo, type ReactNode } from "react";
 import SectionCard from "../../ui/SectionCard";
 import {
   RANKING_COMPARISON_TOP_N,
-  RANKING_MOVEMENT_LIST_SIZE,
   buildScenarioRankingComparison,
-  topRankMovements,
   type ScenarioRankingComparison,
 } from "../../../lib/scenarioRankingComparison";
 import type { ScenarioComparison } from "../../../lib/scenarioComparison";
-import ScenarioRankMovementList from "./ScenarioRankMovementList";
 import ScenarioRankMovementScatter from "./ScenarioRankMovementScatter";
 import ScenarioRankSlopeChart from "./ScenarioRankSlopeChart";
 import ScenarioRankingKpiRow from "./ScenarioRankingKpiRow";
@@ -79,7 +87,6 @@ export default function SuitabilityScenarioRankingAnalytics({
     [comparison, providedModel],
   );
   const model = providedModel === undefined ? derived : providedModel;
-  const movements = useMemo(() => (model === null ? [] : topRankMovements(model)), [model]);
 
   if (model === null) return null;
 
@@ -127,19 +134,10 @@ export default function SuitabilityScenarioRankingAnalytics({
           testId="scenario-ranking-movement-card"
           className="wep-figma-card"
           // One line, as the frame's captions are. The "not a sensitivity sweep"
-          // qualifier is kept — it is the one misreading this chart invites — but as a
-          // clause rather than a second sentence of methodology under the title.
-          description="양쪽에서 순위가 확인된 후보 구역이 B안에서 어느 순위대로 얼마나 움직였는지 보여줍니다. 가중치를 여러 번 바꿔 본 분석이 아니라 두 시나리오 사이의 순위 차이입니다."
+          // qualifier is kept — it is the one misreading this chart invites.
+          description="두 시나리오 사이의 순위 차이입니다. 가중치를 여러 번 바꿔 본 민감도 분석이 아닙니다."
         >
           <ScenarioRankMovementScatter model={model} />
-
-          <div className="mt-4 border-t border-[var(--figma-rule)] pt-3">
-            <h3 className="text-[13px] font-bold text-ink">순위 변화가 큰 후보 구역</h3>
-            <p className="mb-2 mt-0.5 text-[11px] leading-snug text-ink-subtle">
-              위 분포에서 변화가 큰 순으로 최대 {RANKING_MOVEMENT_LIST_SIZE}개입니다.
-            </p>
-            <ScenarioRankMovementList rows={movements} model={model} />
-          </div>
         </SectionCard>
       </div>
 

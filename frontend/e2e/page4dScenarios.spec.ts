@@ -54,6 +54,8 @@ async function mockScenarioPreview(page: Page): Promise<void> {
         policy_version: "suitability-policy-v2",
         derivation_version: "suitability-screening-v3",
         candidate_grid_version: "capital-grid-500m-v1",
+        component_model_version: "suitability-components-zred-v1",
+        component_order: ["zoning", "road", "equity", "demand"],
         canonical_weights: CANONICAL,
         compare_profile: "baseline",
         candidate_count_total: 47893,

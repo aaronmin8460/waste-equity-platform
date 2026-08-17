@@ -58,6 +58,7 @@ function candidate(
     road_score: "0.7000",
     equity_score: "0.6000",
     demand_score: "0.5000",
+    component_scores: {},
     stable_count: 3,
     stability_class: "STABLE",
     centroid_lon: 126.8,
@@ -78,6 +79,8 @@ function preview(
     policy_version: "suitability-policy-v2",
     derivation_version: "suitability-screening-v3",
     candidate_grid_version: "capital-grid-500m-v1",
+    component_model_version: "suitability-components-zred-v1",
+    component_order: ["zoning", "road", "equity", "demand"],
     canonical_weights: WEIGHTS,
     compare_profile: "baseline",
     candidate_count_total: 1000,
@@ -129,9 +132,21 @@ function comparison(
   };
 }
 
-/** Keys `c1..cN` ranked 1..N with descending scores — the served shape. */
-function ranked(keys: string[]): UserScenarioTopCandidate[] {
-  return keys.map((key, index) => candidate(key, index + 1, (1 - index * 0.01).toFixed(4)));
+/**
+ * Keys `c1..cN` ranked 1..N with descending scores — the served shape.
+ *
+ * `overrides` is applied to EVERY row, which is what the run-level fields want: a
+ * frozen stability class is a property of the run, so a fixture that sets it on one
+ * row and not the next would be a shape the backend never serves.
+ */
+function ranked(
+  keys: string[],
+  overrides: Partial<UserScenarioTopCandidate> = {},
+): UserScenarioTopCandidate[] {
+  return keys.map((key, index) => ({
+    ...candidate(key, index + 1, (1 - index * 0.01).toFixed(4)),
+    ...overrides,
+  }));
 }
 
 const TWELVE_A = ranked(["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12"]);
@@ -212,7 +227,7 @@ describe("KPI row", () => {
     renderAnalytics(comparison(short, short));
     expect(screen.getByTestId("scenario-ranking-kpi-retention-value")).toHaveTextContent("3 / 3개");
     expect(screen.getByTestId("scenario-ranking-kpi-retention-caption")).toHaveTextContent(
-      "3개 기준으로 계산했습니다",
+      "3개뿐이라 그 기준으로 계산",
     );
   });
 
@@ -220,7 +235,8 @@ describe("KPI row", () => {
     renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_B)));
     const rose = screen.getByTestId("scenario-ranking-kpi-rose");
     expect(rose).toHaveTextContent("순위 상승 후보 구역");
-    expect(rose).toHaveTextContent("양쪽 상위 목록에 모두 있는");
+    // The tile names the bounded population; the strip below states it in full.
+    expect(rose).toHaveTextContent("양쪽 공통");
     expect(rose).not.toHaveTextContent("전체 후보");
     // c4..c12 each rose by 3; c1 and c2 fell.
     expect(within(rose).getByTestId("scenario-ranking-kpi-rose-value")).toHaveTextContent("9개");
@@ -269,40 +285,65 @@ describe("slope / movement visualization", () => {
   });
 });
 
-describe("ranking movement list", () => {
-  it("orders by absolute exact movement and states the direction in words", () => {
+describe("ranking movement card", () => {
+  /**
+   * The card holds the scatter and nothing else. It used to embed a
+   * 순위 변화가 큰 후보 구역 list, which was the comparison table below it under a
+   * different heading — the table's default sort IS "순위 변화가 큰 순" — and which
+   * pushed this card to ~2.5× the height of the one the frame draws beside it.
+   */
+  it("holds the scatter alone, with no embedded row list", () => {
     renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_B)));
-    const rows = screen.getAllByTestId("scenario-ranking-movement-row");
-    // c1 and c2 each moved 10; the nine risers moved 3.
-    expect(rows[0]).toHaveAttribute("data-direction", "DOWN");
-    expect(within(rows[0]).getByTestId("scenario-ranking-movement-delta")).toHaveTextContent(
-      "↓ 10계단",
-    );
-    expect(rows[2]).toHaveAttribute("data-direction", "UP");
-    expect(within(rows[2]).getByTestId("scenario-ranking-movement-delta")).toHaveTextContent(
-      "↑ 3계단",
-    );
+    expect(screen.getByTestId("scenario-ranking-movement-card")).toBeInTheDocument();
+    expect(screen.getByTestId("scenario-ranking-scatter")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("scenario-ranking-movement-row")).toHaveLength(0);
   });
 
-  it("names the candidate cell, not the municipality alone", () => {
+  it("does not call the A/B difference a sensitivity analysis", () => {
     renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_B)));
-    const first = screen.getAllByTestId("scenario-ranking-movement-row")[0];
-    expect(first).toHaveTextContent("인천광역시 강화군");
-    expect(first).toHaveTextContent("500m 후보 구역 · c1");
+    const card = screen.getByTestId("scenario-ranking-movement-card");
+    expect(card).toHaveTextContent("민감도 분석이 아닙니다");
+    // The card's own title never claims it either.
+    expect(within(card).getByText("순위 변동 분포")).toBeInTheDocument();
+  });
+});
+
+describe("run stability column", () => {
+  /**
+   * `stability_class` is the RUN's, not the comparison's: the backend computes it
+   * once per run and serves the same value inside both previews. It is the only
+   * robustness statement Page 5 is entitled to make, and it must never be dressed
+   * up as an A/B movement.
+   */
+  it("prints the served class once per cell", () => {
+    renderAnalytics(
+      comparison(
+        preview(ranked(["c1"], { stability_class: "STABLE", stable_count: 3 })),
+        preview(ranked(["c1"], { stability_class: "STABLE", stable_count: 3 })),
+      ),
+    );
+    const cells = screen.getAllByTestId("scenario-ranking-table-stability");
+    expect(cells).toHaveLength(1);
+    expect(cells[0]).toHaveAttribute("data-stability-class", "STABLE");
+    expect(cells[0]).toHaveTextContent("세 기준 모두 상위권");
   });
 
-  it("lists no candidate that lacks an exact rank on both sides", () => {
-    renderAnalytics(comparison(preview(ranked(["a1", "a2"])), preview(ranked(["b1", "b2"]))));
-    expect(screen.getByTestId("scenario-ranking-movement-empty")).toHaveTextContent(
-      "함께 나타난 후보 구역이 없어",
+  it("prints 자료 없음 rather than defaulting an unserved class to stable", () => {
+    const unserved = { stability_class: null, stable_count: null } as const;
+    renderAnalytics(
+      comparison(preview(ranked(["c1"], unserved)), preview(ranked(["c1"], unserved))),
     );
+    expect(screen.getByTestId("scenario-ranking-table-stability")).toHaveTextContent("자료 없음");
   });
 
-  it("says nothing moved rather than padding the list with holds", () => {
-    renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_A)));
-    expect(screen.getByTestId("scenario-ranking-movement-empty")).toHaveTextContent(
-      "순위가 모두 그대로입니다",
+  it("withholds the class when the two sides contradict each other", () => {
+    renderAnalytics(
+      comparison(
+        preview(ranked(["c1"], { stability_class: "STABLE", stable_count: 3 })),
+        preview(ranked(["c1"], { stability_class: "WEIGHT_SENSITIVE", stable_count: 1 })),
+      ),
     );
+    expect(screen.getByTestId("scenario-ranking-table-stability")).toHaveTextContent("자료 없음");
   });
 });
 
