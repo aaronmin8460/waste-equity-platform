@@ -60,21 +60,26 @@ import {
 /** One label-left / value-right row of the card's face. */
 function Row({ term, children }: { term: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 text-sm">
+    <div className="flex items-baseline justify-between gap-3 text-xs">
       <dt className="flex-none text-ink-subtle">{term}</dt>
       <dd className="min-w-0 text-right font-semibold text-ink">{children}</dd>
     </div>
   );
 }
 
-/** One quiet chip. Not `ui/Chip` — that one is a pill-shaped selection token. */
+/**
+ * One quiet chip. Not `ui/Chip` — that one is a pill-shaped selection token.
+ *
+ * 11px / 700, 8px radius, 4×9 padding: the frame's chip, normalised off its
+ * 1.354808 scale (see `TransparencySection` for how that factor was established).
+ */
 function CardChip({ label, tone }: { label: string; tone: "subject" | "cadence" }) {
   return (
     <span
       className={
         tone === "subject"
-          ? "rounded-[10px] bg-primary-soft px-3 py-1 text-xs font-semibold text-primary"
-          : "rounded-[10px] bg-surface-muted px-3 py-1 text-xs font-semibold text-ink-secondary"
+          ? "rounded-lg bg-primary-soft px-2.5 py-1 text-[11px] font-semibold text-primary"
+          : "rounded-lg bg-surface-muted px-2.5 py-1 text-[11px] font-semibold text-ink-secondary"
       }
     >
       {label}
@@ -102,20 +107,20 @@ export default function SourceCatalogItem({
   const collected = collectionDate(source.lastSuccessAt);
   return (
     <li
-      className="flex flex-col rounded-2xl border border-hairline bg-surface p-4"
+      className="flex flex-col rounded-[14px] border border-hairline bg-surface p-3.5"
       data-testid="transparency-source-card"
     >
       {/* The first <p> is the citizen-facing dataset name, always. */}
-      <p className="text-base font-bold text-ink">{source.datasetName}</p>
-      <p className="mt-1 text-sm text-ink-secondary">{source.organization}</p>
+      <p className="text-sm font-bold text-ink">{source.datasetName}</p>
+      <p className="mt-2 text-xs text-ink-secondary">{source.organization}</p>
 
-      <div className="mt-2.5 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-1.5">
         <CardChip label={source.areaLabel} tone="subject" />
         <CardChip label={source.frequencyLabel} tone="cadence" />
       </div>
 
       {!source.enabled && (
-        <p className="mt-2.5">
+        <p className="mt-2">
           <DataStatusBadge
             status="excluded"
             label="사용 안 함"
@@ -125,9 +130,9 @@ export default function SourceCatalogItem({
         </p>
       )}
 
-      <hr className="mt-3 border-t border-hairline" />
+      <hr className="mt-2 border-t border-hairline" />
 
-      <dl className="mt-3 flex flex-col gap-1.5">
+      <dl className="mt-2 flex flex-col gap-1">
         <Row term="기준 기간">
           {freshnessState === "loading" ? (
             <span className="font-normal text-ink-subtle">{REFERENCE_PERIOD_LOADING_LABEL}</span>
@@ -180,7 +185,7 @@ export default function SourceCatalogItem({
 
       {/* Pushed to the card's bottom edge so a row of cards aligns on its
           disclosures even when one card's name wraps to an extra line. */}
-      <details className="mt-auto pt-3 text-xs text-ink-subtle" data-diagnostic>
+      <details className="mt-auto pt-2 text-[11px] text-ink-subtle" data-diagnostic>
         {/* Figma draws this control with a ▽ text glyph rather than an icon asset,
             so the glyph is reproduced literally and the engine's own marker is
             suppressed. It is `aria-hidden`: the open/closed state is already

@@ -38,9 +38,16 @@ import { SOURCE_AREA_LABELS, type SourceArea } from "../../lib/dataSources";
 import { formatCount } from "../../lib/metrics";
 import Chip from "../ui/Chip";
 
-/** Shared geometry for the four controls: 44px tall, 12px radius, hairline. */
+/**
+ * Shared geometry for the four controls: 10px radius and 13px text, both the
+ * frame's (normalised off its 1.354808 scale — see `TransparencySection`).
+ *
+ * The HEIGHT is deliberately not the frame's. Figma draws these controls 33px tall;
+ * they stay at 44, the minimum target the rest of the application uses. Pixel parity
+ * is not worth shrinking every control on the screen below that.
+ */
 const CONTROL =
-  "min-h-11 rounded-xl border border-hairline-strong bg-surface px-4 text-sm text-ink";
+  "min-h-11 rounded-[10px] border border-hairline-strong bg-surface px-4 text-[13px] text-ink";
 
 export interface SourceFilterPanelProps {
   searchId: string;
@@ -100,14 +107,14 @@ export default function SourceFilterPanel({
       {/* Native input + native selects: no combobox library, no third-party table,
           and the platform's own keyboard behaviour is preserved. */}
       <div
-        className="flex flex-col gap-2.5 lg:flex-row lg:items-end"
+        className="flex flex-col gap-2 lg:flex-row lg:items-end"
         data-testid="transparency-controls"
       >
         <div className="min-w-0 flex-1">
           <label htmlFor={searchId} className="block text-xs font-medium text-ink-secondary">
             출처 검색
           </label>
-          <div className="mt-1 flex gap-2.5">
+          <div className="mt-1 flex gap-2">
             <input
               id={searchId}
               ref={searchRef}
@@ -121,7 +128,7 @@ export default function SourceFilterPanel({
             {query !== "" && (
               <button
                 type="button"
-                className="wep-btn-quiet min-h-11 flex-none rounded-xl"
+                className="wep-btn-quiet min-h-11 flex-none rounded-[10px]"
                 onClick={onClearQuery}
                 data-testid="transparency-search-clear"
               >
@@ -131,7 +138,7 @@ export default function SourceFilterPanel({
           </div>
         </div>
 
-        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-end">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <div>
             <label htmlFor={areaId} className="block text-xs font-medium text-ink-secondary">
               자료 분야
@@ -181,7 +188,7 @@ export default function SourceFilterPanel({
             type="button"
             onClick={onClearFilters}
             disabled={!filtered}
-            className="min-h-11 flex-none rounded-xl bg-surface-muted px-4 text-sm font-medium text-ink-secondary hover:bg-surface-sunken disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:bg-surface-muted"
+            className="min-h-11 flex-none rounded-[10px] bg-surface-muted px-4 text-[13px] font-medium text-ink-secondary hover:bg-surface-sunken disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:bg-surface-muted"
             data-testid="transparency-clear-filters"
           >
             검색 조건 지우기

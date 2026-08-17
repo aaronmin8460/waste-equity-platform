@@ -71,7 +71,7 @@ export default function KnownDataGaps({
         <p className="mt-1 text-xs text-ink-subtle">
           아래 항목은 공식 자료를 확보하지 못해 설치비 계산에 넣지 못했습니다.
         </p>
-        <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
+        <ul className="mt-2 flex flex-col gap-1 text-[13px] text-ink-muted">
           {/* Rendered from the shared glossary so this list and the cost dashboard
               can never drift into two different wordings. */}
           {Object.values(MISSING_COMPONENT_META).map((component) => (
@@ -86,12 +86,12 @@ export default function KnownDataGaps({
       <div data-testid="transparency-gap-unmapped">
         <GapHeading>지도에 표시하지 못한 시설</GapHeading>
         {mappingFailed ? (
-          <p className="mt-1 text-sm text-ink-muted">
+          <p className="mt-1 text-[13px] text-ink-muted">
             시설 지도 표시 현황을 불러오지 못해 개수를 표시할 수 없습니다.
           </p>
         ) : mapping ? (
           <>
-            <p className="mt-1 text-sm text-ink-muted">
+            <p className="mt-1 text-[13px] text-ink-muted">
               전체 {formatCount(mapping.total)}개 시설 가운데{" "}
               <span className="font-semibold tabular-nums text-ink">
                 {formatCount(mapping.without_map_location)}개
@@ -104,7 +104,7 @@ export default function KnownDataGaps({
             </p>
           </>
         ) : (
-          <p className="mt-1 text-sm text-ink-muted">시설 지도 표시 현황을 확인하는 중입니다.</p>
+          <p className="mt-1 text-[13px] text-ink-muted">시설 지도 표시 현황을 확인하는 중입니다.</p>
         )}
       </div>
 
@@ -112,7 +112,7 @@ export default function KnownDataGaps({
         <GapHeading>기준 기간을 확인하지 못한 자료</GapHeading>
         {freshnessState === "ready" ? (
           <>
-            <p className="mt-1 text-sm text-ink-muted">
+            <p className="mt-1 text-[13px] text-ink-muted">
               등록된 출처 {formatCount(overview.total)}건 가운데{" "}
               <span className="font-semibold tabular-nums text-ink">
                 {formatCount(withoutPeriod)}건
@@ -127,7 +127,7 @@ export default function KnownDataGaps({
             </p>
           </>
         ) : (
-          <p className="mt-1 text-sm text-ink-muted">
+          <p className="mt-1 text-[13px] text-ink-muted">
             {freshnessState === "loading"
               ? "기준 기간 정보를 확인하는 중입니다."
               : "기준 기간 정보를 확인하지 못해 개수를 표시할 수 없습니다. 0건이라는 뜻이 아닙니다."}

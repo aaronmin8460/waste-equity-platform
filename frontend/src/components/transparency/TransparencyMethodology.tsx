@@ -49,7 +49,7 @@ export default function TransparencyMethodology({
       <Accordion label="기술 정보 (분석 버전과 식별자)" testId="transparency-technical">
         {run && policy ? (
           <dl
-            className="grid grid-cols-1 gap-2 text-sm text-ink-muted sm:grid-cols-2"
+            className="grid grid-cols-1 gap-2 text-[13px] text-ink-muted sm:grid-cols-2"
             data-testid="transparency-suitability"
           >
             <div>
@@ -96,7 +96,7 @@ export default function TransparencyMethodology({
             )}
           </dl>
         ) : (
-          <p className="text-sm text-ink-muted" data-testid="transparency-suitability">
+          <p className="text-[13px] text-ink-muted" data-testid="transparency-suitability">
             아직 표시할 후보지 분석 결과가 없습니다.
           </p>
         )}

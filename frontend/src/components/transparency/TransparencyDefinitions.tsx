@@ -72,8 +72,8 @@ function DefinitionGroup({
       <dl className="mt-2 flex flex-col gap-2.5">
         {definitions.map((definition) => (
           <div key={definition.term} data-testid={definition.testId}>
-            <dt className="text-sm font-medium text-ink">{definition.term}</dt>
-            <dd className="mt-0.5 text-sm leading-snug text-ink-muted">{definition.meaning}</dd>
+            <dt className="text-[13px] font-medium text-ink">{definition.term}</dt>
+            <dd className="mt-0.5 text-[13px] leading-snug text-ink-muted">{definition.meaning}</dd>
           </div>
         ))}
       </dl>
@@ -105,7 +105,7 @@ export default function TransparencyDefinitions() {
           the ONLY place these six labels are defined — the banner, the overview
           captions and the gap blocks no longer restate them. */}
       <Accordion label="표시 용어 안내 (상태 표시의 뜻)" testId="transparency-status-guide">
-        <dl className="flex flex-col gap-2 text-sm text-ink-muted">
+        <dl className="flex flex-col gap-2 text-[13px] text-ink-muted">
           <div>
             <dt className="font-medium text-ink">직접 보고값</dt>
             <dd>출처 기관이 그 값을 그대로 보고한 경우입니다.</dd>
@@ -159,7 +159,7 @@ export default function TransparencyDefinitions() {
         data-testid="transparency-def-successor"
       >
         <GroupHeading>{SUCCESSOR_METHODOLOGY_SLOT.title}</GroupHeading>
-        <p className="mt-1 text-sm leading-snug text-ink-muted">
+        <p className="mt-1 text-[13px] leading-snug text-ink-muted">
           {SUCCESSOR_METHODOLOGY_SLOT.body}
         </p>
       </div>

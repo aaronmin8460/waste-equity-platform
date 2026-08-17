@@ -49,12 +49,26 @@ export default function TransparencySection({
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} data-testid={testId}>
-      {/* 20px / 700 in Figma (measured 21.68px on the 1.0838-scaled frame). */}
-      <h2 id={headingId} className="text-xl font-bold text-ink">
+      {/* 16px / 700.
+
+          The frame reports 21.68px, but frame 156:470 is SCALED: its `strokeWeight`
+          is 1.354808 where the unscaled sibling artboards (page-1 74:1992 at 1440,
+          modal1 221:441 at 1180) both report 1.0. Dividing by that factor turns
+          essentially every value in the frame into an exact integer — 1040 wide,
+          976 content, 32 gutter, 22 section gap, 14 radius — and lands the type on
+          the same scale the unscaled sibling modal uses (title 20, card title 13,
+          body 12, small 11). So the design width is 1040, not 1300, and the heading
+          is 16px. The app's dialog is 1088 (`.wep-dialog` max-width 68rem), a 1.046
+          ratio, so the frame's px apply about 1:1.
+
+          A previous pass read the scale as 1.0838 and rendered this at 20px, which
+          made every heading, tile and card on the screen ~25% larger than the frame. */}
+      <h2 id={headingId} className="text-base font-bold text-ink">
         {title}
       </h2>
-      {description ? <p className="mt-1.5 text-sm text-ink-subtle">{description}</p> : null}
-      <div className="mt-3">{children}</div>
+      {/* 12.5px × 1.046 ≈ 13; the frame's heading→description gap is 8. */}
+      {description ? <p className="mt-2 text-[13px] text-ink-subtle">{description}</p> : null}
+      <div className="mt-2.5">{children}</div>
     </section>
   );
 }

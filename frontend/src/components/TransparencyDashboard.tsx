@@ -327,15 +327,20 @@ export default function TransparencyDashboard({
     // No <aside> is introduced — `desktopNavigation.spec.ts` asserts this view has
     // none, and a sticky rail here would also narrow the full-width source section.
     <div
+      // Embedded: 32px side gutters, the frame's, and the same value the scoped
+      // `.wep-dialog-head` rule uses so the dialog title and the sections below it
+      // share one left edge (globals.css, 데이터·출처 block).
       className={
-        embedded ? "w-full px-5 pt-5 pb-6 sm:px-6" : "w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8"
+        embedded ? "w-full px-8 pt-5 pb-6" : "w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8"
       }
       data-testid="transparency-dashboard"
     >
-      {/* Figma's inter-section rhythm is 27.5px; 24px is the nearest step on the
-          scale and the one that keeps 현재 조건 above the fold at 1024×768, which
-          `phase6DataSourcesDashboard.spec.ts` enforces. */}
-      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-6">
+      {/* Figma's inter-section rhythm is 22px — the frame reports 29.8, but frame
+          156:470 is scaled by 1.354808 (see `transparency/TransparencySection.tsx`
+          for how that factor was established against the unscaled sibling
+          artboards). Tightening from 24 keeps 현재 조건 above the fold at 1024×768,
+          which `phase6DataSourcesDashboard.spec.ts` enforces. */}
+      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-[22px]">
         {embedded ? (
           // Nothing: the dialog head already carries the title AND a supporting
           // line, and Figma frame 156:470 shows exactly one such line. Repeating
