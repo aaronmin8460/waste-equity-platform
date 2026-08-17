@@ -30,18 +30,18 @@
  * in one section.
  *
  * ── WHAT IS NOT HERE ───────────────────────────────────────────────────────────
- * No weight, threshold, distance floor, numerator, direction, or stability rule for
- * any future screening version. `SUCCESSOR_METHODOLOGY_SLOT` states that the next
- * methodology is unfinished and documents nothing else, because a transparency
- * screen that guessed at an unmade decision would be doing the exact thing it exists
- * to prevent.
+ * The successor screening methodology. While it was unsettled this section carried a
+ * placeholder saying so; now that the policy has closed it has its own section
+ * (`SuccessorMethodology`), because its weights, floor, land registry, missingness
+ * rule, stability definition and limitations are a methodology rather than a
+ * cross-screen reading rule. Keeping it here would have made this the screen's second
+ * methodology home, which is the duplication this section was created to end.
  */
 
 import Accordion from "../ui/Accordion";
 import {
   ANALYSIS_DEFINITIONS,
   COMPARISON_DEFINITIONS,
-  SUCCESSOR_METHODOLOGY_SLOT,
   type GlobalDefinition,
 } from "./shared";
 
@@ -72,8 +72,8 @@ function DefinitionGroup({
       <dl className="mt-2 flex flex-col gap-2.5">
         {definitions.map((definition) => (
           <div key={definition.term} data-testid={definition.testId}>
-            <dt className="text-sm font-medium text-ink">{definition.term}</dt>
-            <dd className="mt-0.5 text-sm leading-snug text-ink-muted">{definition.meaning}</dd>
+            <dt className="text-[13px] font-medium text-ink">{definition.term}</dt>
+            <dd className="mt-0.5 text-[13px] leading-snug text-ink-muted">{definition.meaning}</dd>
           </div>
         ))}
       </dl>
@@ -105,7 +105,7 @@ export default function TransparencyDefinitions() {
           the ONLY place these six labels are defined — the banner, the overview
           captions and the gap blocks no longer restate them. */}
       <Accordion label="표시 용어 안내 (상태 표시의 뜻)" testId="transparency-status-guide">
-        <dl className="flex flex-col gap-2 text-sm text-ink-muted">
+        <dl className="flex flex-col gap-2 text-[13px] text-ink-muted">
           <div>
             <dt className="font-medium text-ink">직접 보고값</dt>
             <dd>출처 기관이 그 값을 그대로 보고한 경우입니다.</dd>
@@ -152,17 +152,12 @@ export default function TransparencyDefinitions() {
         </dl>
       </Accordion>
 
-      {/* The structural slot for the next screening methodology. It documents an
-          ABSENCE and nothing else: no weight, no threshold, no rule. */}
-      <div
-        className="rounded-2xl border border-hairline bg-surface-muted p-4"
-        data-testid="transparency-def-successor"
-      >
-        <GroupHeading>{SUCCESSOR_METHODOLOGY_SLOT.title}</GroupHeading>
-        <p className="mt-1 text-sm leading-snug text-ink-muted">
-          {SUCCESSOR_METHODOLOGY_SLOT.body}
-        </p>
-      </div>
+      {/* The successor methodology used to be a placeholder box HERE, documenting an
+          absence. The absence is over: the policy closed and the model activated on
+          the V3 contract branch, so the content moved out to its own section
+          (`SuccessorMethodology`, 후속 판정 기준) rather than growing inside a
+          definition list. This section stays what it is — the cross-screen
+          interpretation rules — and does not become a second methodology home. */}
     </div>
   );
 }

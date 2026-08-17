@@ -27,12 +27,11 @@
  * spacing.
  */
 
-import { useId } from "react";
 import type { ReactNode } from "react";
 
 import { formatCount } from "../../lib/metrics";
 import type { SourceOverview as SourceOverviewCounts } from "../../lib/dataSources";
-import { OVERVIEW_SUMMARY, OVERVIEW_TITLE, type FreshnessState } from "./shared";
+import { OVERVIEW_TITLE, type FreshnessState } from "./shared";
 
 export interface SourceOverviewProps {
   overview: SourceOverviewCounts;
@@ -59,59 +58,71 @@ function OverviewTile({
   value?: string;
   unit?: string;
   unavailableReason?: string;
-  caption: ReactNode;
+  /**
+   * Optional, and deliberately so. Figma's tile is label + figure and nothing else,
+   * and three of the four captions only restated their own label (등록된 공식 자료 →
+   * "이 서비스에 등록된 출처 기록 수입니다."). Those are gone. The one that survives
+   * is the period tile's, which is the only place on the screen that can tell a
+   * reader an UNRESOLVED lookup is not `0건` — there is no badge and no definition
+   * that says it, and `TransparencyDashboard.test.tsx` asserts the sentence.
+   */
+  caption?: ReactNode;
   testId: string;
 }) {
   const unavailable = unavailableReason !== undefined;
   return (
-    <div className="rounded-2xl bg-surface-muted px-5 py-4" data-testid={testId}>
-      <dt className="text-sm text-ink-secondary">{label}</dt>
+    // 14px radius, 14px/16px padding — the frame's tile, normalised off its 1.354808
+    // scale (see TransparencySection for how that factor was established).
+    <div className="rounded-[14px] bg-surface-muted px-4 py-3.5" data-testid={testId}>
+      <dt className="text-xs text-ink-secondary">{label}</dt>
       {/* The caption is a SIBLING of the value, never a child of it: several tests
           read `dd.textContent` to prove an unresolved counter renders no digit, and
-          the captions legitimately contain "0건이라는 뜻이 아닙니다". */}
+          the caption legitimately contains "0건이라는 뜻이 아닙니다". */}
       <dd
         className={
-          unavailable ? "mt-2 text-base font-medium text-ink-muted" : "mt-2 whitespace-nowrap"
+          unavailable ? "mt-2 text-sm font-medium text-ink-muted" : "mt-2 whitespace-nowrap"
         }
       >
         {unavailable ? (
           unavailableReason
         ) : (
           <>
-            <span className="text-3xl font-bold tabular-nums text-ink">{value}</span>
-            <span className="ml-1 text-sm text-ink-subtle">{unit}</span>
+            <span className="text-[22px] font-bold leading-tight tabular-nums text-ink">
+              {value}
+            </span>
+            <span className="ml-[3px] text-xs text-ink-subtle">{unit}</span>
           </>
         )}
       </dd>
-      <p className="mt-1.5 text-xs text-ink-subtle">{caption}</p>
+      {caption ? <p className="mt-1.5 text-xs text-ink-subtle">{caption}</p> : null}
     </div>
   );
 }
 
 export default function SourceOverview({ overview, freshnessState }: SourceOverviewProps) {
-  const headingId = useId();
   return (
-    <section aria-labelledby={headingId} data-testid="transparency-overview">
-      <h2 id={headingId} className="text-xl font-bold text-ink">
-        {OVERVIEW_TITLE}
-      </h2>
-      <p className="mt-1.5 text-sm text-ink-subtle">{OVERVIEW_SUMMARY}</p>
-      {/* Four across from 1024 up, as in Figma. At the minimum supported desktop
-          width a 2×2 grid cost ~145px of the first viewport and pushed the
-          catalog's first card below the fold for no informational gain. */}
-      <dl className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+    // Named by `aria-label`, not by a visible heading. The heading and its supporting
+    // line were removed — the four tiles each carry their own label and unit, so the
+    // section reads without them — but the REGION still has to be nameable in the
+    // screen-reader outline, and a nameless <section> is not exposed as a region at
+    // all. `aria-label` keeps the name without drawing anything.
+    <section aria-label={OVERVIEW_TITLE} data-testid="transparency-overview">
+      {/* Four across from 1024 up, as in Figma, at the frame's 14px gutter. At the
+          minimum supported desktop width a 2×2 grid cost ~145px of the first
+          viewport and pushed the catalog's first card below the fold for no
+          informational gain. */}
+      <dl className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
+        {/* No caption: the label already says it, and Figma's tile carries none. */}
         <OverviewTile
           label="등록된 공식 자료"
           value={formatCount(overview.total)}
           unit="건"
-          caption="이 서비스에 등록된 출처 기록 수입니다."
           testId="transparency-overview-total"
         />
         <OverviewTile
           label="자료 분야"
           value={formatCount(overview.areaCount)}
           unit="개"
-          caption="등록된 자료가 다루는 주제의 수입니다."
           testId="transparency-overview-areas"
         />
         <OverviewTile
@@ -125,15 +136,18 @@ export default function SourceOverview({ overview, freshnessState }: SourceOverv
             : {
                 unavailableReason: freshnessState === "loading" ? "확인 중" : "확인하지 못했습니다",
               })}
-          // The RESOLVED caption states only what the counted remainder is. What an
-          // absent reference period means — not "no data", not zero — is defined
-          // once in 공통 해석 기준 and carried by the card badge where it applies.
-          // The UNRESOLVED caption keeps its correction: there is no badge and no
-          // definition that can tell a reader an un-fetched count is not a zero, so
-          // the tile has to say so itself.
+          // The RESOLVED state carries NO caption. "나머지는 기준 기간이 제공되지 않은
+          // 자료입니다" was arithmetic the reader can do from the two figures already
+          // on screen, and what an absent reference period MEANS — not "no data", not
+          // zero — is defined once in 공통 해석 기준 and carried by the card badge
+          // where it applies.
+          //
+          // The UNRESOLVED state keeps its correction, and is the only caption left in
+          // this section: there is no badge and no definition that can tell a reader an
+          // un-fetched count is not a zero, so the tile has to say so itself.
           caption={
             freshnessState === "ready"
-              ? "나머지는 기준 기간이 제공되지 않은 자료입니다."
+              ? undefined
               : "기준 기간 정보를 아직 확인하지 못했습니다. 0건이라는 뜻이 아닙니다."
           }
           testId="transparency-overview-period"
@@ -142,7 +156,6 @@ export default function SourceOverview({ overview, freshnessState }: SourceOverv
           label="원문 링크가 있는 자료"
           value={formatCount(overview.withLink)}
           unit="건"
-          caption="기관이 제공한 안내 주소가 등록된 자료입니다."
           testId="transparency-overview-link"
         />
       </dl>

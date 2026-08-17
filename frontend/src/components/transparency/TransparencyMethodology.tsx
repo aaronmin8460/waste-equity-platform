@@ -49,7 +49,7 @@ export default function TransparencyMethodology({
       <Accordion label="기술 정보 (분석 버전과 식별자)" testId="transparency-technical">
         {run && policy ? (
           <dl
-            className="grid grid-cols-1 gap-2 text-sm text-ink-muted sm:grid-cols-2"
+            className="grid grid-cols-1 gap-2 text-[13px] text-ink-muted sm:grid-cols-2"
             data-testid="transparency-suitability"
           >
             <div>
@@ -82,6 +82,26 @@ export default function TransparencyMethodology({
                 {policy.candidate_grid_version}
               </dd>
             </div>
+            {/* WHICH MODEL produced the figures above.
+                Rendered only when the response actually carries it: the field
+                arrived with the Successor-V3 contract, so a backend serving the
+                older shape must show nothing here rather than a guessed default.
+                The run's OWN identity is preferred over the policy's, because
+                `/policies` reports the currently implemented policy while this row
+                describes a STORED run — and while the successor exists, those two
+                can legitimately differ. */}
+            {(run.component_model_version ?? policy.component_model_version) && (
+              <div>
+                <dt className="inline font-medium text-ink">평가 항목 모형: </dt>
+                <dd
+                  className="inline break-all"
+                  data-diagnostic
+                  data-testid="transparency-component-model"
+                >
+                  {run.component_model_version ?? policy.component_model_version}
+                </dd>
+              </div>
+            )}
             {costOptions && (
               <div>
                 <dt className="inline font-medium text-ink">표준공사비 기준 자료: </dt>
@@ -96,7 +116,7 @@ export default function TransparencyMethodology({
             )}
           </dl>
         ) : (
-          <p className="text-sm text-ink-muted" data-testid="transparency-suitability">
+          <p className="text-[13px] text-ink-muted" data-testid="transparency-suitability">
             아직 표시할 후보지 분석 결과가 없습니다.
           </p>
         )}

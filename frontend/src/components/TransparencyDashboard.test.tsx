@@ -279,13 +279,18 @@ describe("structure", () => {
     expect(h1.compareDocumentPosition(orientation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("keeps the standing information banner out of the alert role", async () => {
+  it("no longer renders a standing banner above the content", async () => {
     await renderDashboard();
-    const banner = screen.getByTestId("transparency-notice");
-    // A standing explanation must never interrupt a screen reader on every render.
-    expect(banner.getAttribute("role")).toBeNull();
-    expect(banner.textContent).toContain("기준 기간");
-    expect(banner.textContent).toContain("0이 아니라");
+    // The 알림 block was removed. Neither claim it carried was lost: missing-is-not-
+    // zero is defined once in 공통 해석 기준 (자료 없음), and the catalog's scope moved
+    // into the 출처 목록 description directly above the list it describes.
+    await screen.findByTestId("transparency-sources");
+    expect(screen.queryByTestId("transparency-notice")).toBeNull();
+    const definitions = screen.getByTestId("transparency-definitions");
+    expect(definitions.textContent).toContain("값이 0이라는 뜻이 아니며");
+    expect(screen.getByTestId("transparency-sources").textContent).toContain(
+      "관련 공공자료 전체를 담고 있다는 뜻은 아닙니다",
+    );
   });
 });
 
@@ -311,19 +316,14 @@ describe("source overview", () => {
     );
     // sgis + waste_statistics + 15064381 served a usable URL; kma and the unknown did not.
     expect(within(overview).getByTestId("transparency-overview-link").textContent).toContain("3건");
-    // Nothing resembling a grade or a percentage. The section's own supporting
-    // line (Figma frame 156:470) NAMES 완성도 점수 and 품질 등급 in order to
-    // disclaim them, so the two words are excluded from the values rather than
-    // from the whole section — the disclaimer is the opposite of the defect.
+    // Nothing resembling a grade or a percentage. The supporting line that used to
+    // NAME 완성도 점수 and 품질 등급 in order to disclaim them is gone with the
+    // heading, so the exclusion now applies to the WHOLE section rather than only to
+    // its values — a stricter assertion than before, and the honest one now that no
+    // copy on this screen has a reason to say either word.
     expect(overview.textContent).not.toMatch(/%/);
-    const values = [...overview.querySelectorAll("dd")].map((node) => node.textContent).join(" ");
-    expect(values).not.toContain("점수");
-    expect(values).not.toContain("등급");
-    expect(
-      within(overview).getByText(
-        "모두 등록된 기록의 개수입니다. 완성도 점수나 품질 등급이 아닙니다.",
-      ),
-    ).toBeDefined();
+    expect(overview.textContent).not.toContain("점수");
+    expect(overview.textContent).not.toContain("등급");
   });
 
   it("computes every counter from the served records rather than a fixed design value", async () => {
@@ -1159,20 +1159,22 @@ describe("refresh: sections, headings, and shared primitives", () => {
     }
   });
 
-  it("gives the overview a visible, non-sr-only heading of its own", async () => {
+  it("keeps the overview a named region even with no visible heading", async () => {
     await renderDashboard();
     const overview = screen.getByTestId("transparency-overview");
     expect(overview.tagName).toBe("SECTION");
-    const heading = document.getElementById(overview.getAttribute("aria-labelledby")!)!;
-    expect(heading.textContent).toBe("한눈에 보기");
-    // Before the refresh this was the one block on the page a sighted reader could
-    // not name — its only heading was sr-only.
-    expect(heading.className).not.toContain("sr-only");
+    // The visible 한눈에 보기 heading and its supporting line were removed: the four
+    // tiles each carry their own label and unit and read without them. The REGION
+    // still has to be nameable, though — a <section> with no accessible name is not
+    // exposed as a region at all — so the name moved to `aria-label`.
+    expect(overview.getAttribute("aria-labelledby")).toBeNull();
+    expect(overview.getAttribute("aria-label")).toBe("한눈에 보기");
+    expect(overview.querySelector("h2")).toBeNull();
   });
 
   it("keeps the sections in their documented reading order", async () => {
     const { container } = await renderDashboard();
-    const order = ["transparency-notice", "transparency-overview", ...SECTIONS];
+    const order = ["transparency-overview", ...SECTIONS];
     const nodes = order.map((testId) => screen.getByTestId(testId));
     for (let index = 1; index < nodes.length; index += 1) {
       const position = nodes[index - 1].compareDocumentPosition(nodes[index]);
@@ -1473,7 +1475,6 @@ describe("global definitions have exactly one home", () => {
   function sectionsMentioning(phrase: string): string[] {
     const root = document.querySelector("[data-testid='transparency-dashboard']")!;
     const areas = [
-      "transparency-notice",
       "transparency-overview",
       "transparency-sources",
       "transparency-datasets",
@@ -1594,16 +1595,55 @@ describe("global definitions have exactly one home", () => {
     );
   });
 
-  it("reserves a successor-methodology slot without inventing a policy", async () => {
+  it("publishes the successor methodology from the approved contract", async () => {
+    // The placeholder that used to live at `transparency-def-successor` documented an
+    // ABSENCE while the policy was open. The policy closed on the V3 contract branch,
+    // so the absence is over and the content is a section of its own.
     await renderDashboard();
-    const slot = screen.getByTestId("transparency-def-successor");
-    // It says the next methodology is NOT settled…
-    expect(slot.textContent).toContain("아직 확정되지 않았습니다");
-    // …and it publishes no weight, threshold, distance, or rule of its own. A
-    // percentage or a metre figure here would be a decision nobody has made.
-    expect(slot.textContent).not.toMatch(/\d\s*%/);
-    expect(slot.textContent).not.toMatch(/\d\s*(m|km|미터|킬로미터)\b/);
-    expect(slot.textContent).not.toMatch(/가중치\s*\d/);
+    expect(screen.queryByTestId("transparency-def-successor")).toBeNull();
+    const section = screen.getByTestId("transparency-successor");
+
+    // All four components, each with its weight and its stored identifier.
+    for (const technical of [
+      "existing_burden",
+      "air_impact_proxy",
+      "resident_impact",
+      "land_conversion",
+    ]) {
+      const row = within(section).getByTestId(`successor-component-${technical}`);
+      expect(row.textContent, technical).toContain("25%");
+      // The plain-Korean name leads; the identifier is a secondary label.
+      expect(row.querySelector("dt")!.textContent!.trim().startsWith(technical)).toBe(false);
+    }
+
+    // The weights are named as a versioned CHOICE, never as an objective truth.
+    const weights = within(section).getByTestId("transparency-successor-weights");
+    expect(weights.textContent).toContain("객관적으로 옳은 값이 아닙니다");
+
+    // The scoring rules that a reader needs in order not to misread a score.
+    const rules = within(section).getByTestId("transparency-successor-rule-list").textContent!;
+    expect(rules).toContain("500m");            // the approved resident floor
+    expect(rules).toContain("0으로 채우거나");   // missing is never zero-filled
+    expect(rules).toContain("다시 하지 않습니다"); // re-scores, never re-screens
+    expect(rules).toContain("법적 입지 제한을 뜻하지 않습니다"); // land classes are not law
+    expect(rules).toContain("법적으로 적합하다는 뜻이 아닙니다"); // stable ≠ suitable
+
+    // The limitations are published, not hidden.
+    const limits = within(section).getByTestId("transparency-successor-limit-list").textContent!;
+    expect(limits).toContain("24.13%");   // structurally excluded residents
+    expect(limits).toContain("13,734");   // the ranking population
+    expect(limits).toContain("양평군");    // the concentration caveat
+  });
+
+  it("never implies the successor model produced the figures on screen", async () => {
+    await renderDashboard();
+    const status = screen.getByTestId("transparency-successor-status").textContent!;
+    // Approved and usable, but NOT the default…
+    expect(status).toContain("아직 기본값이 아닙니다");
+    // …and the stored historical results were not rewritten. This is the single
+    // most misreadable fact in the change, so it is asserted explicitly and it is
+    // on the section's FACE rather than behind a disclosure.
+    expect(status).toContain("고쳐 쓰지 않습니다");
   });
 
   it("keeps the Page-6 card system bordered, never the shadowed figma card", async () => {

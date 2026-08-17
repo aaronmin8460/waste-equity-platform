@@ -127,10 +127,11 @@ for (const vp of VIEWPORTS) {
         expect(labelled, `${testId} has an accessible name`).toBeTruthy();
         await expect(page.locator(`#${labelled}`)).toHaveCount(1);
       }
-      // The overview names itself too, and its heading is no longer sr-only.
+      // The overview names itself too. Its visible heading was removed — the four
+      // tiles read without it — so the name is on `aria-label` rather than pointing
+      // at a rendered <h2>. It is still a named region either way.
       const overview = page.getByTestId("transparency-overview");
-      const overviewLabel = await overview.getAttribute("aria-labelledby");
-      await expect(page.locator(`#${overviewLabel}`)).toHaveText("한눈에 보기");
+      await expect(overview).toHaveAttribute("aria-label", "한눈에 보기");
 
       await expectNoHorizontalOverflow(page, "populated");
     });
@@ -226,7 +227,7 @@ for (const vp of VIEWPORTS) {
       // rail. Measured against a sibling in the same column, because the column is
       // capped and would otherwise fail this at wide viewports.
       const section = (await page.getByTestId("transparency-sources").boundingBox())!;
-      const column = (await page.getByTestId("transparency-notice").boundingBox())!;
+      const column = (await page.getByTestId("transparency-datasets").boundingBox())!;
       expect(Math.abs(section.width - column.width)).toBeLessThanOrEqual(1);
       // The floor is DIALOG-relative, not viewport-relative. The catalogue lives
       // in a width-capped modal now, so "85% of the viewport" is unreachable by

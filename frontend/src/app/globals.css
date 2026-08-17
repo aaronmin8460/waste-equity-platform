@@ -1922,6 +1922,40 @@ body {
   min-height: 0;
   overflow-y: auto;
 }
+
+/* 데이터·출처 (Page 6) ONLY — Figma frame 156:470's modal head.
+
+   The frame gives the head a 32px gutter and a 21px title. `Dialog` is shared by
+   five call sites (Pages 3, 4, 5 and 6), so the values are scoped to this dialog's
+   own test id instead of being pushed into `.wep-dialog-head` / `.wep-dialog-title`,
+   where they would silently restyle the 지표 순위 전체보기 dialog another lane owns.
+
+   The 32px gutter is matched by the embedded dashboard's own `px-8`
+   (components/TransparencyDashboard.tsx), so the title, the supporting line and every
+   section below them share one left edge. They previously did not: the head sat at
+   20px and the body at 24px.
+
+   The frame also draws NO rule under the head — the title, its supporting line and
+   한눈에 보기 sit on one uninterrupted surface — and draws the close control as a
+   borderless filled circle rather than an outlined square.
+
+   The close control's SIZE is deliberately not the frame's 36px. It stays at the 44px
+   target the rest of the application uses; only its shape and fill are adopted. */
+[data-testid="data-sources-dialog"] .wep-dialog-head {
+  padding: 1.625rem 2rem;
+  border-bottom: 0;
+}
+[data-testid="data-sources-dialog"] .wep-dialog-title {
+  font-size: 1.3125rem;
+}
+[data-testid="data-sources-dialog"] .wep-dialog-close {
+  border: 0;
+  border-radius: 9999px;
+  background: var(--color-surface-sunken);
+}
+[data-testid="data-sources-dialog"] .wep-dialog-close:hover {
+  background: var(--color-primary-soft);
+}
 /* (A `max-width: 639px` block used to give phones the full screen here — a centred
    card with margins wastes the little room a long catalogue has. The app no longer
    renders below 1024 (components/ui/NarrowScreenGate.tsx), so no viewport reached it

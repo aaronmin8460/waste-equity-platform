@@ -140,7 +140,7 @@ import SourceCatalog from "./transparency/SourceCatalog";
 import SourceOverview from "./transparency/SourceOverview";
 import TransparencyDefinitions from "./transparency/TransparencyDefinitions";
 import TransparencyMethodology from "./transparency/TransparencyMethodology";
-import TransparencyNotice from "./transparency/TransparencyNotice";
+import SuccessorMethodology from "./transparency/SuccessorMethodology";
 import TransparencySection from "./transparency/TransparencySection";
 import {
   buildDatasetRows,
@@ -327,15 +327,20 @@ export default function TransparencyDashboard({
     // No <aside> is introduced — `desktopNavigation.spec.ts` asserts this view has
     // none, and a sticky rail here would also narrow the full-width source section.
     <div
+      // Embedded: 32px side gutters, the frame's, and the same value the scoped
+      // `.wep-dialog-head` rule uses so the dialog title and the sections below it
+      // share one left edge (globals.css, 데이터·출처 block).
       className={
-        embedded ? "w-full px-5 pt-5 pb-6 sm:px-6" : "w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8"
+        embedded ? "w-full px-8 pt-5 pb-6" : "w-full px-4 pt-6 pb-12 sm:px-6 lg:px-8"
       }
       data-testid="transparency-dashboard"
     >
-      {/* Figma's inter-section rhythm is 27.5px; 24px is the nearest step on the
-          scale and the one that keeps 현재 조건 above the fold at 1024×768, which
-          `phase6DataSourcesDashboard.spec.ts` enforces. */}
-      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-6">
+      {/* Figma's inter-section rhythm is 22px — the frame reports 29.8, but frame
+          156:470 is scaled by 1.354808 (see `transparency/TransparencySection.tsx`
+          for how that factor was established against the unscaled sibling
+          artboards). Tightening from 24 keeps 현재 조건 above the fold at 1024×768,
+          which `phase6DataSourcesDashboard.spec.ts` enforces. */}
+      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-[22px]">
         {embedded ? (
           // Nothing: the dialog head already carries the title AND a supporting
           // line, and Figma frame 156:470 shows exactly one such line. Repeating
@@ -347,11 +352,6 @@ export default function TransparencyDashboard({
             {orientation}
           </PageHeader>
         )}
-
-        {/* Standing explanation, so deliberately NOT role="alert" — an alert here
-            would interrupt a screen reader on every render for information that is
-            never new (components/ui/InfoBanner.tsx contract). */}
-        <TransparencyNotice />
 
         {/* ── Overview ─────────────────────────────────────────────────────────
             Counts of served records only. No completeness percentage, freshness
@@ -423,6 +423,20 @@ export default function TransparencyDashboard({
           description="이 서비스의 모든 화면에 함께 적용되는 표시·비교·해석 기준입니다. 각 화면에서 반복하지 않고 여기에 한 번만 정리합니다."
         >
           <TransparencyDefinitions />
+        </TransparencySection>
+
+        {/* ── The successor screening methodology ──────────────────────────────
+            Placed AFTER 공통 해석 기준 and BEFORE the gap section: it is a
+            methodology rather than a reading rule, so it does not belong in the
+            definitions; and it names its own coverage gaps, which the gap section
+            then continues. It was a placeholder inside `TransparencyDefinitions`
+            for as long as the policy was unsettled. */}
+        <TransparencySection
+          title="후속 판정 기준"
+          testId="transparency-successor"
+          description="후보지 분석의 다음 모형이 무엇을 평가하고, 무엇을 평가하지 못하는지 정리했습니다. 지금 화면에 보이는 후보지 수치를 만든 모형은 아직 기존 모형입니다."
+        >
+          <SuccessorMethodology />
         </TransparencySection>
 
         {/* ── What is currently unavailable ─────────────────────────────────────
