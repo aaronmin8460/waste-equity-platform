@@ -211,7 +211,10 @@ export const METRIC_SECTIONS: readonly MetricSection[] = [
       {
         key: "population",
         label: "지역별 인구",
-        description: "선택 지역의 총 인구를 확인합니다.",
+        // No description. "선택 지역의 총 인구를 확인합니다." restated the label as a
+        // sentence — the row is already named 지역별 인구, inside a section named
+        // 지역별 인구, and the unit and reference year are stated by the selected-metric
+        // summary. A helper line that adds no fact is a line the reader learns to skip.
         total: "population",
       },
     ],
@@ -226,10 +229,12 @@ export const METRIC_SECTIONS: readonly MetricSection[] = [
     rows: [
       {
         key: "household",
+        // This row is the 생활(가정) series ALONE — the 비배출시설계 component is the
+        // next row, as its own official series. That distinction is carried by the two
+        // row labels standing next to each other, so the sentence that used to spell it
+        // out ("생활(가정) 폐기물. 사업장 비배출시설계는 아래에서 따로 봅니다.") is gone.
+        // The Figma frame agrees: it labels this row without a helper line.
         label: "생활계 폐기물 발생량",
-        // NOT "생활 + 비배출계": this row is the 생활(가정) series alone. The
-        // 비배출시설계 component is the next row, as its own official series.
-        description: "생활(가정) 폐기물. 사업장 비배출시설계는 아래에서 따로 봅니다.",
         total: "HOUSEHOLD",
         perCapita: "PER_CAPITA_HOUSEHOLD",
       },
@@ -256,14 +261,14 @@ export const METRIC_SECTIONS: readonly MetricSection[] = [
   {
     key: "facility",
     title: "1인당 시설 처리 수준",
-    // Same removal as 폐기물 발생량 above. The two rows keep their own descriptions
-    // (소재 시설 vs 5km 이내), which is the distinction that actually decides which
-    // one a reader wants.
+    // No descriptions on either row. "선택 지역 내 시설의 처리량" and "선택 지역 5km
+    // 이내 시설의 처리량" only re-spelled the labels 소재 시설 / 인근 5km — the two
+    // labels already carry the one distinction that decides which row a reader wants,
+    // and the selected-metric summary states the scope in full.
     rows: [
       {
         key: "facility_located",
         label: "소재 시설 처리량",
-        description: "선택 지역 내 시설의 처리량",
         // Both facility-burden metrics are ALREADY per-capita as served (their
         // labels say 1인당), which is why this section carries no mode switch —
         // there is no absolute counterpart to switch to.
@@ -272,7 +277,6 @@ export const METRIC_SECTIONS: readonly MetricSection[] = [
       {
         key: "facility_5km",
         label: "인근 5km 시설 처리량",
-        description: "선택 지역 5km 이내 시설의 처리량",
         total: "FACILITY_BURDEN_5KM",
       },
     ],

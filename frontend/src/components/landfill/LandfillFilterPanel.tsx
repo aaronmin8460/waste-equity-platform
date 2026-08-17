@@ -28,7 +28,7 @@ import { useState } from "react";
 import type { LandfillOrigin } from "../../lib/api";
 import DataStatusBadge from "../ui/DataStatusBadge";
 import SectionCard from "../ui/SectionCard";
-import { monthOptions, ORIGIN_OPTIONS, originLabel, PAGE2_CARD_CLASS, yearOptions } from "./shared";
+import { monthOptions, ORIGIN_OPTIONS, PAGE2_CARD_CLASS, yearOptions } from "./shared";
 
 /**
  * What the dashboard currently holds for the selected filters. Passed in rather
@@ -93,9 +93,9 @@ export default function LandfillFilterPanel({
     <SectionCard
       title="조회 조건"
       // No description. Figma's 조회 조건 card (125:5064) carries none, and "네 가지
-      // 조건이 아래 모든 값을 함께 결정합니다" restated what a filter panel is. The
-      // 현재 선택 line below still names every applied condition, which is the part a
-      // reader who has scrolled past the controls actually needs.
+      // 조건이 아래 모든 값을 함께 결정합니다" restated what a filter panel is. The one
+      // line that survives below the controls reports the SERVED outcome, which is the
+      // only thing here a reader cannot read off the controls themselves.
       className={PAGE2_CARD_CLASS}
       testId="landfill-filters"
     >
@@ -210,73 +210,43 @@ export default function LandfillFilterPanel({
         </p>
       )}
 
-      <LandfillSelectionSummary
-        year={year}
-        month={month}
-        origin={origin}
-        waste={waste}
-        outcome={outcome}
-      />
+      <LandfillSelectionSummary outcome={outcome} />
     </SectionCard>
   );
 }
 
 /**
- * 현재 선택 — the asked-for conditions as ONE compact line, plus one sentence saying
- * what the platform currently holds for them.
+ * What the platform currently holds for the asked-for conditions — ONE line.
  *
- * ── Why it is a line and not a definition list ────────────────────────────────
- * It used to be a four-entry `<dl>` — 연도 2023 · 기간 7월 · 출발 지역 경기도 ·
- * 폐기물 종류 생활 — sitting immediately below the four labelled `<select>`s that
- * already say exactly that. Repeating each control's LABEL beside each control's
- * VALUE, one line under the control, is duplication rather than a summary, and it
- * cost four lines of the fold. The Figma frame agrees: `125:5092` shows one inline
- * line, "2025년 · 연간 · 전체 폐기물".
+ * ── What this used to be, and why the echo is gone ────────────────────────────
+ * It was a `현재 선택` label followed by the four chosen values — 2025 · 연간 · 전체 ·
+ * 전체 — sitting immediately below the four labelled `<select>`s that were already
+ * displaying exactly those four values, unobscured, 40px higher. A summary that
+ * restates controls the reader can see is not a summary; it is the same row twice, and
+ * it cost this card ~37px of the fold on a screen the Figma frame gives 139px in total.
+ * The Figma 조회 조건 card carries no such strip.
  *
- * The VALUES are kept, in the controls' own order, so the selection is still
- * readable as a sentence and a reader who has scrolled the controls out of view can
- * still see what was asked. What went is the four repeated field names.
+ * ── What is KEPT, and why it is not redundant ─────────────────────────────────
+ * The OUTCOME sentence stays. It is the one thing on this card that is not readable
+ * from the controls: whether the request is in flight, whether the backend actually
+ * holds an official record for this combination, and — when it does — the SERVED
+ * period, which is not the same string as the 연도 `<option>` (a "최신 완결연도"
+ * selection resolves to a concrete year only in the response). With the KPI row's
+ * former `수도권매립지 기준 기간:` strip removed as a duplicate, this is now the single
+ * place the served period is stated in prose, so it carries a real fact rather than an
+ * echo.
  *
  * It reports STATE, never a result: no count, no total, no share, and no number the
  * backend did not serve. Before a response arrives it says so rather than showing a
  * zero, and a no-data answer is the neutral 자료 없음 gray — not amber, which would
  * caution about a value that exists (docs/ui-refresh/design-tokens.md §"Missing data").
- *
- * It duplicates no control: the four selects above are the only way to change any
- * of this.
  */
-function LandfillSelectionSummary({
-  year,
-  month,
-  origin,
-  waste,
-  outcome,
-}: {
-  year: number | null;
-  month: number | null;
-  origin: LandfillOrigin | null;
-  waste: string | null;
-  outcome: LandfillSelectionOutcome;
-}) {
-  const values: string[] = [
-    // The bare year, exactly as the `<option>` spells it — deliberately NOT
-    // `2024년`. `기준 기간 …년` is the SERVED period, and several specs wait for it
-    // to prove new values have arrived; echoing it from filter state would satisfy
-    // that wait while the previous period's numbers were still on screen.
-    year != null ? String(year) : "최신 완결연도",
-    month != null ? `${month}월` : "연간",
-    originLabel(origin),
-    waste ?? "전체",
-  ];
+function LandfillSelectionSummary({ outcome }: { outcome: LandfillSelectionOutcome }) {
   return (
     <div
-      className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-hairline pt-3"
+      className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-hairline pt-2.5"
       data-testid="landfill-selection"
     >
-      <p className="text-xs font-medium text-ink-subtle">현재 선택</p>
-      <p className="text-xs font-medium text-ink" data-testid="landfill-selection-values">
-        {values.join(" · ")}
-      </p>
       <p
         className="flex flex-wrap items-center gap-1.5 text-xs text-ink-subtle"
         data-testid="landfill-selection-status"

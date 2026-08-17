@@ -349,19 +349,31 @@ describe("metric selection", () => {
     expect(first).not.toContain("border-t");
   });
 
-  it("drops the two standing group descriptions but keeps every row distinction", async () => {
+  it("drops the standing helper prose but keeps every metric distinction", async () => {
     const { container } = await renderLoaded();
     const text = container.textContent ?? "";
-    // Sentences that restated their own headings (page-1 기술요청 copy-density pass).
+    // Group sentences that restated their own headings (earlier copy-density pass).
     expect(text).not.toContain("선택 지역에서 발생하는 폐기물의 양을 확인합니다.");
     expect(text).not.toContain("선택 지역의 폐기물 처리시설 처리량을 확인합니다.");
-    // The headings they restated are still there…
+    // Row sentences that restated their own labels (Figma copy-density pass). Each of
+    // these named the thing its label already named, so removing them costs the reader
+    // no fact — the distinctions they carried are asserted below as LABELS.
+    expect(text).not.toContain("선택 지역의 총 인구를 확인합니다.");
+    expect(text).not.toContain("생활(가정) 폐기물. 사업장 비배출시설계는 아래에서 따로 봅니다.");
+    expect(text).not.toContain("선택 지역 내 시설의 처리량");
+    expect(text).not.toContain("선택 지역 5km 이내 시설의 처리량");
+    // The headings and labels that carry the real distinctions are all still there —
+    // nothing became ambiguous by deleting the prose.
     expect(text).toContain("폐기물 발생량");
     expect(text).toContain("1인당 시설 처리 수준");
-    // …and the ROW descriptions — which carry a real distinction the labels do not —
-    // are untouched, including the one that separates the two facility measures.
-    expect(text).toContain("선택 지역 내 시설의 처리량");
-    expect(text).toContain("선택 지역 5km 이내 시설의 처리량");
+    expect(text).toContain("지역별 인구");
+    // 생활계 vs 비배출시설계 — the separation the deleted sentence spelled out survives
+    // as two distinctly named selectable rows.
+    expect(screen.getByRole("radio", { name: "생활계 폐기물 발생량" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "사업장 폐기물 발생량 (비배출시설계)" })).toBeTruthy();
+    // 소재 시설 vs 인근 5km — likewise.
+    expect(screen.getByRole("radio", { name: "소재 시설 처리량" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "인근 5km 시설 처리량" })).toBeTruthy();
   });
 
   it("reaches all eleven served metrics — four via the 총량/1인당 switch", async () => {

@@ -228,3 +228,38 @@ describe("LandfillHeadlineResults — the 핵심 지표 label", () => {
     expect(heading.className).toContain("sr-only");
   });
 });
+
+describe("LandfillHeadlineResults — the Figma emphasis hierarchy", () => {
+  it("gives the row exactly one dominant result, and Figma puts it on 총 폐기물 발생량", () => {
+    renderRow();
+    // The Figma page-2 frame (125:5106) makes card 1 a FILLED navy card carrying the
+    // largest figure on the screen. The platform's one-hero rule is unchanged — a
+    // reader still gets exactly one entry point — but WHICH card holds it moved: this
+    // row previously made 수도권매립지 반입량 the hero.
+    const generation = screen.getByTestId("landfill-kpi-generation");
+    const heroValue = generation.querySelector("dd");
+    expect(heroValue?.className).toContain("text-3xl");
+    expect(heroValue?.textContent).toBe("59,638,313 t");
+    // Emphasis is fill AND size together, never colour alone.
+    expect(generation.className).toContain("bg-brand");
+    // …and it is the ONLY dominant value. 반입량, the fee, and the two conversions
+    // inside the cost card all stay at the secondary size.
+    const values = Array.from(screen.getByTestId("landfill-kpis").querySelectorAll("dd"));
+    const heroes = values.filter((value) => value.className.includes("text-3xl"));
+    expect(heroes).toHaveLength(1);
+    // The grid holds four cards and no more.
+    expect(screen.getByTestId("landfill-kpis").children).toHaveLength(4);
+  });
+
+  it("keeps the navy card's provenance machine-identifiable, not just visible", () => {
+    renderRow();
+    // The hero draws its own white-alpha chip because the shared badge's light surface
+    // would vanish on the fill — but it is still a 계산값 declaration carrying the same
+    // data-status, so the fill is a tone change and never a downgrade in what the card
+    // says about where its number came from.
+    const generation = screen.getByTestId("landfill-kpi-generation");
+    expect(generation.querySelector("[data-status='derived']")).not.toBeNull();
+    expect(generation.querySelector("[data-status='reported']")).toBeNull();
+    expect(generation.textContent).toContain("계산값");
+  });
+});

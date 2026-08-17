@@ -449,9 +449,14 @@ describe("LandfillDashboard", () => {
     renderDashboard();
     const kpi = screen.getByTestId("landfill-kpi-per-capita");
     expect(kpi.textContent).toContain("주민 1인당 환산 반입수수료");
-    expect(kpi.textContent).toContain("개인의 실제 납부액이 아닙니다");
-    expect(kpi.textContent).not.toContain("세금");
-    expect(kpi.textContent).not.toContain("납부액입니다");
+    // The served caveat is rendered by `PerCapitaProvenance`, which spans the full
+    // width of the cost card rather than the ~120px cell the value sits in — inside
+    // that cell it wrapped to eight lines and became the tallest thing on the row.
+    // It is still VISIBLE and still in the same card, directly under the value.
+    const card = screen.getByTestId("landfill-kpi-fee");
+    expect(card.textContent).toContain("개인의 실제 납부액이 아닙니다");
+    expect(card.textContent).not.toContain("세금");
+    expect(card.textContent).not.toContain("납부액입니다");
   });
 
   it("renders the grouped regional table with three metropolitan rows for 전체", () => {
@@ -993,18 +998,27 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
     // 톤당 환산 수수료 and the per-resident conversion now live INSIDE the 수수료
     // card (Figma 234:441), so the two cards checked here are the ones that own a
     // caption of their own.
+    // The cost card opens with its own 폐기물 관리비용 title (Figma draws card 4 as one
+    // titled surface with two columns), so its caption is addressed by test id rather
+    // than by "the first <p>", which would pick up that title.
+    const captionOf: Record<string, (card: HTMLElement) => Element | null> = {
+      "landfill-kpi-quantity": (card) => card.querySelector("p"),
+      "landfill-kpi-fee": () => screen.getByTestId("landfill-fee-caveat"),
+    };
     for (const testId of ["landfill-kpi-quantity", "landfill-kpi-fee"]) {
       const card = screen.getByTestId(testId);
       const value = card.querySelector("dd");
-      const caption = card.querySelector("p");
+      const caption = captionOf[testId](card);
       expect(value, `${testId} has no value element`).not.toBeNull();
       expect(caption, `${testId} has no caption`).not.toBeNull();
       // Value: at least text-xl and semibold, with aligned digits.
-      expect(value?.className).toMatch(/text-(xl|3xl)/);
+      expect(value?.className).toMatch(/text-(xl|2xl|3xl)/);
       expect(value?.className).toMatch(/font-(semibold|bold)/);
       expect(value?.className).toContain("tabular-nums");
-      // Explanation: strictly smaller, and never bolder than the value.
-      expect(caption?.className).toContain("text-xs");
+      // Explanation: strictly smaller, and never bolder than the value. The Figma
+      // frame's caption step is 11px, one below text-xs, so both are accepted — the
+      // contract is the RELATIONSHIP to the value, not one specific token.
+      expect(caption?.className).toMatch(/text-(xs|\[11px\])/);
       expect(caption?.className).not.toMatch(/font-(semibold|bold)/);
     }
   });
@@ -1142,15 +1156,21 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
       },
     });
     const chart = screen.getByTestId("landfill-trend-chart");
-    // Bars only. Each month also has a transparent full-height hit target carrying
-    // the hover/focus readout, which is not a value and draws nothing.
-    expect(chart.querySelectorAll("[data-testid='landfill-trend-bar']")).toHaveLength(2);
+    // Served months only. The Figma frame draws this series as a LINE with one marker
+    // per served month; an unserved month gets no marker, so a gap stays a gap rather
+    // than becoming a point on the axis. Each month also has a transparent full-height
+    // hit target carrying the hover/focus readout, which is not a value and draws
+    // nothing.
+    expect(chart.querySelectorAll("[data-testid='landfill-trend-point']")).toHaveLength(2);
+    // The line is drawn over exactly those served points and invents no vertex.
+    const line = chart.querySelector("[data-testid='landfill-trend-line']");
+    expect(line?.getAttribute("points")?.trim().split(/\s+/)).toHaveLength(2);
     // The unserved months are absent from the exact table too — not zero rows.
     const rows = screen.getByTestId("landfill-trend-table").querySelectorAll("tbody tr");
     expect(rows).toHaveLength(2);
     const trends = screen.getByTestId("landfill-trends");
     expect(trends.textContent).toContain(
-      "자료가 없는 달은 막대를 그리지 않으며 0으로 채우지 않습니다",
+      "자료가 없는 달은 점을 찍지 않으며 0으로 채우지 않습니다",
     );
     // The unit belongs to the metric currently drawn, and switching changes it.
     expect(trends.textContent).toContain("톤 (t)");
@@ -1403,9 +1423,6 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
       "수도권매립지 반입 구조 (지역별)",
       "수도권매립지 반입 폐기물 구성",
       "월별 반입 추이",
-      // The municipal dataset's compact summary, in the KPI region the Figma frame
-      // puts it in, with its `시·군·구별 상세 보기 →` into the full section below.
-      MUNICIPAL_COST_SUMMARY_TITLE,
       "지역별 상세 현황",
       "공유 및 내보내기",
       "근거와 한계",
@@ -1418,6 +1435,16 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     // ONE orientation sentence, and the header no longer supplies a second one of
     // its own. See "renders the heading and keeps the metropolitan-only limitation".
     expect(screen.queryByText(/수도권매립지로 반입된 공식 반입량과 반입수수료/)).toBeNull();
+    // The municipal dataset is NOT a titled region of its own up here any more: the
+    // Figma frame draws it as the right-hand column of the KPI row's 폐기물 관리비용
+    // card, so it is a labelled column rather than a tenth <h2>. Its name, its counts
+    // and its link into the full section are all still on screen — the full section
+    // below keeps its own heading, which is what the link targets.
+    expect(screen.queryByRole("heading", { name: MUNICIPAL_COST_SUMMARY_TITLE, level: 2 })).toBeNull();
+    expect(screen.getByTestId("municipal-cost-kpi-summary").textContent).toContain(
+      MUNICIPAL_COST_SUMMARY_TITLE,
+    );
+    expect(screen.getByTestId("municipal-cost-detail-link")).toBeDefined();
   });
 
   it("shows no scope banner in any state, and still alerts on a genuine failure", () => {
@@ -1442,47 +1469,28 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     expect(document.querySelector("[role='alert']")).not.toBeNull();
   });
 
-  it("restates the selected conditions as one line, without repeating the field names", () => {
+  it("reports the served outcome without echoing the four controls above it", () => {
     renderDashboard({ year: 2023, month: 7, origin: "41", waste: "생활" });
     const selection = screen.getByTestId("landfill-selection");
     const text = selection.textContent ?? "";
-    expect(text).toContain("2023");
-    expect(text).toContain("7월");
-    expect(text).toContain("경기도");
-    expect(text).toContain("생활");
-    // One inline line (Figma 125:5092), not a four-entry definition list whose
-    // terms merely repeat the labels of the four controls directly above it.
-    expect(screen.getByTestId("landfill-selection-values").textContent).toBe(
-      "2023 · 7월 · 경기도 · 생활",
-    );
-    // No definition list: the control labels are no longer repeated as terms beside
-    // their own values. (Only the two field names that appear nowhere else are
-    // asserted by text — 연도 is a substring of 최신 완결연도 and 기간 of the served
-    // 기준 기간, and neither of those is a repeated control label.)
-    expect(selection.querySelectorAll("dl, dt, dd")).toHaveLength(0);
-    for (const fieldName of ["출발 지역", "폐기물 종류"]) {
-      expect(text, `${fieldName} is already the control's own label`).not.toContain(fieldName);
+    // The strip no longer restates the chosen values. It used to print
+    // "2023 · 7월 · 경기도 · 생활" directly beneath four `<select>`s already showing
+    // exactly those four values, which is the same row twice rather than a summary —
+    // and it cost the 조회 조건 card ~37px of a fold the Figma frame gives 139px in
+    // total. The controls remain the one place the selection is readable, and the one
+    // place it can be changed.
+    expect(screen.queryByTestId("landfill-selection-values")).toBeNull();
+    for (const fieldName of ["출발 지역", "폐기물 종류", "경기도"]) {
+      expect(text, `${fieldName} is already visible on the control itself`).not.toContain(
+        fieldName,
+      );
     }
-    // The summary reports state; it never becomes a second set of controls.
+    // What SURVIVES is the one thing not readable off the controls: the served
+    // outcome, including the served period — which is not the same string as the
+    // 연도 option, because "최신 완결연도" only resolves to a year in the response.
+    expect(screen.getByTestId("landfill-selection-status").textContent).toContain("기준 기간");
+    // The strip reports state; it never becomes a second set of controls.
     expect(selection.querySelectorAll("select, input, button")).toHaveLength(0);
-  });
-
-  it("spells the selected year without 년 so it cannot stand in for the served period", () => {
-    // `기준 기간 …년` is the SERVED period, and several specs wait for it to prove
-    // that new values have arrived. Echoing it from filter state would satisfy that
-    // wait while the previous period's numbers were still on screen.
-    renderDashboard({ year: 2026, data: null, unavailable: null });
-    expect(screen.getByTestId("landfill-selection").textContent).not.toContain("2026년");
-    expect(screen.getByTestId("landfill-selection").textContent).toContain("2026");
-  });
-
-  it("names the default selection rather than inventing one", () => {
-    renderDashboard({ year: null, month: null, origin: null, waste: null });
-    const text = screen.getByTestId("landfill-selection").textContent ?? "";
-    expect(text).toContain("최신 완결연도");
-    expect(text).toContain("연간");
-    // 전체 appears for both the origin and the waste filter.
-    expect(text.match(/전체/g)).toHaveLength(2);
   });
 
   it("states the outcome for the current selection, with no fabricated count", () => {
@@ -1532,20 +1540,25 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     expect(screen.getByTestId("landfill-error").getAttribute("role")).toBe("alert");
   });
 
-  it("makes 총 반입량 the one dominant result on the screen", () => {
+  it("never gives the emphasised card treatment to a total it could not compute", () => {
     renderDashboard();
-    const heroValue = screen.getByTestId("landfill-kpi-quantity").querySelector("dd");
-    expect(heroValue?.className).toContain("text-3xl");
-    expect(heroValue?.textContent).toBe("1,071,548 t");
-    // …and it is the ONLY hero. Every other value on the row — including the two
-    // conversions inside the 수수료 card and the two unbound totals — stays at the
-    // secondary size, so the reader has exactly one entry point.
+    // This fixture passes `reportingStats={null}`, so 총 폐기물 발생량 — the card the
+    // Figma frame (125:5106) fills navy and gives the row's one dominant figure — has
+    // no value to show. It must then render as an ordinary card stating the served
+    // absence: the hero fill is emphasis for a NUMBER, and applying it to a card whose
+    // content is "자료 없음" would make the most visually prominent thing on the screen
+    // an absence dressed as a result.
+    const generation = screen.getByTestId("landfill-kpi-generation");
+    expect(generation.className).not.toContain("bg-brand");
+    expect(generation.querySelector("dd")?.className).not.toContain("text-3xl");
+    // With no computable hero, nothing else promotes itself into the slot either —
+    // the row has one hero or none, never a substitute chosen at render time.
     const values = Array.from(screen.getByTestId("landfill-kpis").querySelectorAll("dd"));
-    const heroes = values.filter((value) => value.className.includes("text-3xl"));
-    expect(heroes).toHaveLength(1);
-    expect(heroes[0].textContent).toBe("1,071,548 t");
+    expect(values.filter((value) => value.className.includes("text-3xl"))).toHaveLength(0);
     // The grid still holds four cards and no more (Figma 125:5106).
     expect(screen.getByTestId("landfill-kpis").children).toHaveLength(4);
+    // The populated hero — navy fill + the single text-3xl value — is covered by
+    // `landfill/LandfillHeadlineResults.test.tsx`, which supplies both derived totals.
   });
 
   it("states provenance per card, because this row mixes reported with derived", () => {
@@ -2029,7 +2042,7 @@ describe("LandfillDashboard — 월별 추이 exact-value readout", () => {
     renderDashboard();
     const readout = screen.getByTestId("landfill-trend-readout");
     // Nothing is claimed before the reader points at anything.
-    expect(readout.textContent).toContain("막대에 커서를 올리거나");
+    expect(readout.textContent).toContain("점에 커서를 올리거나");
     const hit = screen
       .getAllByTestId("landfill-trend-hit")
       .find((element) => element.getAttribute("data-month") === "2024-01")!;
@@ -2039,7 +2052,7 @@ describe("LandfillDashboard — 월별 추이 exact-value readout", () => {
     expect(screen.getByTestId("landfill-trend-readout").textContent).toMatch(/\d/);
     fireEvent.mouseLeave(hit);
     expect(screen.getByTestId("landfill-trend-readout").textContent).toContain(
-      "막대에 커서를 올리거나",
+      "점에 커서를 올리거나",
     );
   });
 
