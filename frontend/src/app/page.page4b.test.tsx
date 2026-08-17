@@ -548,7 +548,7 @@ describe("the ranked object stays a 500m candidate cell", () => {
     await pickCity("시흥", "경기 시흥시");
     serveRanking(ROWS, 777);
     const list = screen.getByTestId("top-candidates");
-    expect(within(list).getByTestId("candidate-list-map-hint").textContent).toContain(
+    expect(within(list).getByTestId("candidate-list-row-meaning").textContent).toContain(
       "시·군·구 자체가 아니라",
     );
     expect(within(list).getAllByTestId("top-candidate-item")[0].textContent).toContain(
@@ -572,7 +572,7 @@ describe("the ranked object stays a 500m candidate cell", () => {
     );
     // Re-ranking 1..N inside the scope would be a client-side re-derivation of the
     // stored screening rank — a new methodology, not a filter.
-    expect(within(screen.getByTestId("top-candidates")).getByTestId("candidate-list-map-hint")
+    expect(within(screen.getByTestId("top-candidates")).getByTestId("candidate-list-row-meaning")
       .textContent).toContain("분석 실행 전체에서의 순위");
   });
 
