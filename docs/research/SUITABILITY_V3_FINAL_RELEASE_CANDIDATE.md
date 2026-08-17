@@ -145,6 +145,31 @@ status-name audit covers the whole rendered view instead of one card.
 **The two "horizontal overflow" failures were not overflow.** Real geometry showed
 none; both passed once the stale stability assertion was removed. No product defect.
 
+### The authoritative run, and the last five failures
+
+The first authoritative pass finished **578 passed · 5 failed · 89 skipped** (34 min).
+All five were inherited stale assertions; all five are resolved with measurements
+taken on an **idle** machine, because the earlier readings were taken at load 52 and
+were not trustworthy.
+
+| failure | verdict | resolution |
+| --- | --- | --- |
+| `phase5LandfillDashboard` ×2 | the `landfill-trend-bar` staleness again, in a second spec | migrated to `landfill-trend-point`; **29 passed** |
+| `phase6DataSourcesDashboard` ×3 (one test, three viewports) | **stale threshold, not a layout defect** | cap corrected to the measured gutter; **57 passed** |
+
+**The Page-6 one is worth stating precisely, because it looked like a real defect.**
+A throwaway geometry probe measured `dialogBody 1088 − section 1024 = 64px` of slack
+in **both** the empty and the populated state — *identical*. Identical slack in both
+states is what proves it is a symmetric 32px-per-side gutter rather than a squeeze of
+the empty state. The assertion's own comment assumed a ~20px-per-side gutter the
+design no longer uses, so the 48px cap was stale. Raised to the measured 64 with the
+evidence recorded in the test; it still fails the moment the catalogue stops filling
+its box, and `expectNoHorizontalOverflow` covers the other direction.
+
+Both are **inherited, not integration damage**: the Page-6 transparency components,
+the shared `components/ui`, and the spec itself are byte-identical between this RC and
+`origin/feat/page6-successor-v3-methodology-final`.
+
 ### The four inherited Page-4 unit-test failures — resolved, not deferred
 
 - `page.page4c` "returns to the first page…" — **contention, not staleness.** Passes
@@ -162,6 +187,43 @@ Staleness was **proven, not assumed**: a temporary probe enumerated every render
 기술 참고사항 and only the `part="all"` layout renders it, which no destination reaches.
 
 ---
+
+## 4a. Final Playwright and 1440×900 visual QA
+
+**Final authoritative Playwright: 583 passed · 89 skipped · 0 failed** (29.3 min,
+2 workers).
+
+**Visual QA at 1440×900**, against the local integrated stack on an idle machine
+(load 3.8), driving the real UI:
+
+| page | verified |
+| --- | --- |
+| 1 지역 지표 | six-item nav; **all four removed helper lines ABSENT**; 명 unit; 데이터 없음 (missing ≠ zero); six facility glyphs; overflow 0 |
+| 2 지역별 폐기물 처리 현황 | **forbidden ratios ABSENT** (`발생량 대비 처리 규모`, `발생량 대비 반입 비율`); hero is **총 폐기물 발생량** per f01d3bf; 반입량 still shown; overflow 0 |
+| 3 후보지 분석 | no raw enum leak; overflow 0 |
+| 4 후보지 심층 분석 | legal/engineering disclaimer present; **Z/R/E/D shown for the historical run and NO V3 cards** — correct for the served model; overflow 0 |
+| 5 후보지 심층 비교 | scenario UI present; **no false 민감도 분석 claim**; overflow 0 |
+| 6 데이터·출처 | h1 `데이터·출처`; all four successor components (기존 처리 부담 · 대기 영향 대리지표 · 주민 근접 영향 · 토지 전환 부담) at **25%** each; removed 한눈에 보기 heading ABSENT; no forbidden primary tokens; overflow 0 |
+
+`최신 완결연도` still appears on Page 2 — verified by DOM inspection to be an
+`<option>` label inside `landfill-year-select`, i.e. a control choice, **not**
+restored caveat prose. The selection summary reads
+"기준 기간 2025년 연간의 공식 반입 자료를 표시합니다."
+
+### Contract finding: V3 is not reachable through the UI, by design
+
+The frontend **never sends `component_model_version`** — it calls
+`/suitability/runs/latest` and `/suitability/summary?profile=…` unpinned, which the
+backend resolves to `DEFAULT_COMPONENT_MODEL` (historical). Confirmed by source
+search and by the live UI showing Z/R/E/D with no V3 cards.
+
+So Page 4's V3 factor cards are implemented, unit-tested
+(`SuitabilityScoringBasis.v3.test.tsx`) and correct, but **no user-visible V3 output
+appears until the default model is flipped or a model selector is enabled.** That is
+the recorded rollout gate, not a defect: the Page-4 lane deliberately did not send a
+selector because the rollout is the owner's call.
+
+**Deploying this RC therefore ships the V3 capability, not a V3 user experience.**
 
 ## 5. Migration and rollback plan
 
