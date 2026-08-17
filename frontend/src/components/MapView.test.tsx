@@ -484,7 +484,14 @@ describe("MapView suitability vector source", () => {
     expect(stable!["source-layer"]).toBe("candidates");
     const filter = JSON.stringify(map.filters["candidates-stable-outline"]);
     expect(filter).toContain("ELIGIBLE");
-    expect(filter).toContain("stable_count");
+    // Stability is tested by CLASS, not by count. The count's denominator differs by
+    // component model — 3 compared profiles historically, 4 perturbations under the
+    // successor model — so a `stable_count == 3` test matched nothing at all on a
+    // successor run and silently emptied this layer. The class means the same thing
+    // in both models, so it is the model-agnostic thing to filter on.
+    expect(filter).toContain("stability_class");
+    expect(filter).toContain("STABLE");
+    expect(filter).not.toContain("stable_count");
     // The selected-candidate highlight is layered above the stable outline.
     // (candidates-stable-outline is added with the candidate layers; the
     //  selected-candidate layers are added later, so they stay on top.)
@@ -493,15 +500,18 @@ describe("MapView suitability vector source", () => {
   it("restricts ELIGIBLE cells to stable ones when stableOnly is enabled", () => {
     const props = baseProps();
     const { map, rerender } = renderAndLoad(props);
-    // Off: the fill filter is just the status filter (no stable_count restriction).
-    expect(JSON.stringify(map.filters["candidates-fill"])).not.toContain("stable_count");
+    // Off: the fill filter is just the status filter (no stability restriction).
+    expect(JSON.stringify(map.filters["candidates-fill"])).not.toContain("stability_class");
     rerender(<MapView {...props} stableOnly={true} />);
     const filter = JSON.stringify(map.filters["candidates-fill"]);
-    // On: eligible cells now require stable_count == 3, while other statuses are
-    // still governed by the status filter (never reclassified as unstable).
-    expect(filter).toContain("stable_count");
+    // On: eligible cells now require stability_class == STABLE, while other statuses
+    // are still governed by the status filter (never reclassified as unstable).
+    expect(filter).toContain("stability_class");
+    expect(filter).toContain("STABLE");
     expect(filter).toContain("ELIGIBLE");
     expect(filter).toContain("REVIEW_REQUIRED");
+    // Never model-specific: a hardcoded count would break on a successor run.
+    expect(filter).not.toContain("stable_count");
   });
 });
 
