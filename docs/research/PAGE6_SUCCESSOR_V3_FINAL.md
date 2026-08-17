@@ -1,7 +1,8 @@
 # Page 6 — 데이터·출처 — Successor-V3 methodology / provenance lane
 
-Status of this document: **PART 1 COMPLETE (Figma fidelity + copy reduction),
-PART 2 BLOCKED (Successor-V3 methodology content) pending the backend handoff.**
+Status of this document: **PART 1 COMPLETE (Figma fidelity + copy reduction).
+PART 2 COMPLETE against the PROVISIONAL contract preview — pending a diff against
+the authoritative `release/backend-v3-ready-20260817`, which has not been published.**
 
 Nothing in this lane was deployed. No backend file was modified.
 
@@ -15,8 +16,9 @@ Nothing in this lane was deployed. No backend file was modified.
 | Base SHA | `be93abb8ed61fabb7997f64a07f95d5ab356530c` |
 | Working branch | `feat/page6-successor-v3-methodology-final` |
 | Worktree | `/Volumes/WASTE_QA2/worktrees/page6-v3-final` |
-| Final SHA (this report's state) | `8c6bb140683bf84b3f97aa21caee0b9d07b19153` |
-| Backend handoff SHA | **NONE — not yet published** (see §9) |
+| Final SHA (this report's state) | `c9f3724f186eeb8ccd097f786b5208adb01846ad` |
+| Backend handoff SHA (preview, provisional) | `b93393a015d6d9d579ff4619e092d545e690f388` |
+| Backend handoff SHA (authoritative) | **NONE — not yet published** (see §9) |
 | Figma frame | `156:470` in `hETmPv3N31IJeW8XdLwoiS` |
 
 Environment: `/Volumes/WASTE_QA2` only, `source /Volumes/WASTE_QA2/recovery-env.sh`.
@@ -219,6 +221,7 @@ search matched nothing · genuine failure, only the last an `alert`) are untouch
 | `TransparencyDashboard.test.tsx` + `dataSources` + wetland + land-cover | **132 passed** |
 | `TransparencyDashboard` + `page.dataDialog` + `accessibility` + `shell` | **139 passed** |
 | after the §5.1 removals: `TransparencyDashboard` + `page.dataDialog` + `accessibility` | **122 passed** |
+| after the §9 V3 methodology: `TransparencyDashboard.test.tsx` | **91 passed** |
 | `tsc --noEmit` | **0 errors** |
 | `eslint` (Page-6 surface) | **0 errors** |
 | Browser QA @1440×900 | 3 passes, all measured deltas 0 |
@@ -265,51 +268,85 @@ The lane brief made MCP inspection mandatory before visual sign-off.
 
 ---
 
-## 9. PART 2 — Successor-V3 methodology content: BLOCKED
+## 9. PART 2 — Successor-V3 methodology, published
 
-Neither handoff branch exists on `origin` as of this report:
+### 9.1 Source and standing
 
-- `release/backend-v3-ready-20260817` — **absent**
-- `integration/backend-v3-contract-preview-20260817` — **absent**
+`integration/backend-v3-contract-preview-20260817` = `b93393a`, carrying
+`docs/research/SUITABILITY_V3_FINAL_POLICY.md` and
+`docs/research/SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md`.
 
-Both are being polled. The related `docs/suitability-v3-phase5-activation-decision`
-(`a21e907`) **does** exist but carries neither `SUITABILITY_V3_FINAL_POLICY.md` nor
-`SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md`; it holds a
-`PHASE5_ACTIVATION_DECISION_REQUEST`. It was inspected read-only and **no policy was
-adopted from it** — it is not the named handoff and the lane brief forbids inventing
-policy.
+**Provisional and non-production.** The authoritative
+`release/backend-v3-ready-20260817` has still not been published and is being
+polled. Because the values may yet change, every one of them is stored as data in
+`transparency/shared.ts` (`SUCCESSOR_VERSIONS`, `SUCCESSOR_STATUS`,
+`SUCCESSOR_COMPONENTS`, `SUCCESSOR_WEIGHT_NOTE`, `SUCCESSOR_RULES`,
+`SUCCESSOR_LIMITS`) rather than scattered through JSX — that block is the entire
+re-check surface for the eventual diff.
 
-Accordingly the following remain **unwritten**, and no placeholder for any of them
-appears in user-visible production code:
+The preview forks at `5148caa`, **before** this lane's frontend base, and carries a
+large older-lineage frontend diff. Only the two contract documents and the backend
+schema were read from it; **nothing was merged.**
 
-policy version · model version · scenario version · the four component definitions
-(`existing_burden`, `air_impact_proxy`, `resident_impact`, `land_conversion`) ·
-component orientation · final weights · missing-component policy · air-impact grain ·
-resident distance floor · land registry version · ambiguous-class treatment ·
-normalization · CRITIC status · stability definition · persistence/version behaviour ·
-historical Z/R/E/D coexistence · coverage statistics.
+### 9.2 What is published
 
-### 9.1 The slot is already built
+| Item | Value |
+|---|---|
+| policy version | `suitability-successor-policy-v1` |
+| derivation version | `suitability-successor-derivation-v1` |
+| component model | `suitability-components-successor-v1` |
+| historical component model (still the default) | `suitability-components-zred-v1` |
+| components (contract order) | 기존 처리 부담 `existing_burden` · 대기 영향 대리지표 `air_impact_proxy` · 주민 근접 영향 `resident_impact` · 토지 전환 부담 `land_conversion` |
+| weights | 0.25 / 0.25 / 0.25 / 0.25 |
+| missing-component policy | `STRICT_ALL_COMPONENTS_REQUIRED`, zero-fill forbidden, reasons preserved |
+| ranking population | historical 통과 ∩ strict complete case = 13,734 of 47,893 (run 47) |
+| resident distance floor | 500 m = one `capital-grid-500m-v1` cell |
+| land registry | `successor-land-cover-l2-v1`, developed = the taxonomy's own 1xx grouping, nothing excluded |
+| ambiguous classes | 230 / 420 / 620 / 710 / 720 — all resolved NOT developed, and flagged |
+| normalization | bounded ratio for `land_conversion`; percentile rank for the other three |
+| CRITIC | diagnostic only; never persisted, served, or used to score |
+| stability | four symmetric 0.06 perturbations; STABLE = all four, CONDITIONAL = 2–3, SENSITIVE = ≤1 |
+| coverage | ranking spans 16 of 79 regions (5,736,197 residents); 22 regions / 6,349,306 (24.13%) structurally outside |
+| concentration | top 50 = 49 양평군 — a real score result, not a tie artifact |
 
-`SUCCESSOR_METHODOLOGY_SLOT` (`components/transparency/shared.ts`, rendered by
-`TransparencyDefinitions` at `transparency-def-successor`) currently states only that
-the next screening methodology is **not settled**, and publishes no weight, threshold,
-distance, numerator, direction, or stability rule. That is the correct pre-handoff
-state and is what Part 2 will replace.
+### 9.3 The claim the section exists to prevent
 
-The historical model (Z / R / E / D) and the Successor V3 components will be
-presented as **coexisting**, so no reader concludes stored historical runs were
-rewritten.
+**The successor did not produce the figures on this screen.** `/policies` hardcodes
+`COMPONENT_MODEL_HISTORICAL`, `DEFAULT_COMPONENT_MODEL` stays pinned to the
+historical model, and successor run 465 is reachable only by explicit run id.
 
-### 9.2 On the preview branch
+So `SUCCESSOR_STATUS` leads the section and sits on its **face**, not behind a
+disclosure: approved and activated, *not* the default; and the stored historical
+results were **not** rewritten. A rule behind a collapsed summary cannot correct a
+misreading a reader has already made.
 
-Per the scheduling-acceleration instruction: if
-`integration/backend-v3-contract-preview-20260817` appears with a frozen
-model/policy/scenario version plus implemented request/response schemas, API wiring
-begins against it, treated as **non-production and provisional**, and is diffed
-against `release/backend-v3-ready-20260817` when that appears — updating to the
-authoritative contract before final tests and push. Nothing is deployed from the
-preview.
+### 9.4 API wiring
+
+`component_model_version` and `component_order` added to `SuitabilityPolicy` and
+`SuitabilityRun` in `lib/api.ts`, **optional** for two independent reasons that both
+still hold: the contract is provisional, and the currently deployed backend serves
+the older shape. A missing field renders nothing rather than a guessed default.
+
+`TransparencyMethodology` now shows which model produced the run's figures,
+preferring the **run's own** identity over the policy's — once the successor exists
+those two can legitimately differ, and the run is what the figures came from.
+
+### 9.5 Copy architecture
+
+Dense but not an essay: a status block, four component rows, one weight summary
+with its reasoning, then three disclosures (자세한 산정 규칙 · 이 모형의 범위와 한계 ·
+기술 정보). Korean names lead; stored identifiers are secondary labels.
+
+`CRITIC` and `ELIGIBLE` are on `FORBIDDEN_PRIMARY_TOKENS` and the terminology audit
+caught **both** in the first draft of this copy. The copy was changed, not the rule:
+each is described in plain Korean on the primary surface and named only inside a
+`[data-diagnostic]` disclosure.
+
+### 9.6 Still to do before final sign-off
+
+Diff the authoritative `release/backend-v3-ready-20260817` against `b93393a` when it
+appears. If identical, no change. If different, update `SUCCESSOR_*` in
+`transparency/shared.ts` and re-run the Page-6 suite before the final push.
 
 ---
 
