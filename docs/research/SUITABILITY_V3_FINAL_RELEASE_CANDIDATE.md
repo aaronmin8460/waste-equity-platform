@@ -108,7 +108,44 @@ lower-is-better component.
 | Frontend production build (`next build --webpack`) | ✅ compiled |
 | Local integrated stack | backend healthy · alembic 0023 · both models readable |
 
-### The four inherited Page-4 test failures — resolved, not deferred
+### Inherited E2E staleness — migrated, not skipped (`edb8577`)
+
+Integration exposed the same class of staleness in Playwright that the unit suite
+had. `landfillDashboard.spec.ts` went **11 failures → 22 passed**. Every migration is
+backed by product code that documents the change:
+
+| finding | evidence in the product |
+| --- | --- |
+| hero card **moved** to 총 폐기물 발생량 | `LandfillHeadlineResults`, beside the `text-3xl` one-hero rule |
+| trend chart is a **line**, not bars | `landfill-trend-bar` gone; `landfill-trend-point` per served month |
+| selection summary no longer echoes origin/waste | `LandfillFilterPanel` documents the removal as redundant with the controls |
+| partial-year notice moved **inside** the 반입량 card | "a WARNING about the value directly above it" |
+| `candidate-counts` / `stability-*` struck | testid enumeration across all three suitability destinations |
+
+**Fixture gaps fixed faithfully.** `mockBackend` served EMPTY envelopes for
+`/waste-reporting/statistics`, `/waste-reporting/per-capita` and
+`/equity/facility-burden`, so the f01d3bf hero — derived by
+`buildCapitalRegionWaste()` from those endpoints — rendered its honest *unavailable*
+state and every headline assertion was measuring the empty card. The summary fixture
+also ignored `month`, so a shared link restored its month control while the summary
+still said 연간.
+
+Both are now fixed in the **real response shape**, taken from a live local backend
+(`month` is the string `"YYYY-MM"`; `is_complete_year` describes the YEAR, not the
+selection). **Real captured values were deliberately NOT used as fixtures:**
+`phase5Fixtures.ts` requires every number in it to be synthetic and marked, because
+real-looking values render under `OFFICIAL_REPORTED_VALUE` labels — which the repo's
+data rules forbid. The fixtures are therefore synthetic, internally consistent, and
+carry the `분석용 합성 픽스처 — 공식 자료 아님` marker.
+
+**Two assertions came out stronger than before:** the partial-year notice is now
+pinned to the value it qualifies rather than floating above an unrelated row, and the
+status-name audit covers the whole rendered view instead of one card.
+
+**The two "horizontal overflow" failures were not overflow.** Real geometry showed
+none; both passed once the stale stability assertion was removed. No product defect.
+
+### The four inherited Page-4 unit-test failures — resolved, not deferred
 
 - `page.page4c` "returns to the first page…" — **contention, not staleness.** Passes
   in isolation; it timed out at 5,872 ms under parallel load.

@@ -286,11 +286,14 @@ test.describe("desktop 1440×900 — states and interaction", () => {
     await expect(partial).toBeVisible();
     await expect(partial).toContainText("2026-05");
     await expect(partial).toContainText("연간 합계가 아닙니다");
-    // Gaps stay gaps: only the five served months are drawn, never twelve. Counted
-    // by the BAR test id: each month also carries a transparent hit target for the
-    // hover/focus readout, which is a second <rect> that paints nothing.
+    // Gaps stay gaps: only the five served months are drawn, never twelve.
+    //
+    // MIGRATED to the f01d3bf design: the trend is a LINE now, so `landfill-trend-bar`
+    // no longer exists and the old count was always 0. Counted by the POINT test id —
+    // one per served month — not by `landfill-trend-hit`, the transparent hover/focus
+    // target that paints nothing and encodes no value.
     await expect(
-      page.getByTestId("landfill-trend-chart").getByTestId("landfill-trend-bar"),
+      page.getByTestId("landfill-trend-chart").getByTestId("landfill-trend-point"),
     ).toHaveCount(5);
 
     // A month selection narrows the period label.
@@ -571,10 +574,12 @@ test.describe("desktop 1440×900 — states and interaction", () => {
   test("clears the previous filter's values before the new ones arrive", async ({ page }) => {
     await mockLandfillBackend(page);
     await gotoLandfill(page);
-    // The complete-year fixture reports twelve trend months (bars, not the readout
-    // hit targets that sit transparently over them).
+    // The complete-year fixture reports twelve trend months. MIGRATED to the line
+    // chart's per-month POINTS (see above); the readout hit targets are excluded for
+    // the same reason as before — they sit transparently over the plot and carry no
+    // value.
     await expect(
-      page.getByTestId("landfill-trend-chart").getByTestId("landfill-trend-bar"),
+      page.getByTestId("landfill-trend-chart").getByTestId("landfill-trend-point"),
     ).toHaveCount(12);
     await expect(page.getByTestId("landfill-dashboard")).toContainText("2024년");
 
