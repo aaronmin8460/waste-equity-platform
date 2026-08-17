@@ -96,7 +96,10 @@ export default function SuitabilityScopeCard({
 
   return (
     <SectionCard
-      title="① 분석 범위"
+      /* 지역 선택, not 분석 범위: Figma 136:8684 titles the card ① 지역 선택 and the
+         page-4 기술 참고사항 list (225:440) calls the rename out explicitly
+         ("탭 소제목 확인: ① 지역 선택"). The control and its state are unchanged. */
+      title="① 지역 선택"
       description="공식 폐기물 자료가 있는 지역만 선택할 수 있습니다."
       testId="suitability-scope"
       className="wep-figma-card wep-numbered-card"

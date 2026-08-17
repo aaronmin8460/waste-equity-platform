@@ -210,11 +210,11 @@ const right = () => screen.getByTestId("deep-right-panel");
 // --------------------------------------------------------------------------- //
 
 describe("the Figma numbered hierarchy", () => {
-  it("puts ① 분석 범위 and ② 계산 모델 가중치 설정 in the controls column, in order", async () => {
+  it("puts ① 지역 선택 and ② 계산 모델 가중치 설정 in the controls column, in order", async () => {
     await enterDeepAnalysis();
     const scope = within(left()).getByTestId("suitability-scope");
     const basis = within(left()).getByTestId("scoring-basis");
-    expect(within(scope).getByRole("heading", { name: "① 분석 범위" })).toBeDefined();
+    expect(within(scope).getByRole("heading", { name: "① 지역 선택" })).toBeDefined();
     expect(
       within(basis).getByRole("heading", { name: "② 계산 모델 가중치 설정" }),
     ).toBeDefined();
