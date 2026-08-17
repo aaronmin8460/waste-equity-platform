@@ -619,17 +619,6 @@ export interface SuitabilityRun {
   derivation_version: string;
   policy_version: string;
   candidate_grid_version: string;
-  /**
-   * This RUN's own component-model identity, read from the stored run row rather
-   * than from the running code's constants (Successor-V3 contract).
-   *
-   * Optional for back-compatibility with a backend serving the pre-V3 shape. A run
-   * whose model is `suitability-components-zred-v1` carries its scores in the four
-   * legacy `*_score` fields; any other model carries them in `component_scores` with
-   * the legacy fields explicitly null. The two are never dual-emitted.
-   */
-  component_model_version?: string;
-  component_order?: string[];
   reference_year: number;
   boundary_vintage: string;
   weight_profile: string;
@@ -649,6 +638,10 @@ export interface SuitabilityRun {
    * never see one model's numbers under another model's labels. Two values exist
    * today: `suitability-components-zred-v1` (historical Z/R/E/D) and
    * `suitability-components-successor-v1` (Successor V3).
+   *
+   * A run whose model is `suitability-components-zred-v1` carries its scores in the
+   * four legacy `*_score` fields; any other model carries them in `component_scores`
+   * with the legacy fields explicitly null. The two are never dual-emitted.
    *
    * OPTIONAL on this type because a response served by a pre-contract backend
    * carries neither field; `undefined` therefore means "this backend does not
