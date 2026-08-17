@@ -217,8 +217,10 @@ test.describe("Page 5B — ranking analytics", () => {
     // Rises and falls, scoped to the common candidates rather than the population.
     await expect(page.getByTestId("scenario-ranking-kpi-rose-value")).toHaveText("9개");
     await expect(page.getByTestId("scenario-ranking-kpi-fell-value")).toHaveText("2개");
+    // The tile names the bounded population in the frame's one-line caption density;
+    // the scope strip immediately below states the same denominator in full.
     await expect(page.getByTestId("scenario-ranking-kpi-rose")).toContainText(
-      "양쪽 상위 목록에 모두 있는 11개 후보 구역 기준",
+      "양쪽 공통 11개 기준",
     );
 
     // The bounded population is stated, not implied.
@@ -241,19 +243,22 @@ test.describe("Page 5B — ranking analytics", () => {
     await expect(c13).toContainText("A안 상위 12 밖");
   });
 
-  test("ranks the movement list by exact movement, with direction in words", async ({ page }) => {
+  test("keeps the movement card to the scatter, with the movement rows in the table", async ({
+    page,
+  }) => {
     await setup(page);
-    const rows = page.getByTestId("scenario-ranking-movement-row");
-    await expect(rows.first()).toBeVisible({ timeout: 20000 });
+    const card = page.getByTestId("scenario-ranking-movement-card");
+    await expect(card).toBeVisible({ timeout: 20000 });
+    await expect(page.getByTestId("scenario-ranking-scatter")).toBeVisible();
 
-    // c1 and c2 moved 10 places; the risers moved 3.
-    await expect(rows.first().getByTestId("scenario-ranking-movement-delta")).toHaveText("↓ 10계단");
-    await expect(rows.first()).toHaveAttribute("data-direction", "DOWN");
-    await expect(rows.nth(2).getByTestId("scenario-ranking-movement-delta")).toHaveText("↑ 3계단");
-    await expect(rows.nth(2)).toHaveAttribute("data-direction", "UP");
+    // The embedded 순위 변화가 큰 후보 구역 list is gone: it restated the comparison
+    // table, whose default sort is that same "순위 변화가 큰 순".
+    await expect(page.getByTestId("scenario-ranking-movement-row")).toHaveCount(0);
 
-    // Each row is a candidate CELL, named as one.
-    await expect(rows.first()).toContainText("500m 후보 구역 · c1");
+    // The movement it ranked by is still on screen, in the table, in that order.
+    const first = page.getByTestId("scenario-ranking-table-row").first();
+    await expect(first).toHaveAttribute("data-candidate-key", "c1");
+    await expect(first.getByTestId("scenario-ranking-table-movement")).toHaveText("↓ 10계단");
   });
 
   test("draws the A/B top-10 union, with a real rank for a candidate that left it", async ({
