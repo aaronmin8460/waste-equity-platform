@@ -128,30 +128,37 @@ function renderRow(overrides: Partial<Parameters<typeof LandfillHeadlineResults>
       priorSettled
       priorPeriodLabel="2024년"
       capitalRegion={capitalRegion()}
-      tierNoun="시·군·구"
       {...overrides}
     />,
   );
 }
 
 describe("LandfillHeadlineResults — real periods", () => {
-  it("shows each metric's OWN source period, not one period for the row", () => {
+  // Owner decision 2026-08-17 (docs/YEOGIDA_UI_REDESIGN_SPEC.md §9): no card on this
+  // row prints a 기준 기간 line any more. The landfill period survives ONLY in the
+  // screen-reader sentence, because 조회 조건 states it visibly one card above.
+  it("no longer prints a 기준 기간 line on any card", () => {
     renderRow();
-    // The two annual series are 2024, stated ON their cards …
-    expect(screen.getByTestId("landfill-kpi-generation-period")).toHaveTextContent("기준 기간 2024년");
-    expect(screen.getByTestId("landfill-kpi-treatment-period")).toHaveTextContent("기준 기간 2024년");
-    // … while the monthly landfill series is 2025, stated ONCE for the two official
-    // cards in the strip above them rather than repeated on each. Both periods are on
-    // screen at the same time, which is the whole point: they genuinely differ.
+    expect(screen.queryByTestId("landfill-kpi-generation-period")).toBeNull();
+    expect(screen.queryByTestId("landfill-kpi-treatment-period")).toBeNull();
+    expect(screen.getByTestId("landfill-kpi-quantity").textContent).not.toContain("기준 기간");
+    expect(screen.getByTestId("landfill-kpi-generation").textContent).not.toContain("기준 기간");
+    expect(screen.getByTestId("landfill-kpi-treatment").textContent).not.toContain("기준 기간");
+  });
+
+  it("keeps the landfill period for assistive technology", () => {
+    renderRow();
     expect(screen.getByTestId("landfill-headline")).toHaveTextContent(
       "수도권매립지 기준 기간: 2025년 연간",
     );
-    // Neither official card restates it — and neither borrows the 2024 beside it,
-    // which is what a shared row-level period line would have made them do.
+  });
+
+  it("still declares the official inbound quantity's provenance as a badge", () => {
+    renderRow();
+    // The 공식 보고값 · FEE_CAVEAT sentence is gone; the machine-readable provenance
+    // that a card's figure is a reported value is NOT.
+    expect(screen.queryByTestId("landfill-fee-caveat")).toBeNull();
     expect(screen.getByTestId("landfill-kpi-quantity")).toHaveTextContent("공식 보고값");
-    expect(screen.getByTestId("landfill-kpi-quantity").textContent).not.toContain("기준 기간");
-    expect(screen.getByTestId("landfill-fee-caveat")).toHaveTextContent("공식 보고값");
-    expect(screen.getByTestId("landfill-fee-caveat").textContent).not.toContain("기준 기간");
   });
 
   it("never shows the Figma mock's 2025 on the two annual cards", () => {
@@ -179,25 +186,25 @@ describe("LandfillHeadlineResults — derived totals", () => {
     expect(generation.querySelector("[data-status='reported']")).toBeNull();
   });
 
-  it("states coverage, including what was excluded from the sum", () => {
+  // Owner decision 2026-08-17 (docs/YEOGIDA_UI_REDESIGN_SPEC.md §9): the per-card
+  // coverage sentence is removed from this row. `coverageSentence` itself is unchanged
+  // and still covered by `lib/capitalRegionWaste.test.ts`; 지역별 상세 현황 below still
+  // carries its own per-row coverage counts.
+  it("no longer prints a coverage sentence on a card that has a value", () => {
     renderRow();
-    expect(screen.getByTestId("landfill-kpi-generation-coverage")).toHaveTextContent(
-      "시·군·구 66곳의 공식 보고값 합계",
-    );
-    // The two unreported INDUSTRIAL_FACILITY cells are declared, not zero-filled.
-    expect(screen.getByTestId("landfill-kpi-generation-coverage")).toHaveTextContent(
-      "미보고 2건은 합계에서 제외했으며 0으로 채우지 않았습니다",
-    );
-    // The region-less facilities are declared as an under-count of the throughput.
-    expect(screen.getByTestId("landfill-kpi-treatment-coverage")).toHaveTextContent(
-      "시설 99곳은 포함되지 않았습니다",
+    expect(screen.queryByTestId("landfill-kpi-generation-coverage")).toBeNull();
+    expect(screen.queryByTestId("landfill-kpi-treatment-coverage")).toBeNull();
+    expect(screen.getByTestId("landfill-kpi-generation").textContent).not.toContain("미보고");
+    expect(screen.getByTestId("landfill-kpi-treatment").textContent).not.toContain(
+      "포함되지 않았습니다",
     );
   });
 
-  it("carries each total's accounting basis and forbids reading a rate from them", () => {
+  // The accounting-basis LABELS moved off the cards with the period line, but the rule
+  // they existed to support did NOT: these two tonnages are adjacent and must never be
+  // divided. That prohibition is still visible, directly under the row.
+  it("still forbids reading a rate from the two adjacent tonnages", () => {
     renderRow();
-    expect(screen.getByTestId("landfill-kpi-generation-period")).toHaveTextContent("발생지 기준");
-    expect(screen.getByTestId("landfill-kpi-treatment-period")).toHaveTextContent("시설 소재지 기준");
     expect(screen.getByTestId("landfill-kpi-basis-note")).toHaveTextContent(
       "서로 나누거나 빼서 처리율로 읽을 수 없습니다",
     );
@@ -213,10 +220,6 @@ describe("LandfillHeadlineResults — derived totals", () => {
     );
   });
 
-  it("names the selected metropolitan's own tier when the view is scoped", () => {
-    renderRow({ tierNoun: "군·구" });
-    expect(screen.getByTestId("landfill-kpi-generation-coverage")).toHaveTextContent("군·구 66곳");
-  });
 });
 
 describe("LandfillHeadlineResults — the 핵심 지표 label", () => {
