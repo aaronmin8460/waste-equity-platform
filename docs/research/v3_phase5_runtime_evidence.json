@@ -1,0 +1,93 @@
+{
+  "phase": "v3-phase5-runtime-validation",
+  "build_report": {
+    "run_id": 465,
+    "source_run_id": 47,
+    "component_model_version": "suitability-components-successor-v1",
+    "policy_version": "suitability-successor-policy-v1",
+    "derivation_version": "suitability-successor-derivation-v1",
+    "candidate_count_total": 47893,
+    "candidate_count_ranked": 13734,
+    "complete_case_count": 33980,
+    "complete_case_by_screening_status": {
+      "ELIGIBLE": 13734,
+      "EXCLUDED": 8933,
+      "REVIEW_REQUIRED": 11313
+    },
+    "source_status_totals": {
+      "ELIGIBLE": 17501,
+      "EXCLUDED": 12260,
+      "REVIEW_REQUIRED": 18132
+    },
+    "component_available_counts": {
+      "existing_burden": 41804,
+      "air_impact_proxy": 38592,
+      "resident_impact": 47893,
+      "land_conversion": 40506
+    },
+    "component_unavailable_reasons": {
+      "existing_burden": {
+        "UNMAPPED_FACILITY_EVIDENCE": 20
+      },
+      "air_impact_proxy": {
+        "MISSING_WASTE_STREAM": 22
+      },
+      "resident_impact": {},
+      "land_conversion": {
+        "NO_EVALUATED_AREA": 7387,
+        "NO_LAND_COVER_COVERAGE": 7387
+      }
+    },
+    "regions_represented": 16,
+    "residents_represented": 5736197,
+    "stability_tally": {
+      "STABLE": 1195,
+      "CONDITIONALLY_STABLE": 214,
+      "WEIGHT_SENSITIVE": 12325
+    },
+    "top_cutoff_rank": 1374,
+    "score_summary": {
+      "count": "13734",
+      "mean": "31.1163",
+      "min": "4.5437",
+      "max": "61.0558",
+      "distinct": "13443"
+    },
+    "ranking_population_rule": "successor ranking population = historical screening status ELIGIBLE INTERSECT strict complete case over all four successor components. Run 47: 13,734 of 33,980 complete cases and of 17,501 ELIGIBLE candidates. A candidate outside this set is not scored, not ranked, and never zero-filled.",
+    "disclaimer": "Successor-model foundation only. These components are implemented and tested but are not an activated analytical policy: no weight vector is approved, no run is scored with them, and no historical result is reinterpreted. Output is analytical decision support, never a legal, permitting, engineering, environmental-review, or final siting determination."
+  },
+  "stored_verification": {
+    "run": {
+      "component_model_version": "suitability-components-successor-v1",
+      "component_order": [
+        "existing_burden",
+        "air_impact_proxy",
+        "resident_impact",
+        "land_conversion"
+      ],
+      "policy_version": "suitability-successor-policy-v1",
+      "derivation_version": "suitability-successor-derivation-v1",
+      "weight_profile": "baseline",
+      "status": "SUCCEEDED",
+      "candidate_count_total": 47893,
+      "candidate_count_eligible": 13734
+    },
+    "candidate_counts": {
+      "total": 47893,
+      "ranked": 13734,
+      "with_components": 47893,
+      "legacy_columns_written": 0,
+      "classified": 13734
+    },
+    "screening_carryover": {
+      "compared": 47893,
+      "status_differs": 0
+    },
+    "ranked_but_not_eligible": 0,
+    "source_run_still_scored": 17501,
+    "top_50_regions": {
+      "경기도 양평군": 49,
+      "경기도 안성시": 1
+    }
+  }
+}

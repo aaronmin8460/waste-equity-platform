@@ -347,53 +347,19 @@ class ActivationBlocker:
         }
 
 
-# Only ENGINEERING blockers remain. Every analytical-policy blocker was closed by
-# the project-owner delegated policy closure of 2026-08-17 — see CLOSED_BLOCKERS
-# for what closed and on what basis, and ACCEPTED_LIMITATIONS for the two data
-# defects that are carried in published scope rather than blocking activation.
-ACTIVATION_BLOCKERS: tuple[ActivationBlocker, ...] = (
-    ActivationBlocker(
-        blocker_id="SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED",
-        summary=(
-            "The additive persistence schema and the version-aware API contract are applied "
-            "(run-level component_model_version + component_order, candidate-level "
-            "component_scores, legacy columns untouched and NULL for successor runs), but "
-            "nothing writes a successor run: no engine stage scores the successor components "
-            "into candidate rows. The policy inputs it needs — eligibility rule, weight "
-            "vector, normalization, distance floor, class registry — are now all approved, so "
-            "what remains is implementation."
-        ),
-        blocks="producing any stored successor run, and successor scenario recombination",
-        resolution_owner="backend owner",
-    ),
-    ActivationBlocker(
-        blocker_id="SUCCESSOR_STABILITY_THRESHOLDS_UNVALIDATED",
-        summary=(
-            "The stability contract's metrics and perturbation axes are defined "
-            "(STABILITY_CONTRACT_DESIGN) and an approved reference vector now exists to "
-            "perturb around, but the acceptance thresholds have not been validated against it "
-            "on real data. The historical stability class must not be reused: it is defined "
-            "over zoning/road/equity/demand and the historical profile registry."
-        ),
-        blocks="successor stability classification",
-        resolution_owner="backend owner",
-    ),
-    ActivationBlocker(
-        blocker_id="SUCCESSOR_MODEL_AWARE_DEFAULT_RUN_NOT_IMPLEMENTED",
-        summary=(
-            "The rollout sequence is DECIDED (SUCCESSOR_RUNTIME_DESIGN['switchover']): "
-            "model-aware default-run resolution ships with the default pinned to the "
-            "historical model, a successor run is then written reachable only by explicit run "
-            "id, and the default moves later by explicit configuration change. The resolution "
-            "itself is not implemented yet, and it must ship BEFORE the first successor run is "
-            "written — today's resolver takes the latest succeeded run regardless of component "
-            "model, so a successor write would silently switch every default view and every "
-            "un-pinned shared link."
-        ),
-        blocks="successor rollout and default-run switchover",
-        resolution_owner="backend owner",
-    ),
-)
+# Every activation blocker is now closed — the analytical ones by the project-owner
+# delegated policy closure of 2026-08-17, the engineering ones by the Phase-5
+# runtime. See CLOSED_BLOCKERS for what closed and on what basis, and
+# ACCEPTED_LIMITATIONS for the two data defects that are carried in published scope
+# rather than blocking activation.
+#
+# **Activation is not a default switch.** An empty blocker list means the successor
+# model may produce and serve runs under its own identity. Which model an unpinned
+# request resolves to is a separate, deliberately separate decision, held in
+# ``component_model.DEFAULT_COMPONENT_MODEL`` and still pinned to the historical
+# model. Writing a successor run therefore changes nothing a user sees until that
+# constant is changed by an explicit, reviewed edit.
+ACTIVATION_BLOCKERS: tuple[ActivationBlocker, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -464,6 +430,41 @@ CLOSED_BLOCKERS: tuple[ClosedBlocker, ...] = (
         basis=(
             "Direction approved as implemented: a larger not-already-developed share is the "
             "worse screening outcome, because siting on already-converted land converts less."
+        ),
+    ),
+    ClosedBlocker(
+        blocker_id="SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED",
+        closed_by="Phase 5 runtime, 2026-08-17",
+        basis=(
+            "successor.runtime.build_successor_run writes a successor run derived from a "
+            "historical source run, copying screening status and geometry rather than "
+            "re-deriving them. Validated on run 47: 47,893 candidates, 13,734 ranked, 0 of "
+            "47,893 statuses differing from the source, 0 ranked candidates that are not "
+            "ELIGIBLE, 0 legacy score columns written, and the source run still carrying all "
+            "17,501 of its own scores."
+        ),
+    ),
+    ClosedBlocker(
+        blocker_id="SUCCESSOR_STABILITY_THRESHOLDS_UNVALIDATED",
+        closed_by="Phase 5 runtime, 2026-08-17",
+        basis=(
+            "successor.stability defines the class over successor axes only — one symmetric "
+            "perturbation per component, anchored on the approved baseline — and the "
+            "historical class is not inherited. Thresholds validated on run 47: 1,195 STABLE, "
+            "214 CONDITIONALLY_STABLE, 12,325 WEIGHT_SENSITIVE at a top-decile cutoff of "
+            "1,374, so every class is populated and none is degenerate."
+        ),
+    ),
+    ClosedBlocker(
+        blocker_id="SUCCESSOR_MODEL_AWARE_DEFAULT_RUN_NOT_IMPLEMENTED",
+        closed_by="already shipped in Phase 2; verified in Phase 5",
+        basis=(
+            "component_model.DEFAULT_COMPONENT_MODEL is pinned to the historical model and "
+            "api.routes.suitability._resolve_run_id already scopes an unpinned request to that "
+            "model, so writing a successor run cannot move the default. Covered by "
+            "test_the_default_run_stays_historical_when_a_successor_shaped_run_is_newer. "
+            "Step 1 of the approved switchover sequence was therefore already in place before "
+            "the first successor run was written, which is the ordering the sequence requires."
         ),
     ),
     ClosedBlocker(
@@ -1456,11 +1457,24 @@ def validate_successor_policy() -> None:
                 f"Phase-4 decision {decision.decision_id!r} has an unknown status",
                 {"status": decision.status},
             )
-    if is_activated():  # pragma: no cover - defensive; blockers are non-empty
-        raise CrossModelReuseError(
-            "successor activation requires an explicit, reviewed policy change",
-            {"blockers": [b.blocker_id for b in ACTIVATION_BLOCKERS]},
-        )
+    # Activation is now reachable, so the guard that used to forbid it outright is
+    # replaced by the invariants that make it *safe*. An activated model must:
+    #   * carry a full policy identity (checked above);
+    #   * have no open policy question (checked above);
+    #   * still leave the default component model pinned to the historical one, so
+    #     activation alone changes nothing an unpinned request sees.
+    # The last is the switchover contract, and it is the one an accidental edit is
+    # most likely to break, so it is asserted rather than assumed.
+    if is_activated():
+        from .. import component_model as _component_model
+
+        if _component_model.DEFAULT_COMPONENT_MODEL != _component_model.COMPONENT_MODEL_HISTORICAL:
+            raise CrossModelReuseError(
+                "the successor model is activated and the default component model has been "
+                "moved off the historical model; moving the default is a separate, explicitly "
+                "reviewed rollout decision and must not travel with activation",
+                {"default_component_model": _component_model.DEFAULT_COMPONENT_MODEL},
+            )
     # The historical criterion order must stay exactly the historical four: the
     # successor model never widens or reorders it.
     if tuple(historical_critic.CRITERION_ORDER) != tuple(HISTORICAL_COMPONENTS):

@@ -12,6 +12,7 @@ from decimal import Decimal
 
 import pytest
 
+from waste_equity_backend.analysis.suitability import component_model
 from waste_equity_backend.analysis.suitability import critic as historical_critic
 from waste_equity_backend.analysis.suitability import policy as historical_policy
 from waste_equity_backend.analysis.suitability import scenario as historical_scenario
@@ -58,15 +59,27 @@ def test_the_successor_model_reuses_the_existing_candidate_grid_identity() -> No
 # --------------------------------------------------------------------------- #
 
 
-def test_an_approved_policy_is_still_not_an_activated_model() -> None:
-    # The distinction the whole gate rests on, and the one the policy closure did
-    # NOT erase: minting a policy identity says an approved analytical policy
-    # exists. Activation additionally requires a runtime that can write a run.
-    # Engineering blockers remain, so the model stays inactive.
+def test_the_model_is_activated_with_a_full_policy_identity() -> None:
+    # Phase 5 closed the last engineering blocker, so the model may now produce and
+    # serve runs under its own identity. Both halves of the identity are minted.
     assert policy.SUCCESSOR_POLICY_VERSION == "suitability-successor-policy-v1"
     assert policy.SUCCESSOR_DERIVATION_VERSION == "suitability-successor-derivation-v1"
-    assert policy.ACTIVATION_BLOCKERS
-    assert policy.is_activated() is False
+    assert policy.ACTIVATION_BLOCKERS == ()
+    assert policy.is_activated() is True
+    policy.assert_activated()  # must not raise
+
+
+def test_activation_does_not_move_the_default_component_model() -> None:
+    """The invariant that replaced "activation is impossible".
+
+    Activation means the successor model may produce and serve runs. It must NOT
+    mean an unpinned request starts resolving to one — that is a separate rollout
+    decision. This is the assertion an accidental edit is most likely to trip, and
+    ``validate_successor_policy`` enforces the same thing at import time.
+    """
+
+    assert component_model.DEFAULT_COMPONENT_MODEL == component_model.COMPONENT_MODEL_HISTORICAL
+    policy.validate_successor_policy()
 
 
 def test_policy_identity_is_minted_as_a_pair() -> None:
@@ -76,28 +89,28 @@ def test_policy_identity_is_minted_as_a_pair() -> None:
     )
 
 
-def test_activation_raises_and_names_every_open_blocker() -> None:
-    with pytest.raises(SuccessorActivationBlockedError) as excinfo:
-        policy.assert_activated()
-    assert excinfo.value.category == "SUCCESSOR_MODEL_NOT_ACTIVATED"
-    assert len(excinfo.value.blockers) == len(policy.ACTIVATION_BLOCKERS)
-    message = str(excinfo.value)
-    for blocker in policy.ACTIVATION_BLOCKERS:
-        assert blocker.blocker_id in message
+def test_the_blocked_error_still_names_every_blocker_when_one_exists() -> None:
+    # The gate machinery must keep working even though nothing blocks today: a
+    # future model revision can reopen a blocker, and the error must still be
+    # legible when it does.
+    blocker = policy.ActivationBlocker(
+        blocker_id="SYNTHETIC_BLOCKER",
+        summary="synthetic",
+        blocks="nothing real",
+        resolution_owner="test",
+    )
+    error = SuccessorActivationBlockedError([blocker])
+    assert error.category == "SUCCESSOR_MODEL_NOT_ACTIVATED"
+    assert "SYNTHETIC_BLOCKER" in str(error)
+    assert len(error.blockers) == 1
 
 
-def test_only_engineering_blockers_remain_open() -> None:
+def test_no_blocker_remains_open() -> None:
     ids = {b.blocker_id for b in policy.activation_blockers()}
-    assert ids == {
-        "SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED",
-        "SUCCESSOR_STABILITY_THRESHOLDS_UNVALIDATED",
-        "SUCCESSOR_MODEL_AWARE_DEFAULT_RUN_NOT_IMPLEMENTED",
-    }
+    assert ids == set()
     # A closed question must not keep blocking, and an open one must not vanish.
     assert "MISSING_COMPONENT_ELIGIBILITY_POLICY_UNDECIDED" not in ids
     assert "SUCCESSOR_ELIGIBLE_POPULATION_NOT_MEASURED" not in ids
-    for blocker in policy.activation_blockers():
-        assert blocker.summary and blocker.blocks and blocker.resolution_owner
 
 
 def test_every_closed_blocker_records_the_basis_it_closed_on() -> None:
@@ -111,6 +124,10 @@ def test_every_closed_blocker_records_the_basis_it_closed_on() -> None:
         "LAND_CONVERSION_DIRECTION_UNAPPROVED",
         "SUCCESSOR_NORMALIZATION_STRATEGY_UNAPPROVED",
         "SUCCESSOR_CRITIC_UNSUITABLE_FOR_WEIGHTING",
+        # Closed by the Phase-5 runtime rather than by the policy closure.
+        "SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED",
+        "SUCCESSOR_STABILITY_THRESHOLDS_UNVALIDATED",
+        "SUCCESSOR_MODEL_AWARE_DEFAULT_RUN_NOT_IMPLEMENTED",
     } <= set(closed)
     for blocker in policy.CLOSED_BLOCKERS:
         assert blocker.basis and blocker.closed_by
@@ -179,14 +196,13 @@ def test_the_missing_component_policy_is_strict_and_admits_nothing_optional() ->
     assert policy.MISSING_POLICY_ZERO_FILL in policy.FORBIDDEN_MISSING_COMPONENT_POLICIES
 
 
-def test_deciding_every_policy_question_did_not_activate_anything() -> None:
-    # A fully decided policy is still not an activated model: nothing writes a
-    # successor run yet. This is the distinction the whole gate rests on.
+def test_every_policy_question_is_closed_before_the_model_activates() -> None:
+    # The ordering the gate exists to enforce: an unanswered question can never be
+    # shipped as an answer, so activation requires the decision register to be
+    # empty of OPEN items first.
     assert not policy.open_phase4_decisions()
     assert policy.SUCCESSOR_WEIGHT_PROFILES
-    assert policy.is_activated() is False
-    with pytest.raises(SuccessorActivationBlockedError):
-        policy.assert_activated()
+    assert policy.is_activated() is True
 
 
 def test_every_phase4_question_carries_an_explicit_status() -> None:
@@ -421,9 +437,13 @@ def test_the_persistence_design_is_applied_but_writes_no_successor_run() -> None
     assert design["applied_migrations"] == ["0022", "0023"]
     assert "component_scores" in design["candidate_level"]["added_columns"]
     assert "component_model_version" in design["run_level"]["added_columns"]
-    assert "SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED" in {
-        b.blocker_id for b in policy.activation_blockers()
-    }
+    # The write path now exists, so the blocker is recorded as closed rather than
+    # open — with the real-data evidence it closed on.
+    closed = {b.blocker_id: b for b in policy.CLOSED_BLOCKERS}
+    assert "SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED" in closed
+    assert "0 legacy score columns written" in closed[
+        "SUCCESSOR_RUN_WRITE_PATH_NOT_IMPLEMENTED"
+    ].basis
 
 
 def test_the_design_forbids_reusing_or_copying_the_historical_columns() -> None:
@@ -438,14 +458,14 @@ def test_the_design_forbids_reusing_or_copying_the_historical_columns() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_the_snapshot_is_json_serializable_and_states_it_is_not_activated() -> None:
+def test_the_snapshot_is_json_serializable_and_states_its_activation_state() -> None:
     import json
 
     snapshot = policy.successor_snapshot()
     json.dumps(snapshot, ensure_ascii=False)  # must not raise
-    # An approved, fully decided policy that is still not an activated model.
-    assert snapshot["activated"] is False
-    assert snapshot["activation_blockers"]
+    # Activated, with nothing left blocking — and the snapshot says so plainly.
+    assert snapshot["activated"] is True
+    assert snapshot["activation_blockers"] == []
     assert snapshot["policy_version"] == policy.SUCCESSOR_POLICY_VERSION
     assert snapshot["derivation_version"] == policy.SUCCESSOR_DERIVATION_VERSION
     assert snapshot["weight_profiles"] == dict(policy.SUCCESSOR_WEIGHT_PROFILES)
