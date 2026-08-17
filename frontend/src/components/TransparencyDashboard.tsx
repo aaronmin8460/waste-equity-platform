@@ -140,6 +140,7 @@ import SourceCatalog from "./transparency/SourceCatalog";
 import SourceOverview from "./transparency/SourceOverview";
 import TransparencyDefinitions from "./transparency/TransparencyDefinitions";
 import TransparencyMethodology from "./transparency/TransparencyMethodology";
+import SuccessorMethodology from "./transparency/SuccessorMethodology";
 import TransparencySection from "./transparency/TransparencySection";
 import {
   buildDatasetRows,
@@ -422,6 +423,20 @@ export default function TransparencyDashboard({
           description="이 서비스의 모든 화면에 함께 적용되는 표시·비교·해석 기준입니다. 각 화면에서 반복하지 않고 여기에 한 번만 정리합니다."
         >
           <TransparencyDefinitions />
+        </TransparencySection>
+
+        {/* ── The successor screening methodology ──────────────────────────────
+            Placed AFTER 공통 해석 기준 and BEFORE the gap section: it is a
+            methodology rather than a reading rule, so it does not belong in the
+            definitions; and it names its own coverage gaps, which the gap section
+            then continues. It was a placeholder inside `TransparencyDefinitions`
+            for as long as the policy was unsettled. */}
+        <TransparencySection
+          title="후속 판정 기준"
+          testId="transparency-successor"
+          description="후보지 분석의 다음 모형이 무엇을 평가하고, 무엇을 평가하지 못하는지 정리했습니다. 지금 화면에 보이는 후보지 수치를 만든 모형은 아직 기존 모형입니다."
+        >
+          <SuccessorMethodology />
         </TransparencySection>
 
         {/* ── What is currently unavailable ─────────────────────────────────────

@@ -30,18 +30,18 @@
  * in one section.
  *
  * ── WHAT IS NOT HERE ───────────────────────────────────────────────────────────
- * No weight, threshold, distance floor, numerator, direction, or stability rule for
- * any future screening version. `SUCCESSOR_METHODOLOGY_SLOT` states that the next
- * methodology is unfinished and documents nothing else, because a transparency
- * screen that guessed at an unmade decision would be doing the exact thing it exists
- * to prevent.
+ * The successor screening methodology. While it was unsettled this section carried a
+ * placeholder saying so; now that the policy has closed it has its own section
+ * (`SuccessorMethodology`), because its weights, floor, land registry, missingness
+ * rule, stability definition and limitations are a methodology rather than a
+ * cross-screen reading rule. Keeping it here would have made this the screen's second
+ * methodology home, which is the duplication this section was created to end.
  */
 
 import Accordion from "../ui/Accordion";
 import {
   ANALYSIS_DEFINITIONS,
   COMPARISON_DEFINITIONS,
-  SUCCESSOR_METHODOLOGY_SLOT,
   type GlobalDefinition,
 } from "./shared";
 
@@ -152,17 +152,12 @@ export default function TransparencyDefinitions() {
         </dl>
       </Accordion>
 
-      {/* The structural slot for the next screening methodology. It documents an
-          ABSENCE and nothing else: no weight, no threshold, no rule. */}
-      <div
-        className="rounded-2xl border border-hairline bg-surface-muted p-4"
-        data-testid="transparency-def-successor"
-      >
-        <GroupHeading>{SUCCESSOR_METHODOLOGY_SLOT.title}</GroupHeading>
-        <p className="mt-1 text-[13px] leading-snug text-ink-muted">
-          {SUCCESSOR_METHODOLOGY_SLOT.body}
-        </p>
-      </div>
+      {/* The successor methodology used to be a placeholder box HERE, documenting an
+          absence. The absence is over: the policy closed and the model activated on
+          the V3 contract branch, so the content moved out to its own section
+          (`SuccessorMethodology`, 후속 판정 기준) rather than growing inside a
+          definition list. This section stays what it is — the cross-screen
+          interpretation rules — and does not become a second methodology home. */}
     </div>
   );
 }

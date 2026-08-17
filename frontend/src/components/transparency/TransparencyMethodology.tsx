@@ -82,6 +82,26 @@ export default function TransparencyMethodology({
                 {policy.candidate_grid_version}
               </dd>
             </div>
+            {/* WHICH MODEL produced the figures above.
+                Rendered only when the response actually carries it: the field
+                arrived with the Successor-V3 contract, so a backend serving the
+                older shape must show nothing here rather than a guessed default.
+                The run's OWN identity is preferred over the policy's, because
+                `/policies` reports the currently implemented policy while this row
+                describes a STORED run — and while the successor exists, those two
+                can legitimately differ. */}
+            {(run.component_model_version ?? policy.component_model_version) && (
+              <div>
+                <dt className="inline font-medium text-ink">평가 항목 모형: </dt>
+                <dd
+                  className="inline break-all"
+                  data-diagnostic
+                  data-testid="transparency-component-model"
+                >
+                  {run.component_model_version ?? policy.component_model_version}
+                </dd>
+              </div>
+            )}
             {costOptions && (
               <div>
                 <dt className="inline font-medium text-ink">표준공사비 기준 자료: </dt>

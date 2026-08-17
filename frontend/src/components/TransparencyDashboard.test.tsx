@@ -1595,16 +1595,55 @@ describe("global definitions have exactly one home", () => {
     );
   });
 
-  it("reserves a successor-methodology slot without inventing a policy", async () => {
+  it("publishes the successor methodology from the approved contract", async () => {
+    // The placeholder that used to live at `transparency-def-successor` documented an
+    // ABSENCE while the policy was open. The policy closed on the V3 contract branch,
+    // so the absence is over and the content is a section of its own.
     await renderDashboard();
-    const slot = screen.getByTestId("transparency-def-successor");
-    // It says the next methodology is NOT settled…
-    expect(slot.textContent).toContain("아직 확정되지 않았습니다");
-    // …and it publishes no weight, threshold, distance, or rule of its own. A
-    // percentage or a metre figure here would be a decision nobody has made.
-    expect(slot.textContent).not.toMatch(/\d\s*%/);
-    expect(slot.textContent).not.toMatch(/\d\s*(m|km|미터|킬로미터)\b/);
-    expect(slot.textContent).not.toMatch(/가중치\s*\d/);
+    expect(screen.queryByTestId("transparency-def-successor")).toBeNull();
+    const section = screen.getByTestId("transparency-successor");
+
+    // All four components, each with its weight and its stored identifier.
+    for (const technical of [
+      "existing_burden",
+      "air_impact_proxy",
+      "resident_impact",
+      "land_conversion",
+    ]) {
+      const row = within(section).getByTestId(`successor-component-${technical}`);
+      expect(row.textContent, technical).toContain("25%");
+      // The plain-Korean name leads; the identifier is a secondary label.
+      expect(row.querySelector("dt")!.textContent!.trim().startsWith(technical)).toBe(false);
+    }
+
+    // The weights are named as a versioned CHOICE, never as an objective truth.
+    const weights = within(section).getByTestId("transparency-successor-weights");
+    expect(weights.textContent).toContain("객관적으로 옳은 값이 아닙니다");
+
+    // The scoring rules that a reader needs in order not to misread a score.
+    const rules = within(section).getByTestId("transparency-successor-rule-list").textContent!;
+    expect(rules).toContain("500m");            // the approved resident floor
+    expect(rules).toContain("0으로 채우거나");   // missing is never zero-filled
+    expect(rules).toContain("다시 하지 않습니다"); // re-scores, never re-screens
+    expect(rules).toContain("법적 입지 제한을 뜻하지 않습니다"); // land classes are not law
+    expect(rules).toContain("법적으로 적합하다는 뜻이 아닙니다"); // stable ≠ suitable
+
+    // The limitations are published, not hidden.
+    const limits = within(section).getByTestId("transparency-successor-limit-list").textContent!;
+    expect(limits).toContain("24.13%");   // structurally excluded residents
+    expect(limits).toContain("13,734");   // the ranking population
+    expect(limits).toContain("양평군");    // the concentration caveat
+  });
+
+  it("never implies the successor model produced the figures on screen", async () => {
+    await renderDashboard();
+    const status = screen.getByTestId("transparency-successor-status").textContent!;
+    // Approved and usable, but NOT the default…
+    expect(status).toContain("아직 기본값이 아닙니다");
+    // …and the stored historical results were not rewritten. This is the single
+    // most misreadable fact in the change, so it is asserted explicitly and it is
+    // on the section's FACE rather than behind a disclosure.
+    expect(status).toContain("고쳐 쓰지 않습니다");
   });
 
   it("keeps the Page-6 card system bordered, never the shadowed figma card", async () => {

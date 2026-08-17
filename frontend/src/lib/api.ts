@@ -577,6 +577,23 @@ export interface SuitabilityPolicy {
   candidate_grid_version: string;
   critic_method_version: string;
   stability_method_version: string;
+  /**
+   * Which component model this POLICY describes, and the order it enumerates its
+   * components in (Successor-V3 contract, `schemas/suitability.py`).
+   *
+   * OPTIONAL on purpose. It is `?` for two independent reasons and both still hold:
+   *   1. the contract arrived on `integration/backend-v3-contract-preview-20260817`,
+   *      which is provisional and non-production, so a deployment serving the older
+   *      shape must not make this screen throw;
+   *   2. `/policies` describes the currently implemented policy rather than a stored
+   *      run, and the route hardcodes the HISTORICAL model — so when this field is
+   *      present it reads `suitability-components-zred-v1`, not the successor.
+   *
+   * Never render a component NAME from a client-side glossary against a run whose
+   * model you have not checked: that is exactly what this field exists to prevent.
+   */
+  component_model_version?: string;
+  component_order?: string[];
   statuses: string[];
   // Static policy-assumption profiles only (critic is NOT here — it is
   // data-derived per run and lives on the run's weight_profiles).
@@ -602,6 +619,17 @@ export interface SuitabilityRun {
   derivation_version: string;
   policy_version: string;
   candidate_grid_version: string;
+  /**
+   * This RUN's own component-model identity, read from the stored run row rather
+   * than from the running code's constants (Successor-V3 contract).
+   *
+   * Optional for back-compatibility with a backend serving the pre-V3 shape. A run
+   * whose model is `suitability-components-zred-v1` carries its scores in the four
+   * legacy `*_score` fields; any other model carries them in `component_scores` with
+   * the legacy fields explicitly null. The two are never dual-emitted.
+   */
+  component_model_version?: string;
+  component_order?: string[];
   reference_year: number;
   boundary_vintage: string;
   weight_profile: string;
