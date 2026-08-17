@@ -145,14 +145,12 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("mode-transparency")).toHaveAttribute("aria-pressed", "true");
     });
 
-    test("leads with the banner, the overview, and the catalog controls", async ({ page }) => {
+    test("leads with the overview and the catalog controls", async ({ page }) => {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
 
-      const notice = page.getByTestId("transparency-notice");
-      await expect(notice).toBeVisible();
-      // A standing explanation, not an alert.
-      await expect(notice).not.toHaveAttribute("role", "alert");
+      // The standing 알림 banner was removed; the overview tiles now lead the body.
+      await expect(page.getByTestId("transparency-notice")).toHaveCount(0);
 
       await expect(page.getByTestId("transparency-overview")).toBeVisible();
       await expect(page.getByTestId("transparency-overview-total")).toBeVisible();
@@ -161,10 +159,9 @@ for (const vp of VIEWPORTS) {
       await expect(page.getByTestId("transparency-filter-frequency")).toBeVisible();
       await expect(page.getByTestId("transparency-result-count")).toBeVisible();
 
-      // Document order: heading → banner → overview → catalog.
+      // Document order: heading → overview → catalog.
       const order = await page.evaluate(() => {
         const ids = [
-          "transparency-notice",
           "transparency-overview",
           "transparency-sources",
           "transparency-datasets",
@@ -689,11 +686,10 @@ for (const vp of VIEWPORTS.filter((viewport) => viewport.desktop)) {
     test("fits the orientation content into the first viewport", async ({ page }) => {
       await mockTransparencyBackend(page);
       await gotoTransparency(page);
-      // Heading, banner, overview, and the catalog controls are all reachable without
+      // Heading, overview, and the catalog controls are all reachable without
       // scrolling; the catalog itself may continue below the fold.
       for (const testId of [
         "top-navigation",
-        "transparency-notice",
         "transparency-overview",
         "transparency-search",
         "transparency-filter-category",

@@ -27,12 +27,11 @@
  * spacing.
  */
 
-import { useId } from "react";
 import type { ReactNode } from "react";
 
 import { formatCount } from "../../lib/metrics";
 import type { SourceOverview as SourceOverviewCounts } from "../../lib/dataSources";
-import { OVERVIEW_SUMMARY, OVERVIEW_TITLE, type FreshnessState } from "./shared";
+import { OVERVIEW_TITLE, type FreshnessState } from "./shared";
 
 export interface SourceOverviewProps {
   overview: SourceOverviewCounts;
@@ -101,18 +100,18 @@ function OverviewTile({
 }
 
 export default function SourceOverview({ overview, freshnessState }: SourceOverviewProps) {
-  const headingId = useId();
   return (
-    <section aria-labelledby={headingId} data-testid="transparency-overview">
-      <h2 id={headingId} className="text-base font-bold text-ink">
-        {OVERVIEW_TITLE}
-      </h2>
-      <p className="mt-2 text-[13px] text-ink-subtle">{OVERVIEW_SUMMARY}</p>
+    // Named by `aria-label`, not by a visible heading. The heading and its supporting
+    // line were removed — the four tiles each carry their own label and unit, so the
+    // section reads without them — but the REGION still has to be nameable in the
+    // screen-reader outline, and a nameless <section> is not exposed as a region at
+    // all. `aria-label` keeps the name without drawing anything.
+    <section aria-label={OVERVIEW_TITLE} data-testid="transparency-overview">
       {/* Four across from 1024 up, as in Figma, at the frame's 14px gutter. At the
           minimum supported desktop width a 2×2 grid cost ~145px of the first
           viewport and pushed the catalog's first card below the fold for no
           informational gain. */}
-      <dl className="mt-2.5 grid grid-cols-2 gap-[14px] lg:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
         {/* No caption: the label already says it, and Figma's tile carries none. */}
         <OverviewTile
           label="등록된 공식 자료"

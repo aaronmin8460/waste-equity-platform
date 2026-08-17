@@ -140,7 +140,6 @@ import SourceCatalog from "./transparency/SourceCatalog";
 import SourceOverview from "./transparency/SourceOverview";
 import TransparencyDefinitions from "./transparency/TransparencyDefinitions";
 import TransparencyMethodology from "./transparency/TransparencyMethodology";
-import TransparencyNotice from "./transparency/TransparencyNotice";
 import TransparencySection from "./transparency/TransparencySection";
 import {
   buildDatasetRows,
@@ -352,11 +351,6 @@ export default function TransparencyDashboard({
             {orientation}
           </PageHeader>
         )}
-
-        {/* Standing explanation, so deliberately NOT role="alert" — an alert here
-            would interrupt a screen reader on every render for information that is
-            never new (components/ui/InfoBanner.tsx contract). */}
-        <TransparencyNotice />
 
         {/* ── Overview ─────────────────────────────────────────────────────────
             Counts of served records only. No completeness percentage, freshness

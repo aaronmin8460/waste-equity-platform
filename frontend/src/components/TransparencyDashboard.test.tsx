@@ -279,13 +279,18 @@ describe("structure", () => {
     expect(h1.compareDocumentPosition(orientation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("keeps the standing information banner out of the alert role", async () => {
+  it("no longer renders a standing banner above the content", async () => {
     await renderDashboard();
-    const banner = screen.getByTestId("transparency-notice");
-    // A standing explanation must never interrupt a screen reader on every render.
-    expect(banner.getAttribute("role")).toBeNull();
-    expect(banner.textContent).toContain("기준 기간");
-    expect(banner.textContent).toContain("0이 아니라");
+    // The 알림 block was removed. Neither claim it carried was lost: missing-is-not-
+    // zero is defined once in 공통 해석 기준 (자료 없음), and the catalog's scope moved
+    // into the 출처 목록 description directly above the list it describes.
+    await screen.findByTestId("transparency-sources");
+    expect(screen.queryByTestId("transparency-notice")).toBeNull();
+    const definitions = screen.getByTestId("transparency-definitions");
+    expect(definitions.textContent).toContain("값이 0이라는 뜻이 아니며");
+    expect(screen.getByTestId("transparency-sources").textContent).toContain(
+      "관련 공공자료 전체를 담고 있다는 뜻은 아닙니다",
+    );
   });
 });
 
@@ -311,19 +316,14 @@ describe("source overview", () => {
     );
     // sgis + waste_statistics + 15064381 served a usable URL; kma and the unknown did not.
     expect(within(overview).getByTestId("transparency-overview-link").textContent).toContain("3건");
-    // Nothing resembling a grade or a percentage. The section's own supporting
-    // line (Figma frame 156:470) NAMES 완성도 점수 and 품질 등급 in order to
-    // disclaim them, so the two words are excluded from the values rather than
-    // from the whole section — the disclaimer is the opposite of the defect.
+    // Nothing resembling a grade or a percentage. The supporting line that used to
+    // NAME 완성도 점수 and 품질 등급 in order to disclaim them is gone with the
+    // heading, so the exclusion now applies to the WHOLE section rather than only to
+    // its values — a stricter assertion than before, and the honest one now that no
+    // copy on this screen has a reason to say either word.
     expect(overview.textContent).not.toMatch(/%/);
-    const values = [...overview.querySelectorAll("dd")].map((node) => node.textContent).join(" ");
-    expect(values).not.toContain("점수");
-    expect(values).not.toContain("등급");
-    expect(
-      within(overview).getByText(
-        "모두 등록된 기록의 개수입니다. 완성도 점수나 품질 등급이 아닙니다.",
-      ),
-    ).toBeDefined();
+    expect(overview.textContent).not.toContain("점수");
+    expect(overview.textContent).not.toContain("등급");
   });
 
   it("computes every counter from the served records rather than a fixed design value", async () => {
@@ -1159,20 +1159,22 @@ describe("refresh: sections, headings, and shared primitives", () => {
     }
   });
 
-  it("gives the overview a visible, non-sr-only heading of its own", async () => {
+  it("keeps the overview a named region even with no visible heading", async () => {
     await renderDashboard();
     const overview = screen.getByTestId("transparency-overview");
     expect(overview.tagName).toBe("SECTION");
-    const heading = document.getElementById(overview.getAttribute("aria-labelledby")!)!;
-    expect(heading.textContent).toBe("한눈에 보기");
-    // Before the refresh this was the one block on the page a sighted reader could
-    // not name — its only heading was sr-only.
-    expect(heading.className).not.toContain("sr-only");
+    // The visible 한눈에 보기 heading and its supporting line were removed: the four
+    // tiles each carry their own label and unit and read without them. The REGION
+    // still has to be nameable, though — a <section> with no accessible name is not
+    // exposed as a region at all — so the name moved to `aria-label`.
+    expect(overview.getAttribute("aria-labelledby")).toBeNull();
+    expect(overview.getAttribute("aria-label")).toBe("한눈에 보기");
+    expect(overview.querySelector("h2")).toBeNull();
   });
 
   it("keeps the sections in their documented reading order", async () => {
     const { container } = await renderDashboard();
-    const order = ["transparency-notice", "transparency-overview", ...SECTIONS];
+    const order = ["transparency-overview", ...SECTIONS];
     const nodes = order.map((testId) => screen.getByTestId(testId));
     for (let index = 1; index < nodes.length; index += 1) {
       const position = nodes[index - 1].compareDocumentPosition(nodes[index]);
@@ -1473,7 +1475,6 @@ describe("global definitions have exactly one home", () => {
   function sectionsMentioning(phrase: string): string[] {
     const root = document.querySelector("[data-testid='transparency-dashboard']")!;
     const areas = [
-      "transparency-notice",
       "transparency-overview",
       "transparency-sources",
       "transparency-datasets",

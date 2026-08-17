@@ -129,7 +129,7 @@ first card, closing note — now all measure exactly **32**. They previously did
 | controls 33px tall | **44px** | the application's minimum target |
 | close control 36px | **44px** (shape/fill adopted) | same |
 | no visible field labels | **labels kept** | a placeholder is not an accessible name, disappears on input, and a `<select>` cannot carry one |
-| no 알림 banner | **banner kept** | it carries "제공되지 않는 값은 0이 아니라 '자료 없음'" — the missing≠zero rule |
+| no 알림 banner | **banner REMOVED** | requested by the user after the Figma passes; see §5.1 for where its two claims went |
 | no 현재 조건 summary; count only | **summary kept** | its default-state wording is contracted by 5 assertions across 2 suites, and it was a deliberate prior decision |
 | link styled bold, not underlined | **underline kept** | otherwise link identity is colour-only (WCAG 1.4.1) |
 | tile captions absent | **1 of 4 kept** | see §5 |
@@ -156,6 +156,44 @@ asserts it. `OverviewTile`'s `caption` prop became optional to express this.
 Density effect at 1440×900: the first viewport went from one partial row of source
 cards to **two full rows**.
 
+## 5.1 Later removal, at the user's request
+
+After the Figma passes the user asked for two more removals. Both are now gone:
+
+- the standing 알림 · 이 화면을 읽는 방법 banner (`TransparencyNotice`, deleted);
+- the 한눈에 보기 heading and its line
+  `모두 등록된 기록의 개수입니다. 완성도 점수나 품질 등급이 아닙니다.`
+
+Both moves happen to close the two largest remaining gaps to the frame — Figma has
+neither a banner nor a heading over the tiles — so the screen is now closer to
+`156:470` than it was at §4, not further from it. The first viewport holds **three
+full rows** of source cards.
+
+Neither of the banner's two claims was deleted from the screen:
+
+| Claim | Where it lives now |
+|---|---|
+| 제공되지 않는 값은 0이 아니라 '자료 없음' | already canonical in 공통 해석 기준 — the `자료 없음` glossary entry: "값이 0이라는 뜻이 아니며, 빈 칸을 0으로 채우지 않습니다." Verified present in the live DOM. |
+| 이 목록은 관련 공공자료 전체가 아니다 | the banner was its **only** copy, so it moved into `CATALOG_SUMMARY` — the 출처 목록 description, directly above the list it describes, and Figma's own slot for it. Verified present in the live DOM. |
+
+The overview section keeps its accessible name. A `<section>` with no accessible name
+is not exposed as a region at all, so the name moved from `aria-labelledby` → a
+rendered `<h2>` to a plain `aria-label="한눈에 보기"`. The four tiles each carry their
+own label and unit, so nothing visible was needed to make them readable.
+
+The removed supporting line NAMED 완성도 점수 and 품질 등급 in order to disclaim them.
+With the line gone, the disclaimer became structural rather than prose, and the unit
+assertion was **tightened**: it previously excluded 점수/등급 only from the tile
+values (the line legitimately contained both words); it now excludes them from the
+whole section.
+
+Tests updated for the removals: 1 unit test rewritten (banner → absence + both claims
+relocated), 1 unit test rewritten (overview named by `aria-label`, no `<h2>`), 1
+assertion dropped, 1 tightened, 2 ordering arrays shortened, and 4 e2e sites in
+`transparencyDashboard.spec.ts` / `phase6DataSourcesDashboard.spec.ts` (including a
+full-width comparison that had used the banner as its sibling reference — now
+`transparency-datasets`).
+
 ---
 
 ## 6. Preserved Page-6 contract
@@ -180,6 +218,7 @@ search matched nothing · genuine failure, only the last an `alert`) are untouch
 |---|---|
 | `TransparencyDashboard.test.tsx` + `dataSources` + wetland + land-cover | **132 passed** |
 | `TransparencyDashboard` + `page.dataDialog` + `accessibility` + `shell` | **139 passed** |
+| after the §5.1 removals: `TransparencyDashboard` + `page.dataDialog` + `accessibility` | **122 passed** |
 | `tsc --noEmit` | **0 errors** |
 | `eslint` (Page-6 surface) | **0 errors** |
 | Browser QA @1440×900 | 3 passes, all measured deltas 0 |
@@ -202,6 +241,7 @@ other lanes were running vitest concurrently), not a regression.
 - 44px targets retained for all five controls against Figma (§4.2).
 - The single `role="status"` live region and the `sr-only` freshness status are
   unchanged and still outside any collapsed disclosure.
+- The overview remains a named region after losing its visible heading — see §5.1.
 - Type floor after the reduction: 11px, used only for chips and the technical
   disclosure — both secondary, both alongside 12–13px body copy.
 

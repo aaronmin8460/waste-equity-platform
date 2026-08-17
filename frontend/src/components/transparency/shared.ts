@@ -28,20 +28,39 @@ export const HEADER_SUMMARY =
  * reproduced anywhere in this feature — the counters and rows are computed from the
  * responses (`lib/dataSources.ts#summarizeSources`, `buildDatasetRows`).
  */
-export const OVERVIEW_TITLE = "한눈에 보기";
-export const OVERVIEW_SUMMARY = "모두 등록된 기록의 개수입니다. 완성도 점수나 품질 등급이 아닙니다.";
 /**
- * How to search this list. Nothing else: this is the caption of a search control.
+ * The overview's accessible name.
+ *
+ * No longer rendered as a visible `<h2>`: the four tiles are self-describing (each
+ * carries its own label and unit) and the heading plus its supporting line were two
+ * lines of chrome above them. `SourceOverview` now passes this string as the
+ * section's `aria-label`, so the region keeps its name in the screen-reader outline
+ * even though nothing is drawn.
+ *
+ * The supporting line it used to sit above (`OVERVIEW_SUMMARY`,
+ * "모두 등록된 기록의 개수입니다. 완성도 점수나 품질 등급이 아닙니다.") is gone with it.
+ * Its disclaimer survives structurally rather than as prose: this section still shows
+ * no percentage, score, or grade anywhere, and a unit test asserts that.
+ */
+export const OVERVIEW_TITLE = "한눈에 보기";
+/**
+ * How to search this list, and what the list is not.
  *
  * TWO claims were appended here at different times and neither belonged. The
  * architectural one (the browser never calls a government API and stores no personal
  * data) is now a 공통 해석 기준 entry — see `DATA_HANDLING_NOTE`. The preservation one
  * ("the registered original names survive in each card's 기술 정보 보기") is the same
  * sentence the modal already closes with, so it is stated once, there — see
- * {@link CATALOG_PRESERVATION_NOTE}. Neither claim was weakened by the move; both are
- * still on this screen, each in one place.
+ * {@link CATALOG_PRESERVATION_NOTE}.
+ *
+ * The SCOPE claim, however, arrived here from the standing banner when that banner
+ * was removed, and it belongs: it is a fact about the catalog rendered directly
+ * below, and this was the banner's ONLY copy of it. Without it the catalog reads as
+ * an exhaustive index of Korean public data, which it is not.
  */
-export const CATALOG_SUMMARY = "자료명·기관명·분야로 검색할 수 있습니다.";
+export const CATALOG_SUMMARY =
+  "자료명·기관명·분야로 검색할 수 있습니다. 이 목록은 이 서비스가 현재 연계한 자료이며, " +
+  "관련 공공자료 전체를 담고 있다는 뜻은 아닙니다.";
 
 /**
  * How the data reaches the reader. Stated once, on the methodology surface.
