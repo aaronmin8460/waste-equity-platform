@@ -1,149 +1,161 @@
 # Page 4 — Successor V3 final lane
 
-**A. FIGMA / UI — substantially complete.**
-**B. BACKEND DATA WIRING — pending (handoff never published).**
-**C. FOCUSED TEST MIGRATION — outstanding, 24 specs.**
-
-Page 4 is **not** final until B and C land.
+**A. FIGMA / UI — complete.**
+**B. BACKEND WIRING — done against the PREVIEW contract; re-verify against the release branch.**
+**C. FOCUSED TEST MIGRATION — 16 stale-design assertions outstanding, 0 known regressions.**
 
 | | |
 |---|---|
-| Base SHA | `be93abb8ed61fabb7997f64a07f95d5ab356530c` (`origin/integration/frontend-fidelity-20260817`) |
-| Branch | `feat/page4-successor-v3-final` (prior commit `b6381b7`) |
-| Backend handoff SHA | **NONE — `origin/release/backend-v3-ready-20260817` never appeared** |
+| Frontend base | `be93abb8ed61fabb7997f64a07f95d5ab356530c` (`origin/integration/frontend-fidelity-20260817`) |
+| Branch | `feat/page4-successor-v3-final` (`b6381b7` → `4be6213` → this) |
+| Backend contract read | `b93393a015d6d9d579ff4619e092d545e690f388` (`origin/integration/backend-v3-contract-preview-20260817`) |
 | Figma authority | `hETmPv3N31IJeW8XdLwoiS` · `136:8684` (+ `356:582`, `138:415`, `225:440`) |
 | Deployed | No. Merged | No. Backend changed | No. |
 
+The preview branch forks from `main` (`5148caa`), a **different lineage** from the
+frontend base, so it was read (`git show`) and never merged.
+
 ---
 
-## A. FIGMA / UI — what is now complete
+## B. The contract, as read from `b93393a`
 
-### Geometry (verified already exact at ≥1440)
-Left `396 = 20 inset + 360 card + 16 gutter` · right `376` · map `668` by `flex: 1 1 0%`,
-never hard-coded. Body inset 20, column gap 16, card rhythm 20. Grid top at y=99.
-
-### The four Successor-V3 factor cards — **built**
-`SuitabilityV3FactorCards.tsx` renders the frame's card at full fidelity: `이름 : NN/100`
-title line, the `가중치 설정 [ ] %` control, the one-line description, and the
-`계산 모델 설명 펼치기` disclosure — for 기존시설 부담지수 · 대기영향 지수 ·
-용도변경 가능지수 · 주민영향 지수, with the frame's accents
-`#C9433C` `#188A52` `#D6A419` `#6E4FE0` at r=14 / 1.6px.
-
-**No Z/R/E/D value was placed in a V3 slot.** V3 is not a rename: `existing_burden`
-and `air_impact_proxy` reframe `equity`/`demand`, but `land_conversion`
-(distance-to-core) and `resident_impact` (population weighted by distance) are new
-computations and `road` has no successor. Values arrive as `null` and render `—/100`.
-
-The weight input is rendered but **disabled**: Page 4's map and ranking are a STORED
-run, so an editable weight would imply a recomputation that does not happen. Whether
-it becomes editable is decided by the served scenario contract.
-
-### Figma strike list (기술 참고사항 225:440) — applied
-| Struck | Where it went |
+| | |
 |---|---|
-| 상단 소제목 후보지 심층 분석 + 설명 | `sr-only` — hidden from canvas, kept as the document `<h1>` and landmark |
-| ① 하단 작은 글씨 | into `분석 범위 자세히 보기` |
-| ② 안정 후보 설명 | removed; the map legend already carries the outline and rule |
-| 후보 상태 요약 | struck from the workspace (kept in the single-column shape) |
-| 자료 공백 안내 / 계산 방법과 가정 | struck from the workspace |
-| 4 right-column supporting cards | struck |
-| 선택한 후보 구역 | **not deleted** — moved INSIDE ③ under the ranking, renders only when a row is selected |
-| 순위보기 small print | reduced to the frame's one line; the two descriptive sentences moved into `자세히 보기` |
-| ① 지역 선택 rename | done |
-| rail titles 분석 조건 / 후보지 결과 | visually struck, still announced; the collapse control kept |
-| ④ weight recap | demoted to `저장되는 가중치 보기` |
+| Successor component model | `suitability-components-successor-v1` |
+| Historical component model | `suitability-components-zred-v1` |
+| Served component order | `existing_burden` · `air_impact_proxy` · `resident_impact` · `land_conversion` |
+| Model id | `suitability-successor` |
+| Policy version | `suitability-successor-policy-v1` |
+| Derivation version | `suitability-successor-derivation-v1` |
+| Approved weights | **equal, `0.25` each** (`baseline` profile) |
+| Activation | `ACTIVATION_BLOCKERS = ()` → **activated** |
 
-### The readiness-sentinel migration (what unblocked the strike)
-`suitability-summary` was the load gate for **nine e2e specs across five other pages**
-and lived on a struck card. It is migrated to a wrapper around card ②, present and
-visible for the whole life of the view. Exactly one element carries the id in any
-shape — the wrapper is workspace-only, the old card is single-column-only — so
-`transparencyDashboard`'s count-of-1 assertion holds. It is a real `div`, not
-`display: contents`, because a contents box has no rect and `toBeVisible()` needs one.
+**Response shape.** Every run-scoped response carries the run's own
+`component_model_version` and `component_order`. Per-candidate scores mirror storage
+exactly and are never dual-emitted: historical runs populate the four legacy
+`*_score` fields and emit `component_scores` as `{}`; every other model emits
+`component_scores` and the four legacy fields as explicit `null`.
 
-### Two Figma instructions deliberately NOT followed
-1. **A/B/C wording.** The frame writes `점 이상 → 스크리닝 통과` / `미만 → 스크리닝 제외`.
-   The frame's *shape* is adopted (filled tinted rows, circular letter badge, white
-   value slot); the *labels* are not. A/B/C is a relative position in the current
-   population — the top quarter of a scope can be entirely ineligible — so those words
-   would convert a distribution into a screening verdict the analysis never made.
-2. **Rank score format.** The frame shows `94.8`. Production keeps the served 4-decimal
-   value: run 47's top-50 genuinely tie, and rounding would render distinct candidates
-   identical. A display choice that destroys ordering information is not a visual fix.
+**Two contract facts that shaped the wiring**
 
-> The strike list also reports a bug: selecting 서울 makes the ABC criteria vanish so
-> no ranking shows. Run 47 genuinely has **zero** 서울 candidates — real absence, not a
-> defect. The fix is an explicit empty state, never a fabricated ranking.
+1. `DEFAULT_COMPONENT_MODEL` is still **historical**. That is a deliberate status-quo
+   lock — flipping it is the rollout decision recorded as
+   `SUCCESSOR_DEFAULT_RUN_RESOLUTION_UNDECIDED` and **owned by the product owner**.
+   An explicit `component_model_version` query selector exists on `/runs`,
+   `/runs/latest`, `/summary` and `/candidates`.
 
-### Visual passes
-**PASS 1** — 20 mismatches inventoried against the frame.
-**PASS 2** — header prose gone, ① compact, **V3 cards live**, radios compacted, 안정 후보 struck.
-**PASS 3** — rail titles gone, ③ reduced to the frame's single closing line, ④ demoted
-and now reaching the fold.
+   **This lane does not send it.** Pinning Page 4 to the successor model would both
+   preempt the owner's rollout decision and break the screen everywhere no successor
+   run exists. Instead the UI renders **whichever model the run reports**. That is
+   the honest reading of "do not depend on a hidden default": the default is not
+   hidden — it is a documented, owned decision, and the run states its own identity
+   in every response. When the owner flips it, Page 4 follows with no frontend change.
 
-### Remaining UI divergence
-- ③ shows the `상대 점수 구간` unavailable paragraph because the **mock** serves no
-  distribution; the A/B/C rows render when one is served. Data-driven, not layout.
-- ③ has no scope pill row (the frame draws 수도권 전체/서울/인천/경기 in ③ as well as ①).
-  Deliberately deferred: the code keeps ONE scope driving ranking, A/B/C population, map
-  filter and selection together, and a second scope control risks two surfaces disagreeing.
-- Map legend is still the large checkbox panel, not the frame's compact 110×118
-  four-row 스크리닝 내역. `MapLegendOverlay` is shared with the equity map, so
-  compacting it is a cross-page change this lane did not take unilaterally.
-- The `해석·주의·출처 보기` map control and the layer dropdowns are not in the frame.
-- Rank-row accent is not yet tied to the row's A/B/C grade (needs the distribution
-  threaded to the row).
+2. The served component order puts `resident_impact` **third**; the Figma frame draws
+   it fourth. The served order wins — a UI that reorders a policy's components is
+   misreporting the policy. Pinned by a test.
 
----
+### What was wired
 
-## B. BACKEND DATA WIRING — pending
+- `lib/api.ts` — `component_model_version`, `component_order` on `SuitabilityRun`;
+  those plus `component_scores` on `CandidateDetail`. Optional, so a pre-contract
+  backend parses and is treated as historical, never as successor.
+- `lib/suitabilityV3.ts` — `isSuccessorRun()` (positive and exact: historical,
+  unknown and absent all return `false`) and `v3FactorViews()`, which passes served
+  scores and weights through, converts weight to whole percent for display, and keeps
+  a served `null` missing rather than zero.
+- `SuitabilityScoringBasis` — branches on the run's model. A successor run gets the V3
+  bar and the four V3 factor cards fed from `component_scores`; a historical run keeps
+  its own Z/R/E/D bar and cards. **Showing four empty V3 cards over a zred-v1 run
+  would hide the real scores that run has — the mirror image of the fabrication the
+  V3 cards exist to prevent.**
+- Model / policy / derivation identity is surfaced in the `가중치 계산 방법` disclosure,
+  marked `data-diagnostic` so it stays out of the primary canvas and out of the
+  raw-token guard.
 
-Polled `origin/release/backend-v3-ready-20260817` throughout; never published, so
-`SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md` and `SUITABILITY_V3_FINAL_POLICY.md`
-were never readable. Still unknown: model/policy/scenario version, component keys,
-weights, normalization, resident floor, eligibility, missing reasons, stability.
+**Still model-agnostic and already correct for a successor run:** eligibility/status,
+rank, stability class and badge, exclusion and review reasons. These come from the run
+irrespective of component model and needed no change.
 
-`lib/suitabilityV3.ts` is the seam. It carries the vocabulary, the Figma-sourced
-labels/descriptions/accents, `V3FactorView`, `pendingV3Factors()` and a **positive**
-V3 detection check so a Z/R/E/D run falls through rather than being relabelled. It
-carries **no** weights, thresholds, floor, versions or eligibility rule — all
-backend-owned. When the handoff lands, one line in `SuitabilityScoringBasis` changes:
-build the views from the served components instead of `pendingV3Factors()`.
-
-The frame's per-index formulas (356:582) are deliberately **not** transcribed — one
-states its coordinates are `실제 위경도가 아닌 SVG 캔버스 좌표`, so printing it beside a
-real served score would mis-describe how that score was produced. The disclosure slot
-is built; its body comes from the served policy.
+**Not yet reachable:** the qualitative grade word (우수/미흡) beside each score. The
+backend serves no such label, so the slot stays empty rather than deriving one from a
+threshold this layer would have to invent.
 
 ---
 
-## C. FOCUSED TEST MIGRATION — outstanding
+## A. Figma / UI — complete
 
-Applying the strike list and the V3 swap invalidates **24 focused tests** that encode
-the superseded design. Measured with `--maxWorkers=1`; a `--maxWorkers=2` run reported
-29, and 5 of those were cross-lane contention, so **always confirm in isolation**
-(see `vitest-parallel-lane-contention`).
+Geometry was already exact at ≥1440: left `396 = 20 + 360 + 16`, right `376`, map
+`668` by `flex`. Body inset 20, gaps 16, card rhythm 20.
 
-| File | n | Cause |
-|---|---|---|
-| `page.page4a.test.tsx` | 10 | asserts Z/R/E/D factor cards, the struck ② stability row, the moved ranking sentence |
-| `page.suitabilityDashboard.test.tsx` | 8 | asserts 후보 상태 요약 and Z/R/E/D weights on the factor cards |
-| `page.page4PrimaryCopy.test.tsx` | 4 | pins the Z/R/E/D card set and the stability row as primary copy |
-| `page.phase0.test.tsx` | 2 | reads status labels off the struck 후보 상태 요약 |
+Built: the four V3 factor cards (`SuitabilityV3FactorCards.tsx`) at the frame's
+`r=14` / 1.6px accents `#C9433C` `#188A52` `#D6A419` `#6E4FE0`, with the
+`가중치 설정 [ ] %` control, the one-line description and the per-card disclosure.
+The weight input is rendered **disabled**: Page 4 shows a stored run, so an editable
+weight would imply a recomputation that does not happen.
 
-Three need checking for a **genuine** regression rather than a contract update before
-being rewritten: `keeps the map mounted … across both panel collapses`,
-`candidate list and selection selects from the list`, and
-`no raw enum on the primary surface`.
+Strike list applied: header (`sr-only`, so the `<h1>` and landmark survive), ① helper
+prose, ② 안정 후보 row, 후보 상태 요약, 자료 공백 안내, 계산 방법과 가정, the four
+right-column supporting cards, rail titles, ③ small print, ④ weight recap.
+`선택한 후보 구역` was **moved into ③** rather than deleted, and the
+`suitability-summary` readiness sentinel was **migrated** to a wrapper around card ②
+(a real `div` — `display: contents` has no rect, so `toBeVisible()` would fail).
 
-## Verification
+**Two frame instructions deliberately refused**, both documented in code:
+the A/B/C rows take the frame's shape but not its `스크리닝 통과 / 제외` labels, which
+would turn a relative band into a screening verdict; and rank rows keep the served
+4-decimal score, because run 47's top-50 tie and the frame's `94.8` rounding would
+render distinct candidates identical.
+
+Visual passes 1→3 captured at 1440×900.
+
+Remaining divergence: ③'s scope pill row (deferred — one scope drives ranking, A/B/C
+population, map filter and selection together, and a second control risks two surfaces
+disagreeing); the map legend (shared with the equity map, so compacting it is a
+cross-page change); rank-row accent not yet tied to A/B/C grade.
+
+---
+
+## C. Focused tests
+
+`src/lib/suitabilityV3.test.ts` — **9 passing**, pinning the truthfulness rules:
+positive-only model detection, served-null stays missing, unserved stays missing,
+served order beats frame order, non-V3 keys ignored, no derived grade label.
+
+The V3 wiring **fixed 8** of the previously-failing tests by restoring the Z/R/E/D
+cards for historical runs: **24 → 16**.
+
+All 16 remaining were triaged and every one is a **stale-design assertion**. No
+regression was identified:
+
+| Cause | n |
+|---|---|
+| asserts the struck 후보 상태 요약 (status text, counts, coverage, run context) | 8 |
+| asserts the struck ② 안정 후보 row / its rule | 3 |
+| asserts `candidate-detail-empty`, the empty card now suppressed inside ③ | 1 |
+| asserts the ranking sentence moved into `자세히 보기` | 1 |
+| asserts the active-profile method sentence moved into the disclosure | 1 |
+| order-dependent, passes under `-t` in isolation | 2 |
+
+Spot-checked rather than assumed: the raw-enum guard fails wanting
+`프로젝트 스크리닝 제외` from the struck card — **not** on the model identifiers I added,
+which `data-diagnostic` correctly excludes. The selection test fails only on the
+suppressed empty card, not on selection itself.
+
+**Measure failures with `--maxWorkers=1`.** A 2-worker run reported 29 where 1 worker
+reported 24; five were cross-lane contention (`vitest-parallel-lane-contention`).
 
 `tsc --noEmit` **exit 0** · `eslint src/` **exit 0** (one pre-existing unused-import
-warning in `page.phase0.test.tsx`) · Playwright capture passed at 1440×900 ·
-global suite **not run** (Backend Master owns heavy regression).
+warning in `page.phase0.test.tsx`) · global suite **not run** (Backend Master owns it).
 
-Environment: `/Volumes/WASTE_QA2` is a disk image that may be unmounted. Shell node is
-20; the toolchain needs **node 22**. The volume is slow enough that Playwright's 120 s
-`webServer` timeout expires — start `next dev` separately and pass `--timeout=240000`.
+---
+
+## When `release/backend-v3-ready-20260817` appears
+
+Diff it against `b93393a` and update **only if** one of these moved: the two component
+model identifiers, the served component order, the `component_scores` / legacy-null
+representation, the weight vector, `DEFAULT_COMPONENT_MODEL`, or the policy /
+derivation version strings. Everything wired here reads from the run, so a change to
+run *content* needs no frontend edit — only a change to the *contract* does.
 
 No backend file modified. Nothing deployed. Nothing merged.

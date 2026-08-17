@@ -71,10 +71,13 @@ import { PROFILE_META, profileLabel } from "../../lib/glossary";
 import { formatCount } from "../../lib/metrics";
 import { namedWeights } from "../../lib/suitability";
 import SectionCard from "../ui/SectionCard";
+import SuitabilityFactorCards from "./SuitabilityFactorCards";
+import SuitabilityWeightBar from "./SuitabilityWeightBar";
 import SuitabilityV3FactorCards, {
   SuitabilityV3WeightBar,
 } from "./SuitabilityV3FactorCards";
-import { pendingV3Factors } from "../../lib/suitabilityV3";
+import { isSuccessorRun, pendingV3Factors, v3FactorViews } from "../../lib/suitabilityV3";
+import { namedWeightRows } from "../../lib/suitability";
 import { OLD_RUN_NO_CRITIC_MESSAGE, PROFILE_OPTIONS } from "./shared";
 
 export interface SuitabilityScoringBasisProps {
@@ -113,25 +116,42 @@ export default function SuitabilityScoringBasis({
   onSelectProfile,
   runProfiles,
   stabilityAvailable,
+  selected,
 }: SuitabilityScoringBasisProps) {
-  // `selected` and `stableOnly` stay on the props interface but are not read today:
-  // the V3 wiring will consume `selected` to fill each factor card's per-candidate
-  // score, and `stableOnly` was only ever read by the struck 안정 후보 row.
+  // `stableOnly` stays on the props interface but is not read: it was only ever
+  // consumed by the struck 안정 후보 row.
   const activeMeta = PROFILE_META[profile];
+  const activeWeights = weightsFor(run, policy, profile);
 
   /**
-   * THE SUCCESSOR-V3 FACTOR STATE.
+   * WHICH MODEL THIS RUN IS — read from the RUN, never assumed.
    *
-   * Sourced from the adapter, NOT from the run's Z/R/E/D weight vector: V3 is not a
-   * rename of Z/R/E/D (lib/suitabilityV3.ts documents why the crosswalk does not
-   * exist). Until a V3 run is served every value is null, and the cards render their
-   * unavailable state rather than borrowing a legacy number.
-   *
-   * When the backend handoff lands this is the ONE line that changes: build the
-   * views from the served components instead of `pendingV3Factors()`.
+   * The backend serves every run's own `component_model_version`
+   * (docs/SUITABILITY_COMPONENT_MODEL_CONTRACT.md) and its default run resolution
+   * is still the HISTORICAL model: flipping that is the product owner's rollout
+   * decision, recorded as SUCCESSOR_DEFAULT_RUN_RESOLUTION_UNDECIDED. So this card
+   * renders whichever model the run reports rather than forcing the successor —
+   * pinning the request to V3 here would both preempt that decision and break the
+   * screen everywhere no successor run exists.
    */
-  const v3Factors = pendingV3Factors();
-  const v3Pending = v3Factors.every((f) => f.score === null && f.weightPercent === null);
+  const successor = isSuccessorRun(run.component_model_version);
+
+  /**
+   * THE SUCCESSOR-V3 FACTOR STATE, built from SERVED values.
+   *
+   * `component_scores` is the authoritative representation for a successor run; the
+   * four legacy columns are explicit null there and are never read for V3. Scores
+   * are per-CANDIDATE, so they fill only once a candidate is selected — with none
+   * selected the cards show their weights and an unavailable score, never a 0.
+   */
+  const v3Factors = successor
+    ? v3FactorViews({
+        componentScores: selected?.component_scores,
+        weights: activeWeights,
+        componentOrder: run.component_order,
+      })
+    : pendingV3Factors();
+  const v3Pending = v3Factors.every((f) => f.score === null);
 
   return (
     <SectionCard
@@ -147,9 +167,14 @@ export default function SuitabilityScoringBasis({
           tinted panel instead of with the distribution it is about. It is drawn
           from the SAME served rows the factor cards print: it adds a shape, never
           a number. */}
-      {/* THE SUCCESSOR-V3 BAR. Draws served V3 weights only — see the component for
-          why the frame's four equal segments are not reproduced while unserved. */}
-      <SuitabilityV3WeightBar factors={v3Factors} />
+      {/* THE BAR FOR THE MODEL THIS RUN ACTUALLY IS. A historical run keeps the
+          Z/R/E/D bar drawn from its own served vector; a successor run gets the V3
+          bar. Neither is ever drawn from the other model's numbers. */}
+      {successor ? (
+        <SuitabilityV3WeightBar factors={v3Factors} />
+      ) : (
+        <SuitabilityWeightBar rows={namedWeightRows(activeWeights)} />
+      )}
 
       {/* WHICH basis those proportions belong to — the NAME, and nothing else.
           This row used to carry three more standing lines, all of which said again
@@ -255,14 +280,22 @@ export default function SuitabilityScoringBasis({
       {/* THE FOUR SUCCESSOR-V3 FACTOR CARDS (Figma card ②, expanded form 356:582).
           Final presentation, honestly empty values — never Z/R/E/D numbers under a
           V3 heading. See SuitabilityV3FactorCards and lib/suitabilityV3.ts. */}
-      <SuitabilityV3FactorCards
-        factors={v3Factors}
-        pendingReason={
-          v3Pending
-            ? "네 지수의 점수와 가중치는 해당 분석 모델이 연결되면 실제 계산 결과로 표시됩니다. 값이 없는 항목은 0으로 채우지 않습니다."
-            : undefined
-        }
-      />
+      {successor ? (
+        <SuitabilityV3FactorCards
+          factors={v3Factors}
+          pendingReason={
+            v3Pending
+              ? "지수 점수는 후보를 선택하면 그 후보의 실제 계산 결과로 표시됩니다. 값이 없는 항목은 0으로 채우지 않습니다."
+              : undefined
+          }
+        />
+      ) : (
+        /* A HISTORICAL RUN KEEPS ITS OWN CARDS. Showing four empty V3 cards over a
+           zred-v1 run would hide the real component scores that run actually has —
+           the mirror image of the fabrication the V3 cards exist to prevent. The
+           model a reader sees is always the model the run is. */
+        <SuitabilityFactorCards weights={namedWeightRows(activeWeights)} selected={selected} />
+      )}
 
       {/* THE METHODOLOGY, BEHIND ONE DISCLOSURE. Both blocks below are unchanged in
           wording and both used to stand open in the primary card: a reader had to
@@ -281,6 +314,31 @@ export default function SuitabilityScoringBasis({
         <summary className="cursor-pointer text-[11px] font-medium text-ink-muted">
           가중치 계산 방법 펼치기
         </summary>
+
+        {/* THE RUN'S OWN ANALYTICAL IDENTITY — model, policy and derivation version.
+            Kept OUT of the primary canvas (the mandate limits technical metadata
+            there) but never hidden: which model produced the numbers on screen is
+            exactly what an analyst reproducing a result needs, and the successor and
+            historical models share no component namespace. Read from the run row,
+            never from this client's constants. */}
+        <dl
+          className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px] text-ink-subtle"
+          data-testid="scoring-basis-model-identity"
+        >
+          <dt className="font-medium text-ink">분석 모델</dt>
+          <dd data-diagnostic className="break-all">
+            {run.component_model_version ?? "모델 정보를 제공하지 않는 분석 실행"}
+            {successor ? " (후속 모델)" : " (기존 모델)"}
+          </dd>
+          <dt className="font-medium text-ink">정책 버전</dt>
+          <dd data-diagnostic className="break-all">
+            {run.policy_version}
+          </dd>
+          <dt className="font-medium text-ink">산출 버전</dt>
+          <dd data-diagnostic className="break-all">
+            {run.derivation_version}
+          </dd>
+        </dl>
 
         {/* Distinguish the fixed policy-assumption bases from the data-distribution
             one. Unchanged wording. */}

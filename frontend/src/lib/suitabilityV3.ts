@@ -140,6 +140,68 @@ export function pendingV3Factors(): V3FactorView[] {
   }));
 }
 
+/**
+ * The backend's component-model identifiers
+ * (`analysis/suitability/component_model.py`). Compared against, never authored:
+ * the UI reports the model a RUN says it is.
+ */
+export const COMPONENT_MODEL_SUCCESSOR = "suitability-components-successor-v1";
+export const COMPONENT_MODEL_HISTORICAL = "suitability-components-zred-v1";
+
+/**
+ * Whether a run is a Successor-V3 run.
+ *
+ * POSITIVE and explicit: only the exact successor identifier returns true. A
+ * historical run, an unknown future model, and a pre-contract backend that reports
+ * no model at all ALL fall through to false, so the UI keeps rendering Z/R/E/D
+ * truthfully rather than relabelling four legacy scores with four V3 names.
+ */
+export function isSuccessorRun(componentModelVersion: string | undefined | null): boolean {
+  return componentModelVersion === COMPONENT_MODEL_SUCCESSOR;
+}
+
+/**
+ * Build the four factor views from SERVED data.
+ *
+ * @param componentScores the run's `component_scores` map, keyed by its own
+ *   component names. A `null` value is a served missing score and stays missing.
+ * @param weights the active profile's served weight vector, as decimal strings.
+ * @param componentOrder the run's OWN `component_order`. It wins over
+ *   {@link V3_COMPONENT_ORDER}: a UI that reorders a policy's components is
+ *   misreporting the policy. Falls back to the frame order only when absent.
+ *
+ * Nothing here computes, rescales, normalises or ranks. A score is parsed for
+ * display and otherwise passed through; a weight is converted from its decimal
+ * string to whole percent for the card, which is presentation only.
+ */
+export function v3FactorViews({
+  componentScores,
+  weights,
+  componentOrder,
+}: {
+  componentScores?: Record<string, string | null>;
+  weights?: Record<string, string>;
+  componentOrder?: readonly string[];
+}): V3FactorView[] {
+  const order = (componentOrder ?? V3_COMPONENT_ORDER).filter(isV3Component);
+  return order.map((component) => {
+    const rawScore = componentScores?.[component];
+    const rawWeight = weights?.[component];
+    const score = rawScore == null || rawScore === "" ? null : Number(rawScore);
+    const weight = rawWeight == null || rawWeight === "" ? null : Number(rawWeight);
+    return {
+      component,
+      score: score !== null && Number.isFinite(score) ? score : null,
+      // The qualitative word beside the score is POLICY-OWNED and the backend does
+      // not serve one, so it stays null rather than being derived from a threshold
+      // this layer would have to invent.
+      gradeLabel: null,
+      weightPercent:
+        weight !== null && Number.isFinite(weight) ? Math.round(weight * 100) : null,
+    };
+  });
+}
+
 /** True when `value` is one of the four V3 component keys. */
 export function isV3Component(value: unknown): value is V3Component {
   return (
