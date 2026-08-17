@@ -183,15 +183,18 @@ export const ANALYSIS_DEFINITIONS: readonly (GlobalDefinition & { testId?: strin
 // SOURCE OF EVERY VALUE BELOW
 // ---------------------------
 // `docs/research/SUITABILITY_V3_FINAL_POLICY.md` and
-// `docs/research/SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md`, as published on
-// `integration/backend-v3-contract-preview-20260817` (b93393a). Nothing here is
+// `docs/research/SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md`. Nothing here is
 // inferred, rounded, or filled in: every version string, weight, floor, class code,
 // threshold and count is transcribed from those two documents.
 //
-// The branch is PROVISIONAL and non-production. If the authoritative
-// `release/backend-v3-ready-20260817` publishes different values, this block is what
-// has to be re-checked against it — which is why the numbers live here as data
-// rather than being scattered through JSX.
+// AUTHORITATIVE. The content was first written against the contract preview and has
+// since been verified against the release branch: `release/backend-v3-ready-20260817`
+// and `integration/backend-v3-contract-preview-20260817` resolve to the SAME commit,
+// `b93393a`, with identical trees and identical blob hashes for both documents and
+// for `schemas/suitability.py`. There was no drift to reconcile.
+//
+// The values stay together here, as data rather than scattered through JSX, so a
+// later policy version has exactly one place to be re-checked against.
 //
 // WHAT THIS BLOCK MUST NOT IMPLY
 // ------------------------------

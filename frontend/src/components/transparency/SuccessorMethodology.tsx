@@ -6,8 +6,9 @@
  * ── WHERE EVERY VALUE COMES FROM ───────────────────────────────────────────────
  * `transparency/shared.ts` (`SUCCESSOR_*`), transcribed from
  * `docs/research/SUITABILITY_V3_FINAL_POLICY.md` and
- * `..._PHASE5_RUNTIME_VALIDATION.md` on the provisional contract branch. This file
- * renders those constants and computes nothing.
+ * `..._PHASE5_RUNTIME_VALIDATION.md` at `b93393a`, the commit both the release and
+ * the preview branch resolve to. This file renders those constants and computes
+ * nothing.
  *
  * ── THE ORDER IS THE ARGUMENT ──────────────────────────────────────────────────
  * Status first, components second, weights third, detail last.

@@ -1,8 +1,8 @@
 # Page 6 — 데이터·출처 — Successor-V3 methodology / provenance lane
 
-Status of this document: **PART 1 COMPLETE (Figma fidelity + copy reduction).
-PART 2 COMPLETE against the PROVISIONAL contract preview — pending a diff against
-the authoritative `release/backend-v3-ready-20260817`, which has not been published.**
+Status of this document: **COMPLETE.** Part 1 (Figma fidelity + copy reduction) and
+Part 2 (Successor-V3 methodology) are both done, and the authoritative backend
+contract has been diffed against the preview: **they are the same commit.**
 
 Nothing in this lane was deployed. No backend file was modified.
 
@@ -17,8 +17,9 @@ Nothing in this lane was deployed. No backend file was modified.
 | Working branch | `feat/page6-successor-v3-methodology-final` |
 | Worktree | `/Volumes/WASTE_QA2/worktrees/page6-v3-final` |
 | Final SHA (this report's state) | `c9f3724f186eeb8ccd097f786b5208adb01846ad` |
-| Backend handoff SHA (preview, provisional) | `b93393a015d6d9d579ff4619e092d545e690f388` |
-| Backend handoff SHA (authoritative) | **NONE — not yet published** (see §9) |
+| Backend handoff SHA | `b93393a015d6d9d579ff4619e092d545e690f388` |
+| — `release/backend-v3-ready-20260817` | `b93393a` |
+| — `integration/backend-v3-contract-preview-20260817` | `b93393a` — **the same commit** (see §9.6) |
 | Figma frame | `156:470` in `hETmPv3N31IJeW8XdLwoiS` |
 
 Environment: `/Volumes/WASTE_QA2` only, `source /Volumes/WASTE_QA2/recovery-env.sh`.
@@ -272,13 +273,13 @@ The lane brief made MCP inspection mandatory before visual sign-off.
 
 ### 9.1 Source and standing
 
-`integration/backend-v3-contract-preview-20260817` = `b93393a`, carrying
+Both handoff branches — `release/backend-v3-ready-20260817` and
+`integration/backend-v3-contract-preview-20260817` — resolve to `b93393a`, carrying
 `docs/research/SUITABILITY_V3_FINAL_POLICY.md` and
 `docs/research/SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md`.
 
-**Provisional and non-production.** The authoritative
-`release/backend-v3-ready-20260817` has still not been published and is being
-polled. Because the values may yet change, every one of them is stored as data in
+**Authoritative.** The content was written against the preview and then verified
+against the release branch; see §9.6 for the diff. Every value is stored as data in
 `transparency/shared.ts` (`SUCCESSOR_VERSIONS`, `SUCCESSOR_STATUS`,
 `SUCCESSOR_COMPONENTS`, `SUCCESSOR_WEIGHT_NOTE`, `SUCCESSOR_RULES`,
 `SUCCESSOR_LIMITS`) rather than scattered through JSX — that block is the entire
@@ -342,11 +343,25 @@ caught **both** in the first draft of this copy. The copy was changed, not the r
 each is described in plain Korean on the primary surface and named only inside a
 `[data-diagnostic]` disclosure.
 
-### 9.6 Still to do before final sign-off
+### 9.6 The authoritative diff — performed, and empty
 
-Diff the authoritative `release/backend-v3-ready-20260817` against `b93393a` when it
-appears. If identical, no change. If different, update `SUCCESSOR_*` in
-`transparency/shared.ts` and re-run the Page-6 suite before the final push.
+`release/backend-v3-ready-20260817` was published during this lane and resolves to
+**the same commit as the preview**, `b93393a`. Verified three ways rather than
+assumed:
+
+| check | result |
+|---|---|
+| `ls-remote` both refs | both `b93393a015d6d9d579ff4619e092d545e690f388` |
+| `git diff --stat release..preview` | empty — identical trees |
+| blob hash `SUITABILITY_V3_FINAL_POLICY.md` | `b4eccf38…` on both |
+| blob hash `SUITABILITY_V3_PHASE5_RUNTIME_VALIDATION.md` | `747e64e2…` on both |
+| blob hash `schemas/suitability.py` | `eaabd45d…` on both |
+
+**There was no drift to reconcile**, so no `SUCCESSOR_*` value changed. The three
+code comments that described the contract as provisional were corrected to state the
+verified fact. The `component_model_version` / `component_order` fields stay OPTIONAL
+— that was never only about the branch's standing: the deployed backend still serves
+the pre-V3 shape.
 
 ---
 
