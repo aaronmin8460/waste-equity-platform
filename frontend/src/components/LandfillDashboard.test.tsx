@@ -449,12 +449,11 @@ describe("LandfillDashboard", () => {
     renderDashboard();
     const kpi = screen.getByTestId("landfill-kpi-per-capita");
     expect(kpi.textContent).toContain("주민 1인당 환산 반입수수료");
-    // The served caveat is rendered by `PerCapitaProvenance`, which spans the full
-    // width of the cost card rather than the ~120px cell the value sits in — inside
-    // that cell it wrapped to eight lines and became the tallest thing on the row.
-    // It is still VISIBLE and still in the same card, directly under the value.
+    // Owner decision 2026-08-17 (docs/YEOGIDA_UI_REDESIGN_SPEC.md §9): the served
+    // caveat no longer prints inside the card. The metric NAME still carries 환산, and
+    // the card must still never claim a payment — that half of this test is unchanged.
     const card = screen.getByTestId("landfill-kpi-fee");
-    expect(card.textContent).toContain("개인의 실제 납부액이 아닙니다");
+    expect(card.textContent).not.toContain("개인의 실제 납부액이 아닙니다");
     expect(card.textContent).not.toContain("세금");
     expect(card.textContent).not.toContain("납부액입니다");
   });
@@ -517,17 +516,17 @@ describe("LandfillDashboard", () => {
     expect(rows[0].textContent).not.toContain("경기도");
   });
 
-  it("formats a valid per-capita fee and shows both reference periods", () => {
+  it("formats a valid per-capita fee and still states both reference periods on the page", () => {
     renderDashboard();
     const kpi = screen.getByTestId("landfill-kpi-per-capita");
     expect(kpi.textContent).toContain("4,153원/인");
-    const periods = screen.getByTestId("landfill-per-capita-periods").textContent ?? "";
-    expect(periods).toContain("수수료 기준 2024");
-    // A complete annual selection is denominated by that year's December month-end.
-    expect(periods).toContain("인구 기준 2024-12");
-    expect(periods).toContain("월말");
-    expect(screen.getByTestId("landfill-population-month").textContent).toBe("2024-12");
-    // The evidence panel names the population source and both periods too.
+    // Owner decision 2026-08-17 (docs/YEOGIDA_UI_REDESIGN_SPEC.md §9): the KPI card no
+    // longer repeats the two reference periods.
+    expect(screen.queryByTestId("landfill-per-capita-periods")).toBeNull();
+    expect(screen.queryByTestId("landfill-population-month")).toBeNull();
+    // They remain on the page, in 근거와 한계 — which is what still lets a reader
+    // reproduce the figure. A complete annual selection is denominated by that year's
+    // December month-end.
     expect(screen.getByTestId("landfill-population-period").textContent).toBe("2024-12");
     expect(screen.getByTestId("landfill-fee-period").textContent).toBe("2024");
   });
@@ -573,7 +572,10 @@ describe("LandfillDashboard", () => {
           }),
         }),
       });
-      expect(screen.getByTestId("landfill-population-month").textContent).toBe(`${year}-12`);
+      // Asserted where the denominator is still stated: 근거와 한계. The KPI card's
+      // copy of it was removed 2026-08-17 (YEOGIDA_UI_REDESIGN_SPEC §9); the
+      // denominator itself is unchanged.
+      expect(screen.getByTestId("landfill-population-period").textContent).toBe(`${year}-12`);
     }
   });
 
@@ -599,8 +601,8 @@ describe("LandfillDashboard", () => {
         }),
       }),
     });
-    expect(screen.getByTestId("landfill-population-month").textContent).toBe("2026-05");
-    expect(screen.getByTestId("landfill-population-month").textContent).not.toBe("2026-06");
+    expect(screen.getByTestId("landfill-population-period").textContent).toBe("2026-05");
+    expect(screen.getByTestId("landfill-population-period").textContent).not.toBe("2026-06");
   });
 
   it("uses the exact selected month as the denominator for a monthly selection", () => {
@@ -616,10 +618,8 @@ describe("LandfillDashboard", () => {
         }),
       }),
     });
-    expect(screen.getByTestId("landfill-population-month").textContent).toBe("2024-07");
-    expect(screen.getByTestId("landfill-per-capita-periods").textContent).toContain(
-      "수수료 기준 2024-07",
-    );
+    expect(screen.getByTestId("landfill-population-period").textContent).toBe("2024-07");
+    expect(screen.getByTestId("landfill-fee-period").textContent).toBe("2024-07");
   });
 
   it("renders an unavailable per-capita fee as its served reason, never 0원", () => {
@@ -657,11 +657,11 @@ describe("LandfillDashboard", () => {
     expect(row.textContent).not.toContain("0원/인");
   });
 
-  it("keeps the official fee caveat and the served caveats visible", () => {
+  it("drops the KPI-card fee caveat but keeps the served caveat list", () => {
     renderDashboard();
-    expect(screen.getByTestId("landfill-fee-caveat").textContent).toContain(
-      "운송비나 전체 폐기물 관리비가 아닙니다",
-    );
+    // Owner decision 2026-08-17 (docs/YEOGIDA_UI_REDESIGN_SPEC.md §9).
+    expect(screen.queryByTestId("landfill-fee-caveat")).toBeNull();
+    // The served caveat LIST is a different surface and is untouched by that decision.
     const caveats = screen.getByTestId("landfill-caveats").textContent ?? "";
     expect(caveats).toContain("시·군·구별 반입량을 의미하지 않습니다");
   });
@@ -998,14 +998,15 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
     // 톤당 환산 수수료 and the per-resident conversion now live INSIDE the 수수료
     // card (Figma 234:441), so the two cards checked here are the ones that own a
     // caption of their own.
-    // The cost card opens with its own 폐기물 관리비용 title (Figma draws card 4 as one
-    // titled surface with two columns), so its caption is addressed by test id rather
-    // than by "the first <p>", which would pick up that title.
+    // The cost card no longer owns a caption at all: its 공식 보고값 · FEE_CAVEAT line
+    // was removed 2026-08-17 (docs/YEOGIDA_UI_REDESIGN_SPEC.md §9). A card with no
+    // explanation cannot violate this hierarchy, so it drops out of the loop — and the
+    // assertion that it has none keeps that an intentional state rather than a gap.
+    expect(screen.queryByTestId("landfill-fee-caveat")).toBeNull();
     const captionOf: Record<string, (card: HTMLElement) => Element | null> = {
       "landfill-kpi-quantity": (card) => card.querySelector("p"),
-      "landfill-kpi-fee": () => screen.getByTestId("landfill-fee-caveat"),
     };
-    for (const testId of ["landfill-kpi-quantity", "landfill-kpi-fee"]) {
+    for (const testId of ["landfill-kpi-quantity"]) {
       const card = screen.getByTestId(testId);
       const value = card.querySelector("dd");
       const caption = captionOf[testId](card);
@@ -1441,8 +1442,15 @@ describe("LandfillDashboard — civic dashboard refresh", () => {
     // and its link into the full section are all still on screen — the full section
     // below keeps its own heading, which is what the link targets.
     expect(screen.queryByRole("heading", { name: MUNICIPAL_COST_SUMMARY_TITLE, level: 2 })).toBeNull();
-    expect(screen.getByTestId("municipal-cost-kpi-summary").textContent).toContain(
+    // Its long dataset name was removed from the column too (owner decision
+    // 2026-08-17, docs/YEOGIDA_UI_REDESIGN_SPEC.md §9). The column is still LABELLED —
+    // 수집·운반 지급액 — and the link into the full section, which does carry the full
+    // name and the distinction, is what this test guards.
+    expect(screen.getByTestId("municipal-cost-kpi-summary").textContent).not.toContain(
       MUNICIPAL_COST_SUMMARY_TITLE,
+    );
+    expect(screen.getByTestId("municipal-cost-kpi-summary").textContent).toContain(
+      "수집·운반 지급액",
     );
     expect(screen.getByTestId("municipal-cost-detail-link")).toBeDefined();
   });
@@ -2013,11 +2021,15 @@ describe("LandfillDashboard — Figma page 2", () => {
     );
   });
 
-  it("names the MOIS population basis where the per-resident value is read", () => {
+  it("still names the MOIS population source in 근거와 한계", () => {
     renderDashboard();
-    const basis = screen.getByTestId("landfill-population-basis").textContent ?? "";
-    expect(basis).toContain("행정안전부 주민등록 인구");
-    expect(basis).toContain("SGIS");
+    // The KPI card's POPULATION_BASIS_NOTE — which also warned that 지역 지표 divides
+    // by a different (SGIS annual) series — was removed 2026-08-17
+    // (docs/YEOGIDA_UI_REDESIGN_SPEC.md §9). The population SOURCE is still named on
+    // the page, in the evidence panel.
+    expect(screen.queryByTestId("landfill-population-basis")).toBeNull();
+    const source = screen.getByTestId("landfill-population-source").textContent ?? "";
+    expect(source).toContain("행정안전부 주민등록 인구");
   });
 
   it("keeps the 출발 지역 filter the Figma design does not show", () => {
@@ -2111,9 +2123,15 @@ describe("LandfillDashboard — 시·군·구별 상세 보기 summary", () => {
     expect(card.textContent ?? "").not.toContain("원/인");
   });
 
-  it("carries the distinction from the official fee it sits beside", () => {
+  it("makes the distinction from the official fee in the section it links to", () => {
     renderDashboard({ municipalCostAll: municipalCostResponse() });
-    expect(screen.getByTestId("municipal-cost-kpi-summary").textContent).toContain(
+    // Removed from the KPI column 2026-08-17 (docs/YEOGIDA_UI_REDESIGN_SPEC.md §9)…
+    expect(screen.getByTestId("municipal-cost-kpi-summary").textContent).not.toContain(
+      "위 수도권매립지 반입수수료와 다른 자료입니다",
+    );
+    // …and still made where the values themselves are, which is where a reader who
+    // acts on an amount will be.
+    expect(screen.getByTestId("municipal-cost-section").textContent).toContain(
       "위 수도권매립지 반입수수료와 다른 자료입니다",
     );
   });

@@ -76,7 +76,6 @@ import type {
 import type { CapitalRegionWaste } from "../lib/capitalRegionWaste";
 import {
   buildCapitalRegionWaste,
-  MUNICIPAL_TIER_LABELS,
   scopeOfLandfillOrigin,
 } from "../lib/capitalRegionWaste";
 import type { LandfillUnavailableState } from "../lib/landfill";
@@ -259,11 +258,6 @@ export default function LandfillDashboard({
       }),
     [reportingStats, reportingPerCapita, facilityBurden, municipalCostAll, scope],
   );
-  // The tier noun for the units the totals counted. Only a single-metropolitan
-  // selection has ONE true tier; the capital region as a whole mixes all three, so
-  // it gets the aggregate noun rather than a wrong specific one.
-  const tierNoun = scope ? MUNICIPAL_TIER_LABELS[scope] : "시·군·구";
-
   // What the filter summary states. Derived from the props the page already hands
   // down — no second request state, and no classification of its own.
   const outcome: LandfillSelectionOutcome = data
@@ -362,7 +356,6 @@ export default function LandfillDashboard({
               priorSettled={priorSettled}
               priorPeriodLabel={priorPeriodLabelOf(data.summary)}
               capitalRegion={capitalRegion}
-              tierNoun={tierNoun}
               /* The municipal contract-payment dataset now lives INSIDE the KPI row's
                  폐기물 관리비용 card, as its right-hand column — the arrangement the
                  Figma frame draws. It used to be a separate full-width card between

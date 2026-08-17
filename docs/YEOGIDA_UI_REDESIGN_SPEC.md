@@ -289,7 +289,50 @@ used to carry was removed with the phone layout.
 
 - Supporting informational panels **may** be collapsible.
 - Critical analytical / data-limitation notices **must remain visible** and must
-  not be hidden by default.
+  not be hidden by default — **on the surface that owns the value**, which since
+  the amendment below is not necessarily the KPI card itself.
+
+### 9.1 Amendment — 2026-08-17, Page 2 KPI row (owner decision)
+
+The product owner directed that the following lines be **removed outright** from
+the Page 2 (`지역별 폐기물 처리 현황`) KPI row, choosing deletion over relocation
+and over `sr-only`. This clause records the decision so the removal is not later
+read as drift, and so a future release does not silently reinstate it.
+
+| Removed from | Line |
+| --- | --- |
+| 총 폐기물 발생량 | `기준 기간 2024년 · 발생지 기준` |
+| 총 폐기물 발생량 | `시·군·구 66곳의 공식 보고값 합계 · 미보고 2건은 합계에서 제외했으며 0으로 채우지 않았습니다` |
+| 총 시설 처리량 | `기준 기간 2024년 · 시설 소재지 기준` |
+| 총 시설 처리량 | `시·군·구 66곳의 공식 보고값 합계 · 지역이 확인되지 않은 시설 99곳은 포함되지 않았습니다.` |
+| 반입 수수료 | `공식 보고값 · ` + `FEE_CAVEAT` |
+| 주민 1인당 환산 반입수수료 | the served `caveat` (`개인의 실제 납부액이 아닙니다`) |
+| 주민 1인당 환산 반입수수료 | `POPULATION_BASIS_NOTE` (the 지역 지표 cross-basis warning) |
+| 주민 1인당 환산 반입수수료 | `수수료 기준 … · 인구 기준 … (월말) · …명` |
+| 수집·운반 지급액 | `MUNICIPAL_COST_SUMMARY_TITLE · MUNICIPAL_COST_DISTINCTION_TITLE` |
+
+**What was deliberately NOT weakened, and where each disclosure still lives.**
+The decision changes what the KPI cards print. It does not change any value, any
+accounting basis, or any of §11's absolute rules:
+
+- `CROSS_BASIS_NOTICE` still renders **visibly** directly under the KPI row, so
+  the prohibition on dividing the two adjacent tonnages is unaffected.
+- Both reference periods and the MOIS population source still render in
+  `근거와 한계` (`LandfillMethodology`), which is what still lets a reader
+  reproduce the per-resident conversion.
+- `MUNICIPAL_COST_DISTINCTION_TITLE` still renders in the
+  `시·군·구별 상세 보기` section the removed column line linked to — i.e. it is
+  still stated where the amounts themselves are.
+- The unavailable branch of each derived-total card **keeps** its foot: the
+  sentence that an absent series is not a zero is not provenance, it is the
+  value, and §11.2 continues to forbid rendering it as `0`.
+- Every provenance badge (`공식 값` / `계산값` / `자료 없음`) is untouched, so
+  each figure still declares what kind of number it is.
+- The API still serves the `caveat`, `POPULATION_BASIS_NOTE` wording and both
+  reference periods on every value; `docs/ANALYTICAL_METHODS.md` is unchanged as
+  the contract for what the backend must supply. Only the Page 2 KPI rendering
+  changed. The constants remain exported from
+  `frontend/src/components/landfill/shared.ts` as the canonical wording.
 
 ---
 

@@ -226,6 +226,11 @@ than silently redefined. v1 is retired; nothing serves it.
   (`caveat` retained as the v1-compatible alias).
 - Caveat (served with every value): 선택 기간의 공식 반입수수료를 동일 기간 기준의
   해당 지역 인구로 나눈 분석용 환산값입니다. 개인의 실제 납부액이 아닙니다.
+  This is a **backend obligation and is unchanged** — the field is still populated
+  on every value. It is no longer printed inside the Page 2 KPI card as of
+  2026-08-17 by owner decision; see `YEOGIDA_UI_REDESIGN_SPEC.md` §9.1. Nothing
+  here licenses a client to omit it from a surface that presents the value as a
+  per-resident amount.
 - Accounting basis: `VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW` for the
   numerator. The landfill fee is never combined with RCIS municipal generation,
   and this indicator is never compared against `per-capita-v1` (different bases,

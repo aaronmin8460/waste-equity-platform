@@ -54,7 +54,6 @@
 import type { LandfillFeePerCapita, LandfillOriginShare, LandfillSummary } from "../../lib/api";
 import type { MunicipalCostResponse } from "../../lib/api";
 import type { CapitalRegionWaste, DerivedTotal } from "../../lib/capitalRegionWaste";
-import { coverageSentence } from "../../lib/capitalRegionWaste";
 import {
   formatEffectiveFee,
   formatKrwEok,
@@ -74,19 +73,12 @@ import DataStatusBadge from "../ui/DataStatusBadge";
 import {
   MUNICIPAL_COST_DETAIL_LINK_LABEL,
   MUNICIPAL_COST_DETAIL_TARGET_ID,
-  MUNICIPAL_COST_DISTINCTION_TITLE,
-  MUNICIPAL_COST_SUMMARY_TITLE,
 } from "./municipalCostShared";
 import {
   CROSS_BASIS_NOTICE,
   EFFECTIVE_FEE_LABEL,
-  FEE_CAVEAT,
-  GENERATION_BASIS_NOTE,
   GENERATION_TOTAL_LABEL,
-  PER_CAPITA_DESCRIPTION,
   PER_CAPITA_LABEL,
-  POPULATION_BASIS_NOTE,
-  TREATMENT_BASIS_NOTE,
   TREATMENT_TOTAL_LABEL,
   UNBOUND_TOTAL_REASON,
 } from "./shared";
@@ -114,8 +106,6 @@ export interface LandfillHeadlineResultsProps {
    * in which case the two cards state the absence rather than showing a zero.
    */
   capitalRegion: CapitalRegionWaste | null;
-  /** The tier noun for the counted units in the coverage sentence (시·군·구 etc.). */
-  tierNoun: string;
   /**
    * The UNFILTERED municipal contract-payment response. It populates the right half
    * of the 폐기물 관리비용 card, which the Figma frame draws INSIDE this row rather
@@ -139,7 +129,6 @@ export default function LandfillHeadlineResults({
   priorSettled,
   priorPeriodLabel,
   capitalRegion,
-  tierNoun,
   municipalCost = null,
   municipalCostError = null,
 }: LandfillHeadlineResultsProps) {
@@ -172,18 +161,14 @@ export default function LandfillHeadlineResults({
         <DerivedTotalKpi
           testId="landfill-kpi-generation"
           label={GENERATION_TOTAL_LABEL}
-          basisNote={GENERATION_BASIS_NOTE}
           total={capitalRegion?.generation ?? null}
-          tierNoun={tierNoun}
           /* Figma card 1 is the filled navy card and carries the largest figure. */
           tone="hero"
         />
         <DerivedTotalKpi
           testId="landfill-kpi-treatment"
           label={TREATMENT_TOTAL_LABEL}
-          basisNote={TREATMENT_BASIS_NOTE}
           total={capitalRegion?.throughput ?? null}
-          tierNoun={tierNoun}
           tone="plain"
         />
         <InboundQuantityKpi
@@ -326,16 +311,12 @@ function CardFoot({ tone, children }: { tone: "hero" | "plain"; children: React.
 function DerivedTotalKpi({
   testId,
   label,
-  basisNote,
   total,
-  tierNoun,
   tone,
 }: {
   testId: string;
   label: string;
-  basisNote: string;
   total: DerivedTotal | null;
-  tierNoun: string;
   tone: "hero" | "plain";
 }) {
   // An early return rather than a ternary: it is what narrows `total.tons` to a
@@ -390,25 +371,14 @@ function DerivedTotalKpi({
       <CardValue tone={tone} testId={`${testId}-value`}>
         {formatTonQuantity(total.tons)}
       </CardValue>
-      <CardFoot tone={tone}>
-        {/* The card's OWN period. Deliberately not the landfill period: the RCIS
-            and facility series are annual and currently a year behind. */}
-        <p
-          className={`text-[11px] font-medium ${tone === "hero" ? "text-white/85" : "text-ink-muted"}`}
-          data-testid={`${testId}-period`}
-        >
-          기준 기간 {total.referenceYear != null ? `${total.referenceYear}년` : "확인 필요"} ·{" "}
-          {basisNote}
-        </p>
-        <p
-          className={`mt-0.5 text-[11px] leading-relaxed ${
-            tone === "hero" ? "text-white/70" : "text-ink-subtle"
-          }`}
-          data-testid={`${testId}-coverage`}
-        >
-          {coverageSentence(total, tierNoun)}
-        </p>
-      </CardFoot>
+      {/* No foot on a card that HAS a value. The card's own reference year, its
+          accounting basis and its coverage sentence were removed by owner decision
+          (2026-08-17) — see docs/YEOGIDA_UI_REDESIGN_SPEC.md §9. The reference year and
+          the per-municipality coverage of both derived totals are still stated in full
+          by 근거와 한계 and by 지역별 상세 현황's own coverage counts, and the
+          prohibition on dividing these two tonnages remains directly under the row as
+          CROSS_BASIS_NOTICE. The unavailable branch above KEEPS its foot: the sentence
+          that an absent series is not a zero is not provenance, it is the value. */}
     </CardShell>
   );
 }
@@ -589,13 +559,11 @@ function CostFeeColumn({
       <dd className="mt-1 text-2xl font-bold tabular-nums text-ink">
         {formatKrwEok(summary.total_inbound_fee_krw)}
       </dd>
-      {/* The scope caveat, and it is load-bearing precisely BECAUSE this card is now
-          titled 폐기물 관리비용: the figure above is the reported inbound charge, not a
-          transport cost and not a total waste-management budget. No 기준 기간 here —
-          the 조회 조건 line states the served period once. */}
-      <p className="mt-1 text-[11px] leading-snug text-ink-subtle" data-testid="landfill-fee-caveat">
-        공식 보고값 · {FEE_CAVEAT}
-      </p>
+      {/* The 공식 보고값 · FEE_CAVEAT scope line was removed by owner decision
+          (2026-08-17) — see docs/YEOGIDA_UI_REDESIGN_SPEC.md §9. The provenance itself
+          is unchanged: the 공식 값 badge on the label above still declares it, and
+          FEE_CAVEAT's scope wording is still served verbatim by 근거와 한계 and by the
+          데이터·출처 destination. */}
       <YoyDelta
         testId="landfill-yoy-fee"
         change={percentChange(
@@ -692,12 +660,12 @@ function CostContractColumn({
       >
         {CONTRACT_PAYMENT_LABEL}
       </CardLabel>
-      {/* One line, and it is the distinction — this column's whole risk is that it
-          sits a rule away from 반입 수수료 and gets read as more of the same money. */}
-      <p className="mt-0.5 text-[11px] leading-relaxed text-ink-subtle">
-        {MUNICIPAL_COST_SUMMARY_TITLE} · {MUNICIPAL_COST_DISTINCTION_TITLE}
-      </p>
-
+      {/* The MUNICIPAL_COST_SUMMARY_TITLE · MUNICIPAL_COST_DISTINCTION_TITLE line was
+          removed by owner decision (2026-08-17) — see
+          docs/YEOGIDA_UI_REDESIGN_SPEC.md §9. The distinction is still made where the
+          values themselves are: the 시·군·구별 상세 보기 section this column links to
+          opens on the same wording, and it keeps its own dataset badge and reference
+          year here. */}
       {meta === null ? (
         <p className="mt-2 text-[11px] text-ink-subtle" data-testid="municipal-cost-kpi-summary-state">
           {/* Never a 0 and never a dash that could be read as one. The no-error wording
@@ -796,37 +764,31 @@ function PerCapitaFigure({ perCapita }: { perCapita: LandfillFeePerCapita }) {
 }
 
 /**
- * Where the per-resident conversion's numerator and denominator came from.
+ * What remains of the per-resident conversion's provenance after the owner decision of
+ * 2026-08-17 (docs/YEOGIDA_UI_REDESIGN_SPEC.md §9).
  *
- * Kept VISIBLE rather than folded into a tooltip: the denominator's month and size are
- * what let a reader reproduce the figure, and the basis note is the only thing stopping
- * a per-resident number here from being compared with the per-resident numbers on
- * 지역 지표, which divide by a different (SGIS annual) series.
+ * REMOVED from this card: the served `caveat` (개인의 실제 납부액이 아닙니다),
+ * `POPULATION_BASIS_NOTE` (the 지역 지표 cross-basis warning) and the two reference
+ * periods with the population count. All three are still served by the API on every
+ * value — `ANALYTICAL_METHODS.md` §"Fee per capita" is unchanged — and 근거와 한계 and
+ * 데이터·출처 still state them; they simply no longer print inside the KPI card.
+ *
+ * What is KEPT is only ever shown when there is NO value: the population month the
+ * conversion still needs, and an untranslatable reason code. Neither is provenance for a
+ * number on screen — they are the explanation for an absence, which this row may never
+ * render as a zero. With a value present there is nothing left to say, so the paragraph
+ * is not emitted at all rather than left as an empty node.
  */
 function PerCapitaProvenance({ perCapita }: { perCapita: LandfillFeePerCapita }) {
   const available = perCapita.fee_per_capita_krw !== null;
   const diagnosticCode = perCapitaUnavailableCode(perCapita.unavailable_reason);
+  const requiredMonth = !available ? perCapita.required_population_month : null;
+  if (!requiredMonth && !diagnosticCode) return null;
   return (
     <p className="mt-1.5 text-[10px] leading-[1.35] text-ink-subtle">
-      {/* The served caveat is authoritative; PER_CAPITA_DESCRIPTION is only a
-          fallback if an older backend omits it. */}
-      <span className="block">{perCapita.caveat || PER_CAPITA_DESCRIPTION}</span>
-      {/* The population BASIS, stated on the page that uses it. */}
-      <span className="mt-0.5 block" data-testid="landfill-population-basis">
-        {POPULATION_BASIS_NOTE}
-      </span>
-      {available && (
-        <span className="mt-0.5 block" data-testid="landfill-per-capita-periods">
-          수수료 기준 {perCapita.fee_reference_period} · 인구 기준{" "}
-          <span data-testid="landfill-population-month">
-            {perCapita.population_reference_month ?? perCapita.population_reference_period}
-          </span>{" "}
-          (월말) · {(perCapita.population ?? 0).toLocaleString("en-US")}명
-        </span>
-      )}
-      {!available && perCapita.required_population_month && (
-        <span className="mt-0.5 block" data-testid="landfill-required-month">
-          필요한 인구 기준월: {perCapita.required_population_month}
+      {requiredMonth && (
+        <span className="block" data-testid="landfill-required-month">
+          필요한 인구 기준월: {requiredMonth}
         </span>
       )}
       {/* Diagnostic only — shown solely for a reason code this build cannot translate,
