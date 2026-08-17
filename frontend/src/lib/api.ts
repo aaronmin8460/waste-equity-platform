@@ -581,10 +581,10 @@ export interface SuitabilityPolicy {
    * Which component model this POLICY describes, and the order it enumerates its
    * components in (Successor-V3 contract, `schemas/suitability.py`).
    *
-   * OPTIONAL on purpose. It is `?` for two independent reasons and both still hold:
-   *   1. the contract arrived on `integration/backend-v3-contract-preview-20260817`,
-   *      which is provisional and non-production, so a deployment serving the older
-   *      shape must not make this screen throw;
+   * OPTIONAL on purpose. The contract itself is now authoritative (the release and
+   * preview branches are the same commit, `b93393a`), but the field stays `?`:
+   *   1. the deployed backend still serves the pre-V3 shape, and a response without
+   *      this field must render nothing rather than make this screen throw;
    *   2. `/policies` describes the currently implemented policy rather than a stored
    *      run, and the route hardcodes the HISTORICAL model — so when this field is
    *      present it reads `suitability-components-zred-v1`, not the successor.
