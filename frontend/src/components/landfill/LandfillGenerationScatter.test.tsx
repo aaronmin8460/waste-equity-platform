@@ -138,10 +138,27 @@ describe("LandfillGenerationScatter", () => {
     expect(detail.textContent).toContain("150.5");
     expect(point.getAttribute("aria-pressed")).toBe("true");
     // Pressing again clears the selection rather than trapping the reader in it.
+    // The empty state now carries the Figma frame's own footnote (annotation
+    // 271:429, "점을 클릭하면 해당 지역을 강조하고…"); the assertion still proves the
+    // slot RETURNED to its empty state, which is what this test is about.
     fireEvent.keyDown(point, { key: "Enter" });
     expect(screen.getByTestId("landfill-scatter-selection").textContent).toContain(
-      "점을 선택하면",
+      "점을 클릭하면",
     );
+    expect(point.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("colours each dot by its parent 시·도 while keeping one dot per 시·군·구", () => {
+    render(<LandfillGenerationScatter perCapita={perCapita} burden={burden} />);
+    const points = screen.getAllByTestId("landfill-scatter-point");
+    // The grain contract: one circle per municipality, never one per 시·도.
+    expect(points.length).toBe(perCapita.items.length);
+    // 기술요청 #14's exact specified fills, and the 시·도 named in the label.
+    expect(points[0].getAttribute("fill")).toBe("#C26B2F");
+    expect(points[0].getAttribute("aria-label")).toContain("서울특별시");
+    // Colour is not the only carrier: the legend names each group in text.
+    expect(screen.getByTestId("landfill-scatter-legend").textContent).toContain("서울특별시");
+    expect(screen.getByTestId("landfill-scatter-legend").textContent).toContain("점 하나 = 시·군·구 한 곳");
   });
 
   it("states the two accounting bases are not comparable, outside any disclosure", () => {
@@ -159,6 +176,9 @@ describe("LandfillGenerationScatter", () => {
 
   it("keeps every plotted value reachable as text", () => {
     render(<LandfillGenerationScatter perCapita={perCapita} burden={burden} />);
+    // 기술요청 #16 — 표로 보기 is a popup now. The table's contract is unchanged;
+    // it just has to be opened first.
+    fireEvent.click(screen.getByTestId("landfill-scatter-exact"));
     const table = screen.getByTestId("landfill-scatter-table");
     expect(within(table).getByText("310.25")).toBeDefined();
     expect(within(table).getByText("80")).toBeDefined();
@@ -167,6 +187,9 @@ describe("LandfillGenerationScatter", () => {
   it("reads the 인근 5km measure from the served indicator when switched", () => {
     render(<LandfillGenerationScatter perCapita={perCapita} burden={burden} />);
     fireEvent.click(screen.getByTestId("landfill-scatter-mode-buffer"));
+    // 기술요청 #16 — 표로 보기 is a popup now. The table's contract is unchanged;
+    // it just has to be opened first.
+    fireEvent.click(screen.getByTestId("landfill-scatter-exact"));
     const table = screen.getByTestId("landfill-scatter-table");
     expect(within(table).getAllByText("200")).toHaveLength(2);
     // The buffer distance shown is the backend's served value.

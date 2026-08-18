@@ -52,7 +52,7 @@
  * must not take this section down with it, and vice versa.
  */
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import type {
   MunicipalCostResponse,
@@ -62,6 +62,7 @@ import type {
 } from "../../lib/api";
 import type { MunicipalCostErrorState } from "../../lib/municipalCost";
 import SectionCard from "../ui/SectionCard";
+import MunicipalCostDetailDialog from "./MunicipalCostDetailDialog";
 import MunicipalCostFilters from "./MunicipalCostFilters";
 import MunicipalCostMethodology from "./MunicipalCostMethodology";
 import {
@@ -90,6 +91,21 @@ export interface MunicipalCostSectionProps {
   setStatus: (value: MunicipalCostStatus | null) => void;
   sort: MunicipalCostSort;
   setSort: (value: MunicipalCostSort) => void;
+  /**
+   * The 시·군·구별 상세 modal's open state, CONTROLLED from `LandfillDashboard`.
+   *
+   * Lifted because three surfaces open the same popup — this section's own button, the
+   * KPI row's 폐기물 관리비용 card (기술요청 #8), and a region name in 지역별 상세 현황
+   * (기술요청 #21). Three independent copies of the state would let two of them be
+   * open at once.
+   *
+   * Optional so the component still works uncontrolled in isolation (its own tests
+   * render it directly).
+   */
+  detailOpen?: boolean;
+  setDetailOpen?: (open: boolean) => void;
+  /** A municipality to highlight in the ranking, when opened from a region name. */
+  detailFocusRegionCode?: string | null;
 }
 
 export default function MunicipalCostSection({
@@ -101,6 +117,9 @@ export default function MunicipalCostSection({
   setStatus,
   sort,
   setSort,
+  detailOpen,
+  setDetailOpen,
+  detailFocusRegionCode = null,
 }: MunicipalCostSectionProps) {
   const meta = data?.meta ?? null;
   const rows = data?.municipalities ?? null;
@@ -111,6 +130,13 @@ export default function MunicipalCostSection({
    * in this component calls `.focus()` — the browser does, on following the anchor.
    */
   const headingRef = useRef<HTMLHeadingElement>(null);
+  // Local fallback for the uncontrolled case. When the dashboard supplies the pair
+  // above, that one wins — see `open` / `setOpen` below. Presentation-only either
+  // way: it changes no request and no filter, so the "holds no state" rule above
+  // still holds for everything that touches data.
+  const [localDetailOpen, setLocalDetailOpen] = useState(false);
+  const open = detailOpen ?? localDetailOpen;
+  const setOpen = setDetailOpen ?? setLocalDetailOpen;
   return (
     <SectionCard
       title={MUNICIPAL_COST_SECTION_TITLE}
@@ -168,37 +194,49 @@ export default function MunicipalCostSection({
             <p role="status" className="sr-only" data-testid="municipal-cost-live">
               시·군·구별 수집·운반 계약 지급액 {rows.length}곳을 표시합니다.
             </p>
-            {/* ── Why the 66-row comparison is now a disclosure ──────────────────
-                Expanded, this table plus its per-row detail rendered ~4,300px — 59%
-                of the whole screen, and roughly twice the height of the ENTIRE Figma
-                page-2 frame. It sits below 지역별 상세 현황, which already carries the
-                2024 계약 지급액 for these same municipalities as its own column group,
-                so a reader scrolling the dashboard met the municipal dataset twice and
-                met the second copy as a wall.
+            {/* ── 기술요청 #8/#16 — 상세보기 버튼 + 팝업, replacing a <details> ─────
+                The frame puts this comparison behind a 상세보기 button and draws the
+                popup itself (`327:428`). Inline, the table plus its per-row detail
+                rendered ~4,300px — 59% of the whole screen, and roughly twice the
+                height of the ENTIRE Figma page-2 frame — directly below 지역별 상세
+                현황, which already carries the 2024 계약 지급액 for these same
+                municipalities as its own column group.
 
                 Nothing is removed and nothing is summarised away: the filters, the
                 served scope, the row count, the reference year and the methodology all
-                stay OUTSIDE the disclosure, so what the dataset covers is still legible
-                without opening anything. The count is in the summary label, so the
-                reader knows the size of what they are opening.
+                stay OUTSIDE the modal, so what the dataset covers is still legible
+                without opening anything, and the count is on the button.
 
-                A native <details>: it is keyboard-operable, it is announced as a
-                disclosure, and it needs no state in a component that deliberately holds
-                none. `name` is omitted so it never forms an accordion group with
-                another disclosure on the page. */}
-            <details className="wep-card p-0" data-testid="municipal-cost-table-disclosure">
-              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-ink marker:content-none">
-                시·군·구별 비교표 보기 ({rows.length}곳)
-              </summary>
-              <div className="border-t border-hairline p-4 pt-3">
-                <MunicipalCostTable rows={rows} />
-              </div>
-            </details>
+                The full filterable table is kept below the ranking inside the modal —
+                the modal is where the dataset lives now, so its per-row reasons and
+                statuses had to travel with it rather than being dropped. */}
+            <div>
+              <button
+                type="button"
+                className="wep-btn-outline"
+                onClick={() => setOpen(true)}
+                data-testid="municipal-cost-detail-open"
+              >
+                시·군·구별 상세 보기 ({rows.length}곳)
+              </button>
+            </div>
           </>
         )}
 
         {meta && <MunicipalCostMethodology meta={meta} />}
       </div>
+
+      {/* Figma `327:428`. Focus handling, Escape, the focus trap and the restore to
+          the 상세 보기 button are all the shared `ui/Dialog` primitive's — reused, not
+          reimplemented and not modified. */}
+      <MunicipalCostDetailDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        data={data}
+        focusRegionCode={detailFocusRegionCode}
+      >
+        <MunicipalCostTable rows={rows ?? []} />
+      </MunicipalCostDetailDialog>
     </SectionCard>
   );
 }

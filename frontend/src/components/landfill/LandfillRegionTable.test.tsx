@@ -22,6 +22,7 @@ import type {
   LandfillTrends,
 } from "../../lib/api";
 import type { CapitalRegionWaste, MunicipalityRow } from "../../lib/capitalRegionWaste";
+import { managementCostPerCapita } from "../../lib/capitalRegionWaste";
 import { downloadLandfillWorkbook } from "../../lib/landfillExport";
 
 /**
@@ -145,8 +146,21 @@ function municipality(overrides: Partial<MunicipalityRow> = {}): MunicipalityRow
       referenceYear: 2024,
     },
     ...overrides,
+    // DERIVED from the row's final contract, after overrides, and through the real
+    // helper — so a fixture that overrides the payment (e.g. 옹진군, which discloses
+    // none) automatically gets the matching null total instead of silently keeping a
+    // combined figure its own contract cell contradicts.
+    managementCost:
+      overrides.managementCost ??
+      managementCostPerCapita(
+        (overrides.contract === undefined ? "85445.1200" : (overrides.contract?.perCapitaKrw ?? null)),
+        METRO_FEE_PER_CAPITA,
+      ),
   };
 }
+
+/** The common 수도권 per-resident inbound fee these fixtures combine against. */
+const METRO_FEE_PER_CAPITA = "4045.92";
 
 function capitalRegion(overrides: Partial<CapitalRegionWaste> = {}): CapitalRegionWaste {
   return {
@@ -361,20 +375,40 @@ describe("LandfillRegionTable — local Excel action", () => {
 });
 
 describe("LandfillRegionTable — municipal drill-down", () => {
-  it("is collapsed on arrival and expands the metropolitan's own tier", () => {
+  /**
+   * ⚠️ THE GRAIN CONTRACT, inverted from the Figma frame on purpose.
+   *
+   * The frame draws three collapsed 시·도 parents; the product requirement is that
+   * 시·군·구 IS the detail row and is not hidden behind a parent expansion. So the
+   * assertion that used to prove "collapsed on arrival" now proves the opposite, and
+   * the toggle is demoted to a grouping affordance that starts open.
+   */
+  it("renders 시·군·구 rows on arrival, with no expansion required", () => {
     renderTable();
-    expect(screen.queryAllByTestId("landfill-municipality-row")).toHaveLength(0);
-    const trigger = expandSeoul();
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-    // The accessible name names the REAL tier, not a generic 시·군·구.
-    expect(trigger).toHaveTextContent("자치구 상세 펼치기");
-
-    fireEvent.click(trigger);
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
     const municipal = screen.getAllByTestId("landfill-municipality-row");
-    expect(municipal).toHaveLength(1);
+    expect(municipal).toHaveLength(2);
     expect(municipal[0]).toHaveTextContent("종로구");
     expect(municipal[0]).toHaveTextContent("자치구");
+    // The grouping affordance exists and is OPEN, so it hides nothing by default.
+    expect(expandSeoul()).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps a 시·도 grouping affordance that can collapse, but never starts collapsed", () => {
+    renderTable();
+    const trigger = expandSeoul();
+    expect(trigger).toHaveTextContent("자치구 묶음 접기");
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    // 서울's 종로구 is gone; 인천's row is untouched — collapsing is per group.
+    expect(screen.getAllByTestId("landfill-municipality-row")).toHaveLength(1);
+  });
+
+  it("names each municipality's parent 시·도 on the row itself", () => {
+    renderTable();
+    const rows = screen.getAllByTestId("landfill-municipality-row");
+    // The grouping travels on the row, so it survives a column sort and is announced
+    // with the row rather than inferred from a group header several rows up.
+    expect(within(rows[0]).getByTestId("landfill-municipality-scope")).toHaveTextContent("서울");
   });
 
   it("labels 인천 as 군·구 — the tiers are not interchangeable", () => {
@@ -382,15 +416,16 @@ describe("LandfillRegionTable — municipal drill-down", () => {
     const incheon = screen
       .getAllByTestId("landfill-region-expand")
       .find((b) => b.textContent?.includes("인천시"))!;
-    expect(incheon).toHaveTextContent("군·구 상세 펼치기");
-    fireEvent.click(incheon);
-    expect(screen.getByTestId("landfill-municipality-row")).toHaveTextContent("군·구");
+    expect(incheon).toHaveTextContent("군·구 묶음 접기");
+    const ongjin = screen
+      .getAllByTestId("landfill-municipality-row")
+      .find((row) => row.textContent?.includes("옹진군"))!;
+    expect(ongjin).toHaveTextContent("군·구");
   });
 
   it("shows the municipal contract payment on the municipality row", () => {
     renderTable();
-    fireEvent.click(expandSeoul());
-    const row = screen.getByTestId("landfill-municipality-row");
+    const row = screen.getAllByTestId("landfill-municipality-row")[0];
     expect(within(row).getByTestId("landfill-municipality-contract-total")).toHaveTextContent(
       "123.5억원",
     );
@@ -401,11 +436,9 @@ describe("LandfillRegionTable — municipal drill-down", () => {
 
   it("never renders an unavailable contract payment as ₩0", () => {
     renderTable();
-    const incheon = screen
-      .getAllByTestId("landfill-region-expand")
-      .find((b) => b.textContent?.includes("인천시"))!;
-    fireEvent.click(incheon);
-    const row = screen.getByTestId("landfill-municipality-row");
+    const row = screen
+      .getAllByTestId("landfill-municipality-row")
+      .find((candidate) => candidate.textContent?.includes("옹진군"))!;
     expect(within(row).queryByTestId("landfill-municipality-contract-total")).toBeNull();
     expect(
       within(row).getByTestId("landfill-municipality-contract-unavailable"),
@@ -418,8 +451,7 @@ describe("LandfillRegionTable — municipal drill-down", () => {
 
   it("states that landfill inbound is not reported at municipal grain", () => {
     renderTable();
-    fireEvent.click(expandSeoul());
-    const cell = screen.getByTestId("landfill-municipality-no-landfill");
+    const cell = screen.getAllByTestId("landfill-municipality-no-landfill")[0];
     // Deliberately NOT "자료 없음": the value was not measured and withheld, the
     // concept does not exist at this grain. Apportioning a sido total down would
     // fabricate the municipal origin the source explicitly declines to publish.
@@ -429,10 +461,6 @@ describe("LandfillRegionTable — municipal drill-down", () => {
 
   it("marks a municipality whose source did not report every stream", () => {
     renderTable();
-    const incheon = screen
-      .getAllByTestId("landfill-region-expand")
-      .find((b) => b.textContent?.includes("인천시"))!;
-    fireEvent.click(incheon);
     expect(screen.getByTestId("landfill-municipality-missing-stream")).toHaveTextContent(
       "미보고 1개 계열 제외",
     );
@@ -460,7 +488,6 @@ describe("LandfillRegionTable — municipal drill-down", () => {
         ],
       }),
     });
-    fireEvent.click(expandSeoul());
     expect(screen.getByTestId("landfill-municipality-derived")).toHaveTextContent(
       "구성 일반구 합산",
     );
@@ -480,5 +507,80 @@ describe("LandfillRegionTable — municipal drill-down", () => {
     for (const cell of municipalCells) {
       expect(cell.textContent).toBe("자료 없음");
     }
+  });
+});
+
+describe("LandfillRegionTable — 주민 1인당 총 관리비용 (기술요청 #20/#21/#22)", () => {
+  it("shows the combined per-resident cost on the municipality row", () => {
+    renderTable();
+    const row = screen.getAllByTestId("landfill-municipality-row")[0];
+    // 85,445.12 (this municipality's own payment) + 4,045.92 (the COMMON metropolitan
+    // fee) = 89,491.04 — the exact sum, not a re-derivation.
+    expect(within(row).getByTestId("landfill-municipality-management-total")).toHaveTextContent(
+      "89,491",
+    );
+  });
+
+  it("renders — for a municipality with no payment, never the fee alone and never 0", () => {
+    renderTable();
+    const row = screen
+      .getAllByTestId("landfill-municipality-row")
+      .find((candidate) => candidate.textContent?.includes("옹진군"))!;
+    expect(
+      within(row).getByTestId("landfill-municipality-management-unavailable"),
+    ).toHaveTextContent("—");
+    // Emphatically NOT the metropolitan fee standing in for the missing operand,
+    // which would rank a municipality that disclosed nothing as the cheapest.
+    expect(row.textContent).not.toContain("4,046");
+    expect(row.textContent).not.toContain("0원");
+  });
+
+  it("states the formula and the population-basis difference beneath the table", () => {
+    renderTable();
+    const note = screen.getByTestId("landfill-region-management-basis");
+    expect(note).toHaveTextContent("수도권 공통");
+    expect(note).toHaveTextContent("조회 지역을 바꿔도 달라지지 않습니다");
+    expect(note).toHaveTextContent("인구 기준이 서로 다릅니다");
+  });
+
+  it("replaces the 정렬 기준 dropdown with column-header sorting (기술요청 #20)", () => {
+    renderTable();
+    expect(screen.queryByTestId("landfill-region-sort")).toBeNull();
+    const headers = screen.getAllByTestId("landfill-region-sort-header");
+    expect(headers.length).toBeGreaterThan(0);
+    // The 엑셀 다운로드 action took the dropdown's place in the header.
+    expect(screen.getByTestId("landfill-region-export-xlsx")).toBeInTheDocument();
+  });
+
+  it("sorts municipalities within their 시·도 group and pins absent values last", () => {
+    renderTable();
+    const byPayment = screen
+      .getAllByTestId("landfill-region-sort-header")
+      .find((header) => header.dataset.sortKey === "contractPerCapita")!;
+    fireEvent.click(byPayment);
+    const rows = screen.getAllByTestId("landfill-municipality-row");
+    // 옹진군 has NO payment. Whichever way the column points it must sort last —
+    // an unknown is not the smallest value.
+    expect(rows[rows.length - 1]).toHaveTextContent("옹진군");
+    fireEvent.click(byPayment);
+    const reversed = screen.getAllByTestId("landfill-municipality-row");
+    expect(reversed[reversed.length - 1]).toHaveTextContent("옹진군");
+  });
+
+  it("applies the SHARED .wep-table grid rather than a second table style (기술요청 #22)", () => {
+    const { container } = renderTable();
+    const table = container.querySelector("table")!;
+    expect(table.className).toContain("wep-table");
+  });
+
+  it("opens a municipality's detail from its region name (기술요청 #21)", () => {
+    const onSelectMunicipality = vi.fn();
+    renderTable({ onSelectMunicipality });
+    fireEvent.click(screen.getAllByTestId("landfill-municipality-detail")[0]);
+    expect(onSelectMunicipality).toHaveBeenCalledTimes(1);
+    expect(onSelectMunicipality.mock.calls[0][0].name).toBe("종로구");
+    expect(screen.getByTestId("landfill-region-grain-note")).toHaveTextContent(
+      "표 우측의 지역명을 누르면",
+    );
   });
 });

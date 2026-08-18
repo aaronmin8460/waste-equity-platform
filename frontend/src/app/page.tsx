@@ -427,6 +427,31 @@ export default function Home() {
   const flowPriorSettled = flowPriorKey !== null && flowPrior?.key === flowPriorKey;
   const flowPriorSummary = flowPriorSettled ? (flowPrior?.summary ?? null) : null;
 
+  /**
+   * The 수도권-wide 반입수수료 per resident — the common second term of every
+   * municipality's 주민 1인당 폐기물 관리비용.
+   *
+   * ⚠️ Deliberately fetched WITHOUT 출발 지역 and WITHOUT 폐기물 종류, and keyed on the
+   * period alone. `flowData.summary.fee_per_capita` cannot be used for this: it is
+   * scoped by the filters, so selecting 출발 지역 = 서울 makes it serve Seoul's
+   * 4,611.40 in place of the 수도권 4,045.92 — and a figure the UI labels 수도권 공통
+   * must not change when the reader narrows the view. Page-2 Figma spec sheet 1 says
+   * the same thing about region ("지역은 글로벌 필터로 두지 않고 각 지역을 비교하는
+   * 구조로 사용").
+   *
+   * ONE extra request, reusing the existing endpoint — no new route, and no change to
+   * any other value on the page. It fails independently: a rejection leaves the value
+   * null, the combined cost renders — rather than a partial figure, and every other
+   * landfill value is untouched.
+   */
+  const [flowMetroFee, setFlowMetroFee] = useState<{
+    key: string;
+    feePerCapitaKrw: string | null;
+  } | null>(null);
+  const flowMetroFeeKey = JSON.stringify([flowYear, flowMonth]);
+  const metroLandfillFeePerCapitaKrw =
+    flowMetroFee?.key === flowMetroFeeKey ? flowMetroFee.feePerCapitaKrw : null;
+
   // 시·군·구 수집·운반 계약 지급액 — a SEPARATE dataset sharing the 매립지 현황 area. Its
   // three filters are held apart from the four official-landfill ones above and are
   // sent to the backend as `sido` / `status` / `sort`; nothing is filtered or
@@ -956,6 +981,34 @@ export default function Home() {
       cancelled = true;
     };
   }, [mode, flowData, flowOrigin, flowWaste]);
+
+  // The UNFILTERED 수도권 summary, for the common per-resident 반입수수료.
+  //
+  // Keyed on the PERIOD only, so changing 출발 지역 or 폐기물 종류 does not re-issue it
+  // and cannot move the value. See `flowMetroFee` above for why the scoped summary
+  // already in `flowData` is not usable here.
+  useEffect(() => {
+    if (mode !== "flow") return;
+    let cancelled = false;
+    fetchLandfillSummary({ year: flowYear, month: flowMonth, origin: null, wasteName: null })
+      .then((summary) => {
+        if (!cancelled) {
+          setFlowMetroFee({
+            key: flowMetroFeeKey,
+            feePerCapitaKrw: summary.fee_per_capita.fee_per_capita_krw,
+          });
+        }
+      })
+      .catch(() => {
+        // No record for the period, or the request failed. `null` propagates into the
+        // combined cost as — ; it is never substituted with 0 and never falls back to
+        // the scoped value, which would silently reintroduce the filter dependency.
+        if (!cancelled) setFlowMetroFee({ key: flowMetroFeeKey, feePerCapitaKrw: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, flowMetroFeeKey, flowYear, flowMonth]);
 
   // 시·군·구 수집·운반 계약 지급액: one request per filter combination, issued only in
   // the 매립지 현황 area.
@@ -2136,6 +2189,10 @@ export default function Home() {
           maxMonth={flowMaxMonth}
           priorSummary={flowPriorSummary}
           priorSettled={flowPriorSettled}
+          // The 수도권 공통 per-resident 반입수수료, from the UNFILTERED summary — the
+          // second term of every municipality's 관리비용. Passed separately from
+          // `flowData.summary` precisely because that one follows 출발 지역.
+          metroLandfillFeePerCapitaKrw={metroLandfillFeePerCapitaKrw}
           // The SERVED per-municipality series the 발생·처리 비교, the two derived
           // headline totals, and the 시·군·구 drill-down all read. Already loaded for
           // the 지역 지표 area, so the landfill view issues no extra request; the

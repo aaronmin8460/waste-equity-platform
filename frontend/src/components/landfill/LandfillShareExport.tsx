@@ -13,18 +13,28 @@
  * different publisher, and a different spatial unit, so it is never written into
  * either file (docs/YEOGIDA_UI_REDESIGN_SPEC.md §4). The scope sentence says so.
  *
- * ── 보고서 보기 is intentionally absent ────────────────────────────────────────
- * The Figma row carries a third action, 보고서 보기. There is no defined Page-2 report
- * artifact, route, or content model — no template, no scope, no statement of which
- * values it would assert — so implementing one would mean inventing an official-looking
- * document. It is left unimplemented and recorded as BLOCKED BY PRODUCT DEFINITION
- * rather than shipped as a button that produces something nobody specified.
+ * ── 보고서 보기 → 이미지 저장 (기술요청 #23) ─────────────────────────────────
+ * The frame's third action is 보고서 보기, and the 기술요청 spells out the flow:
+ * `페이지 맨 하단 [보고서 보기] > [이미지 저장]`. That IS the content model this page
+ * previously lacked — a preview panel whose one export is a PNG — and the platform
+ * already has both halves: `lib/report.ts`'s generic `ReportModel` and its text-only
+ * canvas renderer, and `components/ReportPreview.tsx`, both already used by two other
+ * areas.
+ *
+ * So this is a REUSE, not a new export pipeline: no added dependency (no
+ * html2canvas/dom-to-image), no second definition of what an exported figure means,
+ * and the same absence rule (`—`, never 0). The model is `buildLandfillReport`, whose
+ * scope note states in the image itself that the municipal contract payment is not in
+ * it and that landfill inbound exists only at 시·도 grain.
  */
 
 import { useState } from "react";
 
 import type { LandfillSummary, LandfillTrends } from "../../lib/api";
 import { downloadLandfillCsv, downloadLandfillWorkbook } from "../../lib/landfillExport";
+import { landfillFilenameBase, periodLabel } from "../../lib/landfillExport";
+import { buildLandfillReport } from "../../lib/report";
+import ReportPreview from "../ReportPreview";
 import SectionCard from "../ui/SectionCard";
 import { PAGE2_CARD_CLASS } from "./shared";
 
@@ -36,6 +46,8 @@ export interface LandfillShareExportProps {
 export default function LandfillShareExport({ summary, trends }: LandfillShareExportProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 기술요청 #23 — the preview panel the 이미지 저장 action lives in.
+  const [reportOpen, setReportOpen] = useState(false);
 
   const failed = () => setError("파일을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.");
 
@@ -81,11 +93,48 @@ export default function LandfillShareExport({ summary, trends }: LandfillShareEx
         >
           CSV 내려받기
         </button>
+        {/* 기술요청 #23 — `[보고서 보기] > [이미지 저장]`. The panel it opens carries
+            the 이미지 저장 action, so the two-step flow the request describes is the
+            flow the reader gets. */}
+        <button
+          type="button"
+          className="wep-btn-quiet"
+          data-testid="landfill-export-report"
+          onClick={() => {
+            setError(null);
+            setReportOpen(true);
+          }}
+        >
+          보고서 보기
+        </button>
       </div>
       {error && (
         <p className="mt-2 text-xs text-danger" role="alert" data-testid="landfill-export-error">
           {error}
         </p>
+      )}
+      {reportOpen && (
+        <ReportPreview
+          model={buildLandfillReport({
+            periodLabel: periodLabel(summary),
+            destinationName: summary.destination_name,
+            accountingBasis: summary.accounting_basis,
+            originFilter: summary.origin_filter,
+            wasteFilter: summary.waste_filter,
+            totalQuantityTons: summary.total_quantity_tons,
+            totalInboundFeeKrw: summary.total_inbound_fee_krw,
+            feePerCapitaKrw: summary.fee_per_capita.fee_per_capita_krw,
+            derivationVersion: summary.derivation_version,
+            origins: summary.origin_shares.map((origin) => ({
+              name: origin.origin_name,
+              quantityTons: origin.quantity_tons,
+              share: origin.quantity_share,
+              feeKrw: origin.inbound_fee_krw,
+            })),
+          })}
+          filenameBase={landfillFilenameBase(summary)}
+          onClose={() => setReportOpen(false)}
+        />
       )}
     </SectionCard>
   );

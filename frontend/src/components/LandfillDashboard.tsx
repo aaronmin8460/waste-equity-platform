@@ -61,7 +61,7 @@
  * none of which belongs in a table cell. What it lost is its coloured banner.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import type {
   FacilityBurdenEnvelope,
@@ -73,7 +73,7 @@ import type {
   ReportingPerCapitaEnvelope,
   ReportingWasteStatisticsEnvelope,
 } from "../lib/api";
-import type { CapitalRegionWaste } from "../lib/capitalRegionWaste";
+import type { CapitalRegionWaste, MunicipalityRow } from "../lib/capitalRegionWaste";
 import {
   buildCapitalRegionWaste,
   scopeOfLandfillOrigin,
@@ -209,6 +209,17 @@ export interface LandfillDashboardProps {
    * describe the published scope rather than the current filter.
    */
   municipalCostAll: MunicipalCostResponse | null;
+  /**
+   * The 수도권-wide 반입수수료 per resident, from an UNFILTERED `landfill/summary`.
+   *
+   * The common second term of every municipality's 주민 1인당 폐기물 관리비용. It is a
+   * PROP rather than a read off `data.summary` because that summary is scoped by the
+   * 출발 지역 filter — with 서울 selected it serves Seoul's per-capita figure, and a
+   * value the UI labels 수도권 공통 must not move when the reader narrows the view.
+   * `null` while it loads, or when the backend served no per-capita value; it then
+   * propagates as — rather than as a partial figure.
+   */
+  metroLandfillFeePerCapitaKrw?: string | null;
 }
 
 export default function LandfillDashboard({
@@ -234,6 +245,7 @@ export default function LandfillDashboard({
   title,
   municipalCost,
   municipalCostAll,
+  metroLandfillFeePerCapitaKrw = null,
 }: LandfillDashboardProps) {
   /**
    * The two-grain capital-region model, scoped to the SAME 출발 지역 the landfill
@@ -246,6 +258,17 @@ export default function LandfillDashboard({
    * same four envelopes would be two chances for the totals and the rows beneath
    * them to disagree.
    */
+  /**
+   * The 시·군·구별 지급액 상세 popup, opened from THREE places (기술요청 #8 / #21):
+   * the KPI row's 폐기물 관리비용 card, a region name in 지역별 상세 현황, and the
+   * municipal section's own button. One piece of state so two of them can never be
+   * open at once, and so the region name can say WHICH municipality to highlight.
+   */
+  const [costDetail, setCostDetail] = useState<{ open: boolean; regionCode: string | null }>({
+    open: false,
+    regionCode: null,
+  });
+
   const scope = scopeOfLandfillOrigin(origin);
   const capitalRegion: CapitalRegionWaste = useMemo(
     () =>
@@ -255,8 +278,16 @@ export default function LandfillDashboard({
         facilityBurden,
         municipalCost: municipalCostAll,
         scope,
+        metroLandfillFeePerCapitaKrw,
       }),
-    [reportingStats, reportingPerCapita, facilityBurden, municipalCostAll, scope],
+    [
+      reportingStats,
+      reportingPerCapita,
+      facilityBurden,
+      municipalCostAll,
+      scope,
+      metroLandfillFeePerCapitaKrw,
+    ],
   );
   // What the filter summary states. Derived from the props the page already hands
   // down — no second request state, and no classification of its own.
@@ -369,6 +400,9 @@ export default function LandfillDashboard({
                  returns) still leaves the cost column and its section fully operable. */
               municipalCost={municipalCostAll}
               municipalCostError={municipalCost.error}
+              /* 기술요청 #8 — the card's 상세 보기 opens the popup the frame draws
+                 (`327:428`) rather than scrolling to a section. */
+              onOpenCostDetail={() => setCostDetail({ open: true, regionCode: null })}
             />
           </>
         )}
@@ -398,6 +432,12 @@ export default function LandfillDashboard({
             contractDistinction={
               municipalCostAll?.meta.difference_from_official_landfill_fee ?? null
             }
+            /* 기술요청 #21 — "표 우측의 지역명을 누르면 시·군·구별 상세 지표를 확인할
+               수 있습니다". The name opens the same popup, with that municipality
+               highlighted in place rather than filtered to. */
+            onSelectMunicipality={(row) =>
+              setCostDetail({ open: true, regionCode: row.code })
+            }
           />
         )}
 
@@ -406,7 +446,12 @@ export default function LandfillDashboard({
             its summary. It keeps every filter, every row, its own methodology, its
             own missing states, and its own failure alert: the summary above
             abbreviates nothing away, it only points here. */}
-        <MunicipalCostSection {...municipalCost} />
+        <MunicipalCostSection
+          {...municipalCost}
+          detailOpen={costDetail.open}
+          setDetailOpen={(open) => setCostDetail((current) => ({ ...current, open }))}
+          detailFocusRegionCode={costDetail.regionCode}
+        />
       </div>
     </div>
   );
@@ -429,6 +474,7 @@ function LandfillBody({
   capitalRegion,
   contractReferenceYear,
   contractDistinction,
+  onSelectMunicipality,
 }: {
   data: LandfillDashboardData;
   reportingPerCapita: ReportingPerCapitaEnvelope | null;
@@ -436,6 +482,7 @@ function LandfillBody({
   capitalRegion: CapitalRegionWaste;
   contractReferenceYear: number | null;
   contractDistinction: string | null;
+  onSelectMunicipality: (row: MunicipalityRow) => void;
 }) {
   const { summary, trends } = data;
   const periodLabel = periodLabelOf(summary.period);
@@ -447,24 +494,42 @@ function LandfillBody({
 
   return (
     <>
-      {/* Figma Row2 — the comparison and the inbound structure side by side. */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div className="xl:col-span-7">
-          <LandfillGenerationScatter perCapita={reportingPerCapita} burden={facilityBurden} />
-        </div>
-        <div className="xl:col-span-5">
-          <LandfillFlowStructure summary={summary} originMax={originMax} />
-        </div>
+      {/* ── Figma Row2 — 발생·처리 비교 ‖ 반입 구조 ────────────────────────────
+          ⚠️ SAME-ROW CARDS MUST HAVE EQUAL OUTER HEIGHTS, tops and bottoms aligned.
+          Measured on the frame: both cards are h=517 at y=547, and both end at 1064.
+          Row3's pair is h=460 — so rows differ FROM EACH OTHER, but never within a row.
+
+          Two things make that true here, and both matter:
+            1. the cards are DIRECT grid children (the old `xl:col-span-*` wrapper
+               <div>s are gone). A grid item stretches to its row by default, so the
+               card itself — not a wrapper around it — is what gets the full height;
+            2. `items-stretch` is stated explicitly rather than relied on, because it
+               is the whole contract of this row.
+
+          `min-h` and not a fixed height: the frame's 517 is a FLOOR that keeps the
+          Figma vertical rhythm, while a card whose real content runs longer (the
+          scatter grows when a dot is selected) pushes BOTH cards down together
+          instead of being clipped. That is also 기술요청 #18 — selecting a dot keeps
+          the right-hand 반입 구조 card's height in sync — obtained structurally
+          rather than by measuring anything in JavaScript.
+
+          The column proportions are the frame's own: 760 ‖ 624 in a 1400 track with a
+          16px gap. */}
+      <div className="grid grid-cols-1 items-stretch gap-4 xl:min-h-[517px] xl:grid-cols-[760fr_624fr]">
+        <LandfillGenerationScatter perCapita={reportingPerCapita} burden={facilityBurden} />
+        <LandfillFlowStructure summary={summary} originMax={originMax} />
       </div>
 
-      {/* Figma Row3 — composition and the monthly trend side by side. */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div className="xl:col-span-5">
-          <LandfillCompositionSection summary={summary} periodLabel={periodLabel} />
-        </div>
-        <div className="xl:col-span-7">
-          <LandfillTrendSection trends={trends} />
-        </div>
+      {/* ── Figma Row3 — 반입 폐기물 구성 ‖ 월별 반입 추이 ────────────────────
+          Same rule, this row's own height: both cards h=460 on the frame.
+
+          Proportions 628 ‖ 756. The frame authors the right-hand card at 884, but
+          Row3 sets `clipsContent` and is only 1400 wide, so 884 is an un-resized
+          frame Figma clips — the drawn width is 1400 − 628 − 16 = 756, which is what
+          the rendered page shows and what is used here. */}
+      <div className="grid grid-cols-1 items-stretch gap-4 xl:min-h-[460px] xl:grid-cols-[628fr_756fr]">
+        <LandfillCompositionSection summary={summary} periodLabel={periodLabel} />
+        <LandfillTrendSection trends={trends} />
       </div>
 
       <LandfillRegionTable
@@ -476,6 +541,7 @@ function LandfillBody({
         municipalReferenceYear={capitalRegion.generation.referenceYear}
         contractReferenceYear={contractReferenceYear}
         contractDistinction={contractDistinction}
+        onSelectMunicipality={onSelectMunicipality}
       />
 
       {/* The export sits INSIDE the official-fee block, above the methodology and

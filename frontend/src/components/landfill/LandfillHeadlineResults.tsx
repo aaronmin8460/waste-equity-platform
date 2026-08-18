@@ -120,6 +120,11 @@ export interface LandfillHeadlineResultsProps {
    */
   municipalCost?: MunicipalCostResponse | null;
   municipalCostError?: MunicipalCostErrorState | null;
+  /**
+   * Opens the 시·군·구별 지급액 상세 popup from the 폐기물 관리비용 card (기술요청 #8).
+   * Owned by `LandfillDashboard` because three surfaces open the same popup.
+   */
+  onOpenCostDetail?: () => void;
 }
 
 export default function LandfillHeadlineResults({
@@ -131,6 +136,7 @@ export default function LandfillHeadlineResults({
   capitalRegion,
   municipalCost = null,
   municipalCostError = null,
+  onOpenCostDetail,
 }: LandfillHeadlineResultsProps) {
   return (
     <section aria-labelledby="landfill-headline-heading" data-testid="landfill-headline">
@@ -184,6 +190,7 @@ export default function LandfillHeadlineResults({
           priorPeriodLabel={priorPeriodLabel}
           municipalCost={municipalCost}
           municipalCostError={municipalCostError}
+          onOpenCostDetail={onOpenCostDetail}
         />
       </dl>
       {/* One line, directly under the row it qualifies. The two derived totals are
@@ -506,6 +513,7 @@ function CostCard({
   priorPeriodLabel,
   municipalCost,
   municipalCostError,
+  onOpenCostDetail,
 }: {
   summary: LandfillSummary;
   priorSummary: LandfillSummary | null;
@@ -513,6 +521,7 @@ function CostCard({
   priorPeriodLabel: string;
   municipalCost: MunicipalCostResponse | null;
   municipalCostError: MunicipalCostErrorState | null;
+  onOpenCostDetail?: () => void;
 }) {
   return (
     <div className="wep-card flex h-full flex-col" data-testid="landfill-kpi-fee">
@@ -525,7 +534,11 @@ function CostCard({
           priorPeriodLabel={priorPeriodLabel}
         />
         <div aria-hidden className="hidden w-px flex-none self-stretch bg-hairline sm:block" />
-        <CostContractColumn data={municipalCost} error={municipalCostError} />
+        <CostContractColumn
+          data={municipalCost}
+          error={municipalCostError}
+          onOpenDetail={onOpenCostDetail}
+        />
       </div>
     </div>
   );
@@ -638,9 +651,12 @@ function CostFeeColumn({
 function CostContractColumn({
   data,
   error,
+  onOpenDetail,
 }: {
   data: MunicipalCostResponse | null;
   error: MunicipalCostErrorState | null;
+  /** Opens the 시·군·구별 지급액 상세 popup (기술요청 #8). */
+  onOpenDetail?: () => void;
 }) {
   const meta = data?.meta ?? null;
   return (
@@ -697,13 +713,31 @@ function CostContractColumn({
       {/* Always offered, even while the dataset is loading or failed: the section it
           points at is always rendered, and its own states are the honest place to meet
           a loading or a failed request. */}
-      <a
-        className="wep-btn-quiet mt-auto w-full justify-center pt-0 text-center"
-        href={`#${MUNICIPAL_COST_DETAIL_TARGET_ID}`}
-        data-testid="municipal-cost-detail-link"
-      >
-        {MUNICIPAL_COST_DETAIL_LINK_LABEL}
-      </a>
+      {/* 기술요청 #8 — "[폐기물 관리비용]은 하단에 '상세보기' 버튼 있고, 팝업 내용은
+          아래에 제작해놓음". A real <button> that opens the popup when the dashboard
+          supplies the handler; it falls back to the in-page anchor when this column is
+          rendered on its own, so the affordance is never advertised without behaviour.
+
+          Always offered, even while the dataset is loading or has failed: the surface
+          it opens carries its own loading and failure states. */}
+      {onOpenDetail ? (
+        <button
+          type="button"
+          className="wep-btn-outline mt-auto w-full justify-center text-center"
+          onClick={onOpenDetail}
+          data-testid="municipal-cost-detail-link"
+        >
+          {MUNICIPAL_COST_DETAIL_LINK_LABEL}
+        </button>
+      ) : (
+        <a
+          className="wep-btn-quiet mt-auto w-full justify-center pt-0 text-center"
+          href={`#${MUNICIPAL_COST_DETAIL_TARGET_ID}`}
+          data-testid="municipal-cost-detail-link"
+        >
+          {MUNICIPAL_COST_DETAIL_LINK_LABEL}
+        </a>
+      )}
     </div>
   );
 }

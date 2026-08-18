@@ -45,16 +45,31 @@ export const MUNICIPAL_COST_DISTINCTION_TITLE = "위 수도권매립지 반입�
 
 /**
  * The second line of the distinction banner: what this indicator IS, the two things
- * it is most likely to be mistaken for, the three axes on which it differs from the
- * official inbound fee, and the one operation a reader must not perform.
+ * it is most likely to be mistaken for, and the axes on which it differs from the
+ * official inbound fee.
  *
  * Stated positively first, because a caveat that only says "this is not X" leaves the
  * reader to guess what it is — and the guess a per-capita won figure invites is "the
  * bill I pay", which is the single most damaging misreading of this dataset.
+ *
+ * ── ⚠️ What this sentence USED to say, and why it no longer says it ───────────
+ * It ended "회계 기준·제공기관·공간 단위가 달라 두 값을 더하거나 같은 비용으로 비교할 수
+ * 없습니다" — a flat prohibition on the addition. Page 2 now publishes exactly that
+ * addition as 주민 1인당 총 관리비용, so keeping the sentence would have left the page
+ * printing a combined figure a few hundred pixels from a sentence forbidding it.
+ *
+ * The DISTINCTION is unchanged and still stated: the two figures really do come from
+ * different accounting bases, different providers, different spatial units and
+ * different population series. What changed is that the difference is now something
+ * the reader must be TOLD when the two are combined, rather than a reason the
+ * combination may not exist — which is the honest form of the same fact, and the one
+ * the combined column's own basis note carries
+ * (`lib/capitalRegionWaste.ts` MANAGEMENT_COST_BASIS_NOTE).
  */
 export const MUNICIPAL_COST_DISTINCTION_NOTE =
   "지자체가 수집·운반 계약에 지급한 금액 ÷ 주민수이며, 주민이 낸 요금도 공식 반입수수료도 아닙니다. " +
-  "회계 기준·제공기관·공간 단위가 달라 두 값을 더하거나 같은 비용으로 비교할 수 없습니다.";
+  "회계 기준·제공기관·공간 단위와 인구 기준이 서로 달라, 두 값을 합산한 1인당 총 관리비용은 " +
+  "그 차이를 함께 밝힌 참고값입니다.";
 
 /**
  * The one reference year this release publishes, as a citizen-facing chip.

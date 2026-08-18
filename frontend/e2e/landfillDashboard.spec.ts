@@ -226,7 +226,11 @@ for (const vp of VIEWPORTS) {
 
       // And the monthly chart agrees with its own accessible table: one bar per
       // served month, one row per served month, never a zero-filled twelve.
-      await page.getByTestId("landfill-trend-exact-summary").click();
+      // 기술요청 #16 — 표로 보기 is a popup now (shared `ui/Dialog`), not an inline
+      // <details>, so the trigger is a button rather than a <summary>. The contract
+      // below is unchanged: the table still lists exactly the served months.
+      await page.getByTestId("landfill-trend-exact").click();
+      await expect(page.getByTestId("landfill-trend-table")).toBeVisible();
       // MIGRATED to the f01d3bf design: the trend is a LINE, not bars. The Figma
       // remediation replaced `landfill-trend-bar` with `landfill-trend-line` plus one
       // `landfill-trend-point` per served month, so a bar count is now always 0 and

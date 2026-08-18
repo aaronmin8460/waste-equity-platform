@@ -50,9 +50,21 @@ afterEach(cleanup);
 
 const noop = () => {};
 
+/**
+ * The backend's served difference sentence, as this fixture serves it.
+ *
+ * It used to end "두 값은 합산·차감·비율 계산 대상이 아닙니다" — a flat prohibition on
+ * the addition. Page 2 now publishes exactly that addition as 주민 1인당 총 관리비용,
+ * so the served wording was revised AT ITS SOURCE
+ * (`backend/.../models/municipal_cost.py`, text only — no schema, no migration, no
+ * logic). The distinction itself is unchanged and still asserted; what the sentence
+ * now requires is that the basis difference be STATED when the two are combined,
+ * which is what the combined column's own note does.
+ */
 const DIFFERENCE_SENTENCE =
   "이 지표는 수도권매립지 공식 반입수수료(LANDFILL_INBOUND_FEE_PER_CAPITA)와 다른 회계 기준입니다. " +
-  "두 값은 합산·차감·비율 계산 대상이 아닙니다.";
+  "두 값을 함께 제시할 때에는 회계 기준·제공기관·공간 단위와 인구 기준이 서로 다르다는 점을 " +
+  "반드시 함께 밝혀야 합니다.";
 
 function row(overrides: Partial<MunicipalCostRow> = {}): MunicipalCostRow {
   return {
@@ -228,8 +240,26 @@ function renderSection(props: Partial<Parameters<typeof MunicipalCostSection>[0]
   );
 }
 
+/**
+ * Open the 시·군·구별 상세 modal.
+ *
+ * 기술요청 #8/#16 moved the 66-row comparison out of an inline `<details>` and behind
+ * a 상세 보기 button, into the popup the Figma frame draws (`327:428`). The table's own
+ * rules — served order, absence never rendered as ₩0, the derived-population caption,
+ * the tier vocabulary — are UNCHANGED by that move, so these assertions are unchanged
+ * too; they just have to open the surface the table now lives on first.
+ *
+ * Idempotent, so an accessor can call it without knowing whether it already ran.
+ */
+function openDetail(): void {
+  if (screen.queryByTestId("municipal-cost-table")) return;
+  const trigger = screen.queryByTestId("municipal-cost-detail-open");
+  if (trigger) fireEvent.click(trigger);
+}
+
 /** The desktop table's row for one municipality. */
 function tableRow(name: string): HTMLElement {
+  openDetail();
   const table = screen.getByTestId("municipal-cost-table");
   const found = within(table)
     .getAllByTestId("municipal-cost-row")
@@ -262,25 +292,38 @@ describe("section shell", () => {
     expect(MUNICIPAL_COST_SECTION_TITLE).toContain("2024년");
   });
 
-  it("lays the section out as condition → comparison → methodology sub-cards", () => {
+  /**
+   * 기술요청 #8/#16 changed this shape on purpose.
+   *
+   * The comparison is no longer a sub-card in the section's flow — it is the popup the
+   * Figma frame draws (`327:428`), reached from a 상세 보기 button. What stays IN the
+   * flow is everything that describes the dataset's coverage, so the reader can still
+   * see what it covers without opening anything: the filters, the served scope, the row
+   * count, the reference year and the methodology.
+   */
+  it("lays the section out as condition → 상세 보기 → methodology, with the comparison in a modal", () => {
     renderSection();
     const filters = screen.getByTestId("municipal-cost-filters");
-    const comparison = screen.getByTestId("municipal-cost-comparison");
+    const trigger = screen.getByTestId("municipal-cost-detail-open");
     const methodology = screen.getByTestId("municipal-cost-methodology");
-    // Each is a named region of its own under the section's h2.
-    for (const card of [filters, comparison, methodology]) {
+    for (const card of [filters, methodology]) {
       expect(card.tagName).toBe("SECTION");
     }
-    expect(filters.compareDocumentPosition(comparison) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(filters.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(
-      comparison.compareDocumentPosition(methodology) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(trigger.compareDocumentPosition(methodology) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    // The comparison is NOT in the flow until it is asked for.
+    expect(screen.queryByTestId("municipal-cost-comparison")).toBeNull();
+    openDetail();
+    expect(screen.getByTestId("municipal-cost-comparison")).toBeInTheDocument();
   });
 
   it("states the comparison's units in its card header", () => {
     renderSection();
+    openDetail();
     const comparison = screen.getByTestId("municipal-cost-comparison");
     expect(within(comparison).getByRole("heading", { level: 3 })).toHaveTextContent(
       "지자체별 상세 비교",
@@ -297,14 +340,14 @@ describe("distinction from the official landfill dataset", () => {
   it("shows the served difference statement without expanding anything", () => {
     renderSection();
     const banner = screen.getByTestId("municipal-cost-distinction");
-    // Not inside a <details>: the one sentence that stops a reader adding these
-    // values to the landfill fee must be visible on arrival.
+    // Not inside a <details>: the sentence that tells a reader these two figures rest
+    // on different bases must be visible on arrival.
     expect(banner.closest("details")).toBeNull();
     // Served VERBATIM, not paraphrased.
     expect(screen.getByTestId("municipal-cost-distinction-served")).toHaveTextContent(
       DIFFERENCE_SENTENCE,
     );
-    expect(banner).toHaveTextContent("회계 기준·제공기관·공간 단위가 달라");
+    expect(banner).toHaveTextContent("회계 기준·제공기관·공간 단위와 인구 기준이 서로 달라");
   });
 
   it("states the distinction in words, never as a colour or a severity chip", () => {
@@ -316,7 +359,11 @@ describe("distinction from the official landfill dataset", () => {
     const note = screen.getByTestId("municipal-cost-distinction");
     expect(note.className).not.toContain("wep-banner");
     expect(note).toHaveTextContent(MUNICIPAL_COST_DISTINCTION_TITLE);
-    expect(note).toHaveTextContent("두 값을 더하거나 같은 비용으로 비교할 수 없습니다");
+    // The DISTINCTION survives in text (which is the point of this test — a caution
+    // carried only by a chip and a background is lost in a grayscale render). What it
+    // no longer does is forbid the sum the page now publishes.
+    expect(note).toHaveTextContent("회계 기준·제공기관·공간 단위와 인구 기준이 서로 달라");
+    expect(note.textContent).not.toContain("비교할 수 없습니다");
   });
 
   it("is not an alert — a standing caveat must not interrupt on every render", () => {
@@ -363,6 +410,7 @@ describe("scope summary", () => {
     // own rows would print 4 — and would silently under-report the moment a filter
     // narrowed the list.
     renderSection();
+    openDetail();
     expect(screen.getAllByTestId("municipal-cost-row")).toHaveLength(4);
     expect(screen.getByTestId("municipal-cost-count-expected")).toHaveTextContent("66");
     // A different served scope must move the summary, proving it is not hard-coded.
@@ -384,9 +432,11 @@ describe("scope summary", () => {
     expect(screen.getByTestId("municipal-cost-returned")).not.toHaveTextContent(
       "목록에서 빼지 않고",
     );
+    openDetail();
     expect(screen.getByTestId("municipal-cost-table-notes")).toHaveTextContent(
       "목록에서 빼지 않고",
     );
+    openDetail();
     expect(screen.getByTestId("municipal-cost-table-notes")).toHaveTextContent(
       "0이라는 뜻이 아닙니다",
     );
@@ -520,6 +570,7 @@ describe("filters and sorting", () => {
     // The backend places nulls last; a client-side re-sort would lose that rule and
     // could order an unavailable municipality as if it were the cheapest.
     renderSection();
+    openDetail();
     const names = within(screen.getByTestId("municipal-cost-table"))
       .getAllByTestId("municipal-cost-row")
       .map((element) => element.getAttribute("data-municipality"));
@@ -533,6 +584,7 @@ describe("filters and sorting", () => {
       sort: "region_name_asc",
       data: response({ sort: "region_name_asc", municipalities: byName }),
     });
+    openDetail();
     expect(
       within(screen.getByTestId("municipal-cost-table"))
         .getAllByTestId("municipal-cost-row")
@@ -776,6 +828,8 @@ describe("geographic terminology", () => {
     // It used to be asserted twice — once on the table row, once on the phone card
     // list that shipped beside it. That duplicate is gone (see the responsive
     // describe below), so the caption now has one home per row and cannot drift.
+    openDetail();
+    openDetail();
     expect(screen.getAllByTestId("municipal-cost-scope-caption")).toHaveLength(
       screen.getAllByTestId("municipal-cost-row").length,
     );
@@ -796,6 +850,7 @@ describe("geographic terminology", () => {
 
   it("explains the caption under the table rather than leaving it to be inferred", () => {
     renderSection();
+    openDetail();
     expect(screen.getByTestId("municipal-cost-table-notes")).toHaveTextContent(
       "서울 자치구 · 인천 군·구 · 경기 시·군",
     );
@@ -868,6 +923,7 @@ describe("no frontend fallback data", () => {
       }),
     });
     expect(tableRow("포천시")).toBeInTheDocument();
+    openDetail();
     expect(screen.getAllByTestId("municipal-cost-row")).toHaveLength(1);
     // And no municipality from the section's own fixtures leaked into the render.
     expect(screen.queryByTestId("municipal-cost-table")?.textContent).not.toContain("강남구");
@@ -901,6 +957,7 @@ describe("loading, error, and empty states", () => {
     // The skeleton is decorative only.
     expect(screen.getByTestId("municipal-cost-loading-skeleton")).toHaveAttribute("aria-hidden");
     expect(screen.queryByTestId("municipal-cost-table")).toBeNull();
+    openDetail();
     expect(screen.queryByTestId("municipal-cost-row")).toBeNull();
   });
 
@@ -912,6 +969,7 @@ describe("loading, error, and empty states", () => {
     const error = screen.getByTestId("municipal-cost-error");
     expect(error).toHaveAttribute("role", "alert");
     expect(error).toHaveTextContent("잠시 문제가 발생했습니다.");
+    openDetail();
     expect(screen.queryByTestId("municipal-cost-row")).toBeNull();
     // The backend code is kept as a diagnostic, prefixed exactly once.
     const detail = screen.getByTestId("municipal-cost-error-detail");
@@ -1018,10 +1076,12 @@ describe("responsive presentation", () => {
     // DESKTOP_MIN_WIDTH (1024), while `md:hidden` only reveals cards under 768 — so
     // it was 66 duplicate rows of markup no viewport could reach, and every rule
     // below had to be implemented and asserted twice to stay true of both.
+    openDetail();
     expect(screen.getByTestId("municipal-cost-table")).toBeInTheDocument();
     expect(screen.queryByTestId("municipal-cost-cards")).toBeNull();
     expect(screen.queryAllByTestId("municipal-cost-card")).toHaveLength(0);
     // And the surviving table is no longer gated behind a breakpoint of its own.
+    openDetail();
     expect(screen.getByTestId("municipal-cost-table").closest("div.hidden")).toBeNull();
   });
 
@@ -1050,6 +1110,7 @@ describe("responsive presentation", () => {
 
   it("keeps the table's own horizontal scrolling off the page body", () => {
     renderSection();
+    openDetail();
     const scroller = screen.getByTestId("municipal-cost-table").parentElement;
     expect(scroller?.className).toContain("overflow-x-auto");
   });
@@ -1062,6 +1123,7 @@ describe("responsive presentation", () => {
 describe("accessibility", () => {
   it("uses real table markup with a caption and column headers", () => {
     renderSection();
+    openDetail();
     const table = screen.getByTestId("municipal-cost-table");
     expect(table.tagName).toBe("TABLE");
     expect(table.querySelector("caption")?.textContent).toContain("자료 없음으로 표시");

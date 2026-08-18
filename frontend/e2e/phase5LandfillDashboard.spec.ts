@@ -134,11 +134,16 @@ for (const vp of VIEWPORTS) {
       // columns, plus 지역 spanning both rows. Every leaf keeps its own scope="col"
       // so the grouping is announced rather than merely drawn.
       // Two-grain header (Figma 125:5367): five column GROUPS over eleven leaf
-      // columns, plus the row-spanning 지역 column. The grouping is announced
-      // rather than merely drawn.
+      // columns, plus the row-spanning 지역 column and the row-spanning 주민 1인당 총
+      // 관리비용 column. The grouping is announced rather than merely drawn.
+      //
+      // 주민 1인당 총 관리비용 is the combined per-resident figure (1인당 계약 지급액 +
+      // the common 수도권 반입수수료). It is its OWN row-spanning column rather than a
+      // leaf of the 계약 지급액 group, because it is the only column that spans both
+      // datasets — hence 13 scope="col" and 18 header cells, not 12 and 17.
       await expect(table.locator("thead th[colspan]")).toHaveCount(5);
-      await expect(table.locator('thead th[scope="col"]')).toHaveCount(12);
-      await expect(table.locator("thead th")).toHaveCount(17);
+      await expect(table.locator('thead th[scope="col"]')).toHaveCount(13);
+      await expect(table.locator("thead th")).toHaveCount(18);
       // One row per served origin, at every width.
       await expect(page.getByTestId("landfill-region-row")).toHaveCount(3);
       // The page itself still never scrolls sideways.
