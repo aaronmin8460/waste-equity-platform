@@ -27,9 +27,11 @@ The end-to-end behaviour against real PostGIS is covered by the integration tier
 
 from __future__ import annotations
 
+from waste_equity_backend.analysis.suitability import component_model
 from waste_equity_backend.api.routes.suitability_scenarios import (
     _candidate_rank_sql,
     _preview_sql,
+    _score_expressions,
     _scope_predicate,
     _tile_sql,
 )
@@ -37,6 +39,26 @@ from waste_equity_backend.schemas.scenario import (
     UserScenarioCandidateDetailRequest,
     UserWeightScenarioRequest,
 )
+
+# The historical model's own score expressions, so these scope tests exercise the
+# builders exactly as the historical path calls them.
+HIST = component_model.COMPONENT_MODEL_HISTORICAL
+SCORE, PROV_NUM, PROV_DEN, PRESENT = _score_expressions(
+    HIST, list(component_model.COMPONENT_ORDER_HISTORICAL)
+)
+
+
+def preview_sql(scope_sql: str) -> str:
+    return _preview_sql(scope_sql, SCORE, PRESENT)
+
+
+def rank_sql(scope_sql: str) -> str:
+    return _candidate_rank_sql(scope_sql, SCORE, PRESENT)
+
+
+def tile_sql(scope_sql: str) -> str:
+    return _tile_sql(scope_sql, SCORE, PROV_NUM, PROV_DEN)
+
 
 EQUAL_WEIGHTS = {
     "zoning": "0.25000000",
@@ -127,7 +149,7 @@ def test_preview_scope_precedes_the_ranking_window() -> None:
     """The rank must be computed WITHIN the 범위, not filtered after the fact."""
 
     scope_sql, _ = _scope_predicate("KR-SGIS-31", [])
-    sql = _preview_sql(scope_sql)
+    sql = preview_sql(scope_sql)
     assert sql.index(":scope_sido") < sql.index("row_number() OVER")
 
 
@@ -135,7 +157,7 @@ def test_preview_scope_precedes_the_population_count() -> None:
     """``ranking_population`` must be the 범위's size, not the capital region's."""
 
     scope_sql, _ = _scope_predicate("KR-SGIS-31", [])
-    sql = _preview_sql(scope_sql)
+    sql = preview_sql(scope_sql)
     assert sql.index(":scope_sido") < sql.index("count(*) OVER ()")
 
 
@@ -143,7 +165,7 @@ def test_preview_scope_is_inside_the_eligible_filter_block() -> None:
     """It ANDs onto the existing WHERE rather than replacing any of its conditions."""
 
     scope_sql, _ = _scope_predicate("KR-SGIS-31", [])
-    sql = _preview_sql(scope_sql)
+    sql = preview_sql(scope_sql)
     assert "c.status = 'ELIGIBLE'" in sql
     assert sql.index("c.status = 'ELIGIBLE'") < sql.index(":scope_sido")
 
@@ -151,7 +173,7 @@ def test_preview_scope_is_inside_the_eligible_filter_block() -> None:
 def test_unscoped_queries_contain_no_scope_artefacts() -> None:
     """No stray placeholder, no empty AND — the query is unchanged for 수도권 전체."""
 
-    for sql in (_preview_sql(""), _candidate_rank_sql(""), _tile_sql("")):
+    for sql in (preview_sql(""), rank_sql(""), tile_sql("")):
         assert "scope_" not in sql
         assert "AND \n" not in sql
 
@@ -160,7 +182,7 @@ def test_candidate_rank_is_counted_within_the_scope() -> None:
     """A detail's rank must agree with the row the reader opened it from."""
 
     scope_sql, _ = _scope_predicate(None, ["KR-SGIS-23510"])
-    sql = _candidate_rank_sql(scope_sql)
+    sql = rank_sql(scope_sql)
     assert ":scope_sigungu_0" in sql
     # Inside the ranked set, before the count that produces the rank.
     assert sql.index(":scope_sigungu_0") < sql.index("SELECT count(*) + 1")
@@ -168,7 +190,7 @@ def test_candidate_rank_is_counted_within_the_scope() -> None:
 
 def test_tiles_are_scoped_so_the_map_matches_the_ranking() -> None:
     scope_sql, _ = _scope_predicate("KR-SGIS-23", [])
-    sql = _tile_sql(scope_sql)
+    sql = tile_sql(scope_sql)
     assert ":scope_sido" in sql
     # Inside `base`, alongside the tile-envelope predicate, so only in-scope cells
     # are transformed at all.
