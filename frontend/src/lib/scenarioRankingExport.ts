@@ -29,7 +29,10 @@ import {
   type ScenarioRankingComparison,
 } from "./scenarioRankingComparison";
 import type { ScenarioComparison } from "./scenarioComparison";
-import { SCENARIO_REWEIGHT_NOTE } from "./componentModelWeights";
+import {
+  SCENARIO_REWEIGHT_NOTE,
+  componentModelLabel,
+} from "./componentModelWeights";
 import { NOT_SERVED, type ScenarioComparisonExportExtension } from "./scenarioComparisonExport";
 import { sealSheet, type XlsxSheet } from "./xlsx";
 
@@ -190,6 +193,12 @@ export function rankingComparisonExportExtension(
     sheets: [sealSheet(buildRankingComparisonSheet(model, comparison))],
     metadataNotes: [
       `이 파일에는 "${RANKING_SHEET_NAME}" 시트가 포함되어 있습니다: ${model.scopeDescription}`,
+      // WHICH COMPONENT MODEL produced these numbers. A detached workbook has no
+      // screen around it, so without this a successor export and a historical one
+      // are indistinguishable — and their four factor columns are different
+      // measurements that happen to occupy the same positions.
+      `평가 모델: ${componentModelLabel(comparison.componentModelVersion)}` +
+        ` (${comparison.componentModelVersion ?? "모델 정보 없음"})`,
     ],
     scopeNote: RANKING_SHEET_SCOPE_NOTE,
     filenameMarker: "순위비교",

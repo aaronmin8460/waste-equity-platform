@@ -207,6 +207,14 @@ export type ScenarioComparisonStatus =
  * exactly the value the `OTHER_RUN` check compares against.
  */
 export interface ScenarioComparison {
+  /**
+   * The component model this comparison ran on.
+   *
+   * Carried on the result, not only used to build it, because a detached artifact —
+   * an exported workbook — has no screen around it to say which four measurements
+   * its columns are.
+   */
+  componentModelVersion: ComponentModelVersion;
   runId: number | null;
   sideA: ComparisonSide;
   sideB: ComparisonSide;
@@ -416,7 +424,7 @@ export function buildScenarioComparison(
   run: ActiveRunResolution,
   outcomes: { a: ComparisonSideOutcome | null; b: ComparisonSideOutcome | null },
   /** The component model this comparison runs on. Both sides are held to it. */
-  componentModelVersion?: ComponentModelVersion,
+  componentModelVersion: ComponentModelVersion = COMPONENT_MODEL_HISTORICAL,
 ): ScenarioComparison {
   const sideA = buildSide("A", resolution.a.id, resolution.a.scenario, run, outcomes.a, componentModelVersion);
   const sideB = buildSide("B", resolution.b.id, resolution.b.scenario, run, outcomes.b, componentModelVersion);
@@ -429,6 +437,7 @@ export function buildScenarioComparison(
 
   return {
     runId: run.state === "RESOLVED" ? run.runId : null,
+    componentModelVersion,
     sideA,
     sideB,
     status: summarise(sideA, sideB, run, duplicate),
@@ -437,7 +446,7 @@ export function buildScenarioComparison(
 }
 
 // --------------------------------------------------------------------------- //
-// Z/R/E/D weight comparison rows
+// Weight comparison rows — over whichever model's components
 // --------------------------------------------------------------------------- //
 
 /**

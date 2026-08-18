@@ -20,6 +20,7 @@ import type {
   UserScenarioWeights,
 } from "../../../lib/api";
 import type { ComparisonSide, ScenarioComparison } from "../../../lib/scenarioComparison";
+import { COMPONENT_MODEL_SUCCESSOR } from "../../../lib/componentModelWeights";
 import SuitabilityScenarioRankingAnalytics from "./SuitabilityScenarioRankingAnalytics";
 
 afterEach(cleanup);
@@ -124,6 +125,7 @@ function comparison(
 ): ScenarioComparison {
   return {
     runId: 47,
+    componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
     sideA: side("A", a),
     sideB: side("B", b),
     status: a !== null && b !== null ? "READY" : "PREVIEW_ERROR_BOTH",

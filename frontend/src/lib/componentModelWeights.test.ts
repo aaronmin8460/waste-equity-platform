@@ -158,3 +158,17 @@ describe("isCanonicalWeightsFor rejects non-objects", () => {
     expect(isCanonicalWeightsFor(COMPONENT_MODEL_SUCCESSOR, value)).toBe(false);
   });
 });
+
+describe("the re-weight note is model-neutral", () => {
+  it("describes the mechanism without naming a component namespace", async () => {
+    const { SCENARIO_REWEIGHT_NOTE } = await import("./componentModelWeights");
+    // It used to say "이미 계산된 Z·R·E·D 점수를" — true of a historical comparison
+    // and FALSE of a successor one, whose four re-weighted scores are different
+    // measurements. The mechanism is identical in both, so the sentence states the
+    // mechanism and the factor table names the components.
+    expect(SCENARIO_REWEIGHT_NOTE).not.toContain("Z·R·E·D");
+    expect(SCENARIO_REWEIGHT_NOTE).toContain("평가 요소 점수를 다시 가중해");
+    // The screening-independence half is unchanged.
+    expect(SCENARIO_REWEIGHT_NOTE).toContain("가중치를 바꿔도 달라지지 않습니다");
+  });
+});

@@ -15,6 +15,7 @@ import type {
   UserScenarioWeights,
 } from "./api";
 import type { ComparisonSide, ScenarioComparison } from "./scenarioComparison";
+import { COMPONENT_MODEL_SUCCESSOR } from "./componentModelWeights";
 import {
   RANKING_COMPARISON_TOP_N,
   buildScenarioRankingComparison,
@@ -129,6 +130,7 @@ function comparison(
 ): ScenarioComparison {
   return {
     runId: 47,
+    componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
     sideA: side("A", a),
     sideB: side("B", b),
     status: a !== null && b !== null ? "READY" : "PREVIEW_ERROR_BOTH",

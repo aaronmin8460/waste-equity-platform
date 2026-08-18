@@ -56,6 +56,7 @@ import type {
   UserScenarioWeights,
 } from "../../lib/api";
 import type { ComparisonSide, ScenarioComparison } from "../../lib/scenarioComparison";
+import { COMPONENT_MODEL_SUCCESSOR } from "../../lib/componentModelWeights";
 import SuitabilityScenarioCandidateComparison from "./SuitabilityScenarioCandidateComparison";
 
 const WEIGHTS_A: UserScenarioWeights = {
@@ -157,6 +158,7 @@ function side(
 function comparison(overrides: Partial<ScenarioComparison> = {}): ScenarioComparison {
   return {
     runId: 47,
+    componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
     sideA: side("A", "균형안", WEIGHTS_A, "hasha", [topCandidate()]),
     sideB: side("B", "형평성안", WEIGHTS_B, "hashb", [topCandidate({ custom_rank: 2, custom_score: "75.5000" })]),
     status: "READY",
