@@ -237,3 +237,48 @@ export function approximateTonPerDay(exact: string): ApproximateValue | null {
 export function approximatePercent(exact: string): ApproximateValue | null {
   return approximateFor(exact, { unit: "%", decimals: 0 });
 }
+
+/**
+ * 명 → "약 100.4만 명" (명 ÷ 10,000, 0.1만 명 단위).
+ *
+ * ── WHY THIS EXISTS: A USER REQUIREMENT, NOT A FIGMA ONE ─────────────────────────
+ * The owner asked for person counts to read in 만 명 where a human reads them. Figma
+ * does NOT ask for this — a full-text search of every TEXT node in all six page
+ * frames finds `만` exactly four times, and all four are Page-2 TONNAGE axis ticks
+ * (`3만 / 6만 / 9만 / 12만`); persons are drawn in full digits (`1,186,000 명`). So
+ * this is a deliberate user-over-Figma override and is applied ONLY where the owner
+ * asked for it — see `formatRegionMetricDisplay` (lib/regionDisplay.ts) for the one
+ * call site and for the surfaces deliberately left in full digits.
+ *
+ * ── ONE DECIMAL, NOT ZERO ────────────────────────────────────────────────────────
+ * Capital-region sigungu populations run from roughly 20,000 to 1,190,000. Rounding
+ * to whole 만 would print 119만 for a value the ranking beside it prints as
+ * 1,186,000, and would collapse a 9,000-person difference to nothing. One decimal
+ * keeps four to five significant digits (`약 118.6만 명`), which is readable without
+ * throwing away a magnitude the reader can check against the ranking. The exact
+ * figure is never lost: 지역 순위, 지역 순위 전체보기 and the 순위 CSV all still print
+ * the served integer.
+ *
+ * ── THE ONE ENTRY POINT THAT ACCEPTS A GROUPED NUMERAL ───────────────────────────
+ * Its caller holds a population that this repository already comma-grouped for
+ * display (`formatCount`), not the raw served decimal every other unit here is given.
+ * Rather than relax `parseDecimalString` — which would make a display string silently
+ * acceptable to `approximateBillionWon` and friends, and quietly drop this module's
+ * "malformed input returns null" contract for the cost pages — the grouping is
+ * removed HERE, for this unit only. It is a pure string operation on separators this
+ * codebase inserted itself; no arithmetic, no change of value. Anything that is not a
+ * well-formed decimal afterwards still returns null.
+ *
+ * Every other guarantee of this module still holds: no floating point, a non-zero
+ * value never renders as 0 (it becomes `0.1만 명 미만`), an exact zero stays an
+ * unqualified `0만 명`, malformed input returns null so the caller falls back to the
+ * exact string, and "약" appears only when rounding actually discarded something.
+ */
+export function approximatePersonsAsManMyeong(exact: string): ApproximateValue | null {
+  if (typeof exact !== "string") return null;
+  return approximateFor(exact.trim().replace(/,/g, ""), {
+    unit: "만 명",
+    decimals: 1,
+    shiftLeft: 4,
+  });
+}

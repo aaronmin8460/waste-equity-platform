@@ -10,6 +10,7 @@
  * region code to tell 서울 중구 from 인천 중구.
  */
 
+import { approximatePersonsAsManMyeong } from "./displayNumber";
 import { regionScope, SCOPE_LABELS, type RegionScope } from "./ranking";
 import { formatWithUnit } from "./units";
 
@@ -40,15 +41,43 @@ export function regionUnavailableReasonLabel(reason: string | null | undefined):
  * fabricated zero.
  *
  * The unit goes through `lib/units.ts` so this string and the map legend print the
- * same population unit (`142,000명`, not `142,000 persons`). The served unit is
+ * same population unit (`142,000 명`, not `142,000 persons`). The served unit is
  * unchanged — only its rendering is.
+ *
+ * ── THE 만 명 OVERRIDE LIVES HERE, AND ONLY HERE ─────────────────────────────────
+ * The owner asked for person counts to be human-readable in 만 명. This function is
+ * the ONE formatter behind both surfaces where a reader meets a single region's value
+ * as a headline — the 선택한 지역 card and the map's region popup — and it is called
+ * from exactly two places (`app/page.tsx` builds the accessible selection,
+ * `components/MapView.tsx` builds the feature property the popup prints), so applying
+ * it here converts both and cannot let the two disagree.
+ *
+ * DELIBERATELY NOT CONVERTED, because these are not headline values:
+ *   - the choropleth legend's class rows. Their edges are exact quantile boundaries
+ *     (`151,306 – 240,865 명`); rounding them to 만 makes ADJACENT BINS PRINT THE SAME
+ *     NUMBER, which is a correctness bug rather than a formatting choice. They are
+ *     built from the active scale's breaks in `app/page.tsx` and never pass here.
+ *   - 지역 순위, 지역 순위 전체보기, and the 순위 CSV. Those are comparison surfaces:
+ *     the reader is ordering regions against each other, so they keep the served
+ *     integer at full precision, and they are also where the exact figure this card
+ *     approximates remains available. They format through `lib/ranking.ts`, not here.
+ *
+ * Nothing numeric changes: `approximatePersonsAsManMyeong` is presentation-only,
+ * labels itself with 약 whenever it discarded anything, and returns null on anything
+ * it cannot parse — in which case the exact string is printed unchanged.
  */
 export function formatRegionMetricDisplay(
   display: string | undefined,
   unit: string,
   reason: string | null | undefined,
 ): string {
-  if (display !== undefined) return formatWithUnit(display, unit);
+  if (display !== undefined) {
+    if (unit === "persons") {
+      const readable = approximatePersonsAsManMyeong(display);
+      if (readable !== null) return readable.text;
+    }
+    return formatWithUnit(display, unit);
+  }
   const label = regionUnavailableReasonLabel(reason);
   // With a served reason the reason IS the disclosure; with none, the bare
   // 데이터 없음 stands alone. The old `(no served value)` gloss said the same thing

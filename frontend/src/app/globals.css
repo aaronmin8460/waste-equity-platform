@@ -2030,6 +2030,16 @@ body {
 
    The close control's SIZE is deliberately not the frame's 36px. It stays at the 44px
    target the rest of the application uses; only its shape and fill are adopted. */
+/* The frame's own width. `156:470` measures 1409px on the canvas, but that frame is
+   SCALED by 1.354807734489441 (its dividers report that as `strokeWeight` where every
+   unscaled sibling reports 1.0), so the intended width is 1409 / 1.354808 = 1040px
+   exactly — one of the clean integers that confirms the factor. The shared
+   `.wep-dialog` cap is 68rem/1088px, which is right for the dialogs Pages 3/4/5 open;
+   overriding it there would resize a dialog another lane owns, so the 65rem is scoped
+   to this dialog's test id like the head and title rules below it. */
+[data-testid="data-sources-dialog"] {
+  max-width: 65rem;
+}
 [data-testid="data-sources-dialog"] .wep-dialog-head {
   padding: 1.625rem 2rem;
   border-bottom: 0;
@@ -2060,11 +2070,21 @@ body {
    for four columns inside a 1088px dialog and produced 242px cards, clipping the
    metadata (caught by e2e/transparencyDashboard.spec.ts "cards stay readable").
 
-   `auto-fill` + a 20rem floor derives the column count from the space actually
-   available, so the same rule serves the page and the dialog and a card can never
-   be squeezed below a readable width. */
+   `auto-fill` + a floor derives the column count from the space actually available,
+   so the same rule serves the page and the dialog and a card can never be squeezed
+   below a readable width.
+
+   The floor is 19.5rem (312px), not 20rem. Frame 156:470 draws THREE card columns
+   across its 976px content, i.e. ~313px each, and the dialog is now that frame's
+   1040px wide (see the `data-sources-dialog` block above). With a 20rem floor and the
+   12px `gap-3`, three columns needed 3×320 + 24 = 984px and did not fit 976 — the
+   grid fell back to two, which is wider per card than the design but a column short
+   of it. At 19.5rem three columns need 960px, fit, and render at (976 − 24) / 3 =
+   317px each: still above the >300px readability floor e2e/transparencyDashboard
+   asserts, and within 4px of the frame. Wider containers are unaffected — the
+   standalone page still resolves to the same column count it did at 20rem. */
 .wep-source-grid {
-  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(19.5rem, 1fr));
 }
 
 /* Page 2 (지역별 폐기물 처리 현황): the short-desktop fold budget.

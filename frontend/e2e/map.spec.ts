@@ -104,7 +104,7 @@ test("facility-burden choropleth uses a 9-class logarithmic scale (high-range se
   // The scale-method note states the logarithmic 9-class policy.
   const scaleNote = page.getByTestId("choropleth-scale-method");
   await expect(scaleNote).toBeVisible();
-  await expect(scaleNote).toContainText("로그 간격 9단계");
+  await expect(scaleNote).toContainText("로그 9단계");
   await expect(scaleNote).toContainText("9-class logarithmic intervals");
 
   // The legend renders nine choropleth color rows (plus the separate no-data row).

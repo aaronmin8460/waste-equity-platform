@@ -18,10 +18,16 @@
  * citizen reads are translated.
  *
  * `separator` is per-unit because Korean typography attaches a counter word
- * directly to the numeral (`151,306명`) but keeps a space before a compound symbol
- * unit (`12.3 kg/인/년`, the unit the per-capita metrics serve). A unit with no
- * entry keeps the pre-existing spaced rendering and its own served text, so an
+ * directly to the numeral but keeps a space before a compound symbol unit
+ * (`12.3 kg/인/년`, the unit the per-capita metrics serve). A unit with no entry
+ * keeps the pre-existing spaced rendering and its own served text, so an
  * unrecognised unit is passed through rather than dropped or guessed at.
+ *
+ * `persons` is spaced (`151,306 명`) because the Figma frames write it that way
+ * everywhere they print a person count — the page-1 legend rows (`< 372,000 명`,
+ * `372,000 – 434,000 명`, frame 74:2054) and the ranking rows (`1,186,000 명`,
+ * frame 74:2025). Korean typography permits both; the design picked one, and one
+ * entry here makes every person-count surface follow it at once.
  */
 
 export interface UnitDisplay {
@@ -32,7 +38,7 @@ export interface UnitDisplay {
 }
 
 const UNIT_DISPLAY: Record<string, UnitDisplay> = {
-  persons: { label: "명", separator: "" },
+  persons: { label: "명", separator: " " },
 };
 
 export function unitDisplay(unit: string): UnitDisplay {
@@ -50,7 +56,7 @@ export function unitLabel(unit: string): string {
 
 /**
  * A formatted numeral and its unit, joined the way that unit is written.
- * `formatWithUnit("142,000", "persons")` → `142,000명`;
+ * `formatWithUnit("142,000", "persons")` → `142,000 명`;
  * `formatWithUnit("12.3", "kg/인/년")` → `12.3 kg/인/년`.
  */
 export function formatWithUnit(value: string, unit: string): string {

@@ -8,6 +8,8 @@ import {
   FACILITY_CATEGORY_COLORS,
   FACILITY_CATEGORY_GLYPHS,
   FACILITY_CATEGORY_LABELS,
+  FACILITY_PRIVATE_COLOR,
+  FACILITY_PUBLIC_COLOR,
   METRICS,
   markerGlyphInk,
   classIndexFor,
@@ -273,11 +275,13 @@ describe("legend consistency", () => {
 
 describe("scaleMethodNote", () => {
   // The method and its class count are still stated — that is the note's whole
-  // job. What is gone is the English restatement that followed it in brackets.
+  // job. What is gone is the English restatement that followed it in brackets, and
+  // (Figma frame 74:2054) the sentence form: the note is now the compact suffix the
+  // frame's one-line legend title carries, `인구 범례 - 7분위`.
   it("names the facility-burden scale and its class count, in Korean only", () => {
     const scale = resolveActiveScale(FACILITY_BURDEN_FIXTURE, FACILITY_CONFIG);
     const note = scaleMethodNote(scale);
-    expect(note).toBe("로그 간격 9단계");
+    expect(note).toBe("로그 9단계");
     expect(note).not.toMatch(/[A-Za-z]/);
   });
 
@@ -288,7 +292,7 @@ describe("scaleMethodNote", () => {
       palette: DEFAULT_EQUITY_PALETTE_7,
     });
     const note = scaleMethodNote(scale);
-    expect(note).toBe("분위수 7단계");
+    expect(note).toBe("7분위");
     expect(note).not.toMatch(/[A-Za-z]/);
   });
 });
@@ -311,10 +315,22 @@ describe("facility categories", () => {
     expect(Object.keys(FACILITY_CATEGORY_GLYPHS).sort()).toEqual([...SERVED_CATEGORIES].sort());
   });
 
-  it("gives every category its own colour and its own glyph", () => {
-    // Two categories sharing either signal would render as one on the map.
-    expect(new Set(Object.values(FACILITY_CATEGORY_COLORS)).size).toBe(6);
+  it("colours by OWNERSHIP and separates categories by glyph", () => {
+    // The page-1 기술요청 icon sheet (Figma image node 314:592, whose own annotation
+    // says the colour numbers are readable off the icons) paints every 공공 row
+    // #5EB140 and every 민간 row #C64670. Colour therefore encodes ownership, and the
+    // glyph is what keeps two categories of the SAME ownership from reading as one —
+    // so the glyphs must still be six distinct characters.
+    expect(new Set(Object.values(FACILITY_CATEGORY_COLORS)).size).toBe(2);
     expect(new Set(Object.values(FACILITY_CATEGORY_GLYPHS)).size).toBe(6);
+
+    for (const category of SERVED_CATEGORIES) {
+      expect(FACILITY_CATEGORY_COLORS[category]).toBe(
+        category.startsWith("PUBLIC_") ? FACILITY_PUBLIC_COLOR : FACILITY_PRIVATE_COLOR,
+      );
+    }
+    expect(FACILITY_PUBLIC_COLOR).toBe("#5EB140");
+    expect(FACILITY_PRIVATE_COLOR).toBe("#C64670");
   });
 
   it("uses the Figma glyphs where the design has a matching category", () => {
