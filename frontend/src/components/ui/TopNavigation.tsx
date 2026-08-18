@@ -129,8 +129,17 @@ export default function TopNavigation({ active, onNavigate }: TopNavigationProps
   return (
     <header className="wep-appbar" data-testid="top-navigation">
       {/* Horizontal padding comes from `.wep-appbar-row` (globals.css), which owns
-          the Figma 28px at desktop; the utilities here only centre the row. */}
-      <div className="wep-appbar-row mx-auto w-full max-w-screen-2xl">
+          the Figma 28px at desktop; the utility here only sets the width.
+
+          FULL-BLEED, not centred. The row used to be capped at `max-w-screen-2xl`
+          (1536px) and centred, so above that width — which is what browser zoom-out
+          produces — the brand and the navigation drifted inward and left a growing
+          empty margin at both window edges. The page-1 기술요청 asks for the
+          opposite ("화면 비율 축소 시, 상단 메뉴창 요소들 양 끝에 가 있도록"). The
+          cap is therefore gone and the bar's own 28px insets are what hold the two
+          blocks off the edge, at every width. The PAGE content below keeps its own
+          max width; only the chrome is full-bleed. */}
+      <div className="wep-appbar-row w-full">
         <div className="wep-brand" data-testid="app-brand">
           {/* aria-hidden: the product name beside it is the accessible text, so
               the mark adds no duplicate announcement. FigmaIcon is decorative by

@@ -119,6 +119,12 @@
      (spec §12), with controls kept tighter so a dense form does not read as a
      row of pills. */
   --radius-card: 1.25rem; /* 20px — cards, panels, banners */
+  /* 14px — the SMALL card radius the six-page frames draw on the nested
+     cards inside a card: page-4 factor cards (356:582), page-2 cost card and
+     page-6 data-source cards. A second value rather than a re-point, because
+     the 20px outer card and the 14px inner card appear TOGETHER in those
+     frames; collapsing them to one number flattens that nesting. */
+  --radius-card-sm: 0.875rem;
   --radius-control: 0.625rem; /* 10px — buttons, inputs */
   /* `rounded-input`, an ALIAS of the control radius rather than a fifth value.
      The six-page Figma forensic audit found `rounded-input` on three number/select
@@ -193,6 +199,21 @@
      resolves for itself; used through `border-[var(--figma-rule)]` so Page 1 can
      adopt it without re-pointing the shared role for the five untouched pages. */
   --figma-rule: #eff0f6;
+  /* The provenance-badge pair the page-2 기술요청 names by hex ("'공식값',
+     '계산값' 색 다르게. (순서대로 #6B6C7E, #FDF3DF)"). Before this the two
+     rendered the SAME #eef0f8 — --color-brand-soft and --color-primary-soft are
+     the same value — so the badge that says "an agency published this" and the
+     badge that says "this platform computed it" were visually identical. The
+     written instruction outranks the frame's own render, which draws the pair
+     differently again. Kept as raw measurements here, not promoted to semantic
+     roles, because they are two specific badge fills rather than a palette. */
+  --figma-badge-reported: #6b6c7e;
+  --figma-badge-derived: #fdf3df;
+  /* #fdf3df sits one step from --color-warn-surface (#fdf6ea), so 계산값 and
+     해석 주의 are close in hue. That is acceptable ONLY because every badge
+     renders its own text label and colour is documented as the supporting
+     signal (ui/DataStatusBadge docblock); do not make colour the sole carrier
+     anywhere these two can appear side by side. */
 }
 
 /* Reusable component classes for the consistent citizen patterns (cards, the
@@ -351,13 +372,20 @@
  *     `sticky`/`fixed` does not apply to `relative`.
  *
  * The value is the card family's shadow tightened for a full-bleed bar: shorter
- * blur, so the edge is legible without a grey band creeping down over the map. */
+ * blur, so the edge is legible without a grey band creeping down over the map.
+ *
+ * FULL-PRODUCT PARITY: the page-1 기술요청 asks for that separation to be
+ * stronger still ("메뉴창 하단에 … 그림자 효과 조금 강하게"), so the shadow is
+ * deepened once here rather than three times in three page lanes. It is tinted
+ * with the navy, matching --shadow-card/-float, so the darker edge still reads
+ * as palette rather than as a grey wash; the blur is only two pixels longer, so
+ * the band still stops above the map. */
 .wep-appbar {
   position: relative;
   z-index: 1;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-hairline);
-  box-shadow: 0 2px 12px rgb(0 0 0 / 0.06);
+  box-shadow: 0 3px 14px rgb(17 26 86 / 0.12);
 }
 /* The app-bar content row: [brand] … [primary navigation].
  *
@@ -831,15 +859,21 @@
   line-height: 1.5;
   white-space: nowrap;
 }
+/* reported/derived carry the 기술요청 hexes; see --figma-badge-* above. The
+   FOREGROUNDS are chosen for contrast on those fills, not transcribed: #6b6c7e
+   is a mid gray that needs white text (5.1:1), #fdf3df is near-white and needs
+   the standard ink (~14:1). `missing` keeps its lighter --color-no-data fill and
+   muted ink, so a solid dark gray "공식 값" and a pale gray "자료 없음" stay
+   distinguishable by weight as well as by their labels. */
 .wep-badge-reported {
-  border-color: var(--color-brand-soft);
-  background: var(--color-brand-soft);
-  color: var(--color-brand);
+  border-color: var(--figma-badge-reported);
+  background: var(--figma-badge-reported);
+  color: #ffffff;
 }
 .wep-badge-derived {
-  border-color: var(--color-primary-border);
-  background: var(--color-primary-soft);
-  color: var(--color-primary-hover);
+  border-color: var(--color-hairline-strong);
+  background: var(--figma-badge-derived);
+  color: var(--color-ink);
 }
 .wep-badge-caveat {
   border-color: var(--color-warn-border);
@@ -855,6 +889,51 @@
   border-color: var(--color-hairline-strong);
   background: var(--color-surface);
   color: var(--color-ink-muted);
+}
+
+/* SHARED TABLE SHELL — the one grid style the six-page frames draw.
+ *
+ * The page-2 기술요청 asks for it in one line ("표는 모든 테두리 선을 회색 실선
+ * 처리 + 안에 글자는 중앙 정렬"), and the same treatment appears on the page-5
+ * comparison tables and the page-6 자료별 기준 기간 table. The product had NO
+ * shared table style before this: each page drew its own borderless variant, so
+ * "every edge gets a grey rule" would otherwise be written three times, three
+ * ways, in three parallel lanes.
+ *
+ * Opt-in: adding this class does not restyle any existing table. A page adopts it
+ * by putting `.wep-table` on its <table>; until then nothing changes.
+ *
+ * Centring is the DEFAULT, not the rule. Numeric columns that must be compared
+ * down a column read better right-aligned with tabular figures, and a page is
+ * free to override per column — the annotation asks that cells stop being a
+ * ragged mix of left and right, not that a numeric column lose its alignment.
+ * Text that is scanned rather than compared (a region name) stays left. */
+.wep-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.wep-table th,
+.wep-table td {
+  border: 1px solid var(--color-hairline);
+  padding: 0.5rem 0.625rem;
+  text-align: center;
+  vertical-align: middle;
+}
+.wep-table thead th {
+  background: var(--color-surface-muted);
+  color: var(--color-ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* Opt-outs a page applies per column. `-num` keeps a comparison column aligned on
+   its digits; `-text` keeps a scanned label on the reading edge. */
+.wep-table .wep-table-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.wep-table .wep-table-text {
+  text-align: left;
 }
 
 body {
