@@ -68,7 +68,7 @@ import {
   perCapitaUnavailableLabel,
 } from "../../lib/landfill";
 import type { MunicipalCostErrorState } from "../../lib/municipalCost";
-import { MUNICIPAL_COST_STATUSES, statusChoiceCount, statusLabel } from "../../lib/municipalCost";
+import { availableCountLabel, statusChoiceCount } from "../../lib/municipalCost";
 import DataStatusBadge from "../ui/DataStatusBadge";
 import {
   MUNICIPAL_COST_DETAIL_LINK_LABEL,
@@ -694,19 +694,24 @@ function CostContractColumn({
             : "집계 범위를 아직 불러오지 못했습니다. 값이 0이라는 뜻이 아닙니다."}
         </p>
       ) : (
-        <dl
-          className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]"
-          data-testid="municipal-cost-kpi-coverage"
-        >
-          <Count term="대상 지자체" value={statusChoiceCount(meta, null)} />
-          {MUNICIPAL_COST_STATUSES.map((status) => (
-            <Count
-              key={status}
-              term={statusLabel(status)}
-              value={statusChoiceCount(meta, status)}
-              testId={`municipal-cost-kpi-count-${status.toLowerCase()}`}
-            />
-          ))}
+        /* One figure, not four. The column used to spell out all three served statuses
+           beside the scope total — 대상 지자체 66곳 / 계산 가능 38곳 / 일부 제한 8곳 /
+           자료 없음 20곳 — which is four numbers to read before the reader learns the
+           one thing this card is for: how much of the capital region this dataset can
+           actually compare. The count that answers that leads; the denominator it is a
+           fraction of stays beside it, because "38곳 가능" alone reads as the whole
+           dataset. The three-way status split is not lost — it is the 자료 상태 control
+           and the status column in the section this card opens. */
+        <dl className="mt-2 text-[11px]" data-testid="municipal-cost-kpi-coverage">
+          <dt className="sr-only">계산 가능한 지자체</dt>
+          <dd
+            className="text-sm font-semibold tabular-nums text-ink"
+            data-testid="municipal-cost-kpi-available"
+          >
+            {/* Derived from the served AVAILABLE count on every render. */}
+            {availableCountLabel(meta)}
+          </dd>
+          <Denominator value={statusChoiceCount(meta, null)} />
         </dl>
       )}
 
@@ -742,16 +747,19 @@ function CostContractColumn({
   );
 }
 
-/** One served count. Renders nothing at all rather than a 0 it has not been given. */
-function Count({ term, value, testId }: { term: string; value: number | null; testId?: string }) {
+/**
+ * The published scope the 가능 count is a fraction of. Renders nothing at all rather
+ * than a 0 it has not been given.
+ */
+function Denominator({ value }: { value: number | null }) {
   if (value === null) return null;
   return (
-    <div>
-      <dt className="text-ink-subtle">{term}</dt>
-      <dd className="mt-0.5 text-sm font-semibold tabular-nums text-ink" data-testid={testId}>
-        {value}곳
+    <>
+      <dt className="sr-only">대상 지자체</dt>
+      <dd className="mt-0.5 tabular-nums text-ink-subtle" data-testid="municipal-cost-kpi-expected">
+        대상 {value}곳
       </dd>
-    </div>
+    </>
   );
 }
 

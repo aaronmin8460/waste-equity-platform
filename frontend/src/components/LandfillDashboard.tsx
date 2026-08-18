@@ -448,6 +448,16 @@ export default function LandfillDashboard({
             abbreviates nothing away, it only points here. */}
         <MunicipalCostSection
           {...municipalCost}
+          /* The popup all three affordances open describes the PUBLISHED scope, so it
+             reads the unfiltered response — the same one the KPI card counts from and
+             the drill-down joins against. Spread order matters: this must land AFTER
+             `{...municipalCost}`, which carries the section's own filtered `data`.
+
+             Without it the popup inherited 시·도/자료 상태 from a section far below the
+             card that opened it: with the released 서울 + 계산 가능 default, a reader who
+             pressed 시·군·구별 상세 보기 on the KPI card met 13 서울 자치구 under a
+             수도권 heading and no 인천 or 경기 row at all. */
+          dataAll={municipalCostAll}
           detailOpen={costDetail.open}
           setDetailOpen={(open) => setCostDetail((current) => ({ ...current, open }))}
           detailFocusRegionCode={costDetail.regionCode}

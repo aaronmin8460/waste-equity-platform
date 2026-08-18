@@ -17,6 +17,7 @@ import type {
   LandfillOriginShare,
   LandfillSummary,
   MunicipalCostResponse,
+  MunicipalCostRow,
 } from "../lib/api";
 import type { LandfillUnavailableState } from "../lib/landfill";
 import { FORBIDDEN_PRIMARY_TOKENS } from "../lib/glossary";
@@ -2166,10 +2167,12 @@ describe("LandfillDashboard — 시·군·구별 상세 보기 summary", () => {
   it("summarises the municipal dataset's SCOPE, never a partial total", () => {
     renderDashboard({ municipalCostAll: municipalCostResponse() });
     const card = screen.getByTestId("municipal-cost-kpi-summary");
-    expect(within(card).getByTestId("municipal-cost-kpi-count-available").textContent).toBe("2곳");
-    expect(within(card).getByTestId("municipal-cost-kpi-count-unavailable").textContent).toBe(
-      "1곳",
-    );
+    // The compact form the card leads with: how many municipalities this dataset can
+    // actually compare, then the published scope that count is a fraction of. The
+    // four-status block it replaced (대상/계산 가능/일부 제한/자료 없음) is asserted
+    // gone below, so it cannot creep back in beside this one.
+    expect(within(card).getByTestId("municipal-cost-kpi-available").textContent).toBe("2곳 가능");
+    expect(within(card).getByTestId("municipal-cost-kpi-expected").textContent).toBe("대상 3곳");
     expect(within(card).getByTestId("municipal-cost-summary-year").textContent).toContain("2024");
     // No rolled-up amount. Only some municipalities disclosed one, so a "total"
     // would be a partial sum wearing a complete label — and a 톤당 form would divide
@@ -2226,5 +2229,226 @@ describe("LandfillDashboard — 시·군·구별 상세 보기 summary", () => {
     const state = screen.getByTestId("municipal-cost-kpi-summary-state");
     expect(state.textContent).toContain("값이 0이라는 뜻이 아닙니다");
     expect(screen.queryByTestId("municipal-cost-kpi-coverage")).toBeNull();
+  });
+});
+
+/**
+ * The 시·군·구별 상세 popup's SCOPE — the regression this file exists to hold.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────────
+ * The popup is opened from three places, one of which is the KPI row's 폐기물 관리비용
+ * card. The dashboard held the unfiltered response all along (`municipalCostAll`, the
+ * one the card counts from and the drill-down joins against) but handed the section
+ * only its FILTERED `municipalCost` prop object, and the section passed that same
+ * response straight into the popup. So the popup silently inherited 시·도 / 자료 상태
+ * from a section 1,500px below the card: with `mcSido=11` and the released 계산 가능
+ * default, pressing 시·군·구별 상세 보기 on the card produced 13 서울 자치구 under a
+ * 수도권 heading, with 인천 and 경기 absent and nothing saying they had been removed.
+ *
+ * ── The contract ──────────────────────────────────────────────────────────────
+ * The section's three controls scope the SECTION. The popup describes the PUBLISHED
+ * dataset. The fixtures below make the two disagree on purpose — an unfiltered set
+ * spanning all three metropolitans against a Seoul-only filtered set — so any future
+ * change that re-couples them fails here rather than in front of a reader.
+ */
+describe("LandfillDashboard — 시·군·구별 상세 popup scope", () => {
+  /** A municipality row shaped like the served payload. Values are synthetic. */
+  function costRow(overrides: Partial<MunicipalCostRow> = {}): MunicipalCostRow {
+    return {
+      municipality_key: "11-종로구",
+      display_name: "종로구",
+      metropolitan_code: "11",
+      metropolitan_name: "서울특별시",
+      direct_region_code: "KR-SGIS-11010",
+      boundary_vintage: "2024",
+      population: 142000,
+      population_method: "DIRECT_REGION_POPULATION",
+      population_definition: "SGIS_TOTAL_POPULATION",
+      population_components: [],
+      total_eligible_payment_krw: "12000000000.00",
+      eligible_contract_count: 3,
+      payment_per_capita_krw: "84507.0422",
+      status: "AVAILABLE",
+      evidence_status: "LOCAL_GOVERNMENT_SOURCE_INPUTS_DERIVED_VALUE",
+      reason_codes: [],
+      limitations: [],
+      source_files: [],
+      has_data_a: true,
+      has_data_b: false,
+      quantity_coverage: {
+        observation_count: 12,
+        measured_count: 12,
+        measured_zero_count: 0,
+        missing_count: 0,
+        repeated_municipal_block_count: 0,
+        months_covered: 12,
+        waste_categories: ["COMBINED"],
+      },
+      ...overrides,
+    };
+  }
+
+  const SEOUL_ROWS: MunicipalCostRow[] = [
+    costRow(),
+    costRow({ municipality_key: "11-중구", display_name: "중구", direct_region_code: "KR-SGIS-11020" }),
+  ];
+
+  const INCHEON_ROW = costRow({
+    municipality_key: "28-부평구",
+    display_name: "부평구",
+    metropolitan_code: "28",
+    metropolitan_name: "인천광역시",
+    direct_region_code: "KR-SGIS-23050",
+    payment_per_capita_krw: "19863.0342",
+  });
+
+  const GYEONGGI_ROW = costRow({
+    municipality_key: "41-이천시",
+    display_name: "이천시",
+    metropolitan_code: "41",
+    metropolitan_name: "경기도",
+    direct_region_code: "KR-SGIS-31210",
+    payment_per_capita_krw: "213905.7731",
+  });
+
+  /** The UNFILTERED response: the whole published capital-region scope. */
+  function capitalRegionResponse(
+    overrides: Partial<MunicipalCostResponse["meta"]> = {},
+  ): MunicipalCostResponse {
+    const base = municipalCostResponse();
+    return {
+      ...base,
+      meta: { ...base.meta, expected_count: 4, available_count: 4, unavailable_count: 0, ...overrides },
+      municipalities: [...SEOUL_ROWS, INCHEON_ROW, GYEONGGI_ROW],
+    };
+  }
+
+  /**
+   * What the SECTION is showing under `mcSido=11` + `mcStatus=AVAILABLE` — Seoul only,
+   * and the served `sido_filter` says so. This is the response that used to reach the
+   * popup.
+   */
+  function seoulOnlyResponse(): MunicipalCostResponse {
+    const base = municipalCostResponse();
+    return {
+      ...base,
+      meta: { ...base.meta, expected_count: 2, available_count: 2, unavailable_count: 0 },
+      sido_filter: "11",
+      status_filter: "AVAILABLE",
+      municipalities: SEOUL_ROWS,
+    };
+  }
+
+  /** The dashboard as the page renders it with a Seoul filter applied BELOW the card. */
+  function renderWithSeoulFilter(
+    overrides: Partial<Parameters<typeof renderDashboard>[0]> = {},
+  ) {
+    return renderDashboard({
+      municipalCostAll: capitalRegionResponse(),
+      municipalCost: { ...municipalCostProps(), data: seoulOnlyResponse(), sido: "11", status: "AVAILABLE" },
+      ...overrides,
+    });
+  }
+
+  /** Open the popup from the KPI card, the affordance 기술요청 #8 specifies. */
+  function openFromKpiCard(): HTMLElement {
+    fireEvent.click(screen.getByTestId("municipal-cost-detail-link"));
+    return screen.getByTestId("municipal-cost-detail-modal");
+  }
+
+  /** The municipality names the popup's RANKING lists (not the embedded table). */
+  function rankedNames(): string[] {
+    return screen
+      .getAllByTestId("municipal-cost-detail-row")
+      .map((element) => element.getAttribute("data-municipality") ?? "");
+  }
+
+  it("hands the popup the UNFILTERED dataset, not the section's filtered one", () => {
+    renderWithSeoulFilter();
+    openFromKpiCard();
+    // Every published municipality, including the two the section's filter removed.
+    expect(rankedNames().sort()).toEqual(
+      ["11-종로구", "11-중구", "28-부평구", "41-이천시"].sort(),
+    );
+  });
+
+  it("stays capital-region-wide when the lower section is scoped to 서울 (mcSido=11)", () => {
+    renderWithSeoulFilter();
+    const modal = openFromKpiCard();
+    const names = rankedNames();
+    // One municipality from each metropolitan — the exact property `mcSido=11` broke.
+    expect(names).toContain("11-종로구");
+    expect(names).toContain("28-부평구");
+    expect(names).toContain("41-이천시");
+    expect(within(modal).getByText("부평구")).toBeDefined();
+    expect(within(modal).getByText("이천시")).toBeDefined();
+  });
+
+  it("does not collapse to the 서울-only result the section is showing", () => {
+    renderWithSeoulFilter();
+    openFromKpiCard();
+    const names = rankedNames();
+    // The regression in one line: the popup must be WIDER than the filtered section.
+    expect(names.length).toBeGreaterThan(seoulOnlyResponse().municipalities.length);
+    expect(names.every((key) => key.startsWith("11-"))).toBe(false);
+  });
+
+  it("names the scope 수도권 전체 when more than one metropolitan is represented", () => {
+    renderWithSeoulFilter();
+    const modal = openFromKpiCard();
+    expect(within(modal).getByTestId("municipal-cost-detail-scope").textContent).toContain(
+      "수도권 전체",
+    );
+    // The served reference year rides with it, as the frame draws.
+    expect(within(modal).getByTestId("municipal-cost-detail-scope").textContent).toContain("2024년");
+  });
+
+  it("keeps the popup scope unchanged when the lower section's filter changes", () => {
+    renderWithSeoulFilter();
+    openFromKpiCard();
+    const underSeoulFilter = rankedNames().sort();
+    cleanup();
+    // The same dashboard with the section widened to 전체. The popup was already
+    // describing the published scope, so nothing about it may move.
+    renderDashboard({
+      municipalCostAll: capitalRegionResponse(),
+      municipalCost: { ...municipalCostProps(), data: capitalRegionResponse(), sido: null, status: null },
+    });
+    openFromKpiCard();
+    expect(rankedNames().sort()).toEqual(underSeoulFilter);
+    expect(underSeoulFilter.length).toBe(4);
+  });
+
+  it("leads the KPI card with a DERIVED 가능 count, never a literal", () => {
+    // The published data currently resolves to 38곳 가능. Nothing may hardcode that:
+    // the same component must read 3 and 4 out of two different served payloads.
+    renderDashboard({ municipalCostAll: capitalRegionResponse({ available_count: 3 }) });
+    expect(screen.getByTestId("municipal-cost-kpi-available").textContent).toBe("3곳 가능");
+    cleanup();
+    renderDashboard({ municipalCostAll: capitalRegionResponse({ available_count: 4 }) });
+    expect(screen.getByTestId("municipal-cost-kpi-available").textContent).toBe("4곳 가능");
+  });
+
+  it("repeats the same derived 가능 count in the popup the card opens", () => {
+    renderDashboard({
+      municipalCostAll: capitalRegionResponse({ available_count: 3, expected_count: 4 }),
+    });
+    const modal = openFromKpiCard();
+    const scope = within(modal).getByTestId("municipal-cost-detail-available");
+    expect(scope.textContent).toContain("3곳 가능");
+    // 38 of WHAT: the denominator travels with the figure on both surfaces.
+    expect(scope.textContent).toContain("대상 4곳");
+  });
+
+  it("drops the four-count status block from the compact card", () => {
+    // 기술 요청: the card leads with one figure. The three-way status split still
+    // exists — as the section's 자료 상태 control and its status column — but it is no
+    // longer four numbers to read before the headline.
+    renderDashboard({ municipalCostAll: capitalRegionResponse() });
+    const card = screen.getByTestId("municipal-cost-kpi-summary");
+    expect(within(card).queryByTestId("municipal-cost-kpi-count-partial")).toBeNull();
+    expect(within(card).queryByTestId("municipal-cost-kpi-count-unavailable")).toBeNull();
+    expect(card.textContent ?? "").not.toContain("일부 제한");
+    expect(card.textContent ?? "").not.toContain("자료 없음");
   });
 });

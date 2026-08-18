@@ -37,7 +37,7 @@
 
 import type { MunicipalCostResponse } from "../../lib/api";
 import type { MunicipalCostErrorState } from "../../lib/municipalCost";
-import { MUNICIPAL_COST_STATUSES, statusChoiceCount, statusLabel } from "../../lib/municipalCost";
+import { availableCountLabel, statusChoiceCount } from "../../lib/municipalCost";
 import SectionCard from "../ui/SectionCard";
 import {
   MUNICIPAL_COST_DETAIL_LINK_LABEL,
@@ -88,19 +88,19 @@ export default function MunicipalCostSummary({ data, error }: MunicipalCostSumma
               : "집계 범위를 아직 불러오지 못했습니다. 값이 0이라는 뜻이 아닙니다."}
           </p>
         ) : (
-          <dl
-            className="flex flex-wrap gap-x-6 gap-y-2 text-xs"
-            data-testid="municipal-cost-kpi-coverage"
-          >
-            <Count term="대상 지자체" value={statusChoiceCount(meta, null)} />
-            {MUNICIPAL_COST_STATUSES.map((status) => (
-              <Count
-                key={status}
-                term={statusLabel(status)}
-                value={statusChoiceCount(meta, status)}
-                testId={`municipal-cost-kpi-count-${status.toLowerCase()}`}
-              />
-            ))}
+          /* The same compact figure the KPI column carries, so the fallback card and
+             the in-row column state the coverage identically. See
+             `LandfillHeadlineResults.tsx` `CostContractColumn` for why it is one
+             derived count and its denominator rather than the four-status block. */
+          <dl className="text-xs" data-testid="municipal-cost-kpi-coverage">
+            <dt className="sr-only">계산 가능한 지자체</dt>
+            <dd
+              className="text-base font-semibold tabular-nums text-ink"
+              data-testid="municipal-cost-kpi-available"
+            >
+              {availableCountLabel(meta)}
+            </dd>
+            <Denominator value={statusChoiceCount(meta, null)} />
           </dl>
         )}
 
@@ -119,23 +119,18 @@ export default function MunicipalCostSummary({ data, error }: MunicipalCostSumma
   );
 }
 
-/** One served count. Renders nothing at all rather than a 0 it has not been given. */
-function Count({
-  term,
-  value,
-  testId,
-}: {
-  term: string;
-  value: number | null;
-  testId?: string;
-}) {
+/**
+ * The published scope the 가능 count is a fraction of. Renders nothing at all rather
+ * than a 0 it has not been given.
+ */
+function Denominator({ value }: { value: number | null }) {
   if (value === null) return null;
   return (
-    <div>
-      <dt className="text-ink-subtle">{term}</dt>
-      <dd className="mt-0.5 text-base font-semibold tabular-nums text-ink" data-testid={testId}>
-        {value}곳
+    <>
+      <dt className="sr-only">대상 지자체</dt>
+      <dd className="mt-0.5 text-xs tabular-nums text-ink-subtle" data-testid="municipal-cost-kpi-expected">
+        대상 {value}곳
       </dd>
-    </div>
+    </>
   );
 }

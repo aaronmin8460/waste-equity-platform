@@ -142,6 +142,28 @@ export function statusChoiceCount(
   }
 }
 
+/**
+ * The compact "계산 가능한 곳" figure, e.g. `38곳 가능`.
+ *
+ * The one home for the count the KPI cost card and the 상세보기 popup lead with. It is
+ * DERIVED from the served `meta.available_count` on every render — no call site may
+ * write the number as a literal, because the published scope changes with the source
+ * refresh and a hardcoded 38 would keep asserting last year's coverage.
+ *
+ * `null` when no response has arrived, so a caller states absence rather than a 0곳 it
+ * has not been given — the same rule {@link statusChoiceCount} enforces.
+ *
+ * Its denominator belongs beside it: 38 of WHAT is the question the figure invites, and
+ * {@link statusChoiceCount}(meta, null) is the honest answer. Both surfaces show it.
+ */
+export function availableCountLabel(meta: MunicipalCostMeta | null): string | null {
+  const count = statusChoiceCount(meta, "AVAILABLE");
+  return count === null ? null : `${count}곳 ${MUNICIPAL_COST_AVAILABLE_SUFFIX}`;
+}
+
+/** The word that turns the served AVAILABLE count into the compact card's headline. */
+export const MUNICIPAL_COST_AVAILABLE_SUFFIX = "가능";
+
 // --------------------------------------------------------------------------- //
 // Metropolitan filter and local-government tier
 // --------------------------------------------------------------------------- //
