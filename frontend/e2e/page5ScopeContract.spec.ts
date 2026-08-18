@@ -39,17 +39,23 @@ test.use({ channel: "chrome" });
 
 const STORAGE_KEY = "waste-equity:suitability-saved-scenarios:v1";
 
+/**
+ * SUCCESSOR weight vectors — Page 5 runs on the V3 model, so both saved scenarios
+ * are authored over its four components. A historical Z/R/E/D vector is refused as
+ * `OTHER_MODEL` and has its own coverage in `page45V3Successor.spec.ts`.
+ */
+const SUCCESSOR_MODEL = "suitability-components-successor-v1";
 const WEIGHTS_A = {
-  zoning: "0.40000000",
-  road: "0.30000000",
-  equity: "0.20000000",
-  demand: "0.10000000",
+  existing_burden: "0.40000000",
+  air_impact_proxy: "0.30000000",
+  resident_impact: "0.20000000",
+  land_conversion: "0.10000000",
 };
 const WEIGHTS_B = {
-  zoning: "0.20000000",
-  road: "0.20000000",
-  equity: "0.40000000",
-  demand: "0.20000000",
+  existing_burden: "0.20000000",
+  air_impact_proxy: "0.20000000",
+  resident_impact: "0.40000000",
+  land_conversion: "0.20000000",
 };
 
 /** SGIS codes, the space `suitability_candidates` actually stores. */
@@ -124,11 +130,17 @@ function candidates(rows: PoolRow[], base: number, order: readonly string[]) {
     comparison_rank: 999,
     rank_delta: 900,
     rank_change_direction: "up",
-    zoning_score: "90.0000",
-    road_score: "70.0000",
-    equity_score: "95.0000",
-    demand_score: "80.0000",
-    component_scores: {},
+    // A successor row leaves the legacy columns null and carries component_scores.
+    zoning_score: null,
+    road_score: null,
+    equity_score: null,
+    demand_score: null,
+    component_scores: {
+      existing_burden: "70.0000",
+      air_impact_proxy: "75.0000",
+      resident_impact: "80.0000",
+      land_conversion: "85.0000",
+    },
     stable_count: 3,
     stability_class: "STABLE",
     centroid_lon: 126.9,
@@ -147,7 +159,7 @@ async function mockScopedBackend(page: Page): Promise<Recorder> {
     const posted = (route.request().postDataJSON() as Record<string, unknown>) ?? {};
     const scope = scopeOf(posted);
     rec.previews.push(scope);
-    const isB = Number((posted.weights as Record<string, string>).equity) > 0.3;
+    const isB = Number((posted.weights as Record<string, string>).resident_impact) > 0.3;
     const rows = POOL.filter((row) => inScope(row, scope));
     const order = (isB ? ORDER_B : ORDER_A).filter((key) =>
       rows.some((row) => row.key === key),
@@ -164,8 +176,13 @@ async function mockScopedBackend(page: Page): Promise<Recorder> {
         policy_version: "suitability-policy-v2",
         derivation_version: "suitability-screening-v3",
         candidate_grid_version: "capital-grid-500m-v1",
-        component_model_version: "suitability-components-zred-v1",
-        component_order: ["zoning", "road", "equity", "demand"],
+        component_model_version: SUCCESSOR_MODEL,
+        component_order: [
+          "existing_burden",
+          "air_impact_proxy",
+          "resident_impact",
+          "land_conversion",
+        ],
         canonical_weights: isB ? WEIGHTS_B : WEIGHTS_A,
         compare_profile: "baseline",
         candidate_count_total: 47893,
@@ -207,23 +224,25 @@ async function seedScenarios(page: Page): Promise<void> {
       window.localStorage.setItem(
         key as string,
         JSON.stringify({
-          schemaVersion: 1,
+          schemaVersion: 2,
           scenarios: [
             {
-              schemaVersion: 1,
+              schemaVersion: 2,
               id: "sc-a",
               name: "균형안",
               weights: weightsA,
+              componentModelVersion: "suitability-components-successor-v1",
               runId: 47,
               profileSource: null,
               createdAt: now,
               updatedAt: now,
             },
             {
-              schemaVersion: 1,
+              schemaVersion: 2,
               id: "sc-b",
               name: "형평성안",
               weights: weightsB,
+              componentModelVersion: "suitability-components-successor-v1",
               runId: 47,
               profileSource: null,
               createdAt: now,

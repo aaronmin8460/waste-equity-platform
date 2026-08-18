@@ -839,7 +839,7 @@ export default function Home() {
     // The SAME scope as the ranking. A/B/C is a position in a POPULATION, so the
     // bands are recomputed exactly (four scoped order-statistic reads), never
     // approximated from the rows already on screen.
-    computeGradeDistribution(runId, profile, suitScope)
+    computeGradeDistribution(runId, profile, suitScope, suit.run.component_model_version)
       .then((distribution) => {
         if (cancelled) return;
         setGradeDistribution(distribution);
