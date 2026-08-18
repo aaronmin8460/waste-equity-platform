@@ -211,6 +211,82 @@ export interface MunicipalContractPayment {
   referenceYear: number;
 }
 
+/**
+ * 주민 1인당 폐기물 관리비용 — the three-term per-resident cost for ONE municipality.
+ *
+ * ── The arithmetic, and what each operand actually is ─────────────────────────
+ *   collectionTransportPerCapitaKrw  = the SERVED `payment_per_capita_krw` for this
+ *                                      municipality (2024 수집·운반 계약 지급액 ÷ 인구)
+ *   metroLandfillFeePerCapitaKrw     = the SERVED metropolitan `fee_per_capita_krw`
+ *                                      (수도권 반입수수료 총액 ÷ 수도권 인구)
+ *   totalPerCapitaKrw                = the exact sum of the two
+ *
+ * Nothing here is derived from a tonnage, a share, or an assumed unit price. Both
+ * operands are already-computed backend values; this module only adds them.
+ *
+ * ── Three rules this type exists to enforce ───────────────────────────────────
+ * 1. **The landfill term is ONE COMMON METROPOLITAN VALUE.** It is identical on every
+ *    municipality row. There is no per-시·군·구 landfill fee — the corporation reports
+ *    inbound per 시·도 and declares no municipal origin — so apportioning it by
+ *    population share, waste share, or anything else would be inventing a figure no
+ *    source published. It is also NOT re-scoped by the 출발 지역 filter: a display
+ *    filter must not silently change a value described as 수도권 공통.
+ * 2. **The sum is exact.** Both operands are decimal STRINGS and are added with
+ *    {@link sumExactDecimals}, never through `Number()`.
+ * 3. **A missing operand is not zero.** 20 of the 66 municipalities published no
+ *    payment at all; their total is `null` and renders —. Treating the absence as 0
+ *    would rank a municipality that disclosed nothing as the cheapest in the country.
+ *
+ * ── The two per-capita terms rest on DIFFERENT population bases ───────────────
+ * The collection/transport term divides by the SGIS 2024 ANNUAL population of that
+ * municipality; the landfill term divides by the MOIS 2025-12 monthly resident
+ * registration population of the whole capital region. That is structural — the
+ * backend states it never denominates a municipal indicator with the metropolitan
+ * MOIS series — so the mismatch is STATED beside the figure ({@link
+ * MANAGEMENT_COST_BASIS_NOTE}) rather than hidden or silently reconciled.
+ */
+export interface ManagementCostPerCapita {
+  /** This municipality's own served 수집·운반 per-resident payment. `null` ≠ 0. */
+  collectionTransportPerCapitaKrw: string | null;
+  /** The common 수도권 landfill fee per resident. Identical on every row. */
+  metroLandfillFeePerCapitaKrw: string | null;
+  /** The exact sum, or `null` when either operand is absent. */
+  totalPerCapitaKrw: string | null;
+}
+
+/**
+ * Why the two per-resident figures are not on one population basis.
+ *
+ * Rendered beside the combined figure. The platform's rule is that a basis mismatch
+ * is disclosed at the point of use, not resolved by quietly picking one denominator.
+ */
+export const MANAGEMENT_COST_BASIS_NOTE =
+  "수집·운반 지급액은 SGIS 2024 연간 인구, 반입수수료는 행정안전부 주민등록 인구(월말) 기준입니다. " +
+  "두 값의 인구 기준이 서로 다릅니다.";
+
+/** How the common metropolitan term is labelled wherever it appears. */
+export const METRO_LANDFILL_FEE_PER_CAPITA_LABEL = "수도권 공통 반입수수료";
+
+/**
+ * Combine one municipality's served payment with the common metropolitan fee.
+ *
+ * Exact-decimal and null-propagating by construction — see {@link ManagementCostPerCapita}.
+ */
+export function managementCostPerCapita(
+  collectionTransportPerCapitaKrw: string | null,
+  metroLandfillFeePerCapitaKrw: string | null,
+): ManagementCostPerCapita {
+  const totalPerCapitaKrw =
+    collectionTransportPerCapitaKrw !== null && metroLandfillFeePerCapitaKrw !== null
+      ? sumExactDecimals([collectionTransportPerCapitaKrw, metroLandfillFeePerCapitaKrw])
+      : null;
+  return {
+    collectionTransportPerCapitaKrw,
+    metroLandfillFeePerCapitaKrw,
+    totalPerCapitaKrw,
+  };
+}
+
 export interface MunicipalityRow {
   /** The reporting-geography code — the row's stable identity. */
   code: string;
@@ -238,6 +314,13 @@ export interface MunicipalityRow {
   throughputPerCapitaKg: number | null;
   /** The 2024 contract payment, or `null` when the dataset served no row for it. */
   contract: MunicipalContractPayment | null;
+  /**
+   * 주민 1인당 총 폐기물 관리비용 — this municipality's 수집·운반 per-resident payment
+   * PLUS the common metropolitan 반입수수료 per resident. See
+   * {@link ManagementCostPerCapita}: exact-decimal, null-propagating, and carrying a
+   * landfill term that is the same on every row and independent of the display filter.
+   */
+  managementCost: ManagementCostPerCapita;
 }
 
 export interface MetropolitanGroup {
@@ -310,6 +393,22 @@ export interface CapitalRegionWasteInput {
   municipalCost: MunicipalCostResponse | null;
   /** Limit to one metropolitan, mirroring the landfill 출발 지역 filter. */
   scope?: RegionScope | null;
+  /**
+   * The served 수도권-wide 반입수수료 per resident, from an **UNFILTERED**
+   * `landfill/summary` — the second term of every row's 관리비용.
+   *
+   * ⚠️ It must come from a summary fetched WITHOUT the 출발 지역 filter. The filtered
+   * summary re-scopes `fee_per_capita` to the selected origin (서울 4,611.40 rather
+   * than the 수도권 4,045.92), so feeding the scoped value in here would make a figure
+   * labelled "수도권 공통" change every time the reader narrowed the view — the exact
+   * behaviour the requirement forbids. `app/page.tsx` issues one extra unfiltered
+   * request for precisely this and passes the result down; `scope` above still scopes
+   * everything else.
+   *
+   * `null` (not yet loaded, or the backend served no per-capita value) propagates: the
+   * combined total becomes `null` and renders —, never a partial figure.
+   */
+  metroLandfillFeePerCapitaKrw?: string | null;
 }
 
 // --------------------------------------------------------------------------- //
@@ -355,6 +454,7 @@ export function buildCapitalRegionWaste({
   facilityBurden,
   municipalCost,
   scope = null,
+  metroLandfillFeePerCapitaKrw = null,
 }: CapitalRegionWasteInput): CapitalRegionWaste {
   // ── population, from the per-capita envelope's own denominator ─────────────
   // Identical across all four streams of a region, and identical to the
@@ -464,6 +564,12 @@ export function buildCapitalRegionWaste({
               referenceYear: municipalCostYear,
             }
           : null,
+      // The three-term per-resident cost. The landfill operand is the SAME string on
+      // every row by construction — one common metropolitan value, never apportioned.
+      managementCost: managementCostPerCapita(
+        contract && municipalCostYear !== null ? contract.payment_per_capita_krw : null,
+        metroLandfillFeePerCapitaKrw,
+      ),
     });
   }
 

@@ -418,3 +418,91 @@ export function downloadBlob(filename: string, blob: Blob): void {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 }
+
+/**
+ * 지역별 폐기물 처리 현황 (Page 2) — the report behind 기술요청 #23's
+ * `[보고서 보기] > [이미지 저장]`.
+ *
+ * Built on the SAME generic `ReportModel` and the same text-only canvas renderer the
+ * other two reports use, so it adds no dependency (no html2canvas/dom-to-image), no
+ * second export contract, and no second definition of what an exported figure means.
+ *
+ * ── Scope, stated rather than implied ────────────────────────────────────────
+ * Every value here is a SERVED official figure or a figure this platform already
+ * publishes as a 계산값 on the screen itself. In particular the report:
+ *   - carries the official inbound quantity and fee at 시·도 grain, which is the only
+ *     grain they are published on;
+ *   - does NOT carry the municipal 수집·운반 계약 지급액, which is a different
+ *     accounting basis from a different publisher — the same exclusion the workbook
+ *     and CSV make, and the scope note says so;
+ *   - prints an absent value as `—`, never as 0.
+ */
+export function buildLandfillReport(input: {
+  periodLabel: string;
+  destinationName: string;
+  accountingBasis: string;
+  originFilter: string | null;
+  wasteFilter: string | null;
+  totalQuantityTons: string;
+  totalInboundFeeKrw: string;
+  feePerCapitaKrw: string | null;
+  derivationVersion: string;
+  origins: { name: string; quantityTons: string; share: string | null; feeKrw: string }[];
+  when?: Date;
+}): ReportModel {
+  const dash = (value: string | null) => value ?? "—";
+  return {
+    generatedAt: readableTimestamp(input.when ?? new Date()),
+    mapExclusionNote: MAP_EXCLUSION_NOTE,
+    blocks: [
+      { kind: "title", text: "지역별 폐기물 처리 현황" },
+      { kind: "subtitle", text: `수도권매립지 반입 · ${input.periodLabel}` },
+      {
+        kind: "section",
+        heading: "조회 조건과 자료 정보",
+        rows: compact([
+          kv("대상 시점", input.periodLabel),
+          kv("도착지", input.destinationName),
+          kv("출발 지역", input.originFilter ?? "전체"),
+          kv("폐기물 종류", input.wasteFilter ?? "전체"),
+          kv("집계 기준", input.accountingBasis),
+          kv("계산 방식", input.derivationVersion),
+        ]),
+      },
+      {
+        kind: "section",
+        heading: "핵심 지표",
+        rows: compact([
+          kv("총 반입량(톤)", input.totalQuantityTons),
+          kv("공식 반입수수료(원)", input.totalInboundFeeKrw),
+          kv("주민 1인당 반입수수료(원/인)", dash(input.feePerCapitaKrw)),
+        ]),
+      },
+      {
+        kind: "table",
+        caption: "출발 지역별 반입 구조 (시·도 단위 보고)",
+        headers: ["출발 지역", "반입량(톤)", "비중", "공식 반입수수료(원)"],
+        rows: input.origins.map((origin) => [
+          origin.name,
+          origin.quantityTons,
+          dash(origin.share),
+          origin.feeKrw,
+        ]),
+      },
+      { kind: "disclaimer", text: LANDFILL_REPORT_DISCLAIMER },
+    ],
+  };
+}
+
+/**
+ * What this report is not.
+ *
+ * The three sentences a reader has to have before carrying any figure out of the
+ * page: the grain the landfill data actually exists at, the dataset this file
+ * deliberately excludes, and the absence rule.
+ */
+const LANDFILL_REPORT_DISCLAIMER =
+  "수도권매립지 반입량과 공식 반입수수료는 광역지자체(시·도) 단위로만 보고되며, " +
+  "시·군·구별 반입량은 존재하지 않습니다. 이 보고서에는 시·군·구 생활폐기물 수집·운반 계약 " +
+  "지급액이 포함되지 않습니다(회계 기준·제공기관·공간 단위가 다른 별개 자료입니다). " +
+  "값이 비어 있는 항목은 자료가 제공되지 않았다는 뜻이며 0이 아닙니다.";

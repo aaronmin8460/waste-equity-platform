@@ -389,6 +389,20 @@ function renderDashboard(props: Partial<Parameters<typeof LandfillDashboard>[0]>
   );
 }
 
+/**
+ * Open 월별 반입 추이's 표로 보기 popup.
+ *
+ * 기술요청 #16 moved the exact-value table out of an inline `<details>` and into the
+ * shared `ui/Dialog`. The table's own contract — every month, BOTH metrics, lossless
+ * served values, gaps never filled with 0 — is unchanged, so these assertions are
+ * unchanged; they just have to open the surface it now lives on. Idempotent.
+ */
+function openTrendTable(): void {
+  if (screen.queryByTestId("landfill-trend-table")) return;
+  const trigger = screen.queryByTestId("landfill-trend-exact");
+  if (trigger) fireEvent.click(trigger);
+}
+
 describe("LandfillDashboard", () => {
   it("renders the heading and keeps the metropolitan-only limitation, without a banner", () => {
     // Deliberately `container` queries rather than `screen.getByRole`/`getByText`
@@ -468,13 +482,23 @@ describe("LandfillDashboard", () => {
     renderDashboard();
     const table = screen.getByTestId("landfill-region-table");
     const headers = within(table).getAllByRole("columnheader");
-    expect(headers.map((h) => h.textContent)).toEqual([
+    // 기술요청 #20 moved sorting onto the column headers, so a sortable header's
+    // textContent now also carries its direction glyph and its screen-reader
+    // instruction. This assertion is about the column NAMES and their ORDER, so the
+    // sort affordance is stripped rather than asserted here — `landfill-region-sort-header`
+    // owns the sorting contract in LandfillRegionTable.test.tsx.
+    const columnName = (element: Element) =>
+      (element.textContent ?? "").replace(/[⇅▲▼].*$/u, "").trim();
+    expect(headers.map(columnName)).toEqual([
       "지역",
       "폐기물 발생량",
       "시설 처리량 (지역 내)",
       "수도권매립지 반입량",
       "공식 반입수수료",
       "생활폐기물 수집·운반 계약 지급액",
+      // The combined per-resident figure — its own group, because it is the only
+      // column that spans BOTH datasets.
+      "주민 1인당 총 관리비용",
       "총 발생량",
       "1인당 (kg/인·년)",
       "총 처리량",
@@ -494,9 +518,12 @@ describe("LandfillDashboard", () => {
     const names = rows.map((row) => within(row).getAllByRole("rowheader")[0].textContent ?? "");
     expect(names.map((name) => name.split("\n")[0].replace(/[\d,]+명|인구 자료 없음/, "").trim()))
       .toEqual(["서울시", "인천시", "경기도"]);
-    // The drill-down is announced, and the reason the landfill columns stop at 시·도.
+    // 기술요청 #21 replaced the expansion sentence: 시·군·구 rows are the detail grain
+    // and are rendered outright, so what the region name does now is open that
+    // municipality's own detail. The reason the landfill columns stop at 시·도 is
+    // unchanged and still asserted below.
     expect(screen.getByTestId("landfill-region-grain-note").textContent).toContain(
-      "지역 이름을 누르면 시·군·구 단위 상세 자료가 펼쳐집니다",
+      "표 우측의 지역명을 누르면 시·군·구별 상세 지표를 확인할 수 있습니다",
     );
     expect(screen.getByTestId("landfill-region-grain-note").textContent).toContain(
       "광역지자체(시·도) 단위로만 보고",
@@ -695,6 +722,7 @@ describe("LandfillDashboard", () => {
 
   it("offers an accessible table fallback with each month's exact (lossless) value", () => {
     renderDashboard();
+    openTrendTable();
     const table = screen.getByTestId("landfill-trend-table");
     // The hover-only <title> tooltips are unreachable by touch/AT; the table gives
     // every month's exact served value as text — no chart rounding. BOTH metrics are
@@ -754,8 +782,10 @@ describe("LandfillDashboard", () => {
         municipalCost={municipalCostProps()}
       />,
     );
+    openTrendTable();
     const qtyTable = screen.getByTestId("landfill-trend-table");
     expect(within(qtyTable).getByText("90,123.456 t")).toBeDefined();
+    openTrendTable();
     const feeTable = screen.getByTestId("landfill-trend-table");
     expect(within(feeTable).getByText("9,000,012,345.67원")).toBeDefined();
   });
@@ -1118,10 +1148,11 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
     const table = section.querySelector("table");
     expect(table).not.toBeNull();
     expect(table?.querySelector("caption")).not.toBeNull();
-    // Eleven leaf columns plus the row-spanning 지역 column, under five group
-    // headers; the group cells carry colSpan instead of scope="col", which is what
-    // makes them announce as groups rather than as columns.
-    expect(section.querySelectorAll("th[scope='col']")).toHaveLength(12);
+    // Eleven leaf columns plus the row-spanning 지역 column and the row-spanning
+    // 주민 1인당 총 관리비용 column, under five group headers; the group cells carry
+    // colSpan instead of scope="col", which is what makes them announce as groups
+    // rather than as columns.
+    expect(section.querySelectorAll("th[scope='col']")).toHaveLength(13);
     expect(section.querySelectorAll("th[colspan]")).toHaveLength(5);
     expect(section.querySelectorAll("th[scope='row']").length).toBeGreaterThan(0);
     // The table — not the page — owns its horizontal overflow.
@@ -1167,6 +1198,7 @@ describe("LandfillDashboard — Phase 5 desktop hierarchy", () => {
     const line = chart.querySelector("[data-testid='landfill-trend-line']");
     expect(line?.getAttribute("points")?.trim().split(/\s+/)).toHaveLength(2);
     // The unserved months are absent from the exact table too — not zero rows.
+    openTrendTable();
     const rows = screen.getByTestId("landfill-trend-table").querySelectorAll("tbody tr");
     expect(rows).toHaveLength(2);
     const trends = screen.getByTestId("landfill-trends");
@@ -1985,7 +2017,7 @@ describe("LandfillDashboard — Figma page 2", () => {
     expect(screen.getByTestId("landfill-trend-no-extremes")).toBeDefined();
   });
 
-  it("reorders the regional table by the chosen key without changing a value", () => {
+  it("orders the 시·도 group rows by served 반입량, with no 정렬 기준 dropdown (기술요청 #20)", () => {
     renderDashboard({
       data: data({
         origin_shares: [
@@ -2004,18 +2036,26 @@ describe("LandfillDashboard — Figma page 2", () => {
       screen
         .getAllByTestId("landfill-region-row")
         .map((row) => within(row).getAllByRole("rowheader")[0].textContent?.slice(0, 3));
+    // 인천 (300t) above 서울 (100t) — the served landfill reading order.
     expect(names()).toEqual(["인천시", "서울시"]);
-    fireEvent.change(screen.getByTestId("landfill-region-sort"), { target: { value: "fee" } });
-    expect(names()).toEqual(["서울시", "인천시"]);
+    // #20 removed the separate control; sorting moved onto the column headers, where
+    // it reorders 시·군·구 WITHIN a group (contracted in LandfillRegionTable.test.tsx).
+    expect(screen.queryByTestId("landfill-region-sort")).toBeNull();
+    expect(screen.getAllByTestId("landfill-region-sort-header").length).toBeGreaterThan(0);
   });
 
-  it("offers both export formats for the official landfill dataset only", () => {
+  it("offers the three export actions for the official landfill dataset only", () => {
     renderDashboard();
     expect(screen.getByTestId("landfill-export-xlsx")).toBeDefined();
     expect(screen.getByTestId("landfill-export-csv")).toBeDefined();
-    // 보고서 보기 is BLOCKED BY PRODUCT DEFINITION — no artifact, route, or content
-    // model exists, so no button pretends one does.
-    expect(screen.getByTestId("landfill-export").textContent).not.toContain("보고서");
+    // 보고서 보기 was previously recorded as BLOCKED BY PRODUCT DEFINITION — there was
+    // no report artifact or content model to open. 기술요청 #23 supplies exactly that
+    // ("페이지 맨 하단 [보고서 보기] > [이미지 저장]"), and the platform already owns
+    // both halves: `lib/report.ts`'s generic ReportModel + text-only canvas renderer,
+    // and `components/ReportPreview.tsx`. So it is a REUSE of an existing export
+    // contract, not an invented document — and no new dependency.
+    expect(screen.getByTestId("landfill-export-report")).toBeDefined();
+    // The file's scope is unchanged: the municipal contract payment stays out of it.
     expect(screen.getByTestId("landfill-export-scope").textContent).toContain(
       "이 파일에 포함되지 않습니다",
     );
@@ -2059,9 +2099,14 @@ describe("LandfillDashboard — 월별 추이 exact-value readout", () => {
       .getAllByTestId("landfill-trend-hit")
       .find((element) => element.getAttribute("data-month") === "2024-01")!;
     fireEvent.mouseEnter(hit);
-    // The LOSSLESS served value, with its unit — not the rounded axis form.
-    expect(screen.getByTestId("landfill-trend-readout").textContent).toContain("1월 · ");
-    expect(screen.getByTestId("landfill-trend-readout").textContent).toMatch(/\d/);
+    // The LOSSLESS served values, with their units — not the rounded axis form — and
+    // BOTH of them, which is what Figma spec sheet 8 (271-442) asks the tooltip for:
+    // "Tooltip에는 해당 월의 반입량 + 공식 반입수수료를 함께 표시."
+    const shown = () => screen.getByTestId("landfill-trend-readout").textContent ?? "";
+    expect(shown()).toContain("1월");
+    expect(shown()).toContain("반입량");
+    expect(shown()).toContain("공식 반입수수료");
+    expect(shown()).toMatch(/\d/);
     fireEvent.mouseLeave(hit);
     expect(screen.getByTestId("landfill-trend-readout").textContent).toContain(
       "점에 커서를 올리거나",
@@ -2077,15 +2122,26 @@ describe("LandfillDashboard — 월별 추이 exact-value readout", () => {
     expect(hit.getAttribute("tabindex")).toBe("0");
     // …and the same string is the accessible name, so the figure is ANNOUNCED
     // rather than only painted — a readout alone needs a pointer or a focus ring.
+    // The accessible name carries BOTH served figures, the same pair the visible
+    // tooltip shows (Figma spec sheet 8) — so a keyboard/screen-reader user hears
+    // exactly what a pointing reader sees.
     const label = hit.getAttribute("aria-label") ?? "";
     expect(label).toContain("1월 · ");
+    expect(label).toContain("반입량");
+    expect(label).toContain("공식 반입수수료");
     fireEvent.focus(hit);
-    expect(screen.getByTestId("landfill-trend-readout").textContent).toContain(label);
+    // The readout renders the same facts as separate elements, so compare the
+    // figures rather than one concatenated string.
+    const shown = screen.getByTestId("landfill-trend-readout").textContent ?? "";
+    for (const part of label.split(" · ")) {
+      expect(shown).toContain(part.replace(/^반입량 |^공식 반입수수료 /, ""));
+    }
   });
 
   it("keeps the exact-value table as well, for readers who never point at a bar", () => {
     renderDashboard();
     expect(screen.getByTestId("landfill-trend-exact")).toBeDefined();
+    openTrendTable();
     expect(
       screen.getByTestId("landfill-trend-table").querySelectorAll("tbody tr").length,
     ).toBeGreaterThan(0);
@@ -2136,16 +2192,19 @@ describe("LandfillDashboard — 시·군·구별 상세 보기 summary", () => {
     );
   });
 
-  it("links to the full section, which still renders every value it points at", () => {
+  it("opens the 시·군·구별 지급액 popup from the KPI card (기술요청 #8)", () => {
     renderDashboard({ municipalCostAll: municipalCostResponse() });
-    const link = screen.getByTestId("municipal-cost-detail-link");
-    expect(link.textContent).toContain("시·군·구별 상세 보기 →");
-    // The affordance reveals nothing: the section is always rendered, so no data is
-    // hidden behind it. It only moves the reader — and focus — to the heading.
-    expect(link.getAttribute("href")).toBe("#municipal-cost-heading");
-    const heading = document.getElementById("municipal-cost-heading");
-    expect(heading).not.toBeNull();
-    expect(heading?.getAttribute("tabindex")).toBe("-1");
+    const trigger = screen.getByTestId("municipal-cost-detail-link");
+    expect(trigger.textContent).toContain("시·군·구별 상세 보기 →");
+    // 기술요청 #8: "[폐기물 관리비용]은 하단에 '상세보기' 버튼 있고, 팝업 내용은 아래에
+    // 제작해놓음". It is a real <button> that opens the Figma popup (327:428), not an
+    // in-page anchor that scrolls to a section.
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(screen.queryByTestId("municipal-cost-detail-modal")).toBeNull();
+    fireEvent.click(trigger);
+    expect(screen.getByTestId("municipal-cost-detail-modal")).toBeDefined();
+    // The section itself still renders every value it describes — the popup is where
+    // the comparison lives now, it is not where the dataset's scope is disclosed.
     expect(screen.getByTestId("municipal-cost-section")).toBeDefined();
   });
 

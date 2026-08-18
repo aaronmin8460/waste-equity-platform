@@ -523,3 +523,70 @@ describe("formatPerCapitaKg", () => {
     expect(formatPerCapitaKg(1497.53)).toBe("1,497.5");
   });
 });
+
+// --------------------------------------------------------------------------- //
+// 주민 1인당 폐기물 관리비용
+// --------------------------------------------------------------------------- //
+
+describe("managementCostPerCapita", () => {
+  const METRO_FEE = "4045.92";
+
+  it("adds the two served per-resident figures on the exact decimal strings", () => {
+    const model = buildCapitalRegionWaste({ ...envelopes(), metroLandfillFeePerCapitaKrw: METRO_FEE });
+    const jongno = model.groups
+      .flatMap((group) => group.municipalities)
+      .find((row) => row.name === "종로구");
+    expect(jongno?.managementCost.collectionTransportPerCapitaKrw).toBe("85445.1200");
+    expect(jongno?.managementCost.metroLandfillFeePerCapitaKrw).toBe(METRO_FEE);
+    // 85445.1200 + 4045.92 — exact, at the wider of the two scales. `Number()` would
+    // land on 89491.03999999999 here.
+    expect(jongno?.managementCost.totalPerCapitaKrw).toBe("89491.0400");
+  });
+
+  it("propagates a missing payment as null rather than treating it as 0", () => {
+    const model = buildCapitalRegionWaste({ ...envelopes(), metroLandfillFeePerCapitaKrw: METRO_FEE });
+    const ongjin = model.groups
+      .flatMap((group) => group.municipalities)
+      .find((row) => row.name === "옹진군");
+    expect(ongjin?.managementCost.collectionTransportPerCapitaKrw).toBeNull();
+    // NOT the landfill term alone, and emphatically not 0 + 4045.92.
+    expect(ongjin?.managementCost.totalPerCapitaKrw).toBeNull();
+  });
+
+  it("propagates an absent metropolitan fee as null on every row", () => {
+    const model = buildCapitalRegionWaste({ ...envelopes(), metroLandfillFeePerCapitaKrw: null });
+    for (const row of model.groups.flatMap((group) => group.municipalities)) {
+      expect(row.managementCost.metroLandfillFeePerCapitaKrw).toBeNull();
+      expect(row.managementCost.totalPerCapitaKrw).toBeNull();
+    }
+  });
+
+  it("applies ONE common metropolitan fee to every municipality, never apportioned", () => {
+    const model = buildCapitalRegionWaste({ ...envelopes(), metroLandfillFeePerCapitaKrw: METRO_FEE });
+    const rows = model.groups.flatMap((group) => group.municipalities);
+    expect(rows.length).toBeGreaterThan(1);
+    // Identical string on every row — across all three 시·도. A per-municipality
+    // landfill share does not exist in any source and must never be invented.
+    expect(new Set(rows.map((row) => row.managementCost.metroLandfillFeePerCapitaKrw))).toEqual(
+      new Set([METRO_FEE]),
+    );
+  });
+
+  it("does not change the common fee when the view is scoped to one 시·도", () => {
+    const all = buildCapitalRegionWaste({ ...envelopes(), metroLandfillFeePerCapitaKrw: METRO_FEE });
+    const seoulOnly = buildCapitalRegionWaste({
+      ...envelopes(),
+      scope: "11",
+      metroLandfillFeePerCapitaKrw: METRO_FEE,
+    });
+    const feeOf = (model: ReturnType<typeof buildCapitalRegionWaste>) =>
+      model.groups.flatMap((g) => g.municipalities).find((r) => r.name === "종로구")
+        ?.managementCost;
+    // Scoping the DISPLAY must not re-scope a value labelled 수도권 공통. The scoped
+    // landfill summary would have served Seoul's own figure here.
+    expect(feeOf(seoulOnly)?.metroLandfillFeePerCapitaKrw).toBe(
+      feeOf(all)?.metroLandfillFeePerCapitaKrw,
+    );
+    expect(feeOf(seoulOnly)?.totalPerCapitaKrw).toBe(feeOf(all)?.totalPerCapitaKrw);
+  });
+});

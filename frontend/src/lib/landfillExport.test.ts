@@ -111,7 +111,7 @@ describe("the fee / payment separation", () => {
   it("names the fee as the OFFICIAL inbound fee and says it cannot be combined", () => {
     const preamble = buildOriginSheet(summary()).preamble.join("\n");
     expect(preamble).toContain("공식 반입수수료");
-    expect(preamble).toContain("더하거나 같은 비용으로 비교할 수 없습니다");
+    expect(preamble).toContain("이 파일에는 포함되지 않습니다");
     // The accounting basis is stated outright — the fact that makes them separate.
     expect(preamble).toContain("VERIFIED_METROPOLITAN_ORIGIN_TO_DESTINATION_FLOW");
   });
@@ -201,7 +201,7 @@ describe("the CSV export (same scope as the workbook, never wider)", () => {
     const flat = rows.map((row) => row.join("|")).join("\n");
     expect(flat).not.toContain("수집·운반 계약 지급액(원)");
     // …and the sentence that says why is carried into the CSV preamble.
-    expect(flat).toContain("더하거나 같은 비용으로 비교할 수 없습니다");
+    expect(flat).toContain("이 파일에는 포함되지 않습니다");
   });
 
   it("omits the trend block entirely when no month was served", () => {

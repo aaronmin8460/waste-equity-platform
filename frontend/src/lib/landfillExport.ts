@@ -68,9 +68,14 @@ function landfillPreamble(summary: LandfillSummary, title: string): string[] {
       `집계 기준 ${summary.accounting_basis}`,
     `출발 지역 ${summary.origin_filter ?? "전체"} · 폐기물 종류 ${summary.waste_filter ?? "전체"}`,
     `계산 방식 ${summary.derivation_version}`,
+    // The DISTINCTION stays; the flat prohibition on adding does not — Page 2 now
+    // publishes 주민 1인당 총 관리비용, and an export that forbids the sum the screen
+    // shows would contradict it. This file's own scope note (that the workbook holds
+    // the official inbound dataset ONLY) is unchanged and is what the reader needs
+    // here.
     "이 표의 금액은 수도권매립지 공식 반입수수료입니다. " +
-      "시·군·구 수집·운반 계약 지급액과는 회계 기준·제공기관·공간 단위가 모두 달라 " +
-      "더하거나 같은 비용으로 비교할 수 없습니다.",
+      "시·군·구 수집·운반 계약 지급액과는 회계 기준·제공기관·공간 단위가 모두 다르며, " +
+      "이 파일에는 포함되지 않습니다.",
     ...summary.caveats,
     "값이 비어 있는 칸은 해당 자료가 제공되지 않았다는 뜻이며 0이 아닙니다.",
   ];
@@ -147,7 +152,7 @@ export function buildTrendSheet(
       `출발 지역 ${trends.origin_filter ?? "전체"} · 폐기물 종류 ${trends.waste_filter ?? "전체"}`,
       `계산 방식 ${trends.derivation_version}`,
       "이 표의 금액은 수도권매립지 공식 반입수수료입니다. " +
-        "시·군·구 수집·운반 계약 지급액과 더하거나 같은 비용으로 비교할 수 없습니다.",
+        "시·군·구 수집·운반 계약 지급액과는 회계 기준이 다르며, 이 파일에는 포함되지 않습니다.",
       ...trends.caveats,
       "표시된 달만 공식 자료가 있는 기간입니다. 빠진 달은 0이 아니라 자료 없음입니다.",
     ],

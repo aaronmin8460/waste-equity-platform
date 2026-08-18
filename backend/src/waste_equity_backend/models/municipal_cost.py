@@ -99,7 +99,8 @@ INDICATOR_DIFFERENCE_FROM_OFFICIAL_LANDFILL_FEE_KO = (
     "이 지표는 수도권매립지 공식 반입수수료(LANDFILL_INBOUND_FEE_PER_CAPITA)와 다른 "
     "회계 기준입니다. 공식 반입수수료는 수도권매립지관리공사가 광역지자체(서울시·인천시·"
     "경기도) 단위로 보고한 반입수수료이며, 이 지표는 개별 기초지자체가 공개한 생활폐기물 "
-    "수집·운반 대행 계약의 지급액입니다. 두 값은 합산·차감·비율 계산 대상이 아닙니다."
+    "수집·운반 대행 계약의 지급액입니다. 두 값을 함께 제시할 때에는 회계 기준·제공기관·"
+    "공간 단위와 인구 기준이 서로 다르다는 점을 반드시 함께 밝혀야 합니다."
 )
 
 # Accounting basis — a distinct fourth basis, never merged with

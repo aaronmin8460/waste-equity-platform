@@ -36,6 +36,8 @@
  */
 
 import type { FacilityBurdenEnvelope, ReportingPerCapitaEnvelope } from "./api";
+import type { RegionScope } from "./ranking";
+import { regionScope } from "./ranking";
 
 /** Which served facility-burden measure the Y axis shows. */
 export type BurdenMode = "located" | "buffer";
@@ -45,6 +47,21 @@ export interface ScatterPoint {
   /** Native SGIS region code — the key both datasets agreed on. */
   regionCode: string;
   regionName: string;
+  /**
+   * The parent 시·도 this municipality belongs to — a GROUPING key, never an
+   * observation.
+   *
+   * Page-2 기술요청 #14 asks for the dots to be coloured 서울 / 경기 / 인천, and the
+   * Figma spec sheet 5 (271:439) states independently that **각 점 = 하나의 시·군·구**.
+   * The two together mean exactly one thing: one dot stays one municipality, and the
+   * 시·도 only decides which of three fills it gets. Collapsing the plot to three
+   * points — one per 시·도 — would satisfy the colour instruction while destroying
+   * the chart, so the scope rides on the point rather than replacing it.
+   *
+   * `null` for a code outside the three capital-region 시·도, which is plotted in the
+   * neutral fill and named as 분류 없음 rather than silently folded into a group.
+   */
+  scope: RegionScope | null;
   /** Served per-capita generation, kg/인·년. Exact served string kept alongside. */
   generation: number;
   generationExact: string;
@@ -99,6 +116,54 @@ export interface ScatterDataset {
  */
 export const SCATTER_COMPARABILITY_CAVEAT =
   "가로축은 발생지 기준, 세로축은 시설 소재지 기준입니다. 두 축의 차이는 처리 부족분이나 잉여가 아닙니다.";
+
+/**
+ * The 시·도 fills, transcribed verbatim from page-2 기술요청 `267:428`:
+ *
+ * > 사분면 위 원dots들 : 서울(C26B2F), 경기(7771AE), 인천(579B7A) 을 기준으로 색 다르게 표시
+ *
+ * These are SPECIFIED values, not a palette choice — do not substitute the project's
+ * categorical tokens for them. `null` (a code outside the three capital-region 시·도)
+ * keeps the previous neutral blue rather than being folded into one of the groups.
+ *
+ * Colour is never the SOLE carrier of the grouping: the 시·도 name is in every dot's
+ * `aria-label`, in the legend, in the selected-point readout, and as its own column in
+ * 표로 보기 — so the plot is readable without colour vision and by a screen reader.
+ */
+export const SCATTER_SCOPE_COLORS: Record<RegionScope, string> = {
+  "11": "#C26B2F",
+  "23": "#579B7A",
+  "31": "#7771AE",
+};
+
+/** Fill for a point whose code belongs to no capital-region 시·도. */
+export const SCATTER_SCOPE_FALLBACK_COLOR = "#6b8bd6";
+
+/**
+ * The FULL 시·도 names, as the 기술요청 and the legend spell them.
+ *
+ * Deliberately not `ranking.ts`'s short `SCOPE_LABELS` (서울 / 인천 / 경기): the
+ * legend is the one place the grouping is defined, so it names the administrative
+ * units in full.
+ */
+export const SCATTER_SCOPE_LABELS: Record<RegionScope, string> = {
+  "11": "서울특별시",
+  "23": "인천광역시",
+  "31": "경기도",
+};
+
+/** Legend reading order — the same 서울 → 인천 → 경기 order the rest of Page 2 uses. */
+export const SCATTER_SCOPE_ORDER: readonly RegionScope[] = ["11", "23", "31"];
+
+/** The fill for one point, by its parent 시·도. */
+export function scatterScopeColor(scope: RegionScope | null): string {
+  return scope ? SCATTER_SCOPE_COLORS[scope] : SCATTER_SCOPE_FALLBACK_COLOR;
+}
+
+/** How a point's 시·도 is named in text. Never an empty string. */
+export function scatterScopeLabel(scope: RegionScope | null): string {
+  return scope ? SCATTER_SCOPE_LABELS[scope] : "분류 없음";
+}
 
 /** Reason labels in plain Korean. The raw enum stays in a diagnostic line. */
 export const SCATTER_EXCLUSION_LABELS: Record<ScatterExclusion["reason"], string> = {
@@ -181,6 +246,7 @@ export function buildScatterDataset(
     }
     points.push({
       ...identity,
+      scope: regionScope(item.reporting_region_code),
       generation,
       generationExact,
       burden: burdenValue,
@@ -201,6 +267,22 @@ export function buildScatterDataset(
     generationMedian: median(points.map((point) => point.generation)),
     burdenMedian: median(points.map((point) => point.burden)),
   };
+}
+
+/**
+ * How many plotted municipalities each 시·도 contributes.
+ *
+ * The legend prints these counts, which is what makes the grain VISIBLE: a reader
+ * sees 서울특별시 25곳 rather than one 서울 swatch, so a future regression that
+ * collapsed the plot to three 시·도 points would be legible on the screen itself and
+ * not only in a test.
+ */
+export function scopeCounts(points: readonly ScatterPoint[]): Map<RegionScope | null, number> {
+  const counts = new Map<RegionScope | null, number>();
+  for (const point of points) {
+    counts.set(point.scope, (counts.get(point.scope) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**

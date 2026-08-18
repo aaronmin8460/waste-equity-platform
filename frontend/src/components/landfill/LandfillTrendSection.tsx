@@ -20,21 +20,39 @@
  * than merely painted.
  *
  * It is still not the ONLY way to read a value. A readout needs a pointer or a focus
- * ring; every month's exact served figure therefore also stays as text in the table
- * below, and the highest and lowest months are called out in words. The request asked
- * for the extremes in red and blue; colour is applied on TOP of those text callouts,
- * never instead of them. (The request's #F9F9F9 for the remaining bars is the page
- * canvas colour and would be invisible on a white card — the latest Figma read
- * 2026-08-16 still says #F9F9F9 and so does not resolve it — so the neutral bars use
- * the nearest visible step of the same neutral ramp.)
+ * ring; every month's exact served figure therefore also stays as text in the table,
+ * and the highest and lowest months are called out in words. Colour is applied on TOP
+ * of those text callouts, never instead of them.
+ *
+ * ── ⚠️ THE EXTREME COLOURS: 최저 = RED, 최고 = BLUE ───────────────────────────
+ * Annotation `271:430` reads:
+ *
+ *   "단, 최저/최고는 각각 빨간색, 파란색으로 표현하고, 그외는 #F9F9F9로 표현"
+ *
+ * Order-matched, that is 최저 → 빨간색 and 최고 → 파란색, and the rendered reference
+ * (`271-443.png`) confirms it visually: 최저(7월) is red-on-pale-red and 최고(11월) is
+ * blue-on-pale-lavender. An earlier audit recorded this the other way round; it was
+ * wrong and this file follows the annotation and the render.
+ *
+ * Note this is the OPPOSITE polarity to Page 5's slope chart (순위 상승 = 빨강). The two
+ * are different claims about different quantities and must NOT be unified into one
+ * "semantic" colour scale.
+ *
+ * ── What `#F9F9F9` turned out to be ──────────────────────────────────────────
+ * It is the CHIP fill for an ordinary month, not a marker colour. Read as a marker it
+ * is the page canvas colour and would be invisible on a white card, which is why it
+ * previously looked unresolvable; `271-443.png` settles it — the extremes are labelled
+ * with tinted CHIPS (pale red / pale lavender), so `그외는 #F9F9F9` is the neutral
+ * version of that same chip. The hover readout chip therefore uses it, and the
+ * ordinary month markers keep the navy the frame draws the series in.
  */
 
 import { useMemo, useState } from "react";
 
 import type { LandfillTrendPoint, LandfillTrends } from "../../lib/api";
 import { formatDecimalExact } from "../../lib/landfill";
-import Accordion from "../ui/Accordion";
 import DataStatusBadge from "../ui/DataStatusBadge";
+import Dialog from "../ui/Dialog";
 import SectionCard from "../ui/SectionCard";
 import SegmentedControl from "../ui/SegmentedControl";
 import { PAGE2_CARD_CLASS } from "./shared";
@@ -74,9 +92,17 @@ const METRICS: Record<TrendMetric, MetricSpec> = {
   },
 };
 
-/** Max red, min blue, everything else a visible neutral (see the file header). */
-const BAR_MAX = "#b91c1c";
-const BAR_MIN = "#1d4ed8";
+/**
+ * 최저 RED / 최고 BLUE — annotation `271:430`, order-matched. See the file header;
+ * do not "correct" these back.
+ */
+const MARK_MIN = "#b91c1c";
+const MARK_MAX = "#1d4ed8";
+/** The tinted chips those callouts sit on, and the neutral one for every other month. */
+const CHIP_MIN = "#FDECEC";
+const CHIP_MAX = "#ECEEFB";
+/** `그외는 #F9F9F9` — the ordinary month's readout chip. */
+const CHIP_NEUTRAL = "#F9F9F9";
 /** The connecting line and its ordinary month markers (Figma draws this series navy). */
 const LINE_STROKE = "#111a56";
 const POINT_DEFAULT = "#111a56";
@@ -92,6 +118,8 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
    * keyboard reader's position is never stolen by a stray mouse move across the
    * chart. Focus wins when both are set.
    */
+  // 표로 보기 (기술요청 #16) — presentation state only.
+  const [tableOpen, setTableOpen] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const activeMonth = focused ?? hovered;
@@ -159,18 +187,38 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
               chart never reflows the card. It is `aria-live="polite"` rather than
               `role="status"`: it echoes what the focused bar's own `aria-label`
               already announced, so it must never interrupt. */}
+          {/* Figma spec sheet 8 (271-442): "Tooltip에는 해당 월의 반입량 + 공식
+              반입수수료를 함께 표시." BOTH figures, whichever metric the chart is
+              drawing — switching the series changes what is plotted, not what a month
+              is worth. The chip is tinted when the active month IS an extreme and
+              #F9F9F9 otherwise (그외는 #F9F9F9). */}
           <p
-            className="mt-2 min-h-[1.25rem] text-xs font-medium tabular-nums text-ink"
+            className="mt-2 flex min-h-[1.5rem] flex-wrap items-center gap-x-2 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums text-ink"
+            style={{
+              backgroundColor: activePoint
+                ? activePoint.reference_month === extremes?.min.reference_month
+                  ? CHIP_MIN
+                  : activePoint.reference_month === extremes?.max.reference_month
+                    ? CHIP_MAX
+                    : CHIP_NEUTRAL
+                : "transparent",
+            }}
             aria-live="polite"
             data-testid="landfill-trend-readout"
           >
             {activePoint ? (
               <>
-                {monthLabel(activePoint.reference_month)} · {spec.exact(activePoint)}
+                <span className="font-bold">{monthLabel(activePoint.reference_month)}</span>
+                <span data-testid="landfill-trend-readout-quantity">
+                  반입량 {METRICS.quantity.exact(activePoint)}
+                </span>
+                <span data-testid="landfill-trend-readout-fee">
+                  공식 반입수수료 {METRICS.fee.exact(activePoint)}
+                </span>
               </>
             ) : (
               <span className="font-normal text-ink-subtle">
-                점에 커서를 올리거나 키보드로 이동하면 그 달의 정확한 값이 표시됩니다.
+                점에 커서를 올리거나 키보드로 이동하면 그 달의 반입량과 공식 반입수수료가 함께 표시됩니다.
               </span>
             )}
           </p>
@@ -180,11 +228,22 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
             {extremes ? (
               <>
-                <span data-testid="landfill-trend-max" className="font-semibold text-danger">
+                {/* 최고 BLUE, 최저 RED — annotation 271:430. The chips echo the
+                    rendered reference (271-443.png), where the callouts sit on a pale
+                    tint of their own colour. */}
+                <span
+                  data-testid="landfill-trend-max"
+                  className="rounded-full px-2 py-0.5 font-semibold"
+                  style={{ color: MARK_MAX, backgroundColor: CHIP_MAX }}
+                >
                   최고 {monthLabel(extremes.max.reference_month)} ·{" "}
                   {spec.format(spec.pick(extremes.max))}
                 </span>
-                <span data-testid="landfill-trend-min" className="font-semibold text-[#1d4ed8]">
+                <span
+                  data-testid="landfill-trend-min"
+                  className="rounded-full px-2 py-0.5 font-semibold"
+                  style={{ color: MARK_MIN, backgroundColor: CHIP_MIN }}
+                >
                   최저 {monthLabel(extremes.min.reference_month)} ·{" "}
                   {spec.format(spec.pick(extremes.min))}
                 </span>
@@ -199,9 +258,26 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
             </span>
           </div>
 
+          {/* 기술요청 #16 — '표로 보기' becomes a popup rather than an inline
+              disclosure, on the shared `ui/Dialog` primitive (focus trap, Escape,
+              focus restore to this button; the primitive itself is untouched). */}
           <div className="mt-3">
-            <Accordion label="표로 보기 (월별 정확한 값)" testId="landfill-trend-exact">
-              <div className="max-h-56 overflow-y-auto">
+            <button
+              type="button"
+              className="wep-btn-quiet w-full justify-between"
+              onClick={() => setTableOpen(true)}
+              data-testid="landfill-trend-exact"
+            >
+              표로 보기 (월별 정확한 값)
+            </button>
+            <Dialog
+              open={tableOpen}
+              title="월별 정확한 값"
+              description={`${spec.title} · ${points[0].reference_month} – ${points[points.length - 1].reference_month}`}
+              onClose={() => setTableOpen(false)}
+              testId="landfill-trend-table-modal"
+            >
+              <div className="px-5 py-4">
                 <table className="w-full text-left text-[11px]" data-testid="landfill-trend-table">
                   <caption className="sr-only">{spec.title} — 월별 정확한 값</caption>
                   <thead>
@@ -236,8 +312,18 @@ export default function LandfillTrendSection({ trends }: LandfillTrendSectionPro
                     ))}
                   </tbody>
                 </table>
+                <div className="mt-4 flex justify-end border-t border-hairline pt-3">
+                  <button
+                    type="button"
+                    className="wep-btn-primary"
+                    onClick={() => setTableOpen(false)}
+                    data-testid="landfill-trend-table-dismiss"
+                  >
+                    닫기
+                  </button>
+                </div>
               </div>
-            </Accordion>
+            </Dialog>
           </div>
         </>
       )}
@@ -337,7 +423,12 @@ function TrendChart({
           const isMax = extremes?.max.reference_month === point.reference_month;
           const isMin = extremes?.min.reference_month === point.reference_month;
           const isActive = activeMonth === point.reference_month;
-          const readout = `${monthLabel(point.reference_month)} · ${spec.exact(point)}`;
+          // BOTH metrics, matching the visible tooltip (Figma spec sheet 8): a
+          // screen-reader user must hear what a sighted reader sees, not the plotted
+          // series alone.
+          const readout =
+            `${monthLabel(point.reference_month)} · 반입량 ${METRICS.quantity.exact(point)}` +
+            ` · 공식 반입수수료 ${METRICS.fee.exact(point)}`;
           return (
             <g key={point.reference_month}>
               {/* A full-height transparent target over the month's slot, so a low
@@ -374,7 +465,7 @@ function TrendChart({
                   y1={cy}
                   x2={cx}
                   y2={CHART.padTop + plotHeight}
-                  stroke={isMax ? BAR_MAX : isMin ? BAR_MIN : "#111a56"}
+                  stroke={isMax ? MARK_MAX : isMin ? MARK_MIN : "#111a56"}
                   strokeWidth={1}
                   strokeDasharray="3 3"
                   aria-hidden
@@ -385,7 +476,7 @@ function TrendChart({
                 cx={cx}
                 cy={cy}
                 r={isActive || isMax || isMin ? 5 : 3.5}
-                fill={isMax ? BAR_MAX : isMin ? BAR_MIN : POINT_DEFAULT}
+                fill={isMax ? MARK_MAX : isMin ? MARK_MIN : POINT_DEFAULT}
                 stroke="#ffffff"
                 strokeWidth={1.5}
                 // Decorative: the hit target above owns the name and the focus.
@@ -415,8 +506,8 @@ function TrendChart({
         {extremes &&
           (
             [
-              { point: extremes.max, kind: "max" as const, fill: BAR_MAX, label: "최고" },
-              { point: extremes.min, kind: "min" as const, fill: BAR_MIN, label: "최저" },
+              { point: extremes.max, kind: "max" as const, fill: MARK_MAX, label: "최고" },
+              { point: extremes.min, kind: "min" as const, fill: MARK_MIN, label: "최저" },
             ] satisfies { point: LandfillTrendPoint; kind: "max" | "min"; fill: string; label: string }[]
           ).map(({ point, kind, fill, label }) => {
             const index = points.findIndex((p) => p.reference_month === point.reference_month);

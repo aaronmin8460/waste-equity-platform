@@ -143,12 +143,23 @@ describe("landfill filters reach the request and the URL", () => {
     await renderLandfill("?v=1&mode=flow&year=2023&month=7&origin=41");
     const summary = vi.mocked(api.fetchLandfillSummary);
     await waitFor(() => expect(summary).toHaveBeenCalled());
-    // Exactly one summary request: `mode` and the filters are restored in the same
-    // batch, so the effect never runs once for the default state and again for the
-    // restored one.
-    expect(summary).toHaveBeenCalledTimes(1);
+    // Exactly one SCOPED summary request: `mode` and the filters are restored in the
+    // same batch, so the effect never runs once for the default state and again for
+    // the restored one. That is what this test is about, and it is unchanged.
+    const scoped = summary.mock.calls.filter(([args]) => args?.origin != null);
+    expect(scoped).toHaveLength(1);
     expect(summary).toHaveBeenCalledWith(
       expect.objectContaining({ year: 2023, month: 7, origin: "41" }),
+    );
+    // Page 2 also issues ONE deliberately UNFILTERED summary, for the 수도권 공통
+    // per-resident 반입수수료 — the second term of 주민 1인당 총 관리비용. It must not
+    // carry the 출발 지역 filter: the scoped summary serves Seoul's 4,611.40 in place
+    // of the 수도권 4,045.92, and a value labelled 수도권 공통 may not move when the
+    // reader narrows the view.
+    const unfiltered = summary.mock.calls.filter(([args]) => args?.origin == null);
+    expect(unfiltered).toHaveLength(1);
+    expect(unfiltered[0][0]).toEqual(
+      expect.objectContaining({ year: 2023, month: 7, origin: null, wasteName: null }),
     );
   });
 

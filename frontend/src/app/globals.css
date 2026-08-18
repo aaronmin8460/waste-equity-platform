@@ -2116,3 +2116,36 @@ body {
     margin-bottom: 0.25rem; /* mb-2 → mb-1 */
   }
 }
+
+/* ── Page-2 (기술요청 #24) — 상하 스크롤 시 페이지 멈춤 ─────────────────────────
+   Scroll snapping down the Page-2 reading order, so a scroll gesture settles on a
+   section boundary instead of halfway through a chart.
+
+   `proximity`, deliberately NOT `mandatory`. Mandatory snapping seizes every scroll
+   and makes a long analytical page impossible to read at an arbitrary offset — it
+   would fight a reader comparing two rows of a 66-row table, and it can strand
+   keyboard and screen-reader users mid-section. Proximity snaps only when the scroll
+   already ends near a boundary, which is what "페이지가 멈춘다" describes and what
+   leaves free scrolling intact.
+
+   `scroll-margin-top` clears the 78px sticky app bar, so a snapped section's heading
+   is never parked underneath it.
+
+   Desktop only, and scoped to `.landfill-compact` (the Page-2 root) so no other area
+   inherits it. Disabled entirely under `prefers-reduced-motion`: snapping is an
+   involuntary scroll adjustment, which is exactly what that preference asks us not
+   to do. */
+@media (min-width: 64rem) {
+  .landfill-compact-stack {
+    scroll-snap-type: y proximity;
+  }
+  .landfill-compact-stack > * {
+    scroll-snap-align: start;
+    scroll-margin-top: 5.5rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landfill-compact-stack {
+    scroll-snap-type: none;
+  }
+}

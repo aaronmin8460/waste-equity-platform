@@ -36,10 +36,15 @@ import {
   quadrantOf,
   SCATTER_COMPARABILITY_CAVEAT,
   SCATTER_EXCLUSION_LABELS,
+  SCATTER_SCOPE_ORDER,
+  scatterScopeColor,
+  scatterScopeLabel,
+  scopeCounts,
 } from "../../lib/landfillScatter";
 import { formatQuantity } from "../../lib/metrics";
 import Accordion from "../ui/Accordion";
 import DataStatusBadge from "../ui/DataStatusBadge";
+import Dialog from "../ui/Dialog";
 import SectionCard from "../ui/SectionCard";
 import SegmentedControl from "../ui/SegmentedControl";
 import { PAGE2_CARD_CLASS } from "./shared";
@@ -71,6 +76,8 @@ export default function LandfillGenerationScatter({
 }: LandfillGenerationScatterProps) {
   const [mode, setMode] = useState<BurdenMode>("located");
   const [selected, setSelected] = useState<string | null>(null);
+  // 표로 보기 (기술요청 #16) — presentation state only.
+  const [tableOpen, setTableOpen] = useState(false);
 
   const dataset = useMemo(
     () => buildScatterDataset(perCapita, burden, SCATTER_WASTE_STREAM, mode),
@@ -104,6 +111,7 @@ export default function LandfillGenerationScatter({
         </p>
       ) : (
         <>
+          <ScopeLegend dataset={dataset} />
           <ScatterPlot
             dataset={dataset}
             selected={selected}
@@ -123,9 +131,40 @@ export default function LandfillGenerationScatter({
           <SelectedPointDetail point={selectedPoint} dataset={dataset} />
 
           <div className="mt-3 flex flex-col gap-2">
-            <Accordion label="표로 보기 (지역별 정확한 값)" testId="landfill-scatter-exact">
-              <ScatterTable dataset={dataset} />
-            </Accordion>
+            {/* 기술요청 #16 — '표로 보기' is a popup, on the shared `ui/Dialog`. */}
+            <button
+              type="button"
+              className="wep-btn-quiet w-full justify-between"
+              onClick={() => setTableOpen(true)}
+              data-testid="landfill-scatter-exact"
+            >
+              표로 보기 (지역별 정확한 값)
+            </button>
+            <Dialog
+              open={tableOpen}
+              title="지역별 정확한 값"
+              description={`1인당 ${SCATTER_STREAM_LABEL} 발생량과 1인당 시설 처리량 · ${dataset.points.length}개 시·군·구`}
+              onClose={() => setTableOpen(false)}
+              testId="landfill-scatter-table-modal"
+            >
+              <div className="px-5 py-4">
+                <ScatterTable dataset={dataset} />
+                <div className="mt-4 flex justify-end border-t border-hairline pt-3">
+                  <button
+                    type="button"
+                    className="wep-btn-primary"
+                    onClick={() => setTableOpen(false)}
+                    data-testid="landfill-scatter-table-dismiss"
+                  >
+                    닫기
+                  </button>
+                </div>
+              </div>
+            </Dialog>
+            {/* KEPT as an inline disclosure, deliberately — see the note in the
+                dashboard: this is the ONLY place the excluded regions are named with
+                their reason, and 기술요청 #15 asks for it to be deleted. Deleting it
+                would turn a disclosed exclusion into a silent one. */}
             <Accordion label="자료 기준과 비교에서 빠진 지역" testId="landfill-scatter-coverage">
               <ScatterCoverage dataset={dataset} mode={mode} />
             </Accordion>
@@ -133,6 +172,51 @@ export default function LandfillGenerationScatter({
         </>
       )}
     </SectionCard>
+  );
+}
+
+/**
+ * The 시·도 grouping key, stated in text beside the plot.
+ *
+ * This exists so COLOUR IS NOT THE ONLY CARRIER of the grouping (WCAG 1.4.1). It is
+ * also the visible proof of the page's data contract: it prints each 시·도's dot
+ * COUNT, so "서울특별시 25곳 · 인천광역시 10곳 · 경기도 24곳" reads as 59 municipalities
+ * in three groups — not as three 시·도 observations. A regression that collapsed the
+ * plot to one dot per 시·도 would show up here as "1곳" three times.
+ *
+ * Groups with no plotted dot are omitted rather than shown as 0곳: an empty group is
+ * not a measurement, and the 빠진 지역 disclosure below already names what dropped out
+ * and why.
+ */
+function ScopeLegend({ dataset }: { dataset: ScatterDataset }) {
+  const counts = scopeCounts(dataset.points);
+  const groups = [
+    ...SCATTER_SCOPE_ORDER.filter((scope) => (counts.get(scope) ?? 0) > 0),
+    ...((counts.get(null) ?? 0) > 0 ? [null] : []),
+  ];
+  if (groups.length === 0) return null;
+  return (
+    <ul
+      className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-muted"
+      data-testid="landfill-scatter-legend"
+    >
+      {groups.map((scope) => (
+        <li key={scope ?? "none"} className="flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="inline-block h-2.5 w-2.5 flex-none rounded-full"
+            style={{ backgroundColor: scatterScopeColor(scope) }}
+            data-testid="landfill-scatter-legend-swatch"
+            data-scope={scope ?? "none"}
+          />
+          <span>
+            {scatterScopeLabel(scope)}{" "}
+            <span className="tabular-nums text-ink-subtle">{counts.get(scope) ?? 0}곳</span>
+          </span>
+        </li>
+      ))}
+      <li className="text-ink-subtle">점 하나 = 시·군·구 한 곳</li>
+    </ul>
   );
 }
 
@@ -314,48 +398,97 @@ function ScatterPlot({
           </g>
         )}
 
+        {/* ── Pass 1: every dot ─────────────────────────────────────────────────
+            One circle per 시·군·구, filled by its parent 시·도 (기술요청 #14). The
+            grain is the contract: this map runs over `dataset.points`, which is one
+            entry per municipality, and NOTHING here groups or aggregates them — the
+            시·도 only chooses a fill.
+
+            Selection emphasis follows annotation 271:428 (색 진하게 + 정확한 지역명):
+            the chosen dot KEEPS its 시·도 colour and gains size and a ring, while the
+            rest drop to a third of their opacity. Repainting the selection navy — as
+            it was — threw away the one attribute the reader had just been asked to
+            read the plot by. */}
         {dataset.points.map((point) => {
           const isSelected = point.regionCode === selected;
+          const dimmed = selected !== null && !isSelected;
           return (
-            <g key={point.regionCode}>
-              {/* A real button: focusable, activatable by Enter/Space, and announced
-                  with its exact values. SVG <circle> alone is none of those. */}
-              <circle
-                role="button"
-                tabIndex={0}
-                aria-pressed={isSelected}
-                aria-label={`${point.regionName} — 1인당 발생량 ${formatQuantity(point.generationExact)} kg, 1인당 시설 처리량 ${formatQuantity(point.burdenExact)} kg`}
-                cx={x(point.generation)}
-                cy={y(point.burden)}
-                r={isSelected ? 7 : 4.5}
-                fill={isSelected ? "#111a56" : "#6b8bd6"}
-                stroke={isSelected ? "#ffffff" : "none"}
-                strokeWidth={isSelected ? 2 : 0}
-                className="cursor-pointer focus:outline-none focus-visible:stroke-[#111a56] focus-visible:stroke-2"
-                data-testid="landfill-scatter-point"
-                data-region={point.regionCode}
-                data-selected={isSelected ? "true" : undefined}
-                onClick={() => onSelect(point.regionCode)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onSelect(point.regionCode);
-                  }
-                }}
-              />
-              {isSelected && (
-                <text
-                  x={x(point.generation) + 10}
-                  y={y(point.burden) - 8}
-                  className="fill-ink text-[10px] font-bold"
-                  data-testid="landfill-scatter-point-label"
-                >
-                  {point.regionName}
-                </text>
-              )}
-            </g>
+            /* A real button: focusable, activatable by Enter/Space, and announced with
+               its 시·도 and its exact values. SVG <circle> alone is none of those. */
+            <circle
+              key={point.regionCode}
+              role="button"
+              tabIndex={0}
+              aria-pressed={isSelected}
+              aria-label={`${point.regionName}, ${scatterScopeLabel(point.scope)} — 1인당 발생량 ${formatQuantity(point.generationExact)} kg, 1인당 시설 처리량 ${formatQuantity(point.burdenExact)} kg`}
+              cx={x(point.generation)}
+              cy={y(point.burden)}
+              r={isSelected ? 7.5 : 4.5}
+              fill={scatterScopeColor(point.scope)}
+              fillOpacity={dimmed ? 0.32 : 1}
+              stroke={isSelected ? "#111a56" : "none"}
+              strokeWidth={isSelected ? 2.5 : 0}
+              className="cursor-pointer focus:outline-none focus-visible:stroke-[#111a56] focus-visible:stroke-2"
+              data-testid="landfill-scatter-point"
+              data-region={point.regionCode}
+              data-scope={point.scope ?? "none"}
+              data-selected={isSelected ? "true" : undefined}
+              onClick={() => onSelect(point.regionCode)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(point.regionCode);
+                }
+              }}
+            />
           );
         })}
+
+        {/* ── Pass 2: the selected dot's label, ON TOP ──────────────────────────
+            기술요청 #17: the label used to be drawn inside the same <g> as its own
+            circle, so every dot painted AFTER it covered it — at 59 points a label
+            near the middle of the cloud was routinely half-hidden behind later dots.
+            Painting all labels in a second pass puts them above every circle, which
+            is what "맨 앞으로" asks for.
+
+            A pale halo behind the text keeps it legible where it crosses a dense
+            cluster; it is `aria-hidden` decoration, and the name itself is also in
+            the readout below the plot, so nothing depends on reading it here. */}
+        {(() => {
+          const point = dataset.points.find((candidate) => candidate.regionCode === selected);
+          if (!point) return null;
+          const label = point.regionName;
+          const anchorX = x(point.generation);
+          const anchorY = y(point.burden);
+          // Flip the label inside the plot when the dot sits near the right edge, so
+          // a right-hand region's name is never clipped by the card.
+          const flip = anchorX > PLOT.padLeft + (PLOT.width - PLOT.padLeft - PLOT.padRight) * 0.72;
+          return (
+            <g data-testid="landfill-scatter-point-label-group">
+              <text
+                x={flip ? anchorX - 11 : anchorX + 11}
+                y={anchorY - 9}
+                textAnchor={flip ? "end" : "start"}
+                aria-hidden
+                stroke="#ffffff"
+                strokeWidth={3.5}
+                strokeLinejoin="round"
+                className="text-[10px] font-bold"
+              >
+                {label}
+              </text>
+              <text
+                x={flip ? anchorX - 11 : anchorX + 11}
+                y={anchorY - 9}
+                textAnchor={flip ? "end" : "start"}
+                className="fill-ink text-[10px] font-bold"
+                data-testid="landfill-scatter-point-label"
+              >
+                {label}
+              </text>
+            </g>
+          );
+        })()}
 
         <text
           x={PLOT.padLeft + plotWidth / 2}
@@ -398,7 +531,12 @@ function SelectedPointDetail({
         className="mt-2 rounded-card border border-hairline bg-surface-muted p-3 text-xs text-ink-subtle"
         data-testid="landfill-scatter-selection"
       >
-        점을 선택하면(클릭 · 키보드) 그 지역의 정확한 값이 여기에 표시됩니다.
+        {/* The Figma frame's own footnote (125:5217 / annotation 271:429), verbatim —
+            "· 점을 클릭하면 해당 지역을 강조하고 상세 정보를 확인할 수 있습니다." — with
+            the keyboard affordance appended. The keyboard clause is NOT decoration:
+            the dots are operable by Enter/Space and dropping it would leave that
+            undiscoverable. */}
+        점을 클릭하면 해당 지역을 강조하고 상세 정보를 확인할 수 있습니다. (키보드로도 선택할 수 있습니다)
       </p>
     );
   }
@@ -413,7 +551,20 @@ function SelectedPointDetail({
       <p role="status" className="sr-only">
         {point.regionName} 선택됨.
       </p>
-      <p className="text-sm font-bold text-ink">{point.regionName}</p>
+      <p className="flex items-center gap-1.5 text-sm font-bold text-ink">
+        <span
+          aria-hidden
+          className="inline-block h-2.5 w-2.5 flex-none rounded-full"
+          style={{ backgroundColor: scatterScopeColor(point.scope) }}
+        />
+        {point.regionName}
+        <span
+          className="text-[11px] font-normal text-ink-subtle"
+          data-testid="landfill-scatter-selection-scope"
+        >
+          {scatterScopeLabel(point.scope)}
+        </span>
+      </p>
       <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
         <div>
           <dt className="inline text-ink-subtle">1인당 발생량 </dt>
@@ -455,13 +606,18 @@ function SelectedPointDetail({
 /** Every plotted region's exact served values, as text. */
 function ScatterTable({ dataset }: { dataset: ScatterDataset }) {
   return (
-    <div className="max-h-64 overflow-y-auto">
-      <table className="w-full text-left text-[11px]" data-testid="landfill-scatter-table">
+    <div>
+      <table className="w-full text-left text-sm" data-testid="landfill-scatter-table">
         <caption className="sr-only">지역별 1인당 발생량과 1인당 시설 처리량</caption>
         <thead>
           <tr className="text-ink-subtle">
             <th scope="col" className="py-0.5 pr-3 font-medium">
               지역
+            </th>
+            {/* The grouping key as TEXT. Together with the legend this is what keeps
+                the 시·도 encoding readable without colour vision (기술요청 #14). */}
+            <th scope="col" className="py-0.5 pr-3 font-medium">
+              시·도
             </th>
             <th scope="col" className="py-0.5 pr-3 text-right font-medium">
               1인당 발생량 (kg/인·년)
@@ -477,6 +633,9 @@ function ScatterTable({ dataset }: { dataset: ScatterDataset }) {
               <th scope="row" className="py-0.5 pr-3 font-normal text-ink-muted">
                 {point.regionName}
               </th>
+              <td className="py-0.5 pr-3 text-ink-muted" data-testid="landfill-scatter-table-scope">
+                {scatterScopeLabel(point.scope)}
+              </td>
               <td className="py-0.5 pr-3 text-right tabular-nums text-ink-muted">
                 {formatQuantity(point.generationExact)}
               </td>
