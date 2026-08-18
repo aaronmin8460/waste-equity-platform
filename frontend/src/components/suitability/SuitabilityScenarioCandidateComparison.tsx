@@ -43,7 +43,12 @@ import dynamic from "next/dynamic";
 import { useCallback, useMemo, useState } from "react";
 
 import { userScenarioTileUrl, type RegionBoundaryCollection, type UserScenarioWeights } from "../../lib/api";
-import { COMPONENT_ORDER, SUITABILITY_SCREENING_SHORT_LABEL, statusLabel } from "../../lib/glossary";
+import {
+  SUITABILITY_SCREENING_SHORT_LABEL,
+  codeWithName,
+  statusLabel,
+  type ScoreComponent,
+} from "../../lib/glossary";
 import { defaultCoverageVisibility, emptyAvailableClasses } from "../../lib/landCoverLayer";
 import {
   CANDIDATE_EXCLUDED_COLOR,
@@ -89,9 +94,12 @@ import {
   type SuitabilityScope,
 } from "../../lib/suitabilityScope";
 import {
+  COMPONENT_MODEL_HISTORICAL,
   COMPONENT_MODEL_SUCCESSOR,
+  namedWeightsForModel,
   type ComponentModelVersion,
 } from "../../lib/componentModelWeights";
+import { V3_COMPONENT_META, type V3Component } from "../../lib/suitabilityV3";
 import { STATUS_LABELS } from "./shared";
 import { useScenarioCandidateDetail } from "./useScenarioCandidateDetail";
 
@@ -759,16 +767,26 @@ function ContributionCell({
 // --------------------------------------------------------------------------- //
 
 /**
- * "35% / 25% / 25% / 15%" — the weights the tiles on screen were coloured by, so the
- * map states its own provenance now that the legend overlay no longer carries it.
- * `자료 없음` rather than a guess when a side has no served weights.
+ * The weights the tiles on screen were coloured by, so the map states its own
+ * provenance now that the legend overlay no longer carries it — as one line, in the
+ * labels of the model that produced them. `자료 없음` rather than a guess when a side
+ * has no served weights.
+ *
+ * It used to walk the historical `COMPONENT_ORDER` under a hardcoded "Z/R/E/D"
+ * prefix, so a successor comparison — whose vector has none of those four keys —
+ * printed "Z/R/E/D 자료 없음 / 자료 없음 / 자료 없음 / 자료 없음" over a map that was in
+ * fact coloured by four real V3 weights: a foreign model's names on one model's
+ * numbers, which is exactly what the component-model boundary exists to prevent.
  */
-function weightSummary(weights: UserScenarioWeights | null): string {
+function weightSummary(
+  weights: UserScenarioWeights | null,
+  model: ComponentModelVersion,
+): string {
   if (weights === null) return "자료 없음";
-  return COMPONENT_ORDER.map((component) => {
-    const value = Number(weights[component]);
-    return Number.isFinite(value) ? `${Math.round(value * 100)}%` : "자료 없음";
-  }).join(" / ");
+  return namedWeightsForModel(model, weights, {
+    historical: (component) => codeWithName(component as ScoreComponent),
+    successor: (component) => V3_COMPONENT_META[component as V3Component].label,
+  });
 }
 
 function ScenarioMapCard({
@@ -787,6 +805,12 @@ function ScenarioMapCard({
 }) {
   const [slot, setSlot] = useState<"A" | "B">("A");
   const active = slot === "A" ? sideA : sideB;
+  // The model that COLOURED these tiles, read from the side's own preview echo of the
+  // run — never assumed, and never the request's.
+  const activeModel: ComponentModelVersion =
+    active.preview?.component_model_version === COMPONENT_MODEL_SUCCESSOR
+      ? COMPONENT_MODEL_SUCCESSOR
+      : COMPONENT_MODEL_HISTORICAL;
   // Stable identity for equal scopes, so a re-rendered scope object does not
   // rebuild the tile URL (and therefore does not re-create the map source).
   const scopeQueryKey = scopeKey(scope);
@@ -966,7 +990,7 @@ function ScenarioMapCard({
           three text slots) because the legend directly above shows 배제/검토 swatches
           that a reader could otherwise take as moving with the weights. */}
       <p className="mt-2 text-[11px] leading-snug text-ink-subtle" data-testid="scenario-map-note">
-        색은 이 시나리오 가중치(Z/R/E/D {weightSummary(active.canonicalWeights)})로 다시 계산한
+        색은 이 시나리오 가중치({weightSummary(active.canonicalWeights, activeModel)})로 다시 계산한
         점수입니다. 배제·검토 판정(스크리닝)은 규칙 기반이며 A안과 B안에서 달라지지 않습니다.{" "}
         {SUITABILITY_SCREENING_SHORT_LABEL}.
       </p>

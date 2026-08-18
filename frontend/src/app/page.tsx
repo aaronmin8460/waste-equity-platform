@@ -213,7 +213,6 @@ import { decimalWeightsToPercents, type ScenarioPercents } from "../lib/scenario
 import { hasComparisonIntent } from "../lib/scenarioComparison";
 import {
   deleteSavedScenario,
-  isCanonicalWeights,
   readSavedScenarios,
   renameSavedScenario,
   resolveComparisonPair,
@@ -1294,8 +1293,14 @@ export default function Home() {
     if (customWeightsApplied !== null) return customWeightsApplied.weights;
     const served =
       (suit.run.weight_profiles ?? {})[profile] ?? suit.policy.weight_profiles[profile] ?? null;
-    return isCanonicalWeights(served) ? served : null;
-  }, [suit, profile, customWeightsApplied]);
+    // MODEL-AWARE. `isCanonicalWeights` only ever recognises the HISTORICAL four
+    // components, so on a successor run it rejected the run's own approved profile
+    // and left this `null` — which reads on screen as "이 분석 실행에서 확인할 수 없어",
+    // permanently blocking ④ 시나리오 저장 (and therefore ⑤'s A/B pair) for V3.
+    // `modelWeightsFrom` validates against THIS run's components and rebuilds the
+    // vector component by component, so no foreign key can travel with it.
+    return modelWeightsFrom(activeComponentModel, served)?.weights ?? null;
+  }, [suit, profile, customWeightsApplied, activeComponentModel]);
 
   const activeRunId = suit?.run.id ?? null;
 
