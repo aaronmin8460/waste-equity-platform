@@ -283,7 +283,15 @@ export default function SuitabilityScoringBasis({
           {/* Once the reader has authored a vector, the basis in force is THEIRS —
               printing a preset's name over 사용자 지정 numbers would be the one
               mislabel this card cannot afford. */}
-          {customWeights?.isCustom ? CUSTOM_WEIGHTS_LABEL : profileLabel(profile)}
+          {/* The name of the basis IN FORCE. On a successor run the five historical
+              profile labels do not apply — the model has one approved profile — so
+              naming it "기본 기준" would attach a historical policy name to a
+              successor vector. */}
+          {customWeights?.isCustom
+            ? CUSTOM_WEIGHTS_LABEL
+            : successor
+              ? SUCCESSOR_BASIS_LABEL
+              : profileLabel(profile)}
         </span>
       </div>
 
@@ -718,6 +726,15 @@ export default function SuitabilityScoringBasis({
 
 /** The name the Custom option carries on every surface that mentions it. */
 export const CUSTOM_WEIGHTS_LABEL = "사용자 지정";
+
+/**
+ * The successor model's one approved profile, named as itself.
+ *
+ * NOT "기본 기준": that is the historical `baseline` profile's citizen-facing label,
+ * defined over Z/R/E/D, and printing it above successor weights would name a policy
+ * that was never registered for them.
+ */
+export const SUCCESSOR_BASIS_LABEL = "기준";
 
 /**
  * The running total, its validation, and the two actions — 계산 적용 / 기준값으로

@@ -59,6 +59,7 @@ import { SCOPE_ALL, type SuitabilityScope } from "../../lib/suitabilityScope";
 import {
   COMPONENT_MODEL_SUCCESSOR,
   LEGACY_MODEL_NOTICE,
+  SCENARIO_REWEIGHT_NOTE,
 } from "../../lib/componentModelWeights";
 import {
   SAVED_SCENARIO_OTHER_RUN_NOTICE,
@@ -258,7 +259,11 @@ export default function SuitabilityScenarioComparison({
                               CONTENT is the model's — a code is never shown bare. */}
                           <span className="mr-1.5 tabular-nums text-ink-subtle">{index + 1}</span>
                           {row.label}
-                          <span className="text-ink-subtle">（{row.code}）</span>
+                          {/* The successor components have no single-letter code, so
+                              the parens are omitted rather than rendered empty. */}
+                          {row.code !== "" && (
+                            <span className="text-ink-subtle">（{row.code}）</span>
+                          )}
                         </th>
                         <td className="py-3 pr-3">
                           <WeightCell percent={row.aPercent} testId="scenario-comparison-weight-a" />
@@ -311,7 +316,8 @@ export default function SuitabilityScenarioComparison({
                 {rows.map((row) => (
                   <div key={row.component} className="flex flex-wrap gap-x-3">
                     <dt className="font-medium">
-                      {row.label}（{row.code}）
+                      {row.label}
+                      {row.code !== "" ? `（${row.code}）` : ""}
                     </dt>
                     <dd className="tabular-nums">
                       {SLOT_LABEL.A} {row.aWeight ?? "자료 없음"} · {SLOT_LABEL.B}{" "}
@@ -336,8 +342,7 @@ export default function SuitabilityScenarioComparison({
       {/* The standing limit on what a scenario changes. Stated on the page that
           shows the reweighting, not only on the page that produced it. */}
       <p className="text-[11px] leading-snug text-ink-subtle" data-testid="scenario-comparison-method-note">
-        시나리오는 이미 계산된 Z·R·E·D 점수를 다시 가중해 순위를 바꿉니다. 배제·검토 판정(스크리닝)은
-        규칙 기반이며 가중치를 바꿔도 달라지지 않습니다.
+        {SCENARIO_REWEIGHT_NOTE}
       </p>
     </div>
   );

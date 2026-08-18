@@ -238,3 +238,16 @@ export function namedWeightsForModel(
     })
     .join(" · ");
 }
+
+/**
+ * What a user-weight scenario does, stated without naming a component namespace.
+ *
+ * It used to read "이미 계산된 Z·R·E·D 점수를 다시 가중해" — true of a historical
+ * comparison and FALSE of a successor one, where the re-weighted scores are
+ * `existing_burden` / `air_impact_proxy` / `resident_impact` / `land_conversion`.
+ * The mechanism is identical in both models, so the sentence describes the mechanism
+ * and lets the factor table name the components.
+ */
+export const SCENARIO_REWEIGHT_NOTE =
+  "시나리오는 이미 계산된 평가 요소 점수를 다시 가중해 순위를 바꿉니다. " +
+  "배제·검토 판정(스크리닝)은 규칙 기반이며 가중치를 바꿔도 달라지지 않습니다.";
