@@ -929,6 +929,10 @@ def list_candidates(
     )
     assert run is not None
     run_model_version, run_component_order = _run_model_identity(run)
+    # Which storage carries this run's rank/score. Resolved BEFORE the filter
+    # predicates are assembled, because they depend on it exactly as the ordering
+    # and the per-row reads below do.
+    legacy_rank_storage = component_model.uses_legacy_score_columns(run_model_version)
     _ensure_profile_available(_json_field(run["weight_profiles"], {}), profile, resolved)
     box = _parse_bbox(bbox)
 
@@ -954,7 +958,16 @@ def list_candidates(
         conditions.append(f"sigungu_region_code IN ({placeholders})")
         params.update({f"sigungu_{i}": code for i, code in enumerate(sigungu_codes)})
     if top is not None:
-        conditions.append("status = 'ELIGIBLE' AND (profile_ranks->>:profile) IS NOT NULL")
+        # MODEL-AWARE, for the same reason the ORDER BY below is: a successor run
+        # stores its rank in the first-class `rank` column and leaves the historical
+        # `profile_ranks` map `{}`, so this predicate read through the JSONB path
+        # matched NOTHING and served an empty TOP-N for every successor run.
+        ranked_predicate = (
+            "(profile_ranks->>:profile) IS NOT NULL"
+            if legacy_rank_storage
+            else "rank IS NOT NULL"
+        )
+        conditions.append(f"status = 'ELIGIBLE' AND {ranked_predicate}")
     elif status is not None:
         conditions.append("status = :status")
         params["status"] = status
@@ -963,11 +976,17 @@ def list_candidates(
         # candidates, so a stability_class filter implies status = ELIGIBLE.
         conditions.append("stability_class = :stability_class")
         params["stability_class"] = stability_class
+    # Same storage split as the rank predicate above: the successor run's composite
+    # lives in `total_score`, so a score band read from `profile_totals` would drop
+    # every successor candidate instead of filtering them.
+    score_expr = (
+        "(profile_totals->>:profile)::numeric" if legacy_rank_storage else "total_score"
+    )
     if min_score is not None:
-        conditions.append("(profile_totals->>:profile)::numeric >= :min_score")
+        conditions.append(f"{score_expr} >= :min_score")
         params["min_score"] = min_score
     if max_score is not None:
-        conditions.append("(profile_totals->>:profile)::numeric <= :max_score")
+        conditions.append(f"{score_expr} <= :max_score")
         params["max_score"] = max_score
 
     where = " AND ".join(conditions)
@@ -999,7 +1018,6 @@ def list_candidates(
     # `total_score`. Ordering or reading a successor run through the JSONB path
     # yields NULL for every row, which presented the whole successor grid as
     # unranked and unscored.
-    legacy_rank_storage = component_model.uses_legacy_score_columns(run_model_version)
     rank_direction = "ASC" if sort == "score_desc" else "DESC"
     if top is not None and legacy_rank_storage:
         order = f"ORDER BY (profile_ranks->>:profile)::int {rank_direction}, candidate_key ASC"

@@ -632,13 +632,34 @@ def _contributions(
     return out
 
 
-def _relative_tile_url(run_id: int, canonical: dict[str, str], full_hash: str) -> str:
-    """Relative MVT template (client resolves against the page origin)."""
+def _relative_tile_url(
+    run_id: int,
+    canonical: dict[str, str],
+    full_hash: str,
+    component_order: Sequence[str] = component_model.COMPONENT_ORDER_HISTORICAL,
+) -> str:
+    """Relative MVT template (client resolves against the page origin).
 
+    The historical model keeps the ``wz``/``wr``/``we``/``wd`` abbreviations it has
+    always emitted, byte-for-byte, so every existing caller and cached URL is
+    unaffected. Any other model emits the model-agnostic repeatable
+    ``w=component:value`` form the tile endpoint already accepts and prefers — the
+    abbreviations are deliberately not extended, because ``we`` would abbreviate the
+    successor's ``existing_burden`` as naturally as it abbreviates ``equity``, and a
+    parameter name that can be reinterpreted is exactly how one model's weight
+    silently becomes another's.
+    """
+
+    if tuple(component_order) == component_model.COMPONENT_ORDER_HISTORICAL:
+        weight_query = (
+            f"wz={canonical['zoning']}&wr={canonical['road']}"
+            f"&we={canonical['equity']}&wd={canonical['demand']}"
+        )
+    else:
+        weight_query = "&".join(f"w={c}:{canonical[c]}" for c in component_order)
     return (
         f"/api/v1/suitability/scenarios/tiles/{run_id}/{{z}}/{{x}}/{{y}}.mvt"
-        f"?wz={canonical['zoning']}&wr={canonical['road']}"
-        f"&we={canonical['equity']}&wd={canonical['demand']}"
+        f"?{weight_query}"
         f"&scenario_hash={full_hash}"
     )
 
@@ -821,7 +842,7 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
     weights = _validate_weights(req.weights, run_component_order)
     _assert_scenario_model_supported(resolved, run_model_version)
     canonical = scenario.canonical_weight_strings(weights, run_component_order)
-    full_hash = scenario.scenario_hash(resolved, weights)
+    full_hash = scenario.scenario_hash(resolved, weights, run_component_order)
 
     # THE ANALYSIS SCOPE. Omitted → 수도권 전체, which is the query this endpoint has
     # always run. Given, the ranking, `ranking_population` and every rank below are
@@ -928,7 +949,7 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
         ranking_population=ranking_population,
         top_candidates=top_candidates,
         selected_candidate=selected_candidate,
-        tile_url=_relative_tile_url(resolved, canonical, full_hash),
+        tile_url=_relative_tile_url(resolved, canonical, full_hash, run_component_order),
         assumptions=SCENARIO_ASSUMPTIONS,
         scenario_label=scenario.SCENARIO_LABEL_KO,
         scenario_disclaimer=scenario.SCENARIO_DISCLAIMER_KO,
@@ -950,7 +971,7 @@ def candidate_detail(
     weights = _validate_weights(req.weights, run_component_order)
     _assert_scenario_model_supported(resolved, run_model_version)
     canonical = scenario.canonical_weight_strings(weights, run_component_order)
-    full_hash = scenario.scenario_hash(resolved, weights)
+    full_hash = scenario.scenario_hash(resolved, weights, run_component_order)
     scope_sql, scope_params = _scope_predicate(req.sido, req.sigungu)
     return _build_candidate_detail(
         session,
@@ -1022,7 +1043,7 @@ def scenario_tile(
     )
     weights = _validate_weights(_tile_weight_map(wz, wr, we, wd, w), run_component_order)
     _assert_scenario_model_supported(resolved, run_model_version)
-    expected_hash = scenario.scenario_hash(run_id, weights)
+    expected_hash = scenario.scenario_hash(run_id, weights, run_component_order)
     if scenario_hash != expected_hash:
         raise HTTPException(
             status_code=422,

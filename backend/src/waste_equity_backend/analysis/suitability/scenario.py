@@ -326,32 +326,48 @@ def scenario_provisional_score(
 # --------------------------------------------------------------------------- #
 
 
-def canonical_hash_payload(run_id: int, weights: Mapping[str, Decimal]) -> str:
+def canonical_hash_payload(
+    run_id: int, weights: Mapping[str, Decimal], components: Sequence[str] | None = None
+) -> str:
     """The exact UTF-8 string that is SHA-256'd for the scenario hash.
 
     Fixed key order (``method_version``, ``run_id``, ``weights`` in criterion
     order), compact separators, no whitespace. Excludes selected candidate,
     top_n, viewport, comparison profile, timestamps, and any frontend label — so
     only ``(method_version, run_id, canonical weights)`` determine the identity.
+
+    ``components`` defaults to the historical :data:`COMPONENT_ORDER`, exactly as
+    :func:`canonical_weight_strings` does, so a historical scenario's payload — and
+    therefore its hash — is byte-identical to what it has always been. Pass the
+    run's ``component_order`` for any other model: without it a successor scenario's
+    weights would be looked up under historical component names it does not carry.
     """
 
     payload = {
         "method_version": USER_WEIGHT_SCENARIO_METHOD_VERSION,
         "run_id": int(run_id),
-        "weights": canonical_weight_strings(weights),
+        "weights": canonical_weight_strings(weights, components),
     }
     return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
 
 
-def scenario_hash(run_id: int, weights: Mapping[str, Decimal]) -> str:
+def scenario_hash(
+    run_id: int, weights: Mapping[str, Decimal], components: Sequence[str] | None = None
+) -> str:
     """Deterministic SHA-256 (full 64-hex) identity of a scenario.
 
     Same run + same canonical weights → same hash; a different run id or any
     different weight → a different hash. The comparison profile never affects it.
     This is a *temporary analytical identity*, not a database id.
+
+    ``components`` carries the run's component order for a non-historical model
+    (see :func:`canonical_hash_payload`); omitted, the historical order is used and
+    a historical scenario keeps the hash it has always had.
     """
 
-    return hashlib.sha256(canonical_hash_payload(run_id, weights).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        canonical_hash_payload(run_id, weights, components).encode("utf-8")
+    ).hexdigest()
 
 
 def short_scenario_hash(full_hash: str, length: int = 12) -> str:
