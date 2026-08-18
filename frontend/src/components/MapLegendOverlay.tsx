@@ -173,17 +173,26 @@ function EquityLegend({ metricLabel, unit, methodNote, rows, noDataColor }: Equi
       {/* Figma frame 74:2054 titles the card `{metric} 범례` and puts the unit on
           its own quiet line beneath. `legend-metric-label` therefore moves ONTO the
           heading, so the metric name is still addressable by that id and is no
-          longer printed twice in a 265px card. */}
+          longer printed twice in a 265px card.
+
+          The frame's title is ONE line — `인구 범례 - 7분위` — so the classification
+          method joins it rather than occupying a third line of a 265px card. The
+          method is not dropped and `choropleth-scale-method` still addresses it;
+          `scaleMethodNote` (lib/metrics.ts) now returns the frame's own compact form
+          (`7분위` / `로그 7단계`), which still names the method and the class count. */}
       <h2
         className="text-base font-bold leading-[19px] text-brand"
         data-testid="legend-metric-label"
       >
         {metricLabel} 범례
+        {methodNote ? (
+          <>
+            {" - "}
+            <span data-testid="choropleth-scale-method">{methodNote}</span>
+          </>
+        ) : null}
       </h2>
       {unit ? <p className="mt-1 text-[11px] text-ink-subtle">{unitLabel}</p> : null}
-      <p className="mt-1 text-[11px] text-ink-subtle" data-testid="choropleth-scale-method">
-        {methodNote}
-      </p>
       <ul className="mt-2 flex flex-col gap-1.5" data-testid="choropleth-legend">
         {rows.map((row) => (
           <li

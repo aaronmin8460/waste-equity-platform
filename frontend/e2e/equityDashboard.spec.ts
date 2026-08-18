@@ -216,7 +216,7 @@ test.describe("equity dashboard behaviour at 1440×900", () => {
     // Picker → the same state, in the other direction.
     await page.getByTestId("region-select").selectOption("KR-SGIS-11680");
     await expect(page.getByTestId("selected-region-name")).toHaveText("강남구");
-    // The counter word attaches to the numeral (`561,000명`); never the raw `persons`.
+    // A person count reads in the 만 명 headline unit (`56.1만 명`); never raw `persons`.
     await expect(page.getByTestId("selected-region-value")).toContainText("명");
     await expect(page.getByTestId("selected-region-value")).not.toContainText("persons");
     await expect(page.getByTestId("rank-row").filter({ hasText: "강남구" }).first()).toHaveAttribute(

@@ -100,13 +100,14 @@ describe("equity legend", () => {
     expect(rows[2].textContent).toContain("≥ 200");
   });
 
-  it("prints the population unit as 명 attached to the numeral, and never `persons`", () => {
+  it("prints the population unit as 명 the way the frames space it, never `persons`", () => {
     renderEquity();
     const rows = screen.getAllByTestId("choropleth-legend-row");
-    // Korean counter words attach directly to the numeral — no separating space.
-    expect(rows[0].textContent).toContain("< 100명");
-    expect(rows[1].textContent).toContain("100 – 200명");
-    expect(rows[2].textContent).toContain("≥ 200명");
+    // Figma frame 74:2054 spaces the counter word off the numeral (`< 372,000 명`),
+    // and frame 74:2025's ranking rows do the same (`1,186,000 명`).
+    expect(rows[0].textContent).toContain("< 100 명");
+    expect(rows[1].textContent).toContain("100 – 200 명");
+    expect(rows[2].textContent).toContain("≥ 200 명");
     // The whole legend, including the quiet unit line under the heading.
     expect(screen.getByTestId("legend").textContent).not.toContain("persons");
   });

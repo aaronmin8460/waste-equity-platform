@@ -7,6 +7,7 @@ import {
   approximateAnnualBillionWon,
   approximateBillionWon,
   approximatePercent,
+  approximatePersonsAsManMyeong,
   approximateTonPerDay,
   approximateWonAsManwon,
 } from "./displayNumber";
@@ -241,5 +242,55 @@ describe("displayNumber — negative values", () => {
     // minus sign would be a silent sign error rather than a formatting nicety.
     expect(approximateBillionWon("-12.4")?.text).toBe("약 -12억원");
     expect(approximateBillionWon("-0")?.text).toBe("0억원");
+  });
+});
+
+describe("approximatePersonsAsManMyeong", () => {
+  it("renders a comma-grouped population in 만 명 to one decimal", () => {
+    // A real served population (exact integer, not a round one) — the hundreds are
+    // discarded, so the result says so.
+    expect(approximatePersonsAsManMyeong("1,004,079")).toEqual({
+      text: "약 100.4만 명",
+      approximate: true,
+    });
+  });
+
+  it("accepts an ungrouped decimal string too", () => {
+    expect(approximatePersonsAsManMyeong("1004079")).toEqual({
+      text: "약 100.4만 명",
+      approximate: true,
+    });
+  });
+
+  it("omits 약 when the rounding discarded nothing", () => {
+    // 1,186,000 / 10,000 is exactly 118.6 — claiming approximation would be its own
+    // small dishonesty (contract 5).
+    expect(approximatePersonsAsManMyeong("1,186,000")).toEqual({
+      text: "118.6만 명",
+      approximate: false,
+    });
+  });
+
+  it("keeps two nearby regions distinguishable at 0.1만", () => {
+    // 만 명 is a readability change, not a precision collapse: values 9,000 apart
+    // must not print the same number.
+    expect(approximatePersonsAsManMyeong("1,186,000")?.text).not.toBe(
+      approximatePersonsAsManMyeong("1,195,000")?.text,
+    );
+    expect(approximatePersonsAsManMyeong("1,186,000")?.text).toBe("118.6만 명");
+    expect(approximatePersonsAsManMyeong("1,195,000")?.text).toBe("119.5만 명");
+  });
+
+  it("never renders a real population as zero", () => {
+    expect(approximatePersonsAsManMyeong("400")).toEqual({
+      text: "0.1만 명 미만",
+      approximate: true,
+    });
+  });
+
+  it("returns null for malformed input rather than inventing a value", () => {
+    for (const bad of ["", "abc", "12.", "1,2 3", "--5"]) {
+      expect(approximatePersonsAsManMyeong(bad), `"${bad}" must not be displayable`).toBeNull();
+    }
   });
 });

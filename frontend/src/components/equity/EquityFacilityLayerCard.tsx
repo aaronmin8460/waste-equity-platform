@@ -19,19 +19,35 @@
  * category is invented: the list is exactly the served `facility_category` values the
  * platform recognises.
  *
- * Two deliberate departures from the frame's legend, both to keep it truthful:
- *   - Figma paints all three 공공 rows one green and both 민간 rows one pink, and
- *     omits 민간 최종처분 entirely. Production distinguishes SIX categories by six
- *     colours on the map; adopting the two-colour scheme would make the legend
- *     disagree with the marks it explains, and dropping a category would hide
- *     facilities that are drawn. All six are listed, in their real colours.
- *   - Figma's swatch carries a Korean initial (소 / 매 / 기 / 재) and has FOUR of
- *     them. The swatch now carries one too, because the map now draws one — the
- *     markers are zoom-ramped discs with their category's glyph over them
- *     (MapView.tsx). But there are SIX glyphs here, one per real category, from
- *     `FACILITY_CATEGORY_GLYPHS`: reusing 소 for both 공공 소각시설 and 민간
- *     중간처분(소각) would make two served categories read as one.
- * Both are recorded in docs/figma-redesign/PAGE_1_REGIONAL_INDICATORS.md.
+ * ── THE OWNERSHIP COLOUR SCHEME (page-1 기술요청, icon sheet 314:592) ─────────────
+ * The annotation asks for these icons to be redrawn like its own rendered sheet, and
+ * tells the implementer how to read it: "아이콘 더블 클릭하면 컬러 넘버 확인 가능". The
+ * sheet paints all 공공 rows `#5EB140` and all 민간 rows `#C64670`. That is now what
+ * `FACILITY_CATEGORY_COLORS` holds, so this legend, the MapLibre circle fill and the
+ * marker glyph images all changed together — the swatch here is still a faithful
+ * miniature of the mark on the map, which is the whole point of this card.
+ *
+ * One deliberate departure from the sheet remains, and it is a coverage one, not a
+ * style one: the sheet lists FIVE rows because the prototype knew five categories.
+ * Production serves SIX — 민간 최종처분 is real and is drawn on the map — so all six
+ * are listed. Omitting it would hide facilities the reader can see.
+ *
+ * The swatch carries its category's Korean initial from `FACILITY_CATEGORY_GLYPHS`,
+ * as the map's markers do. That glyph now does more work than it used to: with the
+ * three 공공 categories sharing one colour and the three 민간 categories the other,
+ * it is what separates two rows of the same ownership. The annotation anticipates
+ * exactly this — "아이콘 내부 글씨 크기는 지도 축소했을 때에도 보일정도로" — so the
+ * six glyphs stay six distinct characters and the badge is sized to keep them legible.
+ *
+ * ── INK IS CHOSEN FOR CONTRAST, NOT COPIED FROM THE SHEET ────────────────────────
+ * The sheet draws every glyph white. White on `#C64670` clears 4.5:1 and is used;
+ * white on `#5EB140` measures 2.7:1 and would fail, so `markerGlyphInk` picks the
+ * near-black that measures 7.8:1 there instead. The annotation's own instruction is
+ * that the glyph must stay READABLE, and a glyph that now carries category identity
+ * cannot be the one thing on the card that fails contrast.
+ *
+ * The superseded six-colour scheme is recorded in
+ * docs/figma-redesign/PAGE_1_REGIONAL_INDICATORS.md.
  *
  * The swatch stays a faithful miniature of the mark: same colour, same glyph, and
  * the same luminance-chosen ink (`markerGlyphInk`), so a reader matching a dot on

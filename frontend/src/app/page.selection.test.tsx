@@ -160,7 +160,9 @@ describe("selected-region identity across metric changes", () => {
     // Pick 강남구 via the accessible region <select>.
     fireEvent.change(screen.getByTestId("region-select"), { target: { value: "KR-SGIS-11680" } });
     expect(screen.getByTestId("selected-region-name").textContent).toBe("강남구");
-    expect(screen.getByTestId("selected-region-value").textContent).toContain("561,000");
+    // 만 명 is the readable headline unit for a person count (the owner override,
+    // applied in lib/regionDisplay.ts). The ranking rows above keep full digits.
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("56.1만 명");
 
     // Switch to a facility-burden metric on the SAME (native) geography.
     fireEvent.click(facilityRadio());
@@ -179,7 +181,9 @@ describe("selected-region identity across metric changes", () => {
     await renderLoaded();
     // 종로구 has population but NO facility-burden value in the fixture.
     fireEvent.change(screen.getByTestId("region-select"), { target: { value: "KR-SGIS-11110" } });
-    expect(screen.getByTestId("selected-region-value").textContent).toContain("142,000");
+    // 만 명 is the readable headline unit for a person count (the owner override,
+    // applied in lib/regionDisplay.ts). The ranking rows above keep full digits.
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("14.2만 명");
 
     fireEvent.click(facilityRadio());
     await waitFor(() => expect(screen.getByTestId("selected-region-name").textContent).toBe("종로구"));

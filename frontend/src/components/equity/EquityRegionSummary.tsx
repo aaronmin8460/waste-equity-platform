@@ -86,6 +86,14 @@ export default function EquityRegionSummary({
   const status: DataStatus =
     selected === null ? metricStatus : selected.hasValue ? metricStatus : "missing";
 
+  // The unit caption must name the unit the value ABOVE it is actually printed in.
+  // A served person count is rendered in 만 명 (`formatRegionMetricDisplay`, the
+  // owner's readability override), so `단위 명` would sit above a 만 명 figure and
+  // misread it by four orders of magnitude. With no value on screen there is nothing
+  // to agree with and the metric's own unit stands.
+  const valueInManMyeong = unit === "persons" && selected?.hasValue === true;
+  const printedUnitLabel = valueInManMyeong ? `만 ${unitLabel(unit)}` : unitLabel(unit);
+
   return (
     <section
       aria-label="선택한 지역 요약"
@@ -150,7 +158,7 @@ export default function EquityRegionSummary({
             {/* The PRINTED unit (lib/units.ts), so this reads 단위 명 rather than the
                 served English `persons` the value above it is already rendered with. */}
             {unit ? (
-              <span className="mt-0.5 block text-xs text-ink-subtle">단위 {unitLabel(unit)}</span>
+              <span className="mt-0.5 block text-xs text-ink-subtle">단위 {printedUnitLabel}</span>
             ) : null}
           </dd>
         </div>

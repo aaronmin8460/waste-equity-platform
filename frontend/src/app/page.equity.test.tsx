@@ -143,7 +143,9 @@ describe("regional ranking", () => {
     const high = screen.getByTestId("rank-high");
     fireEvent.click(within(high).getAllByTestId("rank-row")[0]);
     expect(screen.getByTestId("selected-region-name").textContent).toBe("수원시 장안구");
-    expect(screen.getByTestId("selected-region-value").textContent).toContain("500,000");
+    // 만 명 is the readable headline unit for a person count (the owner override,
+    // applied in lib/regionDisplay.ts). The rank rows above keep full digits.
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("50만 명");
   });
 
   it("filters by scope and re-ranks within it", async () => {
@@ -223,7 +225,9 @@ describe("지역 순위 전체보기", () => {
     const dialog = screen.getByTestId("full-ranking-dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: /종로구/ }));
     expect(screen.getByTestId("selected-region-name").textContent).toBe("종로구");
-    expect(screen.getByTestId("selected-region-value").textContent).toContain("300,000");
+    // 만 명 is the readable headline unit for a person count (the owner override,
+    // applied in lib/regionDisplay.ts). The rank rows above keep full digits.
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("30만 명");
   });
 
   it("closes on Escape and gives focus back to the control that opened it", async () => {

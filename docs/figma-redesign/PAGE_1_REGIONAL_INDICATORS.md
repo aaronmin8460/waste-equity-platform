@@ -101,6 +101,18 @@ card carries the toggle AND the type legend, and reads the same
 `FACILITY_CATEGORY_LABELS` / `FACILITY_CATEGORY_COLORS` constants the MapLibre circle
 layer paints from, so a swatch cannot drift from the dot it explains.
 
+> **SUPERSEDED (full-product Figma parity pass).** The two bullets below recorded a
+> decision to keep a six-colour palette against the frame's two-colour one. That
+> decision has been REVERSED, because the annotation the frame carries was not fully
+> read at the time: the `page-1 기술요청` says "[폐기물 처리시설 범례] 아이콘, 아래에
+> 구현한 것처럼 수정" and points at a rendered icon sheet (image node `314:592`), and a
+> third annotation line states how to read it — "아이콘 더블 클릭하면 컬러 넘버 확인
+> 가능". The sheet's colour numbers are `#5EB140` for every 공공 row and `#C64670` for
+> every 민간 row. A written/image annotation outranks both the frame's own render and
+> the prior implementation, so the ownership palette is now what
+> `FACILITY_CATEGORY_COLORS` holds. See §5.1 below for what that changed and what it
+> deliberately did not.
+
 Two deliberate departures from the frame's legend, both to keep it truthful:
 
 - Figma paints all three 공공 rows one green and both 민간 rows one pink, and omits
@@ -115,6 +127,30 @@ Two deliberate departures from the frame's legend, both to keep it truthful:
 
 Colour is never the only signal: every row names its category, and the popup a marker
 opens names the category in words too.
+
+### 5.1 The ownership palette (parity pass)
+
+`FACILITY_CATEGORY_COLORS` now maps the three 공공 categories to `#5EB140` and the three
+민간 categories to `#C64670`, transcribed from icon sheet `314:592`. The earlier
+objection — that a two-colour legend would disagree with the map — does not apply,
+because that map IS the single constant the MapLibre fill, the marker glyph images and
+this legend all read: changing it moves all three together.
+
+What did NOT change, and why:
+
+- **All six categories remain.** The sheet lists five because the prototype knew five;
+  production serves 민간 최종처분 too and draws it on the map, so omitting it would hide
+  facilities a reader can see.
+- **Six distinct glyphs remain** (소 · 매 · 기 · 중 · 최 · 재). Colour now encodes
+  ownership, so the glyph is what separates two categories WITHIN an ownership group.
+  The same annotation anticipates exactly this with "(아이콘 내부 글씨 크기는 지도
+  축소했을 때에도 보일정도로)".
+- **Glyph ink stays contrast-chosen, not copied.** The sheet draws every glyph white.
+  White on `#C64670` measures 4.66:1 and is used; white on `#5EB140` measures 2.68:1 and
+  would fail WCAG 1.4.3, so `markerGlyphInk` picks the near-black that measures 7.84:1
+  there instead. The annotation's own requirement is that the mark stay READABLE, and a
+  glyph that now carries category identity cannot be the one element that fails
+  contrast. This is the single deliberate deviation from the sheet's appearance.
 
 ## 6. The facility click-through defect — fixed
 
@@ -180,7 +216,7 @@ change to two constants (`RANKING_SECTION_LABEL`, `RANKING_FULL_VIEW_LABEL` in
 | Popup provenance @9px | 11px | 9px is below a usable reading size; the popup has room |
 | Active nav pill, no shadow | + `0 1px 2px` | White on the #F9F9F9 track is a ~1.02:1 edge; the shadow restores the boundary without changing a colour, radius, or metric |
 | 사업장 폐기물 발생량 as one row | Two rows | Two distinct official series — §4 |
-| Facility legend: 2 colours, 5 rows | 6 colours, 6 rows | Must match the marks the map paints — §5 |
+| Facility legend: 2 colours, 5 rows | 2 colours, 6 rows | Ownership palette adopted from annotation sheet `314:592`; the sixth row is a real served category the prototype lacked — §5.1 |
 | Rank-row decorative bullets | Omitted | They are absolutely positioned BEHIND the rank number in the frame, and the modal's cycle through four colours implies a category that does not exist |
 
 ### 8.3 Layout differences

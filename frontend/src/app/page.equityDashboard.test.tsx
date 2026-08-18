@@ -255,7 +255,9 @@ describe("current-region summary", () => {
     await renderLoaded();
     fireEvent.change(screen.getByTestId("region-select"), { target: { value: "KR-SGIS-11680" } });
     expect(screen.getByTestId("selected-region-name").textContent).toBe("강남구");
-    expect(screen.getByTestId("selected-region-value").textContent).toContain("561,000명");
+    // 만 명 is the readable headline unit for a person count (the owner override,
+    // applied in lib/regionDisplay.ts). The ranking rows above keep full digits.
+    expect(screen.getByTestId("selected-region-value").textContent).toContain("56.1만 명");
     // The boundary provenance joins the metric provenance for the displayed value.
     expect(screen.getByTestId("selected-region-summary").textContent).toContain("경계 출처");
   });

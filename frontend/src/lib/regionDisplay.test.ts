@@ -8,10 +8,25 @@ import {
 } from "./regionDisplay";
 
 describe("formatRegionMetricDisplay", () => {
-  it("appends the PRINTED unit to a served value", () => {
-    // The served unit is the English `persons`; a Korean-only surface prints 명,
-    // attached to the numeral the way a Korean counter word is written.
-    expect(formatRegionMetricDisplay("142,000", "persons", null)).toBe("142,000명");
+  it("renders a served person count in the readable 만 명 unit", () => {
+    // The owner's readability override: a single region's headline value reads in
+    // 만 명 rather than full digits. 142,000 / 10,000 is exactly 14.2, so nothing was
+    // discarded and no 약 is claimed.
+    expect(formatRegionMetricDisplay("142,000", "persons", null)).toBe("14.2만 명");
+  });
+
+  it("marks a person count as approximate when 만 명 rounding drops digits", () => {
+    expect(formatRegionMetricDisplay("1,004,079", "persons", null)).toBe("약 100.4만 명");
+  });
+
+  it("never renders a real person count as zero", () => {
+    expect(formatRegionMetricDisplay("400", "persons", null)).toBe("0.1만 명 미만");
+  });
+
+  it("falls back to the exact value with its printed unit when 만 명 cannot parse", () => {
+    // Unparseable input must never become a fabricated figure — the served value is
+    // printed unchanged, with the spacing Figma gives the counter word.
+    expect(formatRegionMetricDisplay("n/a", "persons", null)).toBe("n/a 명");
   });
 
   it("keeps the space before a symbol unit it does not translate", () => {

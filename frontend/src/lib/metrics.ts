@@ -511,12 +511,21 @@ export function colorFor(value: number, breaks: number[], palette: readonly stri
  * method itself is NOT dropped: this note still prints inside the 범례 disclosure,
  * which is where a reader asks what the colour classes mean, and the full
  * derivation lives in the methodology surface.
+ *
+ * ── IT IS A TITLE SUFFIX, NOT A SENTENCE (Figma frame 74:2054) ───────────────────
+ * The frame heads the legend with ONE line — `인구 범례 - 7분위` — where the live card
+ * printed the metric title and then `분위수 7단계` on a second, quieter line beneath.
+ * The note is therefore returned in the frame's own compact form (`7분위`, and
+ * `로그 7단계` for the log-scaled facility-burden metrics) and `MapLegendOverlay`
+ * appends it to the heading. Both facts the long form carried are still stated: which
+ * method (분위 / 로그) and how many classes. The class count is the requested one, not
+ * the effective one, exactly as before.
  */
 export function scaleMethodNote(scale: ActiveScale): string {
   if (scale.method === "log-equal-interval") {
-    return `로그 간격 ${scale.requestedClasses}단계`;
+    return `로그 ${scale.requestedClasses}단계`;
   }
-  return `분위수 ${scale.requestedClasses}단계`;
+  return `${scale.requestedClasses}분위`;
 }
 
 /**
@@ -581,6 +590,14 @@ export function frequencyCode(publicationFrequency: string): string | null {
   return frequencyLabelKo(publicationFrequency) === null ? publicationFrequency : null;
 }
 
+/**
+ * The two ownership colours transcribed from the page-1 기술요청 icon sheet
+ * (Figma image node 314:592). Named constants so the legend, the marker images and
+ * any future surface all say "the 공공 colour", never a repeated literal.
+ */
+export const FACILITY_PUBLIC_COLOR = "#5EB140";
+export const FACILITY_PRIVATE_COLOR = "#C64670";
+
 export const FACILITY_CATEGORY_LABELS: Record<string, string> = {
   PUBLIC_INCINERATION: "공공 소각시설",
   PUBLIC_OTHER: "공공 기타 처리시설",
@@ -590,13 +607,45 @@ export const FACILITY_CATEGORY_LABELS: Record<string, string> = {
   PRIVATE_RECYCLING: "민간 재활용",
 };
 
+/**
+ * Facility marker/legend colour, keyed by OWNERSHIP — 공공 green, 민간 magenta.
+ *
+ * ── WHERE THESE TWO NUMBERS COME FROM (page-1 기술요청, image node 314:592) ───────
+ * The annotation "[폐기물 처리시설 범례] 아이콘, 아래에 구현한 것처럼 수정" points at a
+ * rendered icon sheet below it, and a third annotation line says exactly how to read
+ * that sheet: "아이콘 더블 클릭하면 컬러 넘버 확인 가능". The sheet's five circles carry
+ * `#5EB140` on 공공 소각 / 공공 매립 / 공공 기타 처리 and `#C64670` on 민간 중간처분(소각)
+ * / 민간 재활용. Those are the colour numbers the annotation asks to be read, so they
+ * are transcribed here verbatim rather than re-derived or "tuned".
+ *
+ * This REPLACES a six-colour qualitative palette (ColorBrewer Dark2). The previous
+ * lane declined the two-colour scheme on the grounds that the legend would then
+ * disagree with the map. That objection does not apply to this change: the map fill,
+ * the marker images and the legend swatch all read THIS map, so changing it moves all
+ * three together and they still cannot diverge.
+ *
+ * ── NO CATEGORY IS MERGED, HIDDEN OR RENAMED ─────────────────────────────────────
+ * All SIX served categories remain, with the same keys as `FACILITY_CATEGORY_LABELS`
+ * and `FACILITY_CATEGORY_GLYPHS`. What changes is which DIMENSION colour encodes:
+ * ownership (공공/민간) rather than category. Category identity is carried by the
+ * glyph inside the badge (소·매·기 / 중·최·재), by the legend row's full name, and by
+ * the marker popup's own wording — which is precisely why the same annotation adds
+ * "(아이콘 내부 글씨 크기는 지도 축소했을 때에도 보일정도로)": with colour now grouping
+ * rather than separating, the glyph is what tells two same-ownership categories apart,
+ * so it has to survive a zoomed-out map. `MapView.facilityGlyphImage` draws it at
+ * 13px/700 on a device-pixel-ratio-scaled canvas, which clears that bar.
+ *
+ * The 민간 최종처분 row the annotation sheet has no icon for is NOT dropped — the
+ * sheet shows five rows because the prototype knew five categories; production serves
+ * six, and an unlisted category would hide facilities that are drawn on the map.
+ */
 export const FACILITY_CATEGORY_COLORS: Record<string, string> = {
-  PUBLIC_INCINERATION: "#d95f02",
-  PUBLIC_OTHER: "#7570b3",
-  PUBLIC_LANDFILL: "#1b9e77",
-  PRIVATE_INTERMEDIATE_INCINERATION: "#e7298a",
-  PRIVATE_FINAL_DISPOSAL: "#66a61e",
-  PRIVATE_RECYCLING: "#e6ab02",
+  PUBLIC_INCINERATION: FACILITY_PUBLIC_COLOR,
+  PUBLIC_OTHER: FACILITY_PUBLIC_COLOR,
+  PUBLIC_LANDFILL: FACILITY_PUBLIC_COLOR,
+  PRIVATE_INTERMEDIATE_INCINERATION: FACILITY_PRIVATE_COLOR,
+  PRIVATE_FINAL_DISPOSAL: FACILITY_PRIVATE_COLOR,
+  PRIVATE_RECYCLING: FACILITY_PRIVATE_COLOR,
 };
 
 /**
@@ -614,9 +663,20 @@ export const FACILITY_CATEGORY_COLORS: Record<string, string> = {
  *
  * All four Figma glyphs are present; 중 and 최 are the two the design had no mark
  * for because it had no row for them. Nothing here adds, renames, merges, or hides
- * a category: the keys are exactly the keys of the two maps above, and colour
- * remains the primary carrier — the glyph is a redundant second signal, and the
- * marker's popup names the category in full words either way.
+ * a category: the keys are exactly the keys of the two maps above.
+ *
+ * ── THE GLYPH IS NOW THE CATEGORY CARRIER, NOT A REDUNDANT SECOND SIGNAL ─────────
+ * It used to be redundant, because each category had its own colour. Since the
+ * page-1 기술요청 icon sheet moved colour onto OWNERSHIP (`FACILITY_CATEGORY_COLORS`),
+ * the three 공공 categories share one colour and the three 민간 categories share the
+ * other, and the glyph is what separates them inside a group. That is the change the
+ * same annotation anticipates with "아이콘 내부 글씨 크기는 지도 축소했을 때에도
+ * 보일정도로" — so the six glyphs must stay six DISTINCT characters, and the marker
+ * must keep drawing them at a size that survives a zoomed-out map.
+ *
+ * Colour is still never the only signal, and now neither is the glyph: every legend
+ * row prints its category's full name beside the badge, and the marker's popup names
+ * the category in words.
  */
 export const FACILITY_CATEGORY_GLYPHS: Record<string, string> = {
   PUBLIC_INCINERATION: "소",
