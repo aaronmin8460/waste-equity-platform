@@ -288,13 +288,9 @@ export function customWeightScopeNote(
   scopeActive: boolean,
 ): string {
   const population = ranking.rankingPopulation.toLocaleString("ko-KR");
-  const base =
-    `사용자 지정 가중치 순위는 스크리닝 통과 후보 ${population}곳 전체를 다시 순위 매긴 ` +
-    `결과에서 상위 ${ranking.servedCount}개를 받은 것입니다.`;
-  if (!scopeActive) return base;
+  const where = scopeActive ? `${scopeName} 범위의` : "";
   return (
-    `${base} 그중 ${scopeName} 범위에 있는 ${ranking.inScopeCount.toLocaleString("ko-KR")}개를 ` +
-    `보여 줍니다. ${scopeName} 안에서 다시 매긴 순위가 아니라 수도권 전체 순위이며, ` +
-    `이 범위의 후보가 상위 ${ranking.servedCount}개 밖에 있으면 여기에 나오지 않습니다.`
-  );
+    `사용자 지정 가중치 순위는 ${where} 스크리닝 통과 후보 ${population}곳을 이 가중치로 ` +
+    `다시 순위 매긴 결과이며, 순위는 그 안에서 매겨졌습니다.`
+  ).replace("  ", " ");
 }

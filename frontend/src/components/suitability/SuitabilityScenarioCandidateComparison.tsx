@@ -82,6 +82,12 @@ import InfoBanner from "../ui/InfoBanner";
 import SectionCard from "../ui/SectionCard";
 import { COMPONENT_ACCENT } from "./factorAccents";
 import { groupRowsBySigungu } from "../../lib/scenarioSigunguGroups";
+import {
+  SCOPE_ALL,
+  scopeKey,
+  scopeToQuery,
+  type SuitabilityScope,
+} from "../../lib/suitabilityScope";
 import { STATUS_LABELS } from "./shared";
 import { useScenarioCandidateDetail } from "./useScenarioCandidateDetail";
 
@@ -155,6 +161,15 @@ export interface SuitabilityScenarioCandidateComparisonProps {
 export function useScenarioCandidateSelection(
   comparison: ScenarioComparison,
   initialCandidateId: number | null = null,
+  /**
+   * The analysis scope the comparison was previewed within.
+   *
+   * The pickable cells already come from the two SCOPED previews, so the selector
+   * lists only in-scope candidates automatically. This is passed on to the DETAIL
+   * request, whose `custom_rank` is a position in a population and would otherwise be
+   * counted capital-region-wide beside a regional ranking.
+   */
+  scope: SuitabilityScope = SCOPE_ALL,
 ) {
   const { sideA, sideB } = comparison;
 
@@ -170,7 +185,7 @@ export function useScenarioCandidateSelection(
   const [picked, setPicked] = useState<number | null>(null);
   const candidateId = picked ?? initialCandidateId;
 
-  const details = useScenarioCandidateDetail(comparison, candidateId);
+  const details = useScenarioCandidateDetail(comparison, candidateId, scope);
   const rows = useMemo(
     () => candidateContributionRows(details.a.detail, details.b.detail),
     [details.a.detail, details.b.detail],
@@ -251,13 +266,20 @@ export function ScenarioCandidateDetailCard({
 }
 
 /** 후보 결과 변화 지도 — the frame's Row3-right card, as a standalone cell. */
-export function ScenarioCandidateMapCard({ selection }: { selection: ScenarioCandidateSelection }) {
+export function ScenarioCandidateMapCard({
+  selection,
+  scope = SCOPE_ALL,
+}: {
+  selection: ScenarioCandidateSelection;
+  scope?: SuitabilityScope;
+}) {
   return (
     <ScenarioMapCard
       sideA={selection.sideA}
       sideB={selection.sideB}
       details={selection.details}
       candidateKey={selection.candidateKey}
+      scope={scope}
     />
   );
 }
@@ -749,14 +771,20 @@ function ScenarioMapCard({
   sideB,
   details,
   candidateKey,
+  scope = SCOPE_ALL,
 }: {
   sideA: ComparisonSide;
   sideB: ComparisonSide;
   details: ReturnType<typeof useScenarioCandidateDetail>;
   candidateKey: string | null;
+  /** The analysis scope, so the map draws the population the ranking described. */
+  scope?: SuitabilityScope;
 }) {
   const [slot, setSlot] = useState<"A" | "B">("A");
   const active = slot === "A" ? sideA : sideB;
+  // Stable identity for equal scopes, so a re-rendered scope object does not
+  // rebuild the tile URL (and therefore does not re-create the map source).
+  const scopeQueryKey = scopeKey(scope);
 
   // The REAL scenario tile contract: the run, the server's canonical weights, and the
   // server's scenario hash. All three come from that side's own preview response, so
@@ -765,8 +793,17 @@ function ScenarioMapCard({
     if (active.runId === null || active.canonicalWeights === null || active.preview === null) {
       return null;
     }
-    return userScenarioTileUrl(active.runId, active.canonicalWeights, active.preview.scenario_hash);
-  }, [active.runId, active.canonicalWeights, active.preview]);
+    // …AND the analysis scope, so the cells drawn are the cells ranked. Without it a
+    // 경기-scoped comparison drew 인천 cells its own ranking had excluded.
+    return userScenarioTileUrl(
+      active.runId,
+      active.canonicalWeights,
+      active.preview.scenario_hash,
+      scopeToQuery(scope),
+    );
+    // `scopeQueryKey` stands in for `scope` (stable identity for equal scopes).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active.runId, active.canonicalWeights, active.preview, scopeQueryKey]);
 
   // The selected cell's geometry, from whichever side served a detail. The GEOMETRY IS
   // THE RUN'S and does not change with the weights, so the same cell is highlighted

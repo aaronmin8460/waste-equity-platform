@@ -278,7 +278,9 @@ function VariabilityDot({ movement }: { movement: number | null }) {
   const meta = RANK_VARIABILITY_META[level];
   return (
     <span
-      className="h-2 w-2 flex-none rounded-full"
+      // `relative` so the `sr-only` band name inside stays in this cell's flow
+      // rather than escaping to a document coordinate (see SuitabilityFactorCards).
+      className="relative h-2 w-2 flex-none rounded-full"
       style={{ backgroundColor: meta.dot }}
       title={meta.label}
       data-testid="scenario-ranking-table-variability"

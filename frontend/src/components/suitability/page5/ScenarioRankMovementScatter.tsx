@@ -58,6 +58,7 @@ import {
   RANK_VARIABILITY_ORDER,
   RANK_VARIABILITY_SOURCE_NOTE,
   rankVariabilityLevel,
+  type RankVariabilityLevel,
 } from "../../../lib/rankVariability";
 import {
   SIGUNGU_GROUPING_NOTE,
@@ -74,6 +75,9 @@ const COLUMNS = [
   { label: "중위권", detail: "11~30위", test: (rank: number) => rank > 10 && rank <= 30 },
   { label: "하위권", detail: "31위~", test: (rank: number) => rank > 30 },
 ] as const;
+
+/** Plot rows, top (변동성 높음) to bottom (안정성 높음) — the frame's own y order. */
+const ROWS: readonly RankVariabilityLevel[] = ["VOLATILE", "MEDIUM", "STABLE"];
 
 /** A row that can actually be placed: an exact rank on both sides. */
 type PlottableRow = RankedCandidateRow & { bRank: number; movement: number };
@@ -96,128 +100,173 @@ export default function ScenarioRankMovementScatter({ model }: ScenarioRankMovem
     );
   }
 
-  // 시·군·구 groups, in the order their best-ranked member appears. `points` arrives
-  // in the model's natural order (A rank, then B rank, then key), so the group that
-  // holds the strongest candidate leads — an ordering that comes from the candidates
-  // themselves and never from a quantity computed over the group.
-  const groups = groupRowsBySigungu(points);
+  /**
+   * THE PLOT IS A GRID OF COORDINATES; THE 시·군·구 IS THE LABEL INSIDE A CELL.
+   *
+   * Two requirements meet here and both are satisfiable at once:
+   *   - `359:1384` asks for "지역명이 좌표로 찍히도록. 네모칸 안에 쫘르륵 리스트업 되어
+   *     있는 형식 말고" — a coordinate plot, not a list;
+   *   - the owner requires the 시·군·구 to be the visual GROUPING KEY, stated once
+   *     rather than reprinted on every candidate.
+   *
+   * So the axes stay (x = B안 순위권, y = 순위 변화 폭, exactly the two `167-11235`
+   * names) and the GROUPING happens INSIDE each cell: a cell's candidates are grouped
+   * under their 시·군·구 name, printed once. What the owner objected to — a column of
+   * identical "인천광역시 옹진군" chips — is gone, and the plot the annotation asked
+   * for is not traded away for a flat list.
+   */
+  const cellGroups = (bandKey: RankVariabilityLevel, columnIndex: number) =>
+    groupRowsBySigungu(
+      points.filter(
+        (row) =>
+          rankVariabilityLevel(row.movement) === bandKey && COLUMNS[columnIndex].test(row.bRank),
+      ),
+    );
 
   return (
     <div data-testid="scenario-ranking-scatter">
-      {/* The 상위권 / 중위권 / 하위권 bands the sheet defines, as the column key each
-          group's rows are read against. */}
-      <dl
-        className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px] text-ink-subtle"
-        data-testid="scenario-ranking-scatter-columns"
-      >
-        {COLUMNS.map((column) => (
-          <div key={column.label} className="flex items-baseline gap-1">
-            <dt className="font-bold text-ink">{column.label}</dt>
-            <dd className="tabular-nums">B안 {column.detail}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <ul className="flex flex-col gap-2" data-testid="scenario-ranking-scatter-groups">
-        {groups.map((group) => (
-          <li
-            key={group.key}
-            className="rounded-card border border-[var(--figma-rule)] px-2.5 py-2"
-            data-testid="scenario-ranking-scatter-group"
-            data-sigungu={group.key}
-          >
-            {/* THE GROUP HEADING — the 시·군·구 name once, its 시·도 as quiet context,
-                and a COUNT OF ROWS. Deliberately no average rank, no group score and
-                no group 변동폭: see the header. */}
-            <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-              <h5
-                className="text-[12.5px] font-bold text-ink"
-                data-testid="scenario-ranking-scatter-group-name"
-              >
-                {group.label}
-              </h5>
-              {group.sidoLabel !== null && (
-                <span className="text-[10.5px] text-ink-subtle">{group.sidoLabel}</span>
-              )}
-              <span
-                className="text-[10.5px] tabular-nums text-ink-subtle"
-                data-testid="scenario-ranking-scatter-group-count"
-              >
-                후보 구역 {group.size.toLocaleString("ko-KR")}곳
-              </span>
+      <div className="flex gap-3">
+        {/* ── the plot ─────────────────────────────────────────────────────── */}
+        <div className="min-w-0 flex-1">
+          <div className="flex">
+            {/* y-axis captions, top (변동성 높음) to bottom (안정성 높음) */}
+            <div className="flex w-14 flex-none flex-col">
+              {ROWS.map((row) => (
+                <div
+                  key={row}
+                  className="flex flex-1 items-center justify-end pr-2 text-right text-[11px] leading-tight text-ink-subtle"
+                >
+                  {RANK_VARIABILITY_META[row].label}
+                </div>
+              ))}
             </div>
 
-            <ul className="mt-1.5 flex flex-wrap gap-1">
-              {group.rows.map((point) => {
-                const level = rankVariabilityLevel(point.movement);
-                const meta = level === null ? null : RANK_VARIABILITY_META[level];
-                const column = COLUMNS.find((c) => c.test(point.bRank));
-                return (
-                  <li key={point.candidateKey}>
-                    <span
-                      className="inline-flex max-w-full items-center gap-1 rounded-pill bg-surface-muted px-1.5 py-0.5 text-[10.5px] leading-tight text-ink"
-                      // The whole identity, since the chip shows only the movement.
-                      title={`${point.locationLabel ?? "위치 정보 없음"} · ${point.candidateKey} · A안 ${point.aRank}위 → B안 ${point.bRank}위${
-                        meta === null ? "" : ` · ${meta.label}`
+            <div className="min-w-0 flex-1 rounded-card border border-[var(--figma-rule)]">
+              {ROWS.map((band, rowIndex) => (
+                <div
+                  key={band}
+                  className={`grid min-h-[74px] grid-cols-3 ${
+                    rowIndex < ROWS.length - 1 ? "border-b border-[var(--figma-rule)]" : ""
+                  }`}
+                >
+                  {COLUMNS.map((column, columnIndex) => (
+                    <div
+                      key={column.label}
+                      className={`flex flex-col gap-1 p-1.5 ${
+                        columnIndex < COLUMNS.length - 1
+                          ? "border-r border-[var(--figma-rule)]"
+                          : ""
                       }`}
-                      data-testid="scenario-ranking-scatter-point"
-                      data-variability={level ?? undefined}
                     >
-                      {/* 지역명 옆 동그라미 아이콘 — the annotation's own shape. The
-                          band name rides in the chip's title and in the legend, so
-                          the colour is never the only carrier. */}
-                      {meta !== null && (
-                        <span
-                          className="h-2 w-2 flex-none rounded-full"
-                          style={{ backgroundColor: meta.dot }}
-                          aria-hidden="true"
-                        />
-                      )}
-                      {/* The CANDIDATE is the observation. The 시·군·구 is already the
-                          heading above, so the chip carries the cell's own short key
-                          rather than reprinting "인천광역시 옹진군" on every row. */}
-                      <span className="truncate">{point.candidateKey}</span>
-                      <span className="flex-none tabular-nums text-ink-subtle">
-                        A {point.aRank}위 → B {point.bRank}위
-                      </span>
-                      <span className="flex-none tabular-nums text-ink-subtle">
-                        {formatRankMovement(point)}
-                      </span>
-                      {column !== undefined && (
-                        <span className="flex-none text-ink-subtle">{column.label}</span>
-                      )}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </li>
-        ))}
-      </ul>
+                      {cellGroups(band, columnIndex).map((group) => (
+                        <div
+                          key={group.key}
+                          data-testid="scenario-ranking-scatter-group"
+                          data-sigungu={group.key}
+                        >
+                          {/* THE 시·군·구, ONCE. Its 시·도 rides alongside as quiet
+                              context, and the only group-level number is a COUNT of
+                              rows — never an average rank, median or group score. */}
+                          <p className="flex flex-wrap items-baseline gap-x-1 text-[10.5px] leading-tight">
+                            <span
+                              className="font-bold text-ink"
+                              data-testid="scenario-ranking-scatter-group-name"
+                            >
+                              {group.label}
+                            </span>
+                            {group.sidoLabel !== null && (
+                              <span className="text-ink-subtle">{group.sidoLabel}</span>
+                            )}
+                            <span
+                              className="tabular-nums text-ink-subtle"
+                              data-testid="scenario-ranking-scatter-group-count"
+                            >
+                              {group.size.toLocaleString("ko-KR")}곳
+                            </span>
+                          </p>
+                          <ul className="mt-0.5 flex flex-wrap gap-1">
+                            {group.rows.map((point) => {
+                              const level = rankVariabilityLevel(point.movement);
+                              const meta = level === null ? null : RANK_VARIABILITY_META[level];
+                              return (
+                                <li key={point.candidateKey}>
+                                  <span
+                                    className="inline-flex max-w-full items-center gap-1 rounded-pill bg-surface-muted px-1.5 py-0.5 text-[10.5px] leading-tight text-ink"
+                                    // The whole identity, since the chip shows only
+                                    // the cell key and its movement.
+                                    title={`${point.locationLabel ?? "위치 정보 없음"} · ${point.candidateKey} · A안 ${point.aRank}위 → B안 ${point.bRank}위${
+                                      meta === null ? "" : ` · ${meta.label}`
+                                    }`}
+                                    data-testid="scenario-ranking-scatter-point"
+                                    data-variability={level ?? undefined}
+                                  >
+                                    {/* 지역명 옆 동그라미 아이콘 — the annotation's own
+                                        shape. The band name rides in the title and in
+                                        the legend, so colour is never the only
+                                        carrier. */}
+                                    {meta !== null && (
+                                      <span
+                                        className="relative h-2 w-2 flex-none rounded-full"
+                                        style={{ backgroundColor: meta.dot }}
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                    <span className="truncate">{point.candidateKey}</span>
+                                    <span className="flex-none tabular-nums text-ink-subtle">
+                                      {formatRankMovement(point)}
+                                    </span>
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
 
-      {/* ── the 3-colour key ─────────────────────────────────────────────────── */}
-      <dl
-        className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px] text-ink-muted"
-        data-testid="scenario-ranking-variability-legend"
-      >
-        <dt className="text-[10.5px] font-bold text-ink">순위 변화 폭</dt>
-        {RANK_VARIABILITY_ORDER.map((level) => {
-          const meta = RANK_VARIABILITY_META[level];
-          return (
-            <dd key={level} className="flex items-center gap-1.5">
-              <span
-                className="h-2 w-2 flex-none rounded-full"
-                style={{ backgroundColor: meta.dot }}
-                aria-hidden="true"
-              />
-              <span>
-                {meta.label}
-                <span className="ml-1 tabular-nums text-ink-subtle">({meta.detail})</span>
-              </span>
-            </dd>
-          );
-        })}
-      </dl>
+          {/* x-axis captions — the sheet's own 상위권 / 중위권 / 하위권 bands. */}
+          <div className="ml-14 grid grid-cols-3 pt-1.5">
+            {COLUMNS.map((column) => (
+              <div key={column.label} className="text-center">
+                <span className="block text-[11.5px] font-bold text-ink">{column.label}</span>
+                <span className="block text-[10.5px] tabular-nums text-ink-subtle">
+                  ({column.detail})
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="ml-14 pt-1 text-center text-[11px] text-ink-subtle">B안 순위</p>
+        </div>
+
+        {/* ── the 3-colour key ─────────────────────────────────────────────── */}
+        <dl
+          className="w-[112px] flex-none self-start rounded-card bg-surface-muted p-2.5"
+          data-testid="scenario-ranking-variability-legend"
+        >
+          <dt className="text-[11.5px] font-bold text-ink">순위 변화 폭</dt>
+          {RANK_VARIABILITY_ORDER.map((level) => {
+            const meta = RANK_VARIABILITY_META[level];
+            return (
+              <dd key={level} className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-ink-muted">
+                <span
+                  className="relative h-2 w-2 flex-none rounded-full"
+                  style={{ backgroundColor: meta.dot }}
+                  aria-hidden="true"
+                />
+                <span>
+                  {meta.label}
+                  <span className="block tabular-nums text-ink-subtle">({meta.detail})</span>
+                </span>
+              </dd>
+            );
+          })}
+        </dl>
+      </div>
 
       <p className="mt-2 text-[11px] leading-snug text-ink-subtle">
         · 후보 구역별 A안 순위와 B안 순위, 그리고 그 차이입니다. 양쪽 상위 목록에서 순위가 모두 확인된{" "}

@@ -245,25 +245,27 @@ describe("applyRankingDisplayRules", () => {
 describe("customWeightScopeNote", () => {
   const p = preview([row(1, 1, "95", "KR-SGIS-23510"), row(2, 2, "94", "KR-SGIS-23520")]);
 
-  it("names the ranked population and the served cut, unscoped", () => {
+  it("names the ranked population, unscoped", () => {
     const note = customWeightScopeNote(
       customWeightRankingRows(p, SCOPE_ALL, "기본 기준"),
       "수도권 전체",
       false,
     );
     expect(note).toContain("17,501곳");
-    expect(note).toContain("상위 2개");
+    expect(note).toContain("다시 순위 매긴 결과");
   });
 
-  it("says the rows are the in-scope part of a POPULATION-WIDE ranking", () => {
+  it("names the 범위 and says the rank was computed INSIDE it", () => {
     const note = customWeightScopeNote(
       customWeightRankingRows(p, INCHEON, "인천 강화군"),
       "인천 강화군",
       true,
     );
-    // The distinction the endpoint's shape forces: these are the rows of the custom
-    // top-N that lie in the 범위, NOT the top-N of that 범위.
-    expect(note).toContain("다시 매긴 순위가 아니라 수도권 전체 순위");
-    expect(note).toContain("상위 2개 밖에 있으면 여기에 나오지 않습니다");
+    // The endpoint ranks WITHIN the scope now, so the sentence says exactly that.
+    // The old wording — "수도권 전체 순위" filtered down to the 범위 — described the
+    // client-side workaround this replaced and must not come back.
+    expect(note).toContain("인천 강화군 범위의");
+    expect(note).toContain("그 안에서 매겨졌습니다");
+    expect(note).not.toContain("수도권 전체 순위");
   });
 });

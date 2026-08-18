@@ -1170,6 +1170,10 @@ export default function Home() {
     run: suit?.run ?? null,
     policyProfiles: suit?.policy.weight_profiles,
     profile,
+    // ① 분석 범위 — the SAME state that scopes the profile ranking, the A/B/C
+    // population and the map. The custom ranking is computed within it server-side,
+    // so ③ shows this 범위's top N under the reader's own weights.
+    scope: suitScope,
     enabled: mode === "suitability" && suitabilityView === "score",
   });
   const customWeightsApplied =
@@ -1436,6 +1440,10 @@ export default function Home() {
         customWeightsApplied.runId,
         customWeightsApplied.weights,
         customWeightsApplied.scenarioHash,
+        // The 범위 the vector was APPLIED under, carried on the applied record rather
+        // than read from live state, so the tiles can never describe a scope the
+        // ranking beside them was not computed for.
+        scopeToQuery(customWeightsApplied.scope),
       );
     }
     return suitabilityTileUrl(suit.run.id, profile);
@@ -2333,10 +2341,18 @@ export default function Home() {
           // exactly once; the composition below re-derives nothing. `restoredCandidate`
           // is the decoded legacy `cand`, passed as a SEED only: the section never
           // writes it back, so no derived state reaches the URL.
+          // ① 지역 선택, carried over from 후보지 심층 분석. This is the ONE state
+          // that fixes the candidate universe: both previews, the candidate detail,
+          // the scenario map tiles and every table below are ranked within it, so A
+          // and B differ by WEIGHTS only and never by geography.
+          scope={suitScope}
+          scopeName={suitScopeName}
           analysisSections={(comparison) => (
             <SuitabilityScenarioAnalysisSections
               comparison={comparison}
               initialCandidateId={restoredCandidate}
+              scope={suitScope}
+              scopeName={suitScopeName}
             />
           )}
         />

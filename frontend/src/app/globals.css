@@ -1180,6 +1180,12 @@ body {
    These are deliberately NOT the official status colours: a reader must never
    confuse a relative band with a screening outcome. */
 .wep-grade {
+  /* `relative` so the chip's `sr-only` band name (an absolutely positioned span)
+     resolves against the chip rather than the initial containing block. Without it
+     the span lands at a document coordinate, and in a scrolling analysis column that
+     grows documentElement.scrollHeight past the viewport — which breaks the Page-4
+     contract that the COLUMNS scroll and the page never does. */
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;

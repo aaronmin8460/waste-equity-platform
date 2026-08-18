@@ -56,6 +56,12 @@ import {
 } from "../../lib/api";
 import { CUSTOM_SCENARIO_TOP_N } from "../../lib/customWeightRanking";
 import {
+  SCOPE_ALL,
+  scopeKey,
+  scopeToQuery,
+  type SuitabilityScope,
+} from "../../lib/suitabilityScope";
+import {
   SCENARIO_COMPONENTS,
   decimalWeightsToPercents,
   draftTotal,
@@ -80,6 +86,8 @@ export interface AppliedCustomWeights {
   scenarioHashShort: string;
   /** The percents the reader typed, kept so the editor can show what is applied. */
   percents: ScenarioPercents;
+  /** The 범위 this vector was ranked within, carried so the map tiles match it. */
+  scope: SuitabilityScope;
 }
 
 export interface SuitabilityCustomWeights {
@@ -131,6 +139,7 @@ export function useSuitabilityCustomWeights({
   run,
   policyProfiles,
   profile,
+  scope = SCOPE_ALL,
   enabled,
 }: {
   run: SuitabilityRun | null;
@@ -138,6 +147,14 @@ export function useSuitabilityCustomWeights({
   policyProfiles?: Record<string, Record<string, string>>;
   /** The active 점수 반영 기준. Changing it reloads that preset. */
   profile: SuitabilityProfile;
+  /**
+   * The active ① 분석 범위. The preview is ranked WITHIN it, exactly as the profile
+   * ranking is, so ③'s rows are this 범위's top N under the reader's own weights —
+   * not the capital region's top N filtered down to whatever happened to be in range.
+   * Changing the 범위 invalidates an applied vector for the same reason changing the
+   * 기준 does: it is a different population, and therefore a different ranking.
+   */
+  scope?: SuitabilityScope;
   /**
    * Whether 후보지 심층 분석 is the open view. A scenario applied here describes THIS
    * screen's map and ranking, so leaving the screen drops it rather than leaving a
@@ -151,8 +168,23 @@ export function useSuitabilityCustomWeights({
     [run, policyProfiles, profile],
   );
 
-  const [percents, setPercents] = useState<ScenarioPercents>(presetPercents);
+  /**
+   * THE DRAFT IS ONLY THE READER'S OWN EDITS.
+   *
+   * While the editor is on a PRESET the displayed values are DERIVED from the served
+   * vector, not copied into state — so they are correct on the very first render the
+   * run is available on, with no effect to fire and no frame of the wrong numbers.
+   *
+   * Seeding state from props in an effect is what this replaces, and it was wrong:
+   * the run arrives asynchronously, so the editor briefly held the neutral 25/25/25/25
+   * fallback and only corrected itself once an effect ran. Any consumer that read the
+   * weights in between — a test, or a reader who typed immediately — saw a vector the
+   * run never served.
+   */
+  const [draft, setDraft] = useState<ScenarioPercents>(presetPercents);
   const [source, setSource] = useState<WeightSource>({ kind: "preset", profile });
+  // On a preset, the SERVED vector is the answer; on 사용자 지정, the reader's draft.
+  const percents = source.kind === "preset" ? presetPercents : draft;
   const [applied, setApplied] = useState<AppliedCustomWeights | null>(null);
   const [preview, setPreview] = useState<UserScenarioPreview | null>(null);
   const [applying, setApplying] = useState(false);
@@ -160,6 +192,7 @@ export function useSuitabilityCustomWeights({
 
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
+
 
   /**
    * A NEW PRESET, A NEW RUN, OR LEAVING THE SCREEN CLEARS THE SCENARIO.
@@ -171,7 +204,7 @@ export function useSuitabilityCustomWeights({
    * scenario across any of them would leave ③ and the map showing a weighting that
    * nothing on screen still names.
    */
-  const presetKey = `${runId}:${profile}:${enabled ? "on" : "off"}`;
+  const presetKey = `${runId}:${profile}:${scopeKey(scope)}:${enabled ? "on" : "off"}`;
   const lastPresetKey = useRef(presetKey);
   useEffect(() => {
     if (lastPresetKey.current === presetKey) return;
@@ -181,7 +214,7 @@ export function useSuitabilityCustomWeights({
     // job: it is a RESET keyed on an identity change, not a value derived from
     // props, which is why it is guarded by `lastPresetKey` and does not run on
     // every render.
-    setPercents(presetPercents);
+    setDraft(presetPercents);
     setSource({ kind: "preset", profile });
     setApplied(null);
     setPreview(null);
@@ -195,22 +228,24 @@ export function useSuitabilityCustomWeights({
     // unparseable field arrives as NaN and is read as 0, which keeps the total
     // honest (and therefore invalid) rather than silently holding the old value.
     const safe = Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.round(percent))) : 0;
-    setPercents((current) => {
-      if (current[component] === safe) return current;
-      return { ...current, [component]: safe };
-    });
+    // The first edit forks the draft OFF the preset that was on screen, so the other
+    // three values are the ones the reader could actually see when they typed.
+    const base = source.kind === "preset" ? presetPercents : draft;
+    setDraft({ ...base, [component]: safe });
     // ANY edit is what makes the vector the reader's own — see the header.
     setSource({ kind: "custom" });
     setError(null);
-  }, []);
+  }, [source, presetPercents, draft]);
 
   const selectCustom = useCallback(() => {
+    // Adopt whatever is on screen as the reader's own, without changing a value.
+    setDraft(percents);
     setSource({ kind: "custom" });
-  }, []);
+  }, [percents]);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
-    setPercents(presetPercents);
+    setDraft(presetPercents);
     setSource({ kind: "preset", profile });
     setApplied(null);
     setPreview(null);
@@ -244,6 +279,7 @@ export function useSuitabilityCustomWeights({
     setApplying(true);
     setError(null);
     const requested = percents;
+    const requestedScope = scope;
     previewUserWeightScenario(
       {
         run_id: runId,
@@ -253,6 +289,9 @@ export function useSuitabilityCustomWeights({
         // movement means the same thing wherever it is printed.
         compare_profile: "baseline",
         top_n: CUSTOM_SCENARIO_TOP_N,
+        // THE ANALYSIS SCOPE, so the custom ranking is this 범위's own top N. The
+        // same serializer the profile ranking uses, so both mean the same rows.
+        ...scopeToQuery(scope),
       },
       controller.signal,
     )
@@ -267,6 +306,7 @@ export function useSuitabilityCustomWeights({
           scenarioHash: result.scenario_hash,
           scenarioHashShort: result.scenario_hash_short,
           percents: requested,
+          scope: requestedScope,
         });
         setError(null);
       })
@@ -286,7 +326,7 @@ export function useSuitabilityCustomWeights({
       .finally(() => {
         if (!controller.signal.aborted) setApplying(false);
       });
-  }, [valid, runId, percents]);
+  }, [valid, runId, percents, scope]);
 
   return {
     percents,

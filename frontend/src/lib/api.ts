@@ -1435,6 +1435,17 @@ export interface UserScenarioRequest {
   compare_profile: SuitabilityProfile;
   top_n?: number;
   selected_candidate_id?: number | null;
+  /**
+   * THE ANALYSIS SCOPE the scenario is ranked WITHIN — the same ① 지역 선택 the
+   * candidates endpoint takes, in the same SGIS code space and with the same
+   * serializer (`scopeToQuery`).
+   *
+   * A scenario compares two WEIGHT VECTORS; it must never also compare two different
+   * geographic universes. Omitting both is 수도권 전체, which is what every caller
+   * sent before this existed, so the default is unchanged.
+   */
+  sido?: string | null;
+  sigungu?: string[];
 }
 
 export interface UserScenarioContribution {
@@ -1606,12 +1617,23 @@ export function userScenarioTileUrl(
   runId: number,
   weights: UserScenarioWeights,
   scenarioHash: string,
+  /**
+   * The analysis scope, so the MAP draws the same population the ranking beside it
+   * describes. Omitted → 수도권 전체, the tile this function has always produced.
+   * It goes in the URL like every other tile parameter, which is what keeps a tile
+   * fully determined by its URL (and its cache entry per 범위).
+   */
+  scope?: { sido?: string; sigungu?: string[] },
 ): string {
   const base = apiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
+  const scopeQuery = [
+    scope?.sido ? `&sido=${encodeURIComponent(scope.sido)}` : "",
+    ...(scope?.sigungu ?? []).map((code) => `&sigungu=${encodeURIComponent(code)}`),
+  ].join("");
   return (
     `${base}/api/v1/suitability/scenarios/tiles/${runId}/{z}/{x}/{y}.mvt` +
     `?wz=${weights.zoning}&wr=${weights.road}&we=${weights.equity}&wd=${weights.demand}` +
-    `&scenario_hash=${scenarioHash}`
+    `&scenario_hash=${scenarioHash}${scopeQuery}`
   );
 }
 

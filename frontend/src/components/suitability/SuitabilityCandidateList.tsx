@@ -303,7 +303,10 @@ export default function SuitabilityCandidateList({
             the list never quietly disagrees with its own count. */}
         {onSigunguCapChange !== undefined && (
           <div className="mb-2 text-[11px] text-ink-muted">
-            <label className="inline-flex items-center gap-1.5">
+            {/* `relative`: the `sr-only` description below is absolutely positioned,
+                and an unpositioned ancestor would let it escape this scrolling column
+                and grow the document. See SuitabilityFactorCards for the same note. */}
+            <label className="relative inline-flex items-center gap-1.5">
               <input
                 type="checkbox"
                 checked={sigunguCapOn}

@@ -48,6 +48,12 @@ import {
   type ScenarioComparison,
 } from "../../lib/scenarioComparison";
 import type { ComparisonResolution } from "../../lib/savedScenarios";
+import {
+  SCOPE_ALL,
+  scopeKey,
+  scopeToQuery,
+  type SuitabilityScope,
+} from "../../lib/suitabilityScope";
 
 interface Outcomes {
   /** Which request set these outcomes belong to. */
@@ -108,6 +114,20 @@ function requestKey(
 export function useScenarioComparison(
   resolution: ComparisonResolution,
   run: ActiveRunResolution,
+  /**
+   * THE ANALYSIS SCOPE, carried over from 후보지 심층 분석's ① 지역 선택.
+   *
+   * A weight scenario compares two WEIGHT VECTORS over ONE fixed candidate universe.
+   * Before this was threaded through, both sides were previewed population-wide, so
+   * a reader who had narrowed the analysis to 경기 was shown a 수도권-wide A/B
+   * comparison full of 인천 candidates — the comparison silently answered a
+   * different question from the one the page was set up to ask.
+   *
+   * Both sides ALWAYS receive the same scope, so A and B can never differ by
+   * geography; only their weights differ. Defaulted to 수도권 전체 so an existing
+   * caller that does not pass one keeps the population it had.
+   */
+  scope: SuitabilityScope = SCOPE_ALL,
 ): ScenarioComparison {
   // Only a RESOLVED run may be validated against. While it is loading — or if it
   // failed — nothing is sent: previewing against an unknown run is impossible, and
@@ -128,7 +148,10 @@ export function useScenarioComparison(
     return { a: forSlot(resolution.a), b: forSlot(resolution.b) };
   }, [resolution, activeRunId]);
 
-  const key = requestKey(activeRunId, plan.a, plan.b);
+  // The scope is part of the request identity: two previews that differ only by
+  // 범위 are different results and must not share a cache slot.
+  const scopeQueryKey = scopeKey(scope);
+  const key = `${requestKey(activeRunId, plan.a, plan.b)}|${scopeQueryKey}`;
   const [outcomes, setOutcomes] = useState<Outcomes>(NOTHING_LOADED);
 
   // Outcomes from a SUPERSEDED key are not shown. Deriving this rather than
@@ -156,6 +179,9 @@ export function useScenarioComparison(
             weights,
             compare_profile: SCENARIO_COMPARISON_COMPARE_PROFILE,
             top_n: SCENARIO_COMPARISON_TOP_N,
+            // THE ONE serializer both endpoints share, so a 범위 selects exactly the
+            // same rows here as it does for the Page-4 ranking.
+            ...scopeToQuery(scope),
           },
           controller.signal,
         );
@@ -182,9 +208,11 @@ export function useScenarioComparison(
       live = false;
       controller.abort();
     };
-    // `key` already encodes the run and both sides' ids and weights, so it is the
-    // complete identity of this request pair.
-  }, [key, activeRunId, needsA, needsB, weightsA, weightsB]);
+    // `key` already encodes the run and both sides' ids and weights; the scope key
+    // completes the identity of this request pair, so narrowing ① re-previews both
+    // sides instead of leaving a capital-region comparison on screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, activeRunId, needsA, needsB, weightsA, weightsB, scopeQueryKey]);
 
   return useMemo(
     () => buildScenarioComparison(resolution, run, { a: settled.a, b: settled.b }),

@@ -149,8 +149,17 @@ export default function SuitabilityFactorCards({
             {/* 가중치 설정 [ __ ] % — Figma's own control. Editable in the Page-4
                 workspace, a read-out everywhere else (see the header). Both forms
                 print the SAME number, so the segmented bar above and this row can
-                never disagree. */}
-            <div className="mt-2 flex items-center gap-2">
+                never disagree.
+
+                `relative` is LOAD-BEARING, not decoration: the `sr-only` note below is
+                `position: absolute`, so without a positioned ancestor its containing
+                block is the initial one — it then sits at a document coordinate rather
+                than inside the scrolling analysis column, and its static position at
+                the foot of a long column pushes `documentElement.scrollHeight` past the
+                viewport. The Page-4 workspace contract is that the COLUMNS scroll and
+                the page never does (e2e/suitabilityDashboard.spec.ts), so this one word
+                is what keeps a screen-reader-only string from breaking that. */}
+            <div className="relative mt-2 flex items-center gap-2">
               <label className="text-sm font-bold text-ink-subtle" htmlFor={inputId}>
                 가중치 설정
               </label>

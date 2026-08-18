@@ -51,21 +51,34 @@ import {
   useScenarioCandidateSelection,
 } from "../SuitabilityScenarioCandidateComparison";
 import SuitabilityScenarioRankingAnalytics from "./SuitabilityScenarioRankingAnalytics";
+import { SCOPE_ALL, type SuitabilityScope } from "../../../lib/suitabilityScope";
 
 export interface SuitabilityScenarioAnalysisSectionsProps {
   comparison: ScenarioComparison;
   /** A legacy `?cand=` id, passed through as a SEED for the candidate selection only. */
   initialCandidateId?: number | null;
+  /**
+   * The analysis scope the comparison was previewed within, forwarded so the
+   * candidate detail counts its rank over the SAME population the ranking did.
+   */
+  scope?: SuitabilityScope;
+  /** The scope's visible name, for the sections that state which 범위 they describe. */
+  scopeName?: string;
 }
 
 export default function SuitabilityScenarioAnalysisSections({
   comparison,
   initialCandidateId = null,
+  scope = SCOPE_ALL,
+  scopeName,
 }: SuitabilityScenarioAnalysisSectionsProps) {
   // The single derivation. `null` whenever Page 5B has nothing truthful to show.
   const rankingModel = useMemo(
-    () => buildScenarioRankingComparison(comparison),
-    [comparison],
+    // The scope's NAME travels into every figure's scope sentence — the table
+    // caption and the exported workbook's own note — so a scoped comparison never
+    // reads as a capital-region one that mysteriously shrank.
+    () => buildScenarioRankingComparison(comparison, scopeName),
+    [comparison, scopeName],
   );
 
   // `undefined` for a null model, so the workbook falls back to Page 5C's own three
@@ -75,7 +88,7 @@ export default function SuitabilityScenarioAnalysisSections({
     [rankingModel, comparison],
   );
 
-  const selection = useScenarioCandidateSelection(comparison, initialCandidateId);
+  const selection = useScenarioCandidateSelection(comparison, initialCandidateId, scope);
 
   const detailCard = (
     // The candidate lane's own marker travels with its card, so the lane stays
@@ -92,7 +105,7 @@ export default function SuitabilityScenarioAnalysisSections({
     return (
       <div className="grid gap-4 xl:grid-cols-2" data-testid="scenario-analysis-sections">
         {detailCard}
-        <ScenarioCandidateMapCard selection={selection} />
+        <ScenarioCandidateMapCard selection={selection} scope={scope} />
       </div>
     );
   }
@@ -102,7 +115,7 @@ export default function SuitabilityScenarioAnalysisSections({
       <SuitabilityScenarioRankingAnalytics
         comparison={comparison}
         model={rankingModel}
-        mapSlot={<ScenarioCandidateMapCard selection={selection} />}
+        mapSlot={<ScenarioCandidateMapCard selection={selection} scope={scope} />}
         detailSlot={detailCard}
       />
     </div>

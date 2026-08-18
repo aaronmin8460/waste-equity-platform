@@ -55,6 +55,7 @@ import {
   type ComparisonSide,
   type ScenarioComparison,
 } from "../../lib/scenarioComparison";
+import { SCOPE_ALL, type SuitabilityScope } from "../../lib/suitabilityScope";
 import {
   SAVED_SCENARIO_OTHER_RUN_NOTICE,
   type ComparisonResolution,
@@ -91,6 +92,17 @@ export interface SuitabilityScenarioComparisonProps {
    * could not stand behind.
    */
   analysisSections?: (comparison: ScenarioComparison) => ReactNode;
+  /**
+   * THE ANALYSIS SCOPE carried over from 후보지 심층 분석's ① 지역 선택.
+   *
+   * The page owns it — it is the same one state that scopes Page 4's ranking, its
+   * A/B/C population and its map — and it is passed here so BOTH sides of the
+   * comparison are previewed over that one candidate universe. A and B differ by
+   * WEIGHTS only; they must never differ by geography.
+   */
+  scope?: SuitabilityScope;
+  /** The scope's visible name, so the page can say which 범위 it is comparing. */
+  scopeName?: string;
 }
 
 const SLOT_LABEL = { A: "A안", B: "B안" } as const;
@@ -110,6 +122,8 @@ export default function SuitabilityScenarioComparison({
   orientation,
   onBackToSelection,
   analysisSections,
+  scope = SCOPE_ALL,
+  scopeName,
 }: SuitabilityScenarioComparisonProps) {
   // Memoised on the two primitives so the hook's dependency is stable across
   // renders in which the run did not actually change.
@@ -120,7 +134,7 @@ export default function SuitabilityScenarioComparison({
 
   // THE single data load for Page 5. Later sections receive `comparison`; none of
   // them resolves the pair or calls the preview API again.
-  const comparison = useScenarioComparison(selection, runResolution);
+  const comparison = useScenarioComparison(selection, runResolution, scope);
   const { sideA, sideB, status } = comparison;
 
   const rows = comparisonWeightRows(sideA.canonicalWeights, sideB.canonicalWeights);
@@ -161,6 +175,24 @@ export default function SuitabilityScenarioComparison({
         <h2 id="scenario-comparison-heading" className="sr-only">
           비교 대상과 가중치 비교
         </h2>
+
+        {/* WHICH 범위 IS BEING COMPARED — stated, not implied.
+            The candidate universe is fixed by 후보지 심층 분석's ① 지역 선택, and both
+            sides are ranked within it. A comparison that did not name its 범위 would
+            leave a reader unable to tell a 경기-only A/B from a capital-region one,
+            which is precisely the confusion this page had while the scope was being
+            discarded. Only shown when a 범위 is actually narrower than 수도권 전체;
+            the whole-region case needs no qualification. */}
+        {scopeName !== undefined && scope.kind !== "all" && (
+          <p
+            className="text-[11px] leading-snug text-ink-muted"
+            data-testid="scenario-comparison-scope"
+          >
+            분석 범위 <span className="font-semibold text-ink">{scopeName}</span> · A안과 B안 모두
+            이 범위의 스크리닝 통과 후보 구역만을 대상으로 다시 순위를 매긴 결과입니다. 두 안은
+            가중치만 다르며, 비교 대상 지역은 같습니다.
+          </p>
+        )}
 
         {/* The two chips, side by side and equal — the frame's 662+24+662. */}
         <div className="grid gap-4 md:grid-cols-2">

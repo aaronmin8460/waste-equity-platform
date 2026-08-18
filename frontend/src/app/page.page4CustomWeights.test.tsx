@@ -551,6 +551,47 @@ describe("the rest of the ② / ③ requirements", () => {
     expect(request.limit).toBe(5);
   });
 
+  it("sends the ACTIVE ① 분석 범위 with the custom vector, and carries it into the tiles", async () => {
+    // The preview endpoint ranks WITHIN the scope, so a scoped ③ shows this 범위's
+    // own top N under the reader's weights. Sending no scope would rank the whole
+    // capital region and then show it under a regional heading — the defect the
+    // Page-5 scope contract exists to prevent, in its Page-4 form.
+    window.history.replaceState(null, "", "/?v=1&mode=suitability&view=score&suitScope=KR-SGIS-31");
+    await enterDeepAnalysis();
+    setWeight("zoning", 50);
+    setWeight("equity", 10);
+    await waitFor(() =>
+      expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("custom-weight-apply"));
+    await waitFor(() => expect(api.previewUserWeightScenario).toHaveBeenCalled());
+
+    const [request] = vi.mocked(api.previewUserWeightScenario).mock.calls[0];
+    expect(request.sido).toBe("KR-SGIS-31");
+
+    // …and the map tiles are scoped to the same 범위, so the two agree.
+    await waitFor(() => {
+      const url = screen.getByTestId("map-container").getAttribute("data-tile-url") ?? "";
+      expect(url).toContain("/suitability/scenarios/tiles/47/");
+    });
+    const url = screen.getByTestId("map-container").getAttribute("data-tile-url") ?? "";
+    expect(url).toContain(`sido=${encodeURIComponent("KR-SGIS-31")}`);
+  });
+
+  it("sends NO scope for 수도권 전체, which is the whole-region ranking", async () => {
+    await enterDeepAnalysis();
+    setWeight("zoning", 50);
+    setWeight("equity", 10);
+    await waitFor(() =>
+      expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("custom-weight-apply"));
+    await waitFor(() => expect(api.previewUserWeightScenario).toHaveBeenCalled());
+    const [request] = vi.mocked(api.previewUserWeightScenario).mock.calls[0];
+    expect(request.sido).toBeUndefined();
+    expect(request.sigungu ?? []).toEqual([]);
+  });
+
   it("keeps the 점수 기준 자세히 보기 band table with the design's own five labels", async () => {
     await enterDeepAnalysis();
     const table = screen.getByTestId("factor-score-band-table").textContent ?? "";

@@ -44,6 +44,12 @@ import {
   type ScenarioComparison,
 } from "../../lib/scenarioComparison";
 import type { CandidateSideResult } from "../../lib/scenarioCandidateComparison";
+import {
+  SCOPE_ALL,
+  scopeKey,
+  scopeToQuery,
+  type SuitabilityScope,
+} from "../../lib/suitabilityScope";
 
 /** Fallback when a rejection carried no usable backend detail. */
 export const CANDIDATE_DETAIL_FAILED_MESSAGE =
@@ -92,6 +98,15 @@ function requestKey(
 export function useScenarioCandidateDetail(
   comparison: ScenarioComparison,
   candidateId: number | null,
+  /**
+   * The SAME analysis scope the comparison was previewed within.
+   *
+   * `custom_rank` on a candidate detail is a position in a population, so it is only
+   * consistent with the row the reader clicked if it is counted over the same 범위.
+   * Sending no scope here while the ranking was scoped would print a capital-region
+   * rank beside a regional one.
+   */
+  scope: SuitabilityScope = SCOPE_ALL,
 ): ScenarioCandidateDetails {
   const runId = comparison.runId;
   // `canonicalWeights` is non-null ONLY when that side is READY, so this single
@@ -99,7 +114,7 @@ export function useScenarioCandidateDetail(
   const weightsA = comparison.sideA.canonicalWeights;
   const weightsB = comparison.sideB.canonicalWeights;
 
-  const key = requestKey(runId, candidateId, weightsA, weightsB);
+  const key = `${requestKey(runId, candidateId, weightsA, weightsB)}|${scopeKey(scope)}`;
   const [settled, setSettled] = useState<Settled>(NOTHING_LOADED);
 
   // Outcomes from a SUPERSEDED key are not shown. Derived rather than reset in an
@@ -122,6 +137,7 @@ export function useScenarioCandidateDetail(
             run_id: runId,
             weights,
             compare_profile: SCENARIO_COMPARISON_COMPARE_PROFILE,
+            ...scopeToQuery(scope),
           },
           controller.signal,
         );
@@ -143,8 +159,9 @@ export function useScenarioCandidateDetail(
       live = false;
       controller.abort();
     };
-    // `key` already encodes the run, the candidate and both weight vectors, so it is
-    // the complete identity of this request pair.
+    // `key` already encodes the run, the candidate, both weight vectors AND the
+    // scope, so it is the complete identity of this request pair.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, runId, candidateId, weightsA, weightsB]);
 
   return useMemo(() => {

@@ -101,4 +101,26 @@ describe("userScenarioTileUrl", () => {
     expect(url).toContain("wd=0.15000000");
     expect(url).toContain("scenario_hash=deadbeefcafe");
   });
+
+  it("omits every scope parameter when no 범위 is given — 수도권 전체", () => {
+    const url = userScenarioTileUrl(48, WEIGHTS, "deadbeefcafe");
+    expect(url).not.toContain("sido=");
+    expect(url).not.toContain("sigungu=");
+  });
+
+  it("carries a 시·도 범위 so the map draws the population the ranking described", () => {
+    const url = userScenarioTileUrl(48, WEIGHTS, "deadbeefcafe", { sido: "KR-SGIS-31" });
+    expect(url).toContain("sido=KR-SGIS-31");
+  });
+
+  it("carries every 시·군·구 as its own repeated parameter", () => {
+    const url = userScenarioTileUrl(48, WEIGHTS, "deadbeefcafe", {
+      sigungu: ["KR-SGIS-23510", "KR-SGIS-23520"],
+    });
+    expect(url).toContain("sigungu=KR-SGIS-23510");
+    expect(url).toContain("sigungu=KR-SGIS-23520");
+    // Repeated, never comma-joined: the endpoint reads a repeatable query parameter,
+    // and a joined value would arrive as one unmatchable code.
+    expect(url).not.toContain("KR-SGIS-23510,KR-SGIS-23520");
+  });
 });
