@@ -43,9 +43,11 @@ import type { ReactNode } from "react";
 
 import type { MunicipalCostResponse, MunicipalCostRow } from "../../lib/api";
 import {
+  availableCountLabel,
   formatPayment,
   formatPaymentPerCapita,
   primaryLimitation,
+  statusChoiceCount,
   statusLabel,
 } from "../../lib/municipalCost";
 import Dialog from "../ui/Dialog";
@@ -89,12 +91,16 @@ export interface MunicipalCostDetailDialogProps {
    */
   focusRegionCode?: string | null;
   /**
-   * The full filterable comparison table, rendered BELOW the ranking.
+   * The filterable comparison table, rendered BELOW the ranking.
    *
    * The ranking answers "who pays most per resident"; the table carries each row's
    * status, its served reason codes and its population method. Moving this dataset
    * into a modal must not cost it that detail, so the table travels with it rather
    * than being replaced by the ranking.
+   *
+   * It follows the SECTION'S 비교 조건 while the ranking above it does not, so the
+   * disclosure that reveals it names that difference. Two scopes in one modal is only
+   * safe while each one says which it is.
    */
   children?: ReactNode;
 }
@@ -163,7 +169,19 @@ export default function MunicipalCostDetailDialog({
   const half = Math.ceil(ranked.length / 2);
   const columns = [ranked.slice(0, half), ranked.slice(half)];
 
-  const referenceYear = data?.meta.reference_year ?? null;
+  const meta = data?.meta ?? null;
+  const referenceYear = meta?.reference_year ?? null;
+  /**
+   * `38곳 가능` — how many of the published municipalities have a calculable value.
+   *
+   * Read off the SERVED metadata rather than counted from `ranked`, for the same
+   * reason every other municipal surface does: `meta` carries the counts the backend
+   * computes over the published scope, so the headline stays a statement about the
+   * dataset rather than about whatever is currently rendered. Never a literal — a
+   * source refresh that moves 38 to 39 must move this text with it.
+   */
+  const availableLabel = availableCountLabel(meta);
+  const expectedCount = statusChoiceCount(meta, null);
   /**
    * What the list actually covers, read off the ROWS rather than asserted.
    *
@@ -191,6 +209,19 @@ export default function MunicipalCostDetailDialog({
             {scopeLabel}
             {referenceYear != null && ` · ${referenceYear}년`}
           </p>
+          {/* The compact coverage line the KPI card leads with, repeated where the
+              reader lands: 계산 가능한 곳, then the scope it is a fraction OF. Without
+              the denominator "38곳 가능" reads as the whole dataset. */}
+          {availableLabel !== null && (
+            <p className="mt-0.5 text-sm font-bold text-ink" data-testid="municipal-cost-detail-available">
+              {availableLabel}
+              {expectedCount !== null && (
+                <span className="ml-1.5 text-xs font-normal text-ink-subtle">
+                  대상 {expectedCount}곳
+                </span>
+              )}
+            </p>
+          )}
           <p className="mt-0.5 text-sm text-ink-subtle">
             생활계 폐기물 수집·운반 용역 계약에 대한 지급액 기준
           </p>
@@ -349,7 +380,7 @@ export default function MunicipalCostDetailDialog({
         {children && (
           <details className="mt-4 border-t border-hairline pt-3" data-testid="municipal-cost-detail-table">
             <summary className="cursor-pointer list-none text-sm font-semibold text-ink marker:content-none">
-              자료 상태와 산출 근거가 있는 전체 표 보기
+              자료 상태와 산출 근거가 있는 표 보기 (아래 섹션의 비교 조건 적용)
             </summary>
             <div className="pt-3">{children}</div>
           </details>

@@ -1176,3 +1176,132 @@ describe("accessibility", () => {
     expect(screen.getByRole("heading", { level: 3, name: "산출 방법과 한계" }));
   });
 });
+
+// --------------------------------------------------------------------------- //
+// 10 — the popup's scope is the PUBLISHED dataset, not this section's filter
+// --------------------------------------------------------------------------- //
+
+/**
+ * `dataAll` — the prop that keeps the 상세 popup independent of the three controls.
+ *
+ * The section owns a filter; the popup describes a dataset. They used to share one
+ * response, so a reader who set 시·도 = 서울 here also silently narrowed a popup the
+ * KPI card opens far above this section. The fixtures below hold the two apart: the
+ * SECTION is scoped to 경기, the PUBLISHED set spans all three metropolitans.
+ *
+ * The transparency table inside the popup deliberately still follows the section's
+ * filter — it is the one surface on which those controls are legible as a result — and
+ * its disclosure says so. That split is asserted here so neither half drifts onto the
+ * other.
+ */
+describe("상세 popup scope", () => {
+  /** What the section is showing under 시·도 = 경기: the two 경기도 rows. */
+  const GYEONGGI_ONLY = response({
+    sido_filter: "41",
+    municipalities: [row(), DERIVED_ROW],
+    meta: meta({ returned_count: 2 }),
+  });
+
+  function renderScoped(props: Partial<Parameters<typeof MunicipalCostSection>[0]> = {}) {
+    return renderSection({ data: GYEONGGI_ONLY, dataAll: response(), ...props });
+  }
+
+  /** The popup's RANKING rows, by municipality key. */
+  function rankedKeys(): string[] {
+    return screen
+      .getAllByTestId("municipal-cost-detail-row")
+      .map((element) => element.getAttribute("data-municipality") ?? "");
+  }
+
+  function openPopup(): HTMLElement {
+    fireEvent.click(screen.getByTestId("municipal-cost-detail-open"));
+    return screen.getByTestId("municipal-cost-detail-modal");
+  }
+
+  it("ranks the UNFILTERED set even while the section is scoped to one 시·도", () => {
+    renderScoped();
+    openPopup();
+    expect(rankedKeys().sort()).toEqual(
+      ["41-이천시", "41-부천시", "28-부평구", "11-강남구"].sort(),
+    );
+    // The section's own filter really is narrower — otherwise this proves nothing.
+    expect(GYEONGGI_ONLY.municipalities.length).toBe(2);
+  });
+
+  it("names the wide scope 수도권 전체, and one metropolitan when that is the truth", () => {
+    renderScoped();
+    expect(within(openPopup()).getByTestId("municipal-cost-detail-scope")).toHaveTextContent(
+      "수도권 전체",
+    );
+    cleanup();
+    // Handed a genuinely single-metropolitan published set, it names it rather than
+    // asserting 수도권 전체 — the label follows the rows, in both directions.
+    renderSection({ data: GYEONGGI_ONLY, dataAll: GYEONGGI_ONLY });
+    expect(within(openPopup()).getByTestId("municipal-cost-detail-scope")).toHaveTextContent(
+      "경기도",
+    );
+  });
+
+  it("leads the popup with the served AVAILABLE count and its denominator", () => {
+    renderScoped();
+    const scope = within(openPopup()).getByTestId("municipal-cost-detail-available");
+    // Read from `meta` (20 of 66), never counted from the four fixture rows.
+    expect(scope).toHaveTextContent("20곳 가능");
+    expect(scope).toHaveTextContent("대상 66곳");
+  });
+
+  it("falls back to `data` when no unfiltered response has arrived yet", () => {
+    // Standalone rendering, and the window before the unfiltered request resolves.
+    // An empty popup would be a worse answer than a narrow one.
+    renderSection({ data: GYEONGGI_ONLY });
+    openPopup();
+    expect(rankedKeys().sort()).toEqual(["41-부천시", "41-이천시"]);
+  });
+
+  it("keeps the section's filter governing the section, popup or not", () => {
+    renderScoped();
+    // The count on the trigger, and the live region, both describe the FILTERED set.
+    expect(screen.getByTestId("municipal-cost-detail-open")).toHaveTextContent("(2곳)");
+    expect(screen.getByTestId("municipal-cost-live")).toHaveTextContent("2곳을 표시합니다");
+    // …and so does the transparency table inside the popup, whose disclosure says so.
+    const modal = openPopup();
+    const table = within(modal).getByTestId("municipal-cost-table");
+    expect(
+      within(table)
+        .getAllByTestId("municipal-cost-row")
+        .map((element) => element.getAttribute("data-municipality")),
+    ).toEqual(["이천시", "부천시"]);
+    expect(within(modal).getByTestId("municipal-cost-detail-table")).toHaveTextContent(
+      "비교 조건 적용",
+    );
+  });
+
+  it("re-ranks on the metric toggle, on the unfiltered set", () => {
+    renderScoped();
+    const modal = openPopup();
+    // 주민 1인당: 이천시 213,905 > 부천시 80,461 > 부평구 19,863.
+    expect(rankedKeys()[0]).toBe("41-이천시");
+    fireEvent.click(within(modal).getByTestId("municipal-cost-detail-metric-total"));
+    // 총 지급액 reverses the top pair: 부천시 638억 > 이천시 492억.
+    expect(rankedKeys()[0]).toBe("41-부천시");
+    expect(within(modal).getByTestId("municipal-cost-detail-unit")).toHaveTextContent("단위: 원");
+    fireEvent.click(within(modal).getByTestId("municipal-cost-detail-metric-perCapita"));
+    expect(rankedKeys()[0]).toBe("41-이천시");
+  });
+
+  it("reverses on 낮은 순 without ordering an absent value as the cheapest", () => {
+    renderScoped();
+    const modal = openPopup();
+    const sort = within(modal).getByTestId("municipal-cost-detail-sort");
+    fireEvent.change(sort, { target: { value: "asc" } });
+    const ascending = rankedKeys();
+    expect(ascending[0]).toBe("28-부평구");
+    // 강남구 disclosed nothing. Ascending order is exactly where a null read as 0
+    // would surface as "the cheapest municipality in the capital region"; it stays
+    // last and unranked instead.
+    expect(ascending[ascending.length - 1]).toBe("11-강남구");
+    fireEvent.change(sort, { target: { value: "desc" } });
+    expect(rankedKeys()[0]).toBe("41-이천시");
+    expect(rankedKeys()[rankedKeys().length - 1]).toBe("11-강남구");
+  });
+});

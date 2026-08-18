@@ -83,6 +83,22 @@ import { PAGE2_CARD_CLASS } from "./shared";
 export interface MunicipalCostSectionProps {
   /** The served response, or null while loading / after a failure. */
   data: MunicipalCostResponse | null;
+  /**
+   * The UNFILTERED served response — the whole published capital-region scope.
+   *
+   * The 시·군·구별 상세 popup describes the PUBLISHED dataset, not this section's
+   * current selection, so it reads from here and never from `data` above. The two
+   * must stay separate props: `data` is scoped by the three controls below (whose
+   * released default is 서울 + 계산 가능, i.e. 13 of the 66 municipalities), and a
+   * popup opened from the KPI card — which advertises the capital-region scope — must
+   * not silently inherit a filter the reader set on a different surface 1,500px down
+   * the page. Handing one response to both is exactly the defect this prop closes.
+   *
+   * Optional, and falls back to `data`, so the component still works standalone (its
+   * own tests render it directly) and so the popup is never empty in the window
+   * before the unfiltered request resolves.
+   */
+  dataAll?: MunicipalCostResponse | null;
   /** A genuine request failure. Never used for a municipality's own missing value. */
   error: MunicipalCostErrorState | null;
   sido: MunicipalCostSido | null;
@@ -110,6 +126,7 @@ export interface MunicipalCostSectionProps {
 
 export default function MunicipalCostSection({
   data,
+  dataAll = null,
   error,
   sido,
   setSido,
@@ -232,9 +249,16 @@ export default function MunicipalCostSection({
       <MunicipalCostDetailDialog
         open={open}
         onClose={() => setOpen(false)}
-        data={data}
+        /* The UNFILTERED response, which is what this dialog's own prop contract asks
+           for. `data` here would scope the popup to the section's 시·도/자료 상태
+           selection — with the released 서울 + 계산 가능 default that is 13 rows
+           presented under a 수도권 heading. */
+        data={dataAll ?? data}
         focusRegionCode={detailFocusRegionCode}
       >
+        {/* The transparency table stays the SECTION'S filtered set: it is the one place
+            the three controls above are legible as a result rather than as a count, and
+            its own disclosure names the scope so the two are never read as one list. */}
         <MunicipalCostTable rows={rows ?? []} />
       </MunicipalCostDetailDialog>
     </SectionCard>
