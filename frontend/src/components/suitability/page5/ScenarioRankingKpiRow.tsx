@@ -32,19 +32,23 @@ function cellIdentity(row: { locationLabel: string | null; candidateKey: string 
 }
 
 export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowProps) {
-  const { topCandidate, topNRetention, comparableRows, roseCount, fellCount } = model;
+  const { topCandidate, topNRetention, roseCount, fellCount } = model;
 
-  // The denominator every movement KPI is measured against, named once so the four
-  // cards cannot drift into quoting different populations.
-  const commonCount = comparableRows.length;
+  // ── EVERY DENOMINATOR HERE COUNTS 시·군·구 ────────────────────────────────────
+  // The list above these tiles is a list of municipalities, one representative cell
+  // each. Measuring these tiles over candidate keys instead would contradict it:
+  // A and B often represent the same 시·군·구 with different cells, so a
+  // candidate-key turnover would report municipalities as leaving and entering a
+  // list they never left. See `TopNRetention`.
+  const commonCount = topNRetention.retained;
   // The frame's captions are ONE short line. The full denominator sentence is stated
   // once in the scope strip directly below this row, so each tile names the
   // population in the fewest words that stay true rather than repeating it in full.
-  const commonScope = `양쪽 공통 ${commonCount.toLocaleString("ko-KR")}개 기준`;
+  const commonScope = `양쪽 공통 ${commonCount.toLocaleString("ko-KR")}개 시·군·구 기준`;
 
   const retentionLabel = topNRetention.reduced
-    ? `상위 ${topNRetention.denominator} 유지 후보 구역`
-    : `TOP ${topNRetention.n} 유지 후보 구역`;
+    ? `상위 ${topNRetention.denominator} 유지 시·군·구`
+    : `TOP ${topNRetention.n} 유지 시·군·구`;
 
   return (
     // The frame's five equal tiles at gap 14. `auto-rows-fr` keeps a tile whose
@@ -84,18 +88,19 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
         testId="scenario-ranking-kpi-retention"
         valueTestId="scenario-ranking-kpi-retention-value"
         {...(topNRetention.denominator === 0
-          ? { unavailableReason: "비교할 상위 후보가 없습니다" }
-          : { value: `${topNRetention.retained} / ${topNRetention.denominator}개` })}
+          ? { unavailableReason: "비교할 시·군·구가 없습니다" }
+          : { value: `${topNRetention.retained} / ${topNRetention.denominator}곳` })}
         caption={
           topNRetention.percent === null ? null : (
             <span data-testid="scenario-ranking-kpi-retention-caption">
               {topNRetention.percent}% 유지 ·{" "}
               {topNRetention.reduced
                 ? // The shortfall is stated, not silently absorbed into the ratio.
-                  `양쪽 상위 후보가 ${topNRetention.denominator}개뿐이라 그 기준으로 계산`
+                  // On the real V3 run 인천 has only two rankable 시·군·구 at all.
+                  `이 범위에서 순위를 매길 수 있는 시·군·구가 ${topNRetention.denominator}곳뿐이라 그 기준으로 계산`
                 : // What the ratio counts, said plainly. "집합 일치" would read as
                   // "the two sets match", which is what a 10/10 means, not a 5/10.
-                  `양쪽 상위 ${topNRetention.n}개에 함께 든 수`}
+                  `양쪽 목록 ${topNRetention.n}곳에 함께 든 수`}
             </span>
           )
         }
@@ -103,42 +108,45 @@ export default function ScenarioRankingKpiRow({ model }: ScenarioRankingKpiRowPr
 
       {/* ── 순위 상승 / 하락 (공통 후보 한정) ─────────────────────────────────── */}
       <ScenarioKpiCard
-        label="순위 상승 후보 구역"
+        label="표시 위치가 올라간 시·군·구"
         glyph="↑"
         testId="scenario-ranking-kpi-rose"
         valueTestId="scenario-ranking-kpi-rose-value"
         {...(commonCount === 0
-          ? { unavailableReason: "양쪽에 모두 있는 후보가 없습니다" }
-          : { value: `${roseCount.toLocaleString("ko-KR")}개` })}
-        caption={commonCount === 0 ? null : `B안에서 순위가 앞당겨짐 · ${commonScope}`}
+          ? { unavailableReason: "양쪽 목록에 함께 있는 시·군·구가 없습니다" }
+          : { value: `${roseCount.toLocaleString("ko-KR")}곳` })}
+        caption={commonCount === 0 ? null : `B안 목록에서 더 위로 이동 · ${commonScope}`}
       />
 
       <ScenarioKpiCard
-        label="순위 하락 후보 구역"
+        label="표시 위치가 내려간 시·군·구"
         glyph="↓"
         testId="scenario-ranking-kpi-fell"
         valueTestId="scenario-ranking-kpi-fell-value"
         {...(commonCount === 0
-          ? { unavailableReason: "양쪽에 모두 있는 후보가 없습니다" }
-          : { value: `${fellCount.toLocaleString("ko-KR")}개` })}
-        caption={commonCount === 0 ? null : `B안에서 순위가 밀림 · ${commonScope}`}
+          ? { unavailableReason: "양쪽 목록에 함께 있는 시·군·구가 없습니다" }
+          : { value: `${fellCount.toLocaleString("ko-KR")}곳` })}
+        caption={commonCount === 0 ? null : `B안 목록에서 더 아래로 이동 · ${commonScope}`}
       />
 
-      {/* ── 공통 후보 수 ──────────────────────────────────────────────────────── */}
+      {/* ── 목록 교체 ─────────────────────────────────────────────────────────── */}
       <ScenarioKpiCard
-        label="양쪽에서 순위를 확인한 후보 구역"
+        // NOT 신규 통과 / 탈락. Nothing here passed or failed a threshold: a 시·군·구
+        // simply is or is not among the ten this scenario shows. The screening
+        // vocabulary the Figma row uses is deliberately absent — see the header.
+        label="목록에 새로 나타난 · 빠진 시·군·구"
         glyph="⇄"
         testId="scenario-ranking-kpi-common"
         valueTestId="scenario-ranking-kpi-common-value"
-        value={`${commonCount.toLocaleString("ko-KR")}개`}
+        value={`+${topNRetention.entered} / −${topNRetention.exited}곳`}
         caption={
           model.rankingPopulation === null
-            ? "A안과 B안 상위 목록 양쪽에 모두 나타난 후보 구역입니다."
+            ? "B안 목록에만 있는 시·군·구와 A안 목록에만 있는 시·군·구입니다."
             : // The served ranked population, so the reader can see how small the
               // compared slice is rather than reading the counts above as totals. The
               // scope strip below states the same denominator in full; this tile keeps
               // only the figure, which is what makes the ratio legible in place.
-              `순위 대상 ${model.rankingPopulation.toLocaleString("ko-KR")}개 중 비교된 구역입니다.`
+              `순위 대상 후보 구역 ${model.rankingPopulation.toLocaleString("ko-KR")}개를 시·군·구별 대표 한 곳씩으로 추린 목록 기준입니다.`
         }
       />
     </dl>

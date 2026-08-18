@@ -131,6 +131,77 @@ function sizeOf<Row>(rows: readonly Row[]): number {
 }
 
 /**
+ * The 시·군·구 name this row is filed under, or `null` when it carries no place.
+ *
+ * The 시·군·구 first, the 시·도 as the fallback for a partly located cell — the rule
+ * every grouped surface on Page 5 shares. Extracted so {@link groupRowsBySigungu}
+ * and {@link selectSigunguRepresentatives} cannot drift into two different ideas of
+ * what one municipality is.
+ */
+function servedNameOf(row: SigunguGroupable): string | null {
+  if (typeof row.sigunguName === "string" && row.sigunguName.trim() !== "") return row.sigunguName;
+  if (typeof row.sidoName === "string" && row.sidoName.trim() !== "") return row.sidoName;
+  return null;
+}
+
+/**
+ * THE canonical municipality identity for Page 5 — one key, used by every surface.
+ *
+ * The served, fully-qualified 시·군·구 name ("인천광역시 강화군"), which already
+ * carries its 시·도, so two identically-named 시·군·구 in different 시·도 stay
+ * distinct without a second identity system being invented for them.
+ */
+export function sigunguGroupKeyOf(row: SigunguGroupable): string {
+  return servedNameOf(row) ?? UNASSIGNED_SIGUNGU_KEY;
+}
+
+/**
+ * Keep the FIRST row of each 시·군·구, up to `limit` distinct 시·군·구.
+ *
+ * ── WHAT THIS IS ─────────────────────────────────────────────────────────────────
+ * A FILTER, not a reducer. Given rows already ordered by their real scenario rank,
+ * it returns a subset of those very rows — the highest-ranked one of each 시·군·구 —
+ * so each municipality appears at most once in the visible comparison. Every value
+ * on a returned row (score, rank, movement) is the value that row already carried;
+ * nothing is averaged, combined, re-ranked or synthesised, and the input array and
+ * its rows are never mutated.
+ *
+ * ── WHY IT IS NEEDED ─────────────────────────────────────────────────────────────
+ * The real V3 run is extremely concentrated. Under the baseline weights the capital
+ * region's top 2,189 candidates lie in just NINE 시·군·구 — the top 41 are all 양평군
+ * — so a plain "best 10 candidates" list reads as a single-municipality list and
+ * tells a reader nothing about how the region compares.
+ *
+ * ── THE POSITION IS NOT A RANK ───────────────────────────────────────────────────
+ * A row's index here is a DISPLAY POSITION in this list. It is not the candidate's
+ * rank and must never be printed as one: on real data the tenth representative is
+ * the candidate ranked 2,190th. The caller keeps the row's own `custom_rank`
+ * visible beside the position for exactly that reason.
+ *
+ * `limit` ≤ 0 returns nothing. Fewer distinct 시·군·구 than `limit` returns the
+ * fewer that genuinely exist — never a padded list.
+ */
+export function selectSigunguRepresentatives<Row extends SigunguGroupable>(
+  rows: readonly Row[],
+  limit: number,
+): Row[] {
+  if (limit <= 0) return [];
+  const seen = new Set<string>();
+  const representatives: Row[] = [];
+  for (const row of rows) {
+    const key = sigunguGroupKeyOf(row);
+    // First occurrence wins, and the caller ordered the rows by rank, so the row
+    // kept is the group's best-ranked one. Ties therefore resolve exactly as the
+    // incoming ranking already resolved them — no new tie-break is invented here.
+    if (seen.has(key)) continue;
+    seen.add(key);
+    representatives.push(row);
+    if (representatives.length === limit) break;
+  }
+  return representatives;
+}
+
+/**
  * Group rows by their served 시·군·구, preserving incoming order everywhere.
  *
  * Rows with no 시·군·구 fall back to their 시·도 (so a partly located cell still says
@@ -144,13 +215,8 @@ export function groupRowsBySigungu<Row extends SigunguGroupable>(
   const buckets = new Map<string, { label: string; sidoLabel: string | null; rows: Row[] }>();
 
   for (const row of rows) {
-    const served =
-      typeof row.sigunguName === "string" && row.sigunguName.trim() !== ""
-        ? row.sigunguName
-        : typeof row.sidoName === "string" && row.sidoName.trim() !== ""
-          ? row.sidoName
-          : null;
-
+    // The SAME identity `selectSigunguRepresentatives` uses — see `sigunguGroupKeyOf`.
+    const served = servedNameOf(row);
     const key = served ?? UNASSIGNED_SIGUNGU_KEY;
     let bucket = buckets.get(key);
     if (bucket === undefined) {

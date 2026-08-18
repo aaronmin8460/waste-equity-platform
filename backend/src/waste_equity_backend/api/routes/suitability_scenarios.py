@@ -275,11 +275,52 @@ ranked AS (
         count(*) OVER () AS ranking_population
     FROM scored
 )
-SELECT * FROM ranked ORDER BY custom_rank ASC LIMIT :top_n
+{{tail}}
 """
 
+# The plain cut: the best ``top_n`` CANDIDATES.
+_PREVIEW_TAIL_CANDIDATES = "SELECT * FROM ranked ORDER BY custom_rank ASC LIMIT :top_n"
 
-def _preview_sql(scope_sql: str, score_sql: str, present_sql: str) -> str:
+# ── ONE REPRESENTATIVE CANDIDATE PER 시·군·구 ────────────────────────────────────
+#
+# The SAME ranking, with the LIMIT moved from candidates to DISTINCT 시·군·구.
+# ``DISTINCT ON`` keeps the FIRST row of each group under its ``ORDER BY``, and that
+# order is ``custom_rank ASC``, so the row kept is the group's genuinely
+# highest-ranked candidate — a real cell, carrying its own real ``custom_rank`` and
+# ``custom_score``. It is a SELECTION, never an aggregation:
+#
+#   - no average, median or synthetic 시·군·구 score;
+#   - no 시·군·구 rank — the ranks that come back are 1, 42, 622 … , the
+#     representatives' own candidate ranks, with every gap intact and visible;
+#   - ``ranking_population`` is untouched, because ``count(*) OVER ()`` was already
+#     computed inside ``ranked`` over the COMPLETE scoped population, and reducing
+#     the rows afterwards cannot change a value already stamped on each of them.
+#
+# The group key mirrors the frontend's canonical one (`scenarioSigunguGroups.ts`):
+# the 시·군·구 name, falling back to the 시·도 for a cell with no 시·군·구 assigned,
+# and to a single empty-string bucket for a cell with neither. The frontend applies
+# `selectSigunguRepresentatives` over the result regardless, so it — not this query —
+# remains the final authority on what the reader sees, and a whitespace disagreement
+# between the two could still not surface a duplicated 시·군·구.
+_PREVIEW_TAIL_REPRESENTATIVES = """, representatives AS (
+    SELECT DISTINCT ON (
+        coalesce(nullif(btrim(ranked.sigungu_region_name), ''),
+                 nullif(btrim(ranked.sido_region_name), ''),
+                 '')
+    ) ranked.*
+    FROM ranked
+    ORDER BY
+        coalesce(nullif(btrim(ranked.sigungu_region_name), ''),
+                 nullif(btrim(ranked.sido_region_name), ''),
+                 ''),
+        ranked.custom_rank ASC
+)
+SELECT * FROM representatives ORDER BY custom_rank ASC LIMIT :top_n"""
+
+
+def _preview_sql(
+    scope_sql: str, score_sql: str, present_sql: str, *, representatives: bool = False
+) -> str:
     """The ranking query, restricted to the analysis scope.
 
     THE SCOPE IS INSIDE ``raw``, i.e. BEFORE ``row_number()`` and before
@@ -287,9 +328,18 @@ def _preview_sql(scope_sql: str, score_sql: str, present_sql: str) -> str:
     candidate's rank WITHIN the selected 범위 and ``ranking_population`` becomes that
     범위's size. Filtering after the window would have produced capital-region ranks
     wearing a regional label — the exact defect this fixes.
+
+    ``representatives`` moves the LIMIT from candidates to DISTINCT 시·군·구 without
+    touching the ranking, the scope or the population count — see
+    ``_PREVIEW_TAIL_REPRESENTATIVES``.
     """
 
-    return _PREVIEW_SQL_TEMPLATE.format(scope=scope_sql, score=score_sql, present=present_sql)
+    return _PREVIEW_SQL_TEMPLATE.format(
+        scope=scope_sql,
+        score=score_sql,
+        present=present_sql,
+        tail=_PREVIEW_TAIL_REPRESENTATIVES if representatives else _PREVIEW_TAIL_CANDIDATES,
+    )
 
 # Sequential custom rank of ONE ELIGIBLE candidate without ranking twice: 1 + the
 # number of ELIGIBLE candidates that strictly outrank it (higher custom_score, or
@@ -583,18 +633,39 @@ def _score_str(value: Any) -> str | None:
     return format(Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_EVEN), "f")
 
 
-def _component_decimals(row: Any, component_order: Sequence[str]) -> dict[str, Decimal]:
+def _component_decimals(
+    row: Any, component_order: Sequence[str], model_version: str
+) -> dict[str, Decimal]:
     """The present component scores as Decimals (missing components absent).
 
-    Reads the run's own components in the run's own order. Only the historical
-    model reaches here today — successor runs are refused before any weight is
-    parsed — so the values come from the legacy columns; the accessor is used so
-    the reader does not hard-code which storage owns them.
+    Reads the run's own components, in the run's own order, FROM THE STORAGE THAT
+    RUN USES — the legacy columns for the historical model, the ``component_scores``
+    map for any later one. This is the row-reading twin of ``_component_score_sql``,
+    and it must stay in step with it.
+
+    ── WHY THIS IS NOT HISTORICAL-ONLY ANY MORE ─────────────────────────────────
+    It used to say "only the historical model reaches here today — successor runs
+    are refused before any weight is parsed" and index ``row[f"{c}_score"]``
+    unconditionally. That stopped being true once V3 previews were enabled: a
+    successor run has no ``existing_burden_score`` COLUMN, so candidate detail
+    raised ``NoSuchColumnError`` and returned 500 for every real V3 candidate.
+
+    A component absent from the map stays absent from the result rather than
+    becoming 0 — the caller's ``all_present`` check is what decides whether a score
+    may be computed at all, and ZERO_FILL is forbidden by the successor policy.
     """
 
     present: dict[str, Decimal] = {}
+    if component_model.storage_for(model_version) == component_model.STORAGE_LEGACY_COLUMNS:
+        for c in component_order:
+            value = row[f"{c}_score"]
+            if value is not None:
+                present[c] = Decimal(str(value))
+        return present
+
+    scores = row["component_scores"] or {}
     for c in component_order:
-        value = row[f"{c}_score"]
+        value = scores.get(c)
         if value is not None:
             present[c] = Decimal(str(value))
     return present
@@ -722,7 +793,7 @@ def _build_candidate_detail(
     status = row["status"]
     is_excluded = status == policy.STATUS_EXCLUDED
     is_review = status == policy.STATUS_REVIEW
-    components = _component_decimals(row, run_component_order)
+    components = _component_decimals(row, run_component_order, run_model_version)
     all_present = set(components) == set(run_component_order)
 
     custom_score: str | None = None
@@ -860,7 +931,14 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
 
     rows = (
         session.execute(
-            text(_preview_sql(scope_sql, score_sql, present_sql)),
+            text(
+                _preview_sql(
+                    scope_sql,
+                    score_sql,
+                    present_sql,
+                    representatives=req.sigungu_representatives,
+                )
+            ),
             {
                 "run_id": resolved,
                 "profile": req.compare_profile,

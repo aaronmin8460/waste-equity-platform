@@ -4,12 +4,34 @@
  * Page 5A resolves the pair, validates the run and re-previews both sides
  * (docs/figma-redesign/PAGE_5_SCENARIO_CONTRACT.md §9). This module takes those two
  * settled `UserScenarioPreview` responses and derives every rank figure Page 5B
- * shows: the 1위 comparison, TOP-10 retention, per-candidate rank movement, the
- * slope rows and the comparison table. Each Page-5B component reads THIS object;
- * none of them recomputes a rank, so the KPI row and the table can never print two
- * different answers to the same question.
+ * shows: the 1위 comparison, visible-list retention, per-candidate rank movement,
+ * the representative rows and the comparison table. Each Page-5B component reads
+ * THIS object; none of them recomputes a rank, so the KPI row and the table can
+ * never print two different answers to the same question.
  *
  * React-free on purpose — `lib/` is the pure, directly-testable layer.
+ *
+ * ── THE VISIBLE LIST IS ONE CANDIDATE PER 시·군·구 ────────────────────────────────
+ * The real V3 run is extremely concentrated: under the baseline weights the capital
+ * region's top FORTY-ONE candidates are all 경기도 양평군, and its top 2,189 span
+ * nine 시·군·구. A plain "best 10 candidates" list is therefore a list of one
+ * municipality, which tells a reader nothing about how the region compares. So the
+ * preview is requested with `sigungu_representatives` and thinned again here by
+ * `selectSigunguRepresentatives`: each side shows the HIGHEST-RANKED REAL CANDIDATE
+ * of each 시·군·구, at most {@link RANKING_COMPARISON_TOP_N} of them.
+ *
+ * TWO GRAINS THEREFORE COEXIST HERE, and must not be confused:
+ *
+ *   `candidateRows` / `comparableRows`   — CANDIDATE grain. Real cells, real ranks.
+ *   `representativeA` / `representativeB` — the VISIBLE list, one cell per 시·군·구.
+ *   `representativeRows` / `topNRetention` / rose·fell·held
+ *                                        — 시·군·구 grain, keyed by group key.
+ *
+ * A DISPLAY POSITION (1..N in a visible list) IS NOT A RANK. On the live run the
+ * tenth representative is the candidate ranked 2,190th of 13,734, so the position is
+ * never written back over `aRank`/`bRank` and every surface prints the real rank
+ * beside it. Nothing here averages candidates, takes a median, or derives a 시·군·구
+ * score or 시·군·구 rank — the ONLY new quantity is that position.
  *
  * ── WHAT THIS MODULE MAY NOT DO ──────────────────────────────────────────────────
  * It does not read `localStorage`, parse `cmpA`/`cmpB`, call the preview API, or
@@ -66,6 +88,12 @@
 
 import type { StabilityClass, UserScenarioPreview, UserScenarioTopCandidate } from "./api";
 import type { ComparisonSide, ScenarioComparison } from "./scenarioComparison";
+import {
+  UNASSIGNED_SIGUNGU_LABEL,
+  selectSigunguRepresentatives,
+  sigunguGroupKeyOf,
+  splitQualifiedRegionName,
+} from "./scenarioSigunguGroups";
 
 // --------------------------------------------------------------------------- //
 // Frozen analytical bounds
@@ -200,9 +228,23 @@ export interface RankedCandidateRow {
   /** `null` unless both ranks are EXACT — an unknown movement is not "유지". */
   direction: RankMovementDirection | null;
 
-  /** Within this side's `RANKING_COMPARISON_TOP_N`. False when the rank is not EXACT. */
+  /** Within this side's VISIBLE representative list. Equivalent to a non-null slot. */
   inTopA: boolean;
   inTopB: boolean;
+
+  /**
+   * This candidate's DISPLAY POSITION (1..{@link RANKING_COMPARISON_TOP_N}) in the
+   * side's 시·군·구 representative list, or `null` when it is not that side's
+   * representative for its 시·군·구.
+   *
+   * ── A POSITION IS NOT A RANK ─────────────────────────────────────────────────
+   * `aDisplayPosition === 10` says "tenth row of the visible municipality list",
+   * NOT "ranked tenth". On the real V3 run the tenth representative is the
+   * candidate ranked 2,190th of 13,734. `aRank` remains the only rank, is printed
+   * beside the position everywhere, and is never overwritten by it.
+   */
+  aDisplayPosition: number | null;
+  bDisplayPosition: number | null;
 
   /**
    * The RUN's frozen stability class for this cell — NOT an A/B quantity.
@@ -301,25 +343,41 @@ export interface TopCandidateComparison {
 // --------------------------------------------------------------------------- //
 
 /**
- * Exact set overlap of the two sides' top-N candidate keys.
+ * Exact set overlap of the two sides' VISIBLE 시·군·구 — the membership of the two
+ * representative lists, compared as sets of municipalities.
+ *
+ * ── IT COUNTS 시·군·구, NOT CANDIDATES ───────────────────────────────────────────
+ * Every figure here is a count of GROUP KEYS ({@link sigunguGroupKeyOf}), because
+ * that is what the visible TOP list is a list of. Comparing candidate keys here
+ * would contradict the list directly above it: A and B routinely pick DIFFERENT
+ * representative cells inside the same 시·군·구 (a reweighting moves the best cell
+ * within a municipality), so a candidate-key comparison would report 양평군 as
+ * having both left and entered a list it never left.
  *
  * ── IT IS A TOP-N STATEMENT AND NOTHING WIDER ────────────────────────────────────
- * `denominator` is `min(N, served A, served B)`, not always N: a run whose ranked
- * population is smaller than N has no tenth candidate to retain, and dividing by a
- * denominator the data does not support would understate retention. `n` reports
- * the nominal N so a caller can say "요청한 상위 10" and "실제 비교한 8" apart.
+ * `denominator` is `min(N, visible A, visible B)`, not always N: a scope holding
+ * fewer than N rankable 시·군·구 has no tenth municipality to retain, and dividing
+ * by a denominator the data does not support would understate retention. On the
+ * real V3 run 인천 has just TWO rankable 시·군·구, so its denominator is 2. `n`
+ * reports the nominal N so a caller can tell "요청한 상위 10" and "실제 비교한 2"
+ * apart.
  *
  * This metric may NOT be captioned 전체 순위 안정성 or 전체 후보 유지율. It describes
- * the top `denominator` rows and says nothing whatever about the rest of the
- * ranked population.
+ * the visible `denominator` municipalities and says nothing whatever about the rest
+ * of the ranked population. It is also NOT a screening verdict: a 시·군·구 that
+ * leaves the visible list has not "failed" anything — no threshold was applied.
  */
 export interface TopNRetention {
   /** The nominal N asked for (`RANKING_COMPARISON_TOP_N`). */
   n: number;
-  /** The N actually available on BOTH sides — the honest denominator. */
+  /** The N actually visible on BOTH sides — the honest denominator. */
   denominator: number;
-  /** |A top-N keys ∩ B top-N keys|. */
+  /** |A visible 시·군·구 ∩ B visible 시·군·구|. */
   retained: number;
+  /** In B's visible list but not A's — 시·군·구 that appeared. */
+  entered: number;
+  /** In A's visible list but not B's — 시·군·구 that dropped out. */
+  exited: number;
   /** `retained / denominator` as whole percent; `null` when the denominator is 0. */
   percent: number | null;
   /** True when `denominator < n`, so the caller can label the shortfall. */
@@ -331,18 +389,49 @@ export interface TopNRetention {
 // --------------------------------------------------------------------------- //
 
 /**
- * One line of the A→B movement visualization.
+ * One line of the A→B movement visualization — ONE 시·군·구, not one candidate.
  *
- * The population is the UNION of the two sides' top-N sets — the same two ranked
- * columns the Figma frame draws, plus the honest edge cases it does not have:
- * a candidate in A's top 10 but not B's still gets a line, ending at its real B
- * rank when one was served and at an explicit out-of-preview marker when it was
- * not. A numeric endpoint is drawn ONLY where `aRankState`/`bRankState` is `EXACT`.
+ * ── WHY THE LINE IS A 시·군·구 ───────────────────────────────────────────────────
+ * Each side lists a municipality at most once, and the two sides may represent one
+ * municipality with DIFFERENT cells: reweighting can make a different 양평군 cell
+ * that municipality's best. Drawing a line per candidate would then split 양평군
+ * into two lines — one leaving A's column, one entering B's — and the reader would
+ * see a municipality depart and arrive when it did neither. So the line is the
+ * 시·군·구, and each endpoint carries THAT SIDE's own representative cell, with its
+ * own real rank and its own real score.
+ *
+ * ── THE ENDPOINTS ARE POSITIONS, THE LABELS ARE RANKS ────────────────────────────
+ * `aSlot`/`bSlot` place the endpoint (1..N, top-down). What is PRINTED at the
+ * endpoint is the representative's real `custom_rank`, because a position of 10 can
+ * belong to a candidate ranked 2,190th. A `null` slot means this side did not show
+ * the municipality at all — an absence, drawn in the 목록 밖 band, never at a
+ * guessed position.
  */
-export interface ScenarioSlopeRow extends RankedCandidateRow {
-  /** Slot 1..N in A's ranked column; `null` when this candidate is not in A's top N. */
+export interface ScenarioRepresentativeRow {
+  /** THE canonical municipality identity — `sigunguGroupKeyOf`. */
+  groupKey: string;
+  /** The heading as printed: "양평군". */
+  label: string;
+  /** "경기도" — the quiet second half of the heading; `null` when unrecognised. */
+  sidoLabel: string | null;
+
+  /** A's representative cell for this 시·군·구; `null` when A does not show it. */
+  a: RankedCandidateRow | null;
+  b: RankedCandidateRow | null;
+
+  /** Display position 1..N in A's visible list; `null` when absent from it. */
   aSlot: number | null;
   bSlot: number | null;
+
+  /**
+   * `bSlot − aSlot` — movement WITHIN THE VISIBLE LIST, in display positions.
+   * `null` unless BOTH sides show this 시·군·구. Never a rank delta.
+   */
+  slotDelta: number | null;
+  /** Positions moved, unsigned. `null` with `slotDelta`. */
+  slotMovement: number | null;
+  /** `null` unless both sides show it — an unknown movement is not "유지". */
+  slotDirection: RankMovementDirection | null;
 }
 
 // --------------------------------------------------------------------------- //
@@ -380,12 +469,23 @@ export interface ScenarioRankingComparison {
   /** The subset with an EXACT rank on BOTH sides — the only rows a delta exists for. */
   comparableRows: RankedCandidateRow[];
 
-  /** Common candidates that moved up / down / held, within `comparableRows`. */
+  /**
+   * The VISIBLE list for each side: the highest-ranked real candidate of each
+   * 시·군·구, in scenario-rank order, cut at {@link RANKING_COMPARISON_TOP_N}.
+   *
+   * Derived INDEPENDENTLY per side, so A and B may name different cells for the
+   * same municipality — which is the whole point of reweighting.
+   */
+  representativeA: RankedCandidateRow[];
+  representativeB: RankedCandidateRow[];
+
+  /** Shared 시·군·구 that moved up / down / held POSITION in the visible lists. */
   roseCount: number;
   fellCount: number;
   heldCount: number;
 
-  slopeRows: ScenarioSlopeRow[];
+  /** One row per visible 시·군·구 — the union of the two representative lists. */
+  representativeRows: ScenarioRepresentativeRow[];
 
   /** One sentence naming the bounded population every figure above describes. */
   scopeDescription: string;
@@ -429,6 +529,34 @@ export function buildScenarioRankingComparison(
     (row) => row.aRankState === "EXACT" && row.bRankState === "EXACT",
   );
 
+  // ── THE VISIBLE LISTS ────────────────────────────────────────────────────────
+  // Each side ordered by ITS OWN real rank, then thinned to one cell per 시·군·구
+  // and cut at N. Derived separately, so a reweighting is free to promote a
+  // different cell of the same municipality on the B side.
+  const representativeA = selectSigunguRepresentatives(
+    rankedBy(candidateRows, (row) => row.aRank),
+    RANKING_COMPARISON_TOP_N,
+  );
+  const representativeB = selectSigunguRepresentatives(
+    rankedBy(candidateRows, (row) => row.bRank),
+    RANKING_COMPARISON_TOP_N,
+  );
+
+  // Stamp each side's display position onto the row it belongs to. These rows were
+  // constructed by `joinCandidate` a few lines above and are referenced by nothing
+  // else yet, so this writes to freshly-owned objects — never to a caller's data.
+  representativeA.forEach((row, index) => {
+    row.aDisplayPosition = index + 1;
+    row.inTopA = true;
+  });
+  representativeB.forEach((row, index) => {
+    row.bDisplayPosition = index + 1;
+    row.inTopB = true;
+  });
+
+  const representativeRows = representativeSlopeRows(representativeA, representativeB);
+  const moved = representativeRows.filter((row) => row.slotDirection !== null);
+
   const rankingPopulation =
     boundaryA.rankingPopulation !== null &&
     boundaryA.rankingPopulation === boundaryB.rankingPopulation
@@ -440,16 +568,39 @@ export function buildScenarioRankingComparison(
     boundaryA,
     boundaryB,
     rankingPopulation,
-    topCandidate: topCandidateComparison(candidateRows),
-    topNRetention: topNRetention(byKeyA, byKeyB, boundaryA, boundaryB),
+    topCandidate: topCandidateComparison(representativeA, representativeB),
+    topNRetention: topNRetention(representativeA, representativeB),
     candidateRows,
     comparableRows,
-    roseCount: comparableRows.filter((row) => row.direction === "UP").length,
-    fellCount: comparableRows.filter((row) => row.direction === "DOWN").length,
-    heldCount: comparableRows.filter((row) => row.direction === "SAME").length,
-    slopeRows: slopeRows(candidateRows),
+    representativeA,
+    representativeB,
+    roseCount: moved.filter((row) => row.slotDirection === "UP").length,
+    fellCount: moved.filter((row) => row.slotDirection === "DOWN").length,
+    heldCount: moved.filter((row) => row.slotDirection === "SAME").length,
+    representativeRows,
     scopeDescription: scopeDescription(boundaryA, boundaryB, rankingPopulation, scopeName),
   };
+}
+
+/**
+ * The rows that have an EXACT rank on one side, in that side's rank order.
+ *
+ * A copy — `selectSigunguRepresentatives` must not be handed an array whose order
+ * some other surface depends on, and `candidateRows` is the table's own order.
+ */
+function rankedBy(
+  rows: readonly RankedCandidateRow[],
+  rankOf: (row: RankedCandidateRow) => number | null,
+): RankedCandidateRow[] {
+  return rows
+    .filter((row) => rankOf(row) !== null)
+    .sort((x, y) => {
+      const byRank = (rankOf(x) as number) - (rankOf(y) as number);
+      if (byRank !== 0) return byRank;
+      // Ranks are unique per side, so this only settles a malformed response —
+      // deterministically, and by the same key the server ordered ties with.
+      return x.candidateKey < y.candidateKey ? -1 : x.candidateKey > y.candidateKey ? 1 : 0;
+    });
 }
 
 function isReady(side: ComparisonSide): side is ComparisonSide & { preview: UserScenarioPreview } {
@@ -495,8 +646,12 @@ function joinCandidate(
     rankDelta,
     movement: rankDelta === null ? null : Math.abs(rankDelta),
     direction: rankDelta === null ? null : directionOf(rankDelta),
-    inTopA: aRank !== null && aRank <= RANKING_COMPARISON_TOP_N,
-    inTopB: bRank !== null && bRank <= RANKING_COMPARISON_TOP_N,
+    // Set by `buildScenarioRankingComparison` once the visible lists are known — a
+    // row cannot tell on its own whether it represents its 시·군·구.
+    inTopA: false,
+    inTopB: false,
+    aDisplayPosition: null,
+    bDisplayPosition: null,
     ...agreedStability(a, b),
   };
 }
@@ -518,72 +673,129 @@ function compareNullableAsc(x: number | null, y: number | null): number {
   return x - y;
 }
 
-function topCandidateComparison(rows: RankedCandidateRow[]): TopCandidateComparison {
-  const a = rows.find((row) => row.aRank === 1) ?? null;
-  const b = rows.find((row) => row.bRank === 1) ?? null;
+/**
+ * The head of each VISIBLE list — display position 1 on both sides.
+ *
+ * Position 1 is always the side's genuinely best-ranked candidate (the rank-1 cell
+ * is the first row of its 시·군·구, so it always survives the thinning), which is
+ * why this remains a true "1위 후보 구역" statement rather than a statement about
+ * the representative selection.
+ */
+function topCandidateComparison(
+  representativeA: readonly RankedCandidateRow[],
+  representativeB: readonly RankedCandidateRow[],
+): TopCandidateComparison {
+  const a = representativeA[0] ?? null;
+  const b = representativeB[0] ?? null;
   if (a === null || b === null) return { state: "UNAVAILABLE", a, b };
   return { state: a.candidateKey === b.candidateKey ? "UNCHANGED" : "CHANGED", a, b };
 }
 
+/**
+ * Overlap of the two VISIBLE 시·군·구 lists, as sets of group keys.
+ *
+ * See {@link TopNRetention} for why this counts municipalities and not candidates.
+ */
 function topNRetention(
-  byKeyA: Map<string, UserScenarioTopCandidate>,
-  byKeyB: Map<string, UserScenarioTopCandidate>,
-  boundaryA: RankBoundary,
-  boundaryB: RankBoundary,
+  representativeA: readonly RankedCandidateRow[],
+  representativeB: readonly RankedCandidateRow[],
 ): TopNRetention {
-  const topKeys = (index: Map<string, UserScenarioTopCandidate>): Set<string> => {
-    const keys = new Set<string>();
-    for (const [key, candidate] of index) {
-      if (candidate.custom_rank <= RANKING_COMPARISON_TOP_N) keys.add(key);
-    }
-    return keys;
-  };
+  const setA = new Set(representativeA.map(sigunguGroupKeyOf));
+  const setB = new Set(representativeB.map(sigunguGroupKeyOf));
 
-  const setA = topKeys(byKeyA);
-  const setB = topKeys(byKeyB);
-
-  // The honest denominator: a side that served only 6 ranked candidates has no
-  // seventh to retain, and N would overstate the shortfall as a loss.
-  const denominator = Math.min(
-    RANKING_COMPARISON_TOP_N,
-    Math.min(boundaryA.servedCount, boundaryB.servedCount),
-  );
+  // The honest denominator: a scope holding only two rankable 시·군·구 (인천, on the
+  // real V3 run) has no third to retain, and N would report that as a loss.
+  const denominator = Math.min(RANKING_COMPARISON_TOP_N, Math.min(setA.size, setB.size));
 
   let retained = 0;
   for (const key of setA) if (setB.has(key)) retained += 1;
+
+  let entered = 0;
+  for (const key of setB) if (!setA.has(key)) entered += 1;
 
   return {
     n: RANKING_COMPARISON_TOP_N,
     denominator,
     retained,
+    entered,
+    exited: setA.size - retained,
     percent: denominator === 0 ? null : Math.round((retained / denominator) * 100),
     reduced: denominator < RANKING_COMPARISON_TOP_N,
   };
 }
 
 /**
- * The union of the two top-N sets, carrying each side's ranked-column slot.
+ * The union of the two VISIBLE lists, as one row per 시·군·구.
  *
  * Ordered by A slot then B slot, so the left column reads 1..N downwards and a
- * candidate that only enters on the B side sorts after the ones that were already
- * there. `aSlot`/`bSlot` are just the ranks (both ≤ N by construction) but are
- * named separately because a renderer positions by column slot, not by rank.
+ * municipality that only appears on the B side sorts after the ones already there.
+ * A group present on both sides produces exactly ONE row even when the two sides
+ * chose different cells for it — see {@link ScenarioRepresentativeRow}.
  */
-function slopeRows(rows: RankedCandidateRow[]): ScenarioSlopeRow[] {
-  return rows
-    .filter((row) => row.inTopA || row.inTopB)
-    .map((row) => ({
-      ...row,
-      aSlot: row.inTopA ? row.aRank : null,
-      bSlot: row.inTopB ? row.bRank : null,
-    }))
-    .sort((x, y) => {
-      const bySlot = compareNullableAsc(x.aSlot, y.aSlot);
-      if (bySlot !== 0) return bySlot;
-      const byB = compareNullableAsc(x.bSlot, y.bSlot);
-      if (byB !== 0) return byB;
-      return x.candidateKey < y.candidateKey ? -1 : 1;
-    });
+function representativeSlopeRows(
+  representativeA: readonly RankedCandidateRow[],
+  representativeB: readonly RankedCandidateRow[],
+): ScenarioRepresentativeRow[] {
+  const byGroup = new Map<string, ScenarioRepresentativeRow>();
+
+  const blank = (row: RankedCandidateRow): ScenarioRepresentativeRow => {
+    const served = row.sigunguName ?? row.sidoName;
+    const { sido, sigungu } =
+      served === null || served.trim() === ""
+        ? { sido: null, sigungu: UNASSIGNED_SIGUNGU_LABEL }
+        : splitQualifiedRegionName(served);
+    return {
+      groupKey: sigunguGroupKeyOf(row),
+      label: sigungu,
+      sidoLabel: sido,
+      a: null,
+      b: null,
+      aSlot: null,
+      bSlot: null,
+      slotDelta: null,
+      slotMovement: null,
+      slotDirection: null,
+    };
+  };
+
+  const upsert = (row: RankedCandidateRow): ScenarioRepresentativeRow => {
+    const key = sigunguGroupKeyOf(row);
+    let entry = byGroup.get(key);
+    if (entry === undefined) {
+      entry = blank(row);
+      byGroup.set(key, entry);
+    }
+    return entry;
+  };
+
+  representativeA.forEach((row, index) => {
+    const entry = upsert(row);
+    entry.a = row;
+    entry.aSlot = index + 1;
+  });
+  representativeB.forEach((row, index) => {
+    const entry = upsert(row);
+    entry.b = row;
+    entry.bSlot = index + 1;
+  });
+
+  for (const entry of byGroup.values()) {
+    if (entry.aSlot === null || entry.bSlot === null) continue;
+    // Movement between two DISPLAY POSITIONS. A smaller position is higher up, so
+    // the sign convention matches `directionOf` exactly.
+    const delta = entry.bSlot - entry.aSlot;
+    entry.slotDelta = delta;
+    entry.slotMovement = Math.abs(delta);
+    entry.slotDirection = directionOf(delta);
+  }
+
+  return [...byGroup.values()].sort((x, y) => {
+    const bySlot = compareNullableAsc(x.aSlot, y.aSlot);
+    if (bySlot !== 0) return bySlot;
+    const byB = compareNullableAsc(x.bSlot, y.bSlot);
+    if (byB !== 0) return byB;
+    return x.groupKey < y.groupKey ? -1 : x.groupKey > y.groupKey ? 1 : 0;
+  });
 }
 
 /** The bounded population, stated in one sentence rather than left to be assumed. */

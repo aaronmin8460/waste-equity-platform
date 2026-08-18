@@ -302,9 +302,24 @@ def scenario_score(
     ``custom_score = Σ component_score · weight``, on the 0–100 scale, quantized to
     4 dp with ROUND_HALF_EVEN — identical to :func:`policy.composite`, so it matches
     every stored-composite score and the SQL scoring paths exactly.
+
+    ── THE HISTORICAL FOUR STILL GO THROUGH ``policy.composite`` ────────────────
+    :func:`policy.composite` sums over :data:`policy.COMPONENTS`, the historical
+    four, so handing it a successor run's components raised ``KeyError: 'zoning'``
+    and returned a 500 from candidate detail. Rather than loosen that function —
+    which the engine uses to write stored composites — the historical set is
+    delegated to it UNCHANGED and any other model is summed here over its own
+    components, with the same exact-Decimal arithmetic and the same quantizer.
     """
 
-    return policy.composite(dict(component_scores), dict(weights))
+    scores = dict(component_scores)
+    w = dict(weights)
+    if set(scores) == set(policy.COMPONENTS):
+        return policy.composite(scores, w)
+    # `scores` is built in the run's own component order, and Decimal addition is
+    # exact, so neither the order nor the grouping can shift the result.
+    total = sum((scores[c] * w[c] for c in scores), start=Decimal("0"))
+    return policy.quantize_score(total)
 
 
 def scenario_provisional_score(
@@ -316,9 +331,29 @@ def scenario_provisional_score(
     never zero-filled). Returns ``None`` when no component is present or the total
     weight of the present components is zero. Identical semantics to
     :func:`policy.provisional_composite`.
+
+    The historical four are delegated unchanged, for the reason
+    :func:`scenario_score` states. :func:`policy.provisional_composite` selects the
+    present components with ``for c in policy.COMPONENTS``, so on a successor run it
+    would find none present and return ``None`` — a silently blank provisional score
+    rather than a crash, which is the more dangerous of the two failures.
     """
 
-    return policy.provisional_composite(dict(component_scores), dict(weights))
+    scores = dict(component_scores)
+    w = dict(weights)
+    if set(scores) <= set(policy.COMPONENTS):
+        return policy.provisional_composite(scores, w)
+
+    present = {c: scores[c] for c in scores if scores[c] is not None}
+    if not present:
+        return None
+    weight_sum = sum((w[c] for c in present), start=Decimal("0"))
+    if weight_sum == 0:
+        return None
+    # Renormalized over the components ACTUALLY present — never zero-filled, which
+    # the successor policy forbids outright.
+    total = sum((present[c] * w[c] for c in present), start=Decimal("0")) / weight_sum
+    return policy.quantize_score(total)
 
 
 # --------------------------------------------------------------------------- #

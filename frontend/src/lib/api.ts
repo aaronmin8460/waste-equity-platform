@@ -1490,6 +1490,16 @@ export interface UserScenarioRequest {
   weights: UserScenarioWeights;
   compare_profile: SuitabilityProfile;
   top_n?: number;
+  /**
+   * Return ONE representative candidate per 시·군·구 instead of the best `top_n`
+   * candidates. Omitted/false → the plain candidate cut, unchanged.
+   *
+   * The ranking, the scope and `ranking_population` are identical either way; only
+   * the final cut differs, keeping each 시·군·구's HIGHEST-RANKED real candidate with
+   * its own real `custom_rank` and `custom_score`. No municipality score or
+   * municipality rank exists on either side of the wire.
+   */
+  sigungu_representatives?: boolean;
   selected_candidate_id?: number | null;
   /**
    * THE ANALYSIS SCOPE the scenario is ranked WITHIN — the same ① 지역 선택 the

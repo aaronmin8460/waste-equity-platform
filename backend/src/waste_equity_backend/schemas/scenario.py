@@ -69,6 +69,21 @@ class UserWeightScenarioRequest(BaseModel):
     # The analysis scope to rank WITHIN. Omitted → 수도권 전체 (see ScenarioScope).
     sido: str | None = None
     sigungu: list[str] = Field(default_factory=list)
+    # ── ONE REPRESENTATIVE CANDIDATE PER 시·군·구 ──────────────────────────────
+    # Off by default, so every existing caller (Page 4's weight preview and save
+    # card included) keeps the plain "top ``top_n`` candidates" list unchanged.
+    #
+    # Turned ON, the ranking is unchanged and the LIMIT is applied to DISTINCT
+    # 시·군·구 instead of to candidates: the response carries the single
+    # HIGHEST-RANKED real candidate of each 시·군·구, still wearing its own real
+    # ``custom_rank`` and ``custom_score``. Nothing is averaged, no 시·군·구 score
+    # or 시·군·구 rank is computed, and ``ranking_population`` still counts the
+    # whole scoped candidate population — see ``_PREVIEW_SQL_TEMPLATE``.
+    #
+    # Page 5 needs this because the real V3 run is extremely concentrated: the
+    # capital region's top 2,189 candidates span just NINE 시·군·구, so a plain
+    # 50-row cut can only ever show two municipalities.
+    sigungu_representatives: bool = False
 
 
 class UserScenarioCandidateDetailRequest(BaseModel):

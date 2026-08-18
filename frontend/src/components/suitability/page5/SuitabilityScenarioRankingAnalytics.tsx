@@ -110,13 +110,13 @@ export default function SuitabilityScenarioRankingAnalytics({
           title={`후보지 순위 변화 TOP ${RANKING_COMPARISON_TOP_N}`}
           testId="scenario-ranking-slope-card"
           className="wep-figma-card"
-          description={`A안 또는 B안에서 상위 ${RANKING_COMPARISON_TOP_N}위에 든 후보 구역의 순위가 어떻게 이동했는지 보여줍니다.`}
+          // The section NAME is unchanged. What it now lists is one representative
+          // 후보 구역 per 시·군·구, so the description says so — and says the numeral
+          // is a display position, because on real data the tenth row is a candidate
+          // ranked in the thousands and an unqualified "TOP 10" would imply otherwise.
+          description={`각 시·군·구에서 순위가 가장 높은 후보 구역 하나씩을, 최대 ${RANKING_COMPARISON_TOP_N}개 시·군·구까지 보여줍니다. 앞의 번호는 목록에서의 표시 순서이며, 후보 구역의 실제 순위는 이름 옆에 함께 적었습니다.`}
         >
-          <ScenarioRankSlopeChart
-            rows={model.slopeRows}
-            boundaryA={model.boundaryA}
-            boundaryB={model.boundaryB}
-          />
+          <ScenarioRankSlopeChart rows={model.representativeRows} />
         </SectionCard>
 
         {mapSlot}

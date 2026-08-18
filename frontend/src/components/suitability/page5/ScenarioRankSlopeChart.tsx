@@ -3,26 +3,32 @@
 /**
  * A → B 순위 이동 — the slope visualization (Figma 167:10554 `SlopeChart`).
  *
- * Two ranked columns, one line per candidate cell. The frame draws exactly this,
- * with 10 municipalities per side; the departures from it are all about what a line
- * is allowed to CLAIM.
+ * Two columns, ONE LINE PER 시·군·구 — which is what the frame draws too ("10
+ * municipalities per side"). The departures from it are all about what a line is
+ * allowed to CLAIM.
  *
- * ── THE POPULATION IS A NAMED, BOUNDED UNION ─────────────────────────────────────
- * The union of A's top-N and B's top-N (`RANKING_COMPARISON_TOP_N`), so a candidate
- * that left the top N and one that entered it are both drawn — they are the most
- * informative lines on the chart and an intersection-only view would drop exactly
- * them. This is NOT a population-wide slope chart: the preview serves a top-N cut,
- * so a line for every ranked candidate is not available and is not implied.
+ * ── THE LINE IS A MUNICIPALITY, THE NODE IS A REAL CELL ──────────────────────────
+ * Each side lists a 시·군·구 at most once, standing for it with the highest-ranked
+ * real candidate cell that side has. The two sides may pick DIFFERENT cells for one
+ * municipality — reweighting can promote a different 양평군 cell — so a line per
+ * candidate would split 양평군 into a departure and an arrival it never made. The
+ * line is therefore the municipality, and each endpoint carries that side's own
+ * representative cell with its own real rank and score.
  *
- * ── A NUMERIC ENDPOINT ONLY WHERE AN EXACT RANK EXISTS ───────────────────────────
- * Three endpoint kinds, and they look different:
- *   1. an exact rank inside the top N   → a numbered node in its slot;
- *   2. an exact rank outside the top N  → a node in the 상위 N 밖 band, labelled
- *      with the REAL rank the server sent (e.g. "27위") and reached by a dashed line;
- *   3. no served rank at all            → a node in the same band labelled with the
+ * ── THE SLOT IS A POSITION; THE LABEL IS A RANK ──────────────────────────────────
+ * A node's vertical slot is a DISPLAY POSITION (1..N). What is printed beside it is
+ * the representative's REAL `custom_rank`, because on the live V3 run position 10
+ * belongs to the candidate ranked 2,190th of 13,734 — so the numeral and the rank
+ * must never be read as the same thing. Three endpoint kinds, and they look
+ * different:
+ *   1. shown by this side          → a numbered node in its slot, labelled with the
+ *      representative's real rank;
+ *   2. not shown, but still ranked → a node in the 한쪽 목록에만 있음 band, labelled
+ *      "목록 밖 · 11위" with the REAL rank the server sent, reached by a dashed line;
+ *   3. no served rank at all       → a node in the same band labelled with the
  *      honest unavailability wording, never a number.
- * Nothing is ever placed at a guessed rank, and no line is drawn to a fabricated
- * position at the bottom of the axis.
+ * Nothing is ever placed at a guessed position, and no line is drawn to a fabricated
+ * one at the bottom of the axis.
  *
  ── DIRECTION IS TEXT AS WELL AS COLOUR ─────────────────────────────────────────
  * Every line's meaning is written out in the accompanying table, and the per-line
@@ -48,16 +54,48 @@
 
 import {
   RANKING_COMPARISON_TOP_N,
-  formatRankMovement,
-  formatUnavailableRank,
-  type RankBoundary,
-  type ScenarioSlopeRow,
+  type RankedCandidateRow,
+  type ScenarioRepresentativeRow,
 } from "../../../lib/scenarioRankingComparison";
 
 export interface ScenarioRankSlopeChartProps {
-  rows: ScenarioSlopeRow[];
-  boundaryA: RankBoundary;
-  boundaryB: RankBoundary;
+  rows: ScenarioRepresentativeRow[];
+}
+
+/** One side's rank for one cell — "1,058위" — or nothing. Never guessed or padded. */
+function rankOf(candidate: RankedCandidateRow | null, side: "a" | "b"): string | null {
+  if (candidate === null) return null;
+  const rank = side === "a" ? candidate.aRank : candidate.bRank;
+  return rank === null ? null : `${rank.toLocaleString("ko-KR")}위`;
+}
+
+/**
+ * What one endpoint says about a 시·군·구 on one side.
+ *
+ * When this side shows the municipality, its own representative's real rank. When it
+ * does NOT, the OTHER side's representative cell may still carry a real, served rank
+ * on this side — a fact worth printing rather than dropping, so the reader can see
+ * how far out the municipality fell instead of only that it left. Only when neither
+ * is available does this say so in words, never with a number.
+ */
+function endpointText(row: ScenarioRepresentativeRow, side: "a" | "b"): string {
+  const own = rankOf(side === "a" ? row.a : row.b, side);
+  if (own !== null) return own;
+  const fromOther = rankOf(side === "a" ? row.b : row.a, side);
+  return fromOther === null ? "목록에 없음" : `목록 밖 · ${fromOther}`;
+}
+
+/** The A→B movement of a 시·군·구's DISPLAY POSITION, in words. */
+function slotMovementText(row: ScenarioRepresentativeRow): string {
+  if (row.slotDirection === null || row.slotMovement === null) {
+    // One side does not show this 시·군·구, so there are not two positions to
+    // subtract. That is an absence, not a movement of zero.
+    if (row.aSlot === null) return "B안에서만 표시";
+    return "A안에서만 표시";
+  }
+  if (row.slotDirection === "SAME") return "표시 위치 유지";
+  const verb = row.slotDirection === "UP" ? "위로" : "아래로";
+  return `${verb} ${row.slotMovement}칸`;
 }
 
 // Geometry, matching the frame's `SlopeChart` (700×340, lane pitch 34). The frame
@@ -97,7 +135,7 @@ const STROKE = {
 } as const;
 
 interface PlacedRow {
-  row: ScenarioSlopeRow;
+  row: ScenarioRepresentativeRow;
   yA: number;
   yB: number;
   /** True when that endpoint sits in the 밖 band rather than a numbered slot. */
@@ -105,18 +143,13 @@ interface PlacedRow {
   outB: boolean;
 }
 
-export default function ScenarioRankSlopeChart({
-  rows,
-  boundaryA,
-  boundaryB,
-}: ScenarioRankSlopeChartProps) {
+export default function ScenarioRankSlopeChart({ rows }: ScenarioRankSlopeChartProps) {
   if (rows.length === 0) {
     // Nothing to draw and nothing to caption. An empty axis under the heading
     // "순위 이동" would read as "no candidate moved", which is a finding.
     return (
       <p className="text-[13px] text-ink-muted" data-testid="scenario-ranking-slope-empty">
-        양쪽 시나리오에서 상위 {RANKING_COMPARISON_TOP_N}위 후보 구역이 확인되지 않아 순위 이동을 그릴 수
-        없습니다.
+        양쪽 시나리오에서 비교할 시·군·구가 확인되지 않아 순위 이동을 그릴 수 없습니다.
       </p>
     );
   }
@@ -178,18 +211,26 @@ export default function ScenarioRankSlopeChart({
                 fontSize={10}
                 fill="var(--color-ink-subtle)"
               >
-                상위 {RANKING_COMPARISON_TOP_N} 밖
+                {/* NOT "상위 N 밖": the band holds 시·군·구 the OTHER side did not
+                    show in its visible list. Their candidates still have real ranks,
+                    printed on the node, so calling the band a rank cut would be
+                    a claim about the ranking that this list does not make. */}
+                한쪽 목록에만 있음
               </text>
             </>
           ) : null}
 
           {placed.map(({ row, yA, yB, outA: isOutA, outB: isOutB }) => {
-            const direction = row.direction ?? "SAME";
-            // A dashed line means at least one endpoint is not a top-N slot, so the
+            const direction = row.slotDirection ?? "SAME";
+            // A dashed line means one side does not show this 시·군·구 at all, so the
             // slope's steepness is not a like-for-like reading.
             const dashed = isOutA || isOutB;
+            // The A-side score and the B-side score belong to that side's OWN
+            // representative cell, which may be a different cell of the same 시·군·구.
+            const aScore = row.a?.aScore ?? null;
+            const bScore = row.b?.bScore ?? null;
             return (
-              <g key={row.candidateKey}>
+              <g key={row.groupKey}>
                 <line
                   x1={NODE_A_X}
                   y1={yA}
@@ -202,38 +243,39 @@ export default function ScenarioRankSlopeChart({
                 <circle cx={NODE_A_X} cy={yA} r={3.5} fill={STROKE[direction]} />
                 <circle cx={NODE_B_X} cy={yB} r={3.5} fill={STROKE[direction]} />
 
-                {/* The whole identity — cell key included — on hover/focus, so
-                    shortening the visible label loses no information. */}
+                {/* The whole identity on hover/focus — including WHICH cell each side
+                    chose to stand for this 시·군·구, which the one-line labels cannot
+                    carry and which is the thing a reader is most likely to doubt. */}
                 <title>
-                  {`${row.locationLabel ?? "위치 정보 없음"} · ${row.candidateKey} · ` +
-                    `A안 ${row.aRank !== null ? `${row.aRank}위` : formatUnavailableRank(row.aRankState, "A", boundaryA)} → ` +
-                    `B안 ${row.bRank !== null ? `${row.bRank}위` : formatUnavailableRank(row.bRankState, "B", boundaryB)}`}
+                  {`${row.sidoLabel !== null ? `${row.sidoLabel} ` : ""}${row.label} · ` +
+                    `A안 ${row.a !== null ? `${row.a.candidateKey} ` : ""}${endpointText(row, "a")} → ` +
+                    `B안 ${row.b !== null ? `${row.b.candidateKey} ` : ""}${endpointText(row, "b")} · ` +
+                    slotMovementText(row)}
                 </title>
 
-                {/* A node in the 밖 band is labelled with the CELL, not with the band
-                    it is in: the band already carries "상위 N 밖" on its divider, and
-                    repeating it per node produced ten identical labels that named no
-                    candidate at all. The precise state wording stays in the <title>
-                    above and in the screen-reader table below. */}
+                {/* The numeral is the DISPLAY POSITION (it is what makes the two
+                    columns read as columns); the real candidate rank is printed
+                    beside the place name, because position 10 can belong to a
+                    candidate ranked 2,190th and the two must never be confused. */}
                 <SideLabel
                   x={LABEL_A_X}
                   y={yA}
                   anchor="end"
-                  rank={row.aRank}
-                  text={row.locationLabel ?? row.candidateKey}
+                  position={row.aSlot}
+                  text={`${row.label} · ${endpointText(row, "a")}`}
                 />
                 <SideLabel
                   x={LABEL_B_X}
                   y={yB}
                   anchor="start"
-                  rank={row.bRank}
-                  text={row.locationLabel ?? row.candidateKey}
+                  position={row.bSlot}
+                  text={`${row.label} · ${endpointText(row, "b")}`}
                 />
 
                 {/* The frame's score-change string, right-aligned on the B row. Only
                     when BOTH sides served a score — "69.2500 → 자료 없음" is not a
                     change, and printing one side alone would read as one. */}
-                {row.aScore !== null && row.bScore !== null ? (
+                {aScore !== null && bScore !== null ? (
                   <text
                     x={SCORE_X}
                     y={yB + 4}
@@ -241,7 +283,7 @@ export default function ScenarioRankSlopeChart({
                     fontSize={11}
                     fill="var(--color-ink-subtle)"
                   >
-                    {`${row.aScore} → ${row.bScore}`}
+                    {`${aScore} → ${bScore}`}
                   </text>
                 ) : null}
               </g>
@@ -278,32 +320,35 @@ export default function ScenarioRankSlopeChart({
       {/* The same rows, in full, for assistive technology and for anyone who needs
           the exact figures rather than the shape. */}
       <table className="sr-only" data-testid="scenario-ranking-slope-table">
-        <caption>A안과 B안 상위 {RANKING_COMPARISON_TOP_N}위 후보 구역의 순위 이동</caption>
+        <caption>
+          A안과 B안이 각각 상위 {RANKING_COMPARISON_TOP_N}개까지 보여 주는 시·군·구와, 각 시·군·구를
+          대표하는 후보 구역의 실제 순위
+        </caption>
         <thead>
           <tr>
-            <th scope="col">후보 구역</th>
-            <th scope="col">위치</th>
+            <th scope="col">시·군·구</th>
+            <th scope="col">A안 표시 위치</th>
+            <th scope="col">A안 대표 후보 구역</th>
             <th scope="col">A안 순위</th>
+            <th scope="col">B안 표시 위치</th>
+            <th scope="col">B안 대표 후보 구역</th>
             <th scope="col">B안 순위</th>
-            <th scope="col">순위 변화</th>
+            <th scope="col">표시 위치 변화</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.candidateKey}>
-              <th scope="row">{row.candidateKey}</th>
-              <td>{row.locationLabel ?? "위치 정보 없음"}</td>
-              <td>
-                {row.aRank !== null
-                  ? `${row.aRank}위`
-                  : formatUnavailableRank(row.aRankState, "A", boundaryA)}
-              </td>
-              <td>
-                {row.bRank !== null
-                  ? `${row.bRank}위`
-                  : formatUnavailableRank(row.bRankState, "B", boundaryB)}
-              </td>
-              <td>{formatRankMovement(row) ?? "비교할 수 없음"}</td>
+            <tr key={row.groupKey}>
+              <th scope="row">
+                {row.sidoLabel !== null ? `${row.sidoLabel} ${row.label}` : row.label}
+              </th>
+              <td>{row.aSlot !== null ? `${row.aSlot}번째` : "목록에 없음"}</td>
+              <td>{row.a?.candidateKey ?? "없음"}</td>
+              <td>{endpointText(row, "a")}</td>
+              <td>{row.bSlot !== null ? `${row.bSlot}번째` : "목록에 없음"}</td>
+              <td>{row.b?.candidateKey ?? "없음"}</td>
+              <td>{endpointText(row, "b")}</td>
+              <td>{slotMovementText(row)}</td>
             </tr>
           ))}
         </tbody>
@@ -323,20 +368,21 @@ function SideLabel({
   x,
   y,
   anchor,
-  rank,
+  position,
   text,
 }: {
   x: number;
   y: number;
   anchor: "start" | "end";
-  rank: number | null;
+  /** DISPLAY POSITION in this side's list — never the candidate's rank. */
+  position: number | null;
   text: string;
 }) {
   return (
     <text x={x} y={y + 4} textAnchor={anchor} fontSize={12} fill="var(--color-ink)">
-      {rank !== null ? (
+      {position !== null ? (
         <>
-          <tspan fontWeight={700}>{rank}</tspan>
+          <tspan fontWeight={700}>{position}</tspan>
           <tspan dx={6} fill="var(--color-ink-muted)">
             {text}
           </tspan>

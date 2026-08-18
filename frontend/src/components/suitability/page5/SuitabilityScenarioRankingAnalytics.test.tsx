@@ -154,6 +154,30 @@ function ranked(
 const TWELVE_A = ranked(["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12"]);
 const TWELVE_B = ranked(["c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c1", "c2"]);
 
+/**
+ * The same shape, but each cell alone in its OWN 시·군·구.
+ *
+ * `ranked` files every row under 인천광역시 강화군, which is right for the
+ * candidate-level assertions and collapses to ONE municipality under the
+ * representative selection. Anything asserting on the visible 시·군·구 list has to
+ * say which municipality each cell is in rather than inheriting one.
+ */
+function rankedPerSigungu(keys: string[]): UserScenarioTopCandidate[] {
+  return keys.map((key, index) => ({
+    ...candidate(key, index + 1, (1 - index * 0.01).toFixed(4)),
+    sigungu_region_name: `경기도 ${key}군`,
+    sido_region_name: "경기도",
+    sido_region_code: "KR-SGIS-31",
+  }));
+}
+
+const TWELVE_A_G = rankedPerSigungu([
+  "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12",
+]);
+const TWELVE_B_G = rankedPerSigungu([
+  "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c1", "c2",
+]);
+
 function renderAnalytics(model: ScenarioComparison) {
   return render(<SuitabilityScenarioRankingAnalytics comparison={model} />);
 }
@@ -205,44 +229,67 @@ describe("KPI row", () => {
     expect(screen.getByTestId("scenario-ranking-kpi-top1-value")).toHaveTextContent("변화 없음");
   });
 
-  it("shows the exact TOP-10 overlap as a fraction and a percentage", () => {
-    renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_B)));
-    // A top 10 = c1..c10; B top 10 = c4..c13 → 7 shared.
+  it("shows the exact visible 시·군·구 overlap as a fraction and a percentage", () => {
+    renderAnalytics(comparison(preview(TWELVE_A_G), preview(TWELVE_B_G)));
+    // A shows c1..c10군; B shows c4..c13군 → 7 shared municipalities.
     expect(screen.getByTestId("scenario-ranking-kpi-retention-value")).toHaveTextContent(
-      "7 / 10개",
+      "7 / 10곳",
     );
     expect(screen.getByTestId("scenario-ranking-kpi-retention-caption")).toHaveTextContent(
       "70% 유지",
     );
   });
 
-  it("never labels the TOP-10 metric as whole-ranking stability", () => {
-    renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_B)));
-    const kpi = screen.getByTestId("scenario-ranking-kpi-retention");
-    expect(kpi).not.toHaveTextContent("전체 순위 안정성");
-    expect(kpi).not.toHaveTextContent("전체 후보 유지율");
-    expect(kpi).toHaveTextContent("TOP 10 유지 후보 구역");
-  });
-
-  it("states the reduced denominator when a side served fewer than ten", () => {
-    const short = preview(ranked(["c1", "c2", "c3"]), { ranking_population: 3 });
-    renderAnalytics(comparison(short, short));
-    expect(screen.getByTestId("scenario-ranking-kpi-retention-value")).toHaveTextContent("3 / 3개");
-    expect(screen.getByTestId("scenario-ranking-kpi-retention-caption")).toHaveTextContent(
-      "3개뿐이라 그 기준으로 계산",
+  it("counts 시·군·구 and not candidates — ten cells of one 시·군·구 retain as ONE", () => {
+    // THE REAL V3 SHAPE. A candidate-key overlap would print 10 / 10.
+    renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_A)));
+    expect(screen.getByTestId("scenario-ranking-kpi-retention-value")).toHaveTextContent(
+      "1 / 1곳",
     );
   });
 
-  it("scopes the rise and fall counts to the common candidates, not the population", () => {
-    renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_B)));
+  it("never labels the TOP-10 metric as whole-ranking stability", () => {
+    // Ten distinct 시·군·구 on both sides, so the tile shows its full-N label rather
+    // than the reduced-denominator one.
+    renderAnalytics(comparison(preview(TWELVE_A_G), preview(TWELVE_B_G)));
+    const kpi = screen.getByTestId("scenario-ranking-kpi-retention");
+    expect(kpi).not.toHaveTextContent("전체 순위 안정성");
+    expect(kpi).not.toHaveTextContent("전체 후보 유지율");
+    expect(kpi).toHaveTextContent("TOP 10 유지 시·군·구");
+  });
+
+  it("states the reduced denominator when the scope holds fewer than ten 시·군·구", () => {
+    // The 인천 case on real V3 data: only a couple of rankable municipalities exist.
+    const short = preview(rankedPerSigungu(["c1", "c2", "c3"]), { ranking_population: 3 });
+    renderAnalytics(comparison(short, short));
+    expect(screen.getByTestId("scenario-ranking-kpi-retention-value")).toHaveTextContent("3 / 3곳");
+    expect(screen.getByTestId("scenario-ranking-kpi-retention-caption")).toHaveTextContent(
+      "3곳뿐이라 그 기준으로 계산",
+    );
+  });
+
+  it("scopes the rise and fall counts to the shared visible 시·군·구, not the population", () => {
+    renderAnalytics(comparison(preview(TWELVE_A_G), preview(TWELVE_B_G)));
     const rose = screen.getByTestId("scenario-ranking-kpi-rose");
-    expect(rose).toHaveTextContent("순위 상승 후보 구역");
+    expect(rose).toHaveTextContent("표시 위치가 올라간 시·군·구");
     // The tile names the bounded population; the strip below states it in full.
     expect(rose).toHaveTextContent("양쪽 공통");
     expect(rose).not.toHaveTextContent("전체 후보");
-    // c4..c12 each rose by 3; c1 and c2 fell.
-    expect(within(rose).getByTestId("scenario-ranking-kpi-rose-value")).toHaveTextContent("9개");
-    expect(screen.getByTestId("scenario-ranking-kpi-fell-value")).toHaveTextContent("2개");
+    // c4..c10군 are shown by both, each three places higher in B's list.
+    expect(within(rose).getByTestId("scenario-ranking-kpi-rose-value")).toHaveTextContent("7곳");
+    expect(screen.getByTestId("scenario-ranking-kpi-fell-value")).toHaveTextContent("0곳");
+  });
+
+  it("reports 시·군·구 entering and leaving the visible list, with no 통과 wording", () => {
+    renderAnalytics(comparison(preview(TWELVE_A_G), preview(TWELVE_B_G)));
+    const tile = screen.getByTestId("scenario-ranking-kpi-common");
+    // c11군..c13군 appeared; c1군..c3군 dropped out.
+    expect(within(tile).getByTestId("scenario-ranking-kpi-common-value")).toHaveTextContent(
+      "+3 / −3곳",
+    );
+    for (const banned of ["통과", "탈락", "신규 통과"]) {
+      expect(tile).not.toHaveTextContent(banned);
+    }
   });
 
   it("reports the served ranked population beside the compared count", () => {
@@ -252,30 +299,43 @@ describe("KPI row", () => {
 });
 
 describe("slope / movement visualization", () => {
-  it("draws the A/B top-10 union and labels each endpoint with its cell", () => {
-    renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_B)));
+  it("draws the A/B 시·군·구 union and heads each row with the municipality", () => {
+    renderAnalytics(comparison(preview(TWELVE_A_G), preview(TWELVE_B_G)));
     const table = screen.getByTestId("scenario-ranking-slope-table");
-    // c1 is in A's top 10 (rank 1) and c13 is in B's top 10 (rank 10); both appear.
-    expect(within(table).getByRole("rowheader", { name: "c1" })).toBeInTheDocument();
-    expect(within(table).getByRole("rowheader", { name: "c13" })).toBeInTheDocument();
+    // c1군 is in A's visible ten and c13군 is in B's; both get a row.
+    expect(within(table).getByRole("rowheader", { name: "경기도 c1군" })).toBeInTheDocument();
+    expect(within(table).getByRole("rowheader", { name: "경기도 c13군" })).toBeInTheDocument();
   });
 
-  it("shows the real out-of-band rank rather than dropping the candidate", () => {
+  it("prints one row per 시·군·구 even when the two sides pick different cells", () => {
+    // Ten cells of 강화군 on both sides — the real V3 shape. ONE line, not ten.
     renderAnalytics(comparison(preview(TWELVE_A), preview(TWELVE_B)));
     const table = screen.getByTestId("scenario-ranking-slope-table");
-    const row = within(table).getByRole("rowheader", { name: "c1" }).closest("tr");
+    expect(within(table).getAllByRole("rowheader")).toHaveLength(1);
+    expect(within(table).getByRole("rowheader", { name: "인천광역시 강화군" })).toBeInTheDocument();
+  });
+
+  it("shows the real out-of-list rank rather than dropping the 시·군·구", () => {
+    renderAnalytics(comparison(preview(TWELVE_A_G), preview(TWELVE_B_G)));
+    const table = screen.getByTestId("scenario-ranking-slope-table");
+    const row = within(table).getByRole("rowheader", { name: "경기도 c1군" }).closest("tr");
     expect(row).not.toBeNull();
-    // c1 is rank 1 in A and rank 11 in B — outside the top-10 column, but served.
-    expect(within(row as HTMLElement).getByText("11위")).toBeInTheDocument();
-    expect(within(row as HTMLElement).getByText("↓ 10계단")).toBeInTheDocument();
+    // c1군's cell is rank 1 for A and rank 11 for B — off B's visible list, but
+    // served, so the REAL rank is printed rather than discarded.
+    expect(within(row as HTMLElement).getByText("목록 밖 · 11위")).toBeInTheDocument();
+    expect(within(row as HTMLElement).getByText("A안에서만 표시")).toBeInTheDocument();
   });
 
   it("prints an unavailability phrase, never a number, for an unserved rank", () => {
-    renderAnalytics(comparison(preview(ranked(["a1"])), preview(ranked(["b1"]))));
+    renderAnalytics(
+      comparison(preview(rankedPerSigungu(["a1"])), preview(rankedPerSigungu(["b1"]))),
+    );
     const table = screen.getByTestId("scenario-ranking-slope-table");
-    expect(within(table).getByText("B안 상위 1 밖")).toBeInTheDocument();
-    expect(within(table).getByText("A안 상위 1 밖")).toBeInTheDocument();
-    expect(within(table).getAllByText("비교할 수 없음")).toHaveLength(2);
+    // Neither side served the other's 시·군·구, so neither endpoint has a rank to
+    // print — and no number is substituted for the absence.
+    expect(within(table).getAllByText("목록에 없음")).toHaveLength(4);
+    expect(within(table).getByText("A안에서만 표시")).toBeInTheDocument();
+    expect(within(table).getByText("B안에서만 표시")).toBeInTheDocument();
   });
 
   it("says so plainly when there is no top-10 candidate to draw", () => {

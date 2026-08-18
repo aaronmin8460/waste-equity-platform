@@ -24,7 +24,7 @@ venv/
 env/
 
 # Node and frontend tooling
-node_modules/
+node_modules
 .next/
 out/
 dist/

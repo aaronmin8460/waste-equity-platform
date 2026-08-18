@@ -143,6 +143,24 @@ function ranked(keys: string[]): UserScenarioTopCandidate[] {
   return keys.map((key, index) => candidate(key, index + 1, (1 - index * 0.01).toFixed(4)));
 }
 
+/**
+ * N ranked rows, each alone in its OWN 시·군·구, so one row = one municipality.
+ *
+ * The default `candidate` fixture files EVERY row under 인천광역시 강화군, which is
+ * right for the candidate-level assertions but collapses to a single group under the
+ * representative selection. Any test about the VISIBLE 시·군·구 list therefore has to
+ * say which municipality each cell is in, rather than inheriting one.
+ */
+function perSigungu(keys: string[]): UserScenarioTopCandidate[] {
+  return keys.map((key, index) =>
+    candidate(key, index + 1, (1 - index * 0.01).toFixed(4), {
+      sigungu_region_name: `경기도 ${key}군`,
+      sido_region_name: "경기도",
+      sido_region_code: "KR-SGIS-31",
+    }),
+  );
+}
+
 function build(a: UserScenarioPreview, b: UserScenarioPreview, scopeName?: string) {
   const model = buildScenarioRankingComparison(comparison(a, b), scopeName);
   if (model === null) throw new Error("expected a model");
@@ -271,33 +289,42 @@ describe("top-1 comparison", () => {
   });
 });
 
-describe("TOP-N retention — an exact set overlap, and nothing wider", () => {
+describe("TOP-N retention — an exact 시·군·구 set overlap, and nothing wider", () => {
   const twelve = (offset: number) =>
-    ranked(Array.from({ length: 12 }, (_, i) => `c${i + 1 + offset}`));
+    perSigungu(Array.from({ length: 12 }, (_, i) => `c${i + 1 + offset}`));
 
-  it("counts the exact intersection of the two top-10 key sets", () => {
-    // A top 10 = c1..c10; B top 10 = c4..c13 → 7 shared.
+  it("counts the exact intersection of the two visible 시·군·구 sets", () => {
+    // A shows c1..c10군; B shows c4..c13군 → 7 shared municipalities.
     const model = build(preview(twelve(0)), preview(twelve(3)));
     expect(model.topNRetention.retained).toBe(7);
     expect(model.topNRetention.denominator).toBe(10);
     expect(model.topNRetention.percent).toBe(70);
     expect(model.topNRetention.reduced).toBe(false);
+    // The set difference, both ways — 3 appeared and 3 dropped out.
+    expect(model.topNRetention.entered).toBe(3);
+    expect(model.topNRetention.exited).toBe(3);
   });
 
-  it("is 10/10 for two identical rankings", () => {
+  it("is 10/10 for two identical rankings, with nothing entering or exiting", () => {
     const model = build(preview(twelve(0)), preview(twelve(0)));
     expect(model.topNRetention.retained).toBe(10);
     expect(model.topNRetention.percent).toBe(100);
+    expect(model.topNRetention.entered).toBe(0);
+    expect(model.topNRetention.exited).toBe(0);
   });
 
-  it("is 0/10 for two disjoint top-10 sets", () => {
-    const model = build(preview(ranked(["a1", "a2"])), preview(ranked(["b1", "b2"])));
+  it("is 0/N for two disjoint 시·군·구 sets", () => {
+    const model = build(preview(perSigungu(["a1", "a2"])), preview(perSigungu(["b1", "b2"])));
     expect(model.topNRetention.retained).toBe(0);
     expect(model.topNRetention.percent).toBe(0);
+    expect(model.topNRetention.entered).toBe(2);
+    expect(model.topNRetention.exited).toBe(2);
   });
 
-  it("uses the ACTUAL denominator when a side served fewer than N", () => {
-    const short = preview(ranked(["c1", "c2", "c3"]), { ranking_population: 3 });
+  it("uses the ACTUAL denominator when a scope holds fewer than N 시·군·구", () => {
+    // The 인천 case on real V3 data: only a handful of rankable municipalities exist,
+    // so N would report the shortfall as a loss.
+    const short = preview(perSigungu(["c1", "c2", "c3"]), { ranking_population: 3 });
     const model = build(short, short);
     expect(model.topNRetention.denominator).toBe(3);
     expect(model.topNRetention.n).toBe(RANKING_COMPARISON_TOP_N);
@@ -311,12 +338,24 @@ describe("TOP-N retention — an exact set overlap, and nothing wider", () => {
     expect(model.topNRetention.percent).toBeNull();
   });
 
-  it("counts only the top N — an 11th-ranked shared candidate does not raise it", () => {
-    const a = preview(ranked(Array.from({ length: 11 }, (_, i) => `c${i + 1}`)));
-    // B pushes c1 out of the top 10 to rank 11 and promotes c11.
+  it("counts 시·군·구, not candidates — many cells in one 시·군·구 retain as ONE", () => {
+    // THE REAL V3 SHAPE: ten served cells, all 양평군. A candidate-key overlap would
+    // report 10/10 retained; the visible list holds exactly one municipality.
+    const tenInOneSigungu = preview(ranked(Array.from({ length: 10 }, (_, i) => `c${i + 1}`)));
+    const model = build(tenInOneSigungu, tenInOneSigungu);
+    expect(model.topNRetention.retained).toBe(1);
+    expect(model.topNRetention.denominator).toBe(1);
+    expect(model.representativeA).toHaveLength(1);
+  });
+
+  it("counts only the VISIBLE list — an 11th 시·군·구 does not raise it", () => {
+    const a = preview(perSigungu(Array.from({ length: 11 }, (_, i) => `c${i + 1}`)));
+    // B pushes c1군 out of the visible ten to rank 11 and promotes c11군.
     const bKeys = ["c11", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c1"];
-    const model = build(a, preview(ranked(bKeys)));
+    const model = build(a, preview(perSigungu(bKeys)));
     expect(model.topNRetention.retained).toBe(9);
+    expect(model.topNRetention.entered).toBe(1);
+    expect(model.topNRetention.exited).toBe(1);
     expect(row(model, "c1").bRank).toBe(11);
   });
 });
@@ -358,14 +397,34 @@ describe("rank movement — direction, and the sign that must not invert", () =>
     expect(formatRankMovement(row(model, "x"))).toBe("↓ 1계단");
   });
 
-  it("counts risers, fallers and holders over the COMMON candidates only", () => {
-    const a = preview(ranked(["x", "y", "z"]));
-    const b = preview(ranked(["z", "x", "y"]));
+  it("counts risers, fallers and holders over the SHARED VISIBLE 시·군·구 only", () => {
+    // The three counts describe DISPLAY-POSITION movement in the visible list, which
+    // is what the tiles sit beside. Each cell is its own 시·군·구 here, so the three
+    // municipalities move exactly as the three candidates do.
+    const a = preview(perSigungu(["x", "y", "z"]));
+    const b = preview(perSigungu(["z", "x", "y"]));
     const model = build(a, b);
-    expect(model.roseCount).toBe(1); // z: 3 → 1
-    expect(model.fellCount).toBe(2); // x: 1 → 2, y: 2 → 3
+    expect(model.roseCount).toBe(1); // z군: position 3 → 1
+    expect(model.fellCount).toBe(2); // x군: 1 → 2, y군: 2 → 3
     expect(model.heldCount).toBe(0);
-    expect(model.comparableRows).toHaveLength(3);
+    expect(model.topNRetention.retained).toBe(3);
+  });
+
+  it("counts a 시·군·구 ONCE even when the two sides pick different cells for it", () => {
+    // THE CASE THE PRODUCT DECISION TURNS ON: reweighting promotes a different cell
+    // inside 양평군. A candidate-key comparison would call that an exit AND an entry;
+    // the municipality never left the list and its position never moved.
+    const shared = { sigungu_region_name: "경기도 양평군", sido_region_name: "경기도" };
+    const a = preview([candidate("yp-1", 1, "0.9000", shared), candidate("yp-2", 2, "0.8000", shared)]);
+    const b = preview([candidate("yp-2", 1, "0.9500", shared), candidate("yp-1", 2, "0.8500", shared)]);
+    const model = build(a, b);
+    expect(model.representativeA.map((r) => r.candidateKey)).toEqual(["yp-1"]);
+    expect(model.representativeB.map((r) => r.candidateKey)).toEqual(["yp-2"]);
+    expect(model.representativeRows).toHaveLength(1);
+    expect(model.topNRetention.retained).toBe(1);
+    expect(model.topNRetention.entered).toBe(0);
+    expect(model.topNRetention.exited).toBe(0);
+    expect(model.heldCount).toBe(1);
   });
 });
 
@@ -397,10 +456,18 @@ describe("missing ranks are never invented", () => {
     expect(only.aRank).toBeNull();
   });
 
-  it("excludes a one-sided candidate from every movement count", () => {
+  it("excludes a one-sided candidate from every candidate-level movement figure", () => {
     const model = disjoint();
     expect(model.comparableRows).toHaveLength(0);
+  });
+
+  it("excludes a one-sided 시·군·구 from every display-position movement count", () => {
+    // Disjoint at the MUNICIPALITY level, which is the grain the three counts use.
+    // (`disjoint()` above is disjoint by candidate but files every cell under one
+    // 시·군·구, so that municipality is legitimately shown — and held — by both.)
+    const model = build(preview(perSigungu(["a1", "a2"])), preview(perSigungu(["b1", "b2"])));
     expect(model.roseCount + model.fellCount + model.heldCount).toBe(0);
+    expect(model.topNRetention.retained).toBe(0);
   });
 
   it("downgrades to UNKNOWN when the served ranks are not provably 1..k", () => {
@@ -504,50 +571,62 @@ describe("bounded population labelling", () => {
   });
 });
 
-describe("slope rows — the A/B top-N union", () => {
-  const eleven = (keys: string[]) => preview(ranked(keys));
+describe("representative rows — the A/B 시·군·구 union", () => {
+  /** N ranked rows, each in its OWN 시·군·구, so one row = one municipality. */
+  const inOwnSigungu = (keys: string[]): UserScenarioTopCandidate[] =>
+    keys.map((key, index) =>
+      candidate(key, index + 1, (1 - index * 0.01).toFixed(4), {
+        sigungu_region_name: `경기도 ${key}군`,
+        sido_region_name: "경기도",
+        sido_region_code: "KR-SGIS-31",
+      }),
+    );
+
   const KEYS_A = ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11"];
   const KEYS_B = ["c11", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c1"];
+  const eleven = (keys: string[]) => preview(inOwnSigungu(keys));
 
-  it("is the UNION of both top-N sets, not the intersection", () => {
+  it("is the UNION of both visible lists, not the intersection", () => {
     const model = build(eleven(KEYS_A), eleven(KEYS_B));
-    // c1 (A top 10, B rank 11) and c11 (B top 10, A rank 11) are both present.
-    const keys = model.slopeRows.map((r) => r.candidateKey);
-    expect(keys).toContain("c1");
-    expect(keys).toContain("c11");
-    expect(model.slopeRows).toHaveLength(11);
+    // c1군 (shown by A, 11th for B) and c11군 (shown by B, 11th for A) both appear.
+    const groups = model.representativeRows.map((r) => r.groupKey);
+    expect(groups).toContain("경기도 c1군");
+    expect(groups).toContain("경기도 c11군");
+    expect(model.representativeRows).toHaveLength(11);
   });
 
-  it("gives a slot only on the side where the candidate is in the top N", () => {
+  it("gives a slot only on the side whose visible list holds the 시·군·구", () => {
     const model = build(eleven(KEYS_A), eleven(KEYS_B));
-    const leaving = model.slopeRows.find((r) => r.candidateKey === "c1");
+    const leaving = model.representativeRows.find((r) => r.groupKey === "경기도 c1군");
     expect(leaving?.aSlot).toBe(1);
     expect(leaving?.bSlot).toBeNull();
-    // Its real B rank is still served and exact — the endpoint is missing from the
-    // COLUMN, not from the data.
-    expect(leaving?.bRank).toBe(11);
-    expect(leaving?.bRankState).toBe("EXACT");
+    // Its real B rank is still served and exact — the municipality is missing from
+    // the visible COLUMN, not from the data.
+    expect(leaving?.a?.bRank).toBe(11);
+    expect(leaving?.a?.bRankState).toBe("EXACT");
   });
 
-  it("draws no numeric endpoint where the rank is not exact", () => {
-    const model = build(preview(ranked(["a1"])), preview(ranked(["b1"])));
-    const entering = model.slopeRows.find((r) => r.candidateKey === "b1");
+  it("carries no B endpoint for a 시·군·구 the B side never served", () => {
+    const model = build(preview(inOwnSigungu(["a1"])), preview(inOwnSigungu(["b1"])));
+    const entering = model.representativeRows.find((r) => r.groupKey === "경기도 b1군");
     expect(entering?.aSlot).toBeNull();
-    expect(entering?.aRank).toBeNull();
-    expect(entering?.aRankState).toBe("OUTSIDE_PREVIEW");
+    expect(entering?.a).toBeNull();
+    expect(entering?.b?.aRank).toBeNull();
   });
 
   it("orders by A slot first so the left column reads 1..N downwards", () => {
     const model = build(eleven(KEYS_A), eleven(KEYS_B));
-    const slots = model.slopeRows.map((r) => r.aSlot);
+    const slots = model.representativeRows.map((r) => r.aSlot);
     expect(slots.slice(0, 10)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(slots[10]).toBeNull();
   });
 
-  it("excludes candidates outside both top-N sets", () => {
+  it("shows at most N 시·군·구 per side however many were served", () => {
     const long = Array.from({ length: 20 }, (_, i) => `c${i + 1}`);
-    const model = build(preview(ranked(long)), preview(ranked(long)));
-    expect(model.slopeRows).toHaveLength(RANKING_COMPARISON_TOP_N);
+    const model = build(preview(inOwnSigungu(long)), preview(inOwnSigungu(long)));
+    expect(model.representativeRows).toHaveLength(RANKING_COMPARISON_TOP_N);
+    expect(model.representativeA).toHaveLength(RANKING_COMPARISON_TOP_N);
+    // The candidate-level union is untouched by the visible cut.
     expect(model.candidateRows).toHaveLength(20);
   });
 });
@@ -657,7 +736,7 @@ describe("comparison table population", () => {
   it("is empty, not fabricated, when neither side served a candidate", () => {
     const model = build(preview([]), preview([]));
     expect(model.candidateRows).toEqual([]);
-    expect(model.slopeRows).toEqual([]);
+    expect(model.representativeRows).toEqual([]);
     expect(model.topCandidate.state).toBe("UNAVAILABLE");
   });
 });

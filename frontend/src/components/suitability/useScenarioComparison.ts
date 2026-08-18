@@ -191,6 +191,17 @@ export function useScenarioComparison(
             weights,
             compare_profile: SCENARIO_COMPARISON_COMPARE_PROFILE,
             top_n: SCENARIO_COMPARISON_TOP_N,
+            // ONE representative candidate per 시·군·구 — the SAME ranking, cut at
+            // distinct municipalities instead of at candidates.
+            //
+            // Page 5 compares REGIONS; the real V3 run's top 41 capital-region
+            // candidates are all 양평군, so a plain candidate cut renders a
+            // single-municipality comparison. `top_n` still bounds the response
+            // (now at 50 DISTINCT 시·군·구, of which only 16 exist), and the visible
+            // list is cut to ten by `selectSigunguRepresentatives` on this side.
+            //
+            // Page 4 does NOT set this: it ranks candidates and must keep doing so.
+            sigungu_representatives: true,
             // EXPLICIT on both sides, so A and B can never differ by model any more
             // than they can differ by geography.
             component_model_version: componentModelVersion,
