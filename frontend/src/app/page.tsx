@@ -739,6 +739,14 @@ export default function Home() {
   // ELIGIBLE query is the same one the summary's `top_candidates` runs. Unscoped and
   // 높은 순 the rows are therefore identical to before; scoped, both the rows AND
   // `total_matched` narrow together.
+  /**
+   * The component model of the run ON SCREEN — the single answer to "which
+   * components is this page about?". Read from the run, never from the request.
+   */
+  const activeComponentModel = isComponentModelVersion(suit?.run.component_model_version)
+    ? suit.run.component_model_version
+    : COMPONENT_MODEL_HISTORICAL;
+
   /** Cap a 시·군·구 to two displayed rows (the 49/50 concentration fix). Off by default. */
   const [sigunguCapOn, setSigunguCapOn] = useState(false);
   const rankingFetchLimit = sigunguCapOn ? SIGUNGU_CAP_POOL_N : RANKING_TOP_N;
@@ -1182,15 +1190,20 @@ export default function Home() {
     // population and the map. The custom ranking is computed within it server-side,
     // so ③ shows this 범위's top N under the reader's own weights.
     scope: suitScope,
-    // ⭐ PAGE 4 IS PINNED TO THE V3 SUCCESSOR MODEL, EXPLICITLY.
+    // ⭐ THE EDITOR EDITS THE COMPONENTS OF THE RUN ON SCREEN.
     //
-    // Not inherited from DEFAULT_COMPONENT_MODEL: that constant is the GLOBAL
-    // default any unpinned reader gets, it is still historical, and flipping it is
-    // the product owner's rollout decision. Pinning here scopes the change to this
-    // page — the four editable factors below are the successor's own components and
-    // the preview request carries `component_model_version`, so the ranking, the
-    // scores and the map tiles all come from one V3 calculation.
-    componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
+    // Page 4 REQUESTS the successor model (see the pinned reads above): that is what
+    // decides which run is resolved. But which components are editable must follow
+    // the run the backend actually returned, read from its own
+    // `component_model_version` — never assumed from the request.
+    //
+    // The two are the same thing whenever a successor run exists, which is the
+    // intended state. They differ only where one does not, and then the honest
+    // behaviour is to render the run that IS there with its own four components,
+    // rather than four empty successor inputs over historical numbers. Assuming the
+    // pin here produced exactly that: an editor keyed by successor components
+    // reading `undefined` out of a historical vector.
+    componentModelVersion: activeComponentModel,
     enabled: mode === "suitability" && suitabilityView === "score",
   });
   const customWeightsApplied =
@@ -3116,7 +3129,7 @@ export default function Home() {
                   weightsSourceLabel={
                     customWeightsApplied !== null ? CUSTOM_WEIGHTS_LABEL : profileLabel(profile)
                   }
-                  componentModelVersion={COMPONENT_MODEL_SUCCESSOR}
+                  componentModelVersion={activeComponentModel}
                   activeRunId={activeRunId}
                   scenarios={savedScenarios}
                   storageWarnings={savedScenarioWarnings}

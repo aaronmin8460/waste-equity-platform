@@ -242,6 +242,10 @@ describe("saving", () => {
     expect(blob).not.toContain("custom_rank");
     expect(blob).not.toContain("701");
     expect(Object.keys(readSavedScenarios().scenarios[0]).sort()).toEqual([
+      // Schema 2: the model the weights are defined over travels with them, so a
+      // stored vector can be checked against the run it is recombined on rather
+      // than positionally reinterpreted.
+      "componentModelVersion",
       "createdAt",
       "id",
       "name",

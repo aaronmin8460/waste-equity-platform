@@ -141,7 +141,11 @@ export default function SuitabilityScenarioComparison({
   const comparison = useScenarioComparison(selection, runResolution, scope, COMPONENT_MODEL_SUCCESSOR);
   const { sideA, sideB, status } = comparison;
 
-  const rows = comparisonWeightRows(sideA.canonicalWeights, sideB.canonicalWeights);
+  const rows = comparisonWeightRows(
+    sideA.canonicalWeights,
+    sideB.canonicalWeights,
+    COMPONENT_MODEL_SUCCESSOR,
+  );
   // One served side is enough to show the table: the other column renders as
   // explicitly unavailable, which is more informative than hiding both.
   const anyWeights = sideA.canonicalWeights !== null || sideB.canonicalWeights !== null;

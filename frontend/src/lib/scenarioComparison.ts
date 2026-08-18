@@ -45,11 +45,16 @@
  * `components/suitability/useScenarioComparison.ts`.
  */
 
-import { COMPONENT_MODEL_HISTORICAL } from "./api";
 import type { SuitabilityProfile, UserScenarioPreview, UserScenarioWeights } from "./api";
 import { COMPONENT_META, COMPONENT_ORDER, plainError, type ScoreComponent } from "./glossary";
 import type { ComparisonResolution, ComparisonSlot, SavedScenario } from "./savedScenarios";
-import type { ComponentModelVersion } from "./componentModelWeights";
+import {
+  COMPONENT_MODEL_HISTORICAL,
+  COMPONENT_MODEL_SUCCESSOR,
+  SUCCESSOR_COMPONENT_ORDER,
+  type ComponentModelVersion,
+} from "./componentModelWeights";
+import { V3_COMPONENT_META, type V3Component } from "./suitabilityV3";
 import { scenarioRunState } from "./savedScenarios";
 
 // --------------------------------------------------------------------------- //
@@ -280,7 +285,7 @@ function buildSide(
   scenario: SavedScenario | null,
   run: ActiveRunResolution,
   outcome: ComparisonSideOutcome | null,
-  componentModelVersion?: ComponentModelVersion,
+  componentModelVersion: ComponentModelVersion = COMPONENT_MODEL_HISTORICAL,
 ): ComparisonSide {
   const base = {
     slot,
@@ -326,7 +331,11 @@ function buildSide(
   // resident_impact / land_conversion, and every Z/R/E/D lookup on this page would
   // read `undefined` — printing one model's numbers under another model's four
   // labels rather than failing. A wrong-model comparison is not a comparison.
-  if (outcome.preview.component_model_version !== COMPONENT_MODEL_HISTORICAL) {
+  // …and the model it must match is the one this comparison RUNS ON, not a fixed
+  // historical constant. The guard's purpose is unchanged — a preview from another
+  // model would carry another namespace's components, and every lookup on this page
+  // would read `undefined`, printing one model's numbers under another's labels.
+  if (outcome.preview.component_model_version !== componentModelVersion) {
     return {
       ...base,
       state: "PREVIEW_ERROR",
@@ -449,10 +458,12 @@ export function buildScenarioComparison(
  * served demand, not a future-generation forecast.
  */
 export interface ComparisonWeightRow {
-  component: ScoreComponent;
+  /** The component name in ITS OWN model's namespace — historical OR successor. */
+  component: string;
   /** "용도지역 호환성", from the central glossary. */
   label: string;
-  /** "Z" | "R" | "E" | "D". Only ever rendered next to `label`. */
+  /** "Z" | "R" | "E" | "D" for the historical model; empty for the successor, whose
+   *  components have no single-letter code. Only ever rendered next to `label`. */
   code: string;
   /** The exact served decimal strings, unrounded. `null` when that side is not READY. */
   aWeight: string | null;
@@ -480,9 +491,30 @@ function percentOf(value: string | undefined): number | null {
 export function comparisonWeightRows(
   aWeights: UserScenarioWeights | null,
   bWeights: UserScenarioWeights | null,
+  /**
+   * The component model both vectors are defined over.
+   *
+   * Without it this walked the historical Z/R/E/D glossary unconditionally, so a
+   * successor comparison printed four historical factor names with empty values —
+   * the reader's own weights labelled as measurements they never chose. Defaulted to
+   * historical so any unmigrated caller is unchanged.
+   */
+  componentModelVersion: ComponentModelVersion = COMPONENT_MODEL_HISTORICAL,
 ): ComparisonWeightRow[] {
-  return COMPONENT_ORDER.map((component) => {
-    const meta = COMPONENT_META[component];
+  const successor = componentModelVersion === COMPONENT_MODEL_SUCCESSOR;
+  const components = successor
+    ? SUCCESSOR_COMPONENT_ORDER
+    : (COMPONENT_ORDER as readonly string[]);
+  return components.map((component) => {
+    const meta = successor
+      ? {
+          // The successor components have no single-letter code; the label carries
+          // the whole identity, so the code slot stays empty rather than borrowing
+          // a Z/R/E/D letter that means something else.
+          primary: V3_COMPONENT_META[component as V3Component].label,
+          code: "",
+        }
+      : COMPONENT_META[component as ScoreComponent];
     const aWeight = aWeights?.[component] ?? null;
     const bWeight = bWeights?.[component] ?? null;
     const aPercent = percentOf(aWeight ?? undefined);

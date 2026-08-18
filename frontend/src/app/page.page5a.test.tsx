@@ -54,29 +54,39 @@ import {
   SAVED_SCENARIO_SCHEMA_VERSION,
   type SavedScenario,
 } from "../lib/savedScenarios";
-import { COMPONENT_MODEL_HISTORICAL } from "../lib/componentModelWeights";
+import {
+  COMPONENT_MODEL_HISTORICAL,
+  COMPONENT_MODEL_SUCCESSOR,
+} from "../lib/componentModelWeights";
 
 /** The run `homeApiMock` serves. */
 const RUN_ID = 47;
 
-/** A's stored weights — Z 40 / R 30 / E 20 / D 10. */
+/**
+ * A's and B's stored weights, over the SUCCESSOR components.
+ *
+ * Page 5 pins the successor model, so both saved scenarios are authored over
+ * `existing_burden` / `air_impact_proxy` / `resident_impact` / `land_conversion`.
+ * A historical Z/R/E/D vector is deliberately NOT usable here — it is a different
+ * measurement set, and the comparison surfaces it as `OTHER_MODEL` rather than
+ * recombining it. That refusal has its own test below.
+ */
 const A_WEIGHTS: UserScenarioWeights = {
-  zoning: "0.40000000",
-  road: "0.30000000",
-  equity: "0.20000000",
-  demand: "0.10000000",
+  existing_burden: "0.40000000",
+  air_impact_proxy: "0.30000000",
+  resident_impact: "0.20000000",
+  land_conversion: "0.10000000",
 };
-/** B's stored weights — Z 25 / R 25 / E 40 / D 10. */
 const B_WEIGHTS: UserScenarioWeights = {
-  zoning: "0.25000000",
-  road: "0.25000000",
-  equity: "0.40000000",
-  demand: "0.10000000",
+  existing_burden: "0.25000000",
+  air_impact_proxy: "0.25000000",
+  resident_impact: "0.40000000",
+  land_conversion: "0.10000000",
 };
 
 function previewResponse(weights: UserScenarioWeights, overrides: Record<string, unknown> = {}) {
   return {
-    scenario_hash: `hash-${weights.zoning}`,
+    scenario_hash: `hash-${weights.existing_burden}`,
     scenario_hash_short: "hash",
     method_version: "scenario-v1",
     run_id: RUN_ID,
@@ -84,10 +94,14 @@ function previewResponse(weights: UserScenarioWeights, overrides: Record<string,
     policy_version: "suitability-policy-v2",
     derivation_version: "suitability-screening-v3",
     candidate_grid_version: "capital-grid-500m-v1",
-    // The run's component-model identity. Scenarios exist for the historical model
-    // only, and the foundation refuses a preview from any other one.
-    component_model_version: "suitability-components-zred-v1",
-    component_order: ["zoning", "road", "equity", "demand"],
+    // The run's component-model identity — SUCCESSOR, which is what Page 5 pins.
+    component_model_version: "suitability-components-successor-v1",
+    component_order: [
+      "existing_burden",
+      "air_impact_proxy",
+      "resident_impact",
+      "land_conversion",
+    ],
     canonical_weights: weights,
     compare_profile: "baseline",
     candidate_count_total: 47893,
@@ -115,12 +129,9 @@ function echoingPreview() {
   return vi.fn(async (request: { weights: UserScenarioWeights }) => {
     const sent = request.weights;
     // The backend canonicalises to 8 dp. A stored 1-dp value comes back widened.
-    const canonical: UserScenarioWeights = {
-      zoning: Number(sent.zoning).toFixed(8),
-      road: Number(sent.road).toFixed(8),
-      equity: Number(sent.equity).toFixed(8),
-      demand: Number(sent.demand).toFixed(8),
-    };
+    const canonical: UserScenarioWeights = Object.fromEntries(
+      Object.entries(sent).map(([component, value]) => [component, Number(value).toFixed(8)]),
+    );
     return previewResponse(canonical);
   });
 }
@@ -134,7 +145,7 @@ function scenario(overrides: Partial<SavedScenario> = {}): SavedScenario {
     // These fixtures are HISTORICAL Z/R/E/D vectors, so they carry the historical
     // model tag. A successor scenario is a different namespace and is fixtured
     // separately where it is the subject.
-    componentModelVersion: COMPONENT_MODEL_HISTORICAL,
+    componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
     runId: RUN_ID,
     profileSource: "baseline",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -304,7 +315,14 @@ describe("preview revalidation", () => {
   it("shows the SERVER's canonical weights, not the stored copy", async () => {
     // Stored at 1 dp; the backend canonicalises and the page must show the echo.
     seed([
-      scenario({ weights: { zoning: "0.4", road: "0.3", equity: "0.2", demand: "0.1" } }),
+      scenario({
+        weights: {
+          existing_burden: "0.4",
+          air_impact_proxy: "0.3",
+          resident_impact: "0.2",
+          land_conversion: "0.1",
+        },
+      }),
       SAVED_B,
     ]);
     await renderPage5(PAIR_URL);
@@ -315,7 +333,14 @@ describe("preview revalidation", () => {
       (call) => (call[0] as { weights: UserScenarioWeights }).weights,
     );
     expect(sent).toEqual(
-      expect.arrayContaining([{ zoning: "0.4", road: "0.3", equity: "0.2", demand: "0.1" }]),
+      expect.arrayContaining([
+        {
+          existing_burden: "0.4",
+          air_impact_proxy: "0.3",
+          resident_impact: "0.2",
+          land_conversion: "0.1",
+        },
+      ]),
     );
 
     // …and what is DISPLAYED is the server's canonicalisation.
@@ -332,15 +357,24 @@ describe("preview revalidation", () => {
     await renderPage5(PAIR_URL);
     await screen.findByTestId("scenario-comparison-weights");
 
-    for (const component of ["zoning", "road", "equity", "demand"]) {
+    // The SUCCESSOR model's four components, which is what Page 5 now runs on.
+    for (const component of [
+      "existing_burden",
+      "air_impact_proxy",
+      "resident_impact",
+      "land_conversion",
+    ]) {
       expect(weightRow(component)).toBeTruthy();
     }
     const table = screen.getByTestId("scenario-comparison-weights").textContent ?? "";
-    expect(table).toContain("용도지역 호환성");
-    expect(table).toContain("기존 지역 부담");
-    expect(table).toContain("폐기물 처리 수요");
-    for (const invented of ["시설 부담 정도", "토지피복 기반 적합도", "장래 역내 쓰레기 발생량", "주민 반응"]) {
-      expect(table).not.toContain(invented);
+    expect(table).toContain("기존시설 부담지수");
+    expect(table).toContain("대기영향 지수");
+    expect(table).toContain("주민영향 지수");
+    expect(table).toContain("용도변경 가능지수");
+    // No HISTORICAL factor name may appear on a successor comparison — that would be
+    // the reader's own weights labelled as measurements they never chose.
+    for (const historical of ["용도지역 호환성", "도로 근접성", "기존 지역 부담", "폐기물 처리 수요"]) {
+      expect(table).not.toContain(historical);
     }
   });
 
@@ -349,14 +383,15 @@ describe("preview revalidation", () => {
     await renderPage5(PAIR_URL);
     await screen.findByTestId("scenario-comparison-weights");
 
-    const zoning = weightRow("zoning");
-    expect(within(zoning).getByTestId("scenario-comparison-weight-a").textContent).toContain("40%");
-    expect(within(zoning).getByTestId("scenario-comparison-weight-b").textContent).toContain("25%");
-    expect(within(zoning).getByTestId("scenario-comparison-weight-delta").textContent).toBe("−15%p");
+    const burden = weightRow("existing_burden");
+    expect(within(burden).getByTestId("scenario-comparison-weight-a").textContent).toContain("40%");
+    expect(within(burden).getByTestId("scenario-comparison-weight-b").textContent).toContain("25%");
+    expect(within(burden).getByTestId("scenario-comparison-weight-delta").textContent).toBe("−15%p");
 
-    // D is 10% on both sides — stated in words, never as a bare 0.
+    // land_conversion is 10% on both sides — stated in words, never as a bare 0.
     expect(
-      within(weightRow("demand")).getByTestId("scenario-comparison-weight-delta").textContent,
+      within(weightRow("land_conversion")).getByTestId("scenario-comparison-weight-delta")
+        .textContent,
     ).toBe("변화 없음");
   });
 });
@@ -459,11 +494,11 @@ describe("same id", () => {
 });
 
 describe("preview failures", () => {
-  /** Fail only the side whose zoning weight matches. */
-  function failWhenZoningIs(zoning: string) {
+  /** Fail only the side whose existing_burden weight matches. */
+  function failWhenExistingBurdenIs(existing_burden: string) {
     const echo = echoingPreview();
     return vi.fn(async (request: { weights: UserScenarioWeights }) => {
-      if (request.weights.zoning === zoning) {
+      if (request.weights.existing_burden === existing_burden) {
         throw new ApiError(
           422,
           {
@@ -480,7 +515,7 @@ describe("preview failures", () => {
   }
 
   it("keeps B readable when A's preview fails", async () => {
-    previewUserWeightScenario.mockImplementation(failWhenZoningIs(A_WEIGHTS.zoning));
+    previewUserWeightScenario.mockImplementation(failWhenExistingBurdenIs(A_WEIGHTS.existing_burden));
     seed([SAVED_A, SAVED_B]);
     await renderPage5(PAIR_URL);
 
@@ -494,16 +529,16 @@ describe("preview failures", () => {
     // B is unaffected and still shows its served weights.
     expect(within(sideB()).getByTestId("scenario-comparison-side-ready")).toBeTruthy();
     expect(
-      within(weightRow("equity")).getByTestId("scenario-comparison-weight-b").textContent,
+      within(weightRow("resident_impact")).getByTestId("scenario-comparison-weight-b").textContent,
     ).toContain("40%");
     // A's column is unavailable, never a fabricated 0%.
     expect(
-      within(weightRow("equity")).getByTestId("scenario-comparison-weight-a").textContent,
+      within(weightRow("resident_impact")).getByTestId("scenario-comparison-weight-a").textContent,
     ).toBe("자료 없음");
   });
 
   it("keeps A readable when B's preview fails", async () => {
-    previewUserWeightScenario.mockImplementation(failWhenZoningIs(B_WEIGHTS.zoning));
+    previewUserWeightScenario.mockImplementation(failWhenExistingBurdenIs(B_WEIGHTS.existing_burden));
     seed([SAVED_A, SAVED_B]);
     await renderPage5(PAIR_URL);
 
