@@ -357,7 +357,22 @@ describe("comparison table", () => {
       "c2",
       "c3",
     ]);
-    expect(rows[0]).toHaveTextContent("500m 후보 구역 ·");
+    // The row still names WHAT it is and WHICH cell it is. The 시·군·구 moved to the
+    // group heading above the rows (the owner rejected reprinting it on every row),
+    // so the row no longer joins the two with "·" — but the cell key, the thing that
+    // makes a row identifiable, is still on it.
+    expect(rows[0]).toHaveTextContent("500m 후보 구역");
+    expect(rows[0]).toHaveTextContent("c2");
+  });
+
+  it("groups rows under a 시·군·구 heading instead of repeating the name on every row", () => {
+    renderAnalytics(comparison(preview(ranked(["c1", "c2"])), preview(ranked(["c2", "c3"]))));
+    const headings = screen.getAllByTestId("scenario-ranking-table-group-heading");
+    expect(headings.length).toBeGreaterThan(0);
+    // A heading states the place and HOW MANY rows sit under it — never an average
+    // rank, a median or any other aggregate over the group.
+    expect(headings[0].textContent ?? "").toMatch(/후보 구역 \d+곳/);
+    expect(headings[0].textContent ?? "").not.toMatch(/평균|중앙값|합계/);
   });
 
   it("states the bounded population above the table", () => {

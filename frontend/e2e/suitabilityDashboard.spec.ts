@@ -207,9 +207,12 @@ for (const vp of VIEWPORTS) {
 
       // Every profile radio, the status filters, and the stable-only control are
       // individually reachable — nothing analytical is hidden behind a toggle.
+      // SIX, not five: the five served presets plus 사용자 지정, which Figma 356:582
+      // draws and the owner requires. It shares the presets' radio group on purpose,
+      // so arrow keys traverse all six and exactly one can be current.
       const radios = page.locator('input[type="radio"][name="profile"]');
-      await expect(radios).toHaveCount(5);
-      for (let i = 0; i < 5; i += 1) {
+      await expect(radios).toHaveCount(6);
+      for (let i = 0; i < 6; i += 1) {
         await radios.nth(i).scrollIntoViewIfNeeded();
         await expect(radios.nth(i)).toBeVisible();
       }

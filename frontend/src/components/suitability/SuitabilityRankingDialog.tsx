@@ -53,6 +53,7 @@ import {
 import { plainError, profileLabel, statusLabel } from "../../lib/glossary";
 import { formatCount } from "../../lib/metrics";
 import { GRADE_LABELS, gradeFor, type GradeThresholds } from "../../lib/relativeGrade";
+import { RelativeGradeChip } from "./RelativeGradeChip";
 import {
   RANKING_PAGE_SIZE,
   fetchEntireRanking,
@@ -373,9 +374,17 @@ export default function SuitabilityRankingDialog({
                           onClick={() => onSelect(Number(c.candidate_id))}
                           className="min-h-[1.75rem] w-full rounded-control px-1 text-left hover:bg-surface-muted"
                         >
-                          <span className="block text-ink">
-                            {isSelected && <span className="mr-1 text-primary">✓</span>}
-                            {cellLocationLabel(c.sigungu_region_name)}
+                          <span className="flex items-center gap-1.5 text-ink">
+                            {isSelected && <span className="text-primary">✓</span>}
+                            <span className="min-w-0 truncate">
+                              {cellLocationLabel(c.sigungu_region_name)}
+                            </span>
+                            {/* The A/B/C band beside the region name — the position
+                                the page-4 기술 참고사항 asks for, in the same
+                                green/amber/red the ③ card now uses, so the modal and
+                                the card behind it read as one system. The 등급 column
+                                still carries the full band name in words. */}
+                            {grade !== null && <RelativeGradeChip grade={grade} />}
                           </span>
                           {/* The scored object, and the cell's own identity —
                               this is what keeps a row from reading as a city. */}

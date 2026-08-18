@@ -24,11 +24,21 @@
  * Nothing is ever placed at a guessed rank, and no line is drawn to a fabricated
  * position at the bottom of the axis.
  *
- * ── DIRECTION IS TEXT, NEVER COLOUR ALONE ────────────────────────────────────────
- * Every line's meaning is also written out in the accompanying table, and the
- * per-line `<title>` states it in words. The stroke uses the project's navy/blue and
- * grey — an upward move is not "good" and a downward move is not "bad", so the
- * red/green reading a semantic palette would invite is deliberately avoided.
+ ── DIRECTION IS TEXT AS WELL AS COLOUR ─────────────────────────────────────────
+ * Every line's meaning is written out in the accompanying table, and the per-line
+ * `<title>` states it in words, so the stroke is never the only carrier.
+ *
+ * THE PALETTE IS THE ANNOTATION'S. Page-5's 수정 요청 (`359:1384`) asks for
+ * "[후보지 순위 변화 TOP 10] … 순위 상승 = 빨간색 / 하락 = 파란색". An earlier pass
+ * used navy-for-up / grey-for-down, reasoning that an upward move is not "good" and a
+ * red/green reading should be avoided; the requested pair is red/BLUE rather than
+ * red/green, which carries no good-bad valence in the first place, and the owner has
+ * asked for it explicitly. So 상승 is red and 하락 is blue, and a hold stays faint.
+ *
+ * ⚠️ This is the OPPOSITE polarity from Page 2's monthly-trend requirement
+ * (최저 = 빨강 / 최고 = 파랑). The two are different annotations about different
+ * quantities and must NOT be unified into one "semantic" scale — a change to either
+ * palette is a change to that page only.
  *
  * ── ACCESSIBILITY ────────────────────────────────────────────────────────────────
  * The SVG is decorative-by-duplication: it is `aria-hidden`, and the same rows are
@@ -76,10 +86,13 @@ const SCORE_X = VIEW_WIDTH - 4;
 /** Gap between the last rank slot and the 상위 N 밖 band, in lanes. */
 const BAND_GAP = 0.7;
 
-/** Navy for a rise, mid-grey for a fall, faint for a hold — never red/green. */
+/**
+ * 상승 = 빨강, 하락 = 파랑, 유지 = 옅은 회색 — the `359:1384` annotation's own pair.
+ * See the header for why red/blue is adopted where red/green was refused.
+ */
 const STROKE = {
-  UP: "var(--color-primary)",
-  DOWN: "var(--color-ink-secondary)",
+  UP: "var(--color-danger)",
+  DOWN: "#1d4ed8",
   SAME: "var(--color-hairline, #e3e5ec)",
 } as const;
 
@@ -236,6 +249,31 @@ export default function ScenarioRankSlopeChart({
           })}
         </svg>
       </div>
+
+      {/* WHAT THE TWO STROKE COLOURS MEAN, in words. The annotation asks for the
+          colours; this line is what keeps them from being the only carrier for a
+          sighted reader who has not opened the table below. */}
+      <ul
+        className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-muted"
+        data-testid="scenario-ranking-slope-legend"
+      >
+        {(
+          [
+            { key: "UP", label: "순위 상승" },
+            { key: "DOWN", label: "순위 하락" },
+            { key: "SAME", label: "순위 유지" },
+          ] as const
+        ).map((entry) => (
+          <li key={entry.key} className="flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className="h-0.5 w-4 flex-none rounded-pill"
+              style={{ backgroundColor: STROKE[entry.key] }}
+            />
+            <span>{entry.label}</span>
+          </li>
+        ))}
+      </ul>
 
       {/* The same rows, in full, for assistive technology and for anyone who needs
           the exact figures rather than the shape. */}

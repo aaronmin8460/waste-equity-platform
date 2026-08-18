@@ -81,6 +81,7 @@ import { type StatusVisibility } from "../MapView";
 import InfoBanner from "../ui/InfoBanner";
 import SectionCard from "../ui/SectionCard";
 import { COMPONENT_ACCENT } from "./factorAccents";
+import { groupRowsBySigungu } from "../../lib/scenarioSigunguGroups";
 import { STATUS_LABELS } from "./shared";
 import { useScenarioCandidateDetail } from "./useScenarioCandidateDetail";
 
@@ -351,11 +352,36 @@ function CandidateDetailCard({
             data-testid="scenario-candidate-picker"
           >
             <option value="">후보 구역 선택…</option>
-            {choices.map((item) => (
-              <option key={item.candidateId} value={item.candidateId}>
-                {[item.sigunguRegionName, item.candidateKey].filter(Boolean).join(" · ")}
-                {item.inA && item.inB ? "" : item.inA ? " (A안 목록)" : " (B안 목록)"}
-              </option>
+            {/* GROUPED BY 시·군·구, not a flat list.
+                Every option used to lead with its own fully-qualified region name, so
+                a picker over one municipality's cells read "인천광역시 옹진군 · …"
+                twenty times over — the exact repetition the owner rejected. The
+                시·군·구 is now the `<optgroup>` label, said once, and each option
+                carries only what distinguishes it: the cell's own key and which side's
+                list it came from.
+
+                `<optgroup>` is the native grouping primitive, so this costs no custom
+                listbox and keeps the control keyboard- and screen-reader-native.
+                NOTHING is aggregated: a group is a label over its members, and no
+                average, median or group rank is computed anywhere here. */}
+            {groupRowsBySigungu(
+              choices.map((item) => ({
+                ...item,
+                sigunguName: item.sigunguRegionName,
+                sidoName: item.sidoRegionName,
+              })),
+            ).map((group) => (
+              <optgroup
+                key={group.key}
+                label={`${group.label}${group.sidoLabel === null ? "" : ` (${group.sidoLabel})`}`}
+              >
+                {group.rows.map((item) => (
+                  <option key={item.candidateId} value={item.candidateId}>
+                    {item.candidateKey}
+                    {item.inA && item.inB ? "" : item.inA ? " (A안 목록)" : " (B안 목록)"}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
           <button

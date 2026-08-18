@@ -211,13 +211,45 @@ export function RelativeGradeUnavailable({
    */
   scopeName,
   emptyScope = false,
+  customWeights = false,
 }: {
   nested?: boolean;
   scopeName?: string;
   /** True when the scoped ELIGIBLE population is genuinely too small to band. */
   emptyScope?: boolean;
+  /**
+   * True while a 사용자 지정 weight vector is applied.
+   *
+   * A THIRD, entirely different reason for having no bands, and the only one that is
+   * not about the data at all. The thresholds are read as order statistics from
+   * `/suitability/candidates`, which ranks by a STORED profile; the scenario preview
+   * that produces custom scores serves a bounded top-N, from which a population
+   * quartile cannot be derived. Showing the profile's P25/P75 beside custom scores
+   * would band them against a distribution they are not part of, so the bands are
+   * withheld and the reason is named — not reported as a failure, because nothing
+   * failed.
+   */
+  customWeights?: boolean;
 }) {
-  const body = emptyScope ? (
+  const body = customWeights ? (
+    /* ONE line on the canvas, with the reasoning one keystroke away. The full
+       explanation is genuinely needed — a reader must be able to tell "withheld
+       because it would be wrong" from "failed to load" — but at five lines it
+       displaced the ranking that is card ③'s subject. */
+    <div data-testid="relative-grade-custom-weights">
+      <p className="text-xs leading-relaxed text-ink-muted">
+        사용자 지정 가중치를 적용하는 동안에는 상대 점수 구간(A/B/C)을 표시하지 않습니다.
+      </p>
+      <details className="mt-1">
+        <summary className="cursor-pointer text-[11px] text-ink-subtle">표시하지 않는 이유</summary>
+        <p className="mt-1 text-[11px] leading-snug text-ink-subtle">
+          구간 경계는 점수 반영 기준별 전체 후보 점수 분포에서 계산한 값입니다. 사용자 지정 점수는
+          그 분포에 속하지 않으므로 다른 기준의 경계를 그대로 붙이면 실제와 다른 구간이 됩니다.
+          기준값으로 되돌리면 다시 표시됩니다.
+        </p>
+      </details>
+    </div>
+  ) : emptyScope ? (
     <p className="text-xs leading-relaxed text-ink-muted" data-testid="relative-grade-empty-scope">
       {scopeName ?? "선택한 범위"} 안에는 점수가 계산된 스크리닝 통과 구역이 상대 구간을 나눌 만큼
       있지 않아 상대 점수 구간을 표시하지 않습니다. 자료를 불러오지 못한 것이 아니라, 이 범위의 실제

@@ -54,6 +54,20 @@ vi.mock("../lib/relativeGrade", async (importOriginal) => {
 import { COMPONENT_ORDER, PROFILE_META, codeWithName } from "../lib/glossary";
 import Home from "./page";
 
+/**
+ * The weight a factor card is showing.
+ *
+ * The card renders `가중치 설정 [ NN ] %` — Figma 356:582's own control — which is a
+ * live `<input>` in the Page-4 workspace and a read-out `<span>` in the single-column
+ * shape. Both carry the same testid and the same number; only where the number lives
+ * differs, so the assertions read whichever the element is.
+ */
+function factorWeightText(testId: string): string {
+  const el = screen.getByTestId(testId);
+  return el instanceof HTMLInputElement ? `${el.value}%` : (el.textContent ?? "");
+}
+
+
 beforeEach(() => {
   vi.clearAllMocks();
   computeGradeDistribution.mockResolvedValue({
@@ -231,10 +245,10 @@ describe("② 계산 모델 가중치 설정 — what stays primary", () => {
       expect(within(card()).getByTestId(`factor-card-${component}`)).toBeDefined();
     }
     // The served baseline vector, on the cards rather than in a sentence.
-    expect(screen.getByTestId("factor-weight-zoning").textContent).toContain("40%");
-    expect(screen.getByTestId("factor-weight-road").textContent).toContain("30%");
-    expect(screen.getByTestId("factor-weight-equity").textContent).toContain("20%");
-    expect(screen.getByTestId("factor-weight-demand").textContent).toContain("10%");
+    expect(factorWeightText("factor-weight-zoning")).toContain("40%");
+    expect(factorWeightText("factor-weight-road")).toContain("30%");
+    expect(factorWeightText("factor-weight-equity")).toContain("20%");
+    expect(factorWeightText("factor-weight-demand")).toContain("10%");
   });
 
   it("keeps the basis selector and a clear selected state on the primary surface", async () => {

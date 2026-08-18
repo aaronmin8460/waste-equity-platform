@@ -39,6 +39,14 @@ import { useMemo, useState } from "react";
 
 import { STABILITY_META } from "../../../lib/glossary";
 import {
+  RANK_VARIABILITY_META,
+  rankVariabilityLevel,
+} from "../../../lib/rankVariability";
+import {
+  SIGUNGU_GROUPING_NOTE,
+  groupRowsBySigungu,
+} from "../../../lib/scenarioSigunguGroups";
+import {
   formatRankMovement,
   formatUnavailableRank,
   scoreChange,
@@ -80,6 +88,16 @@ export default function ScenarioRankingTable({ model }: ScenarioRankingTableProp
     () => sortRankingComparisonRows(model.candidateRows, sort),
     [model.candidateRows, sort],
   );
+  /**
+   * 시·군·구 GROUPS, in the order the active sort puts their first member.
+   *
+   * The sort still decides everything — no group is ordered by a quantity computed
+   * over its members, because no such quantity exists here (see
+   * `lib/scenarioSigunguGroups.ts`). Each group becomes its own `<tbody>` with one
+   * heading row, so the 시·군·구 is said ONCE instead of on all N rows, and every
+   * rank, score and movement stays on the candidate row that owns it.
+   */
+  const groups = useMemo(() => groupRowsBySigungu(rows), [rows]);
 
   if (rows.length === 0) {
     return (
@@ -156,46 +174,77 @@ export default function ScenarioRankingTable({ model }: ScenarioRankingTableProp
               </th>
             </tr>
           </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr
-                key={row.candidateKey}
-                className="border-b border-hairline last:border-b-0"
-                data-testid="scenario-ranking-table-row"
-                data-candidate-key={row.candidateKey}
-              >
-                <th scope="row" className="py-2.5 pr-3 text-[13px] font-normal text-ink">
-                  <span className="block">{row.locationLabel ?? "위치 정보 없음"}</span>
-                  <span className="block text-[11px] text-ink-subtle">
-                    500m 후보 구역 · {row.candidateKey}
+          {/* ONE <tbody> PER 시·군·구, each opened by a heading row.
+              The heading carries the place name and a COUNT OF ROWS — never an
+              average rank, a median or a synthetic group score. The owner rejected
+              that aggregation explicitly, and `groupRowsBySigungu` is written so it
+              cannot be added by accident. */}
+          {groups.map((group) => (
+            <tbody key={group.key} data-testid="scenario-ranking-table-group" data-sigungu={group.key}>
+              <tr className="border-b border-hairline bg-surface-muted">
+                <th
+                  scope="colgroup"
+                  colSpan={8}
+                  className="py-1.5 pr-3 text-left text-[12px] font-bold text-ink"
+                  data-testid="scenario-ranking-table-group-heading"
+                >
+                  {group.label}
+                  {group.sidoLabel !== null && (
+                    <span className="ml-1.5 text-[10.5px] font-normal text-ink-subtle">
+                      {group.sidoLabel}
+                    </span>
+                  )}
+                  <span className="ml-1.5 text-[10.5px] font-normal tabular-nums text-ink-subtle">
+                    후보 구역 {group.size.toLocaleString("ko-KR")}곳
                   </span>
                 </th>
-                <RankCell
-                  rank={row.aRank}
-                  fallback={formatUnavailableRank(row.aRankState, "A", model.boundaryA)}
-                />
-                <RankCell
-                  rank={row.bRank}
-                  fallback={formatUnavailableRank(row.bRankState, "B", model.boundaryB)}
-                />
-                <td
-                  className={`py-2.5 pr-3 text-right text-[13px] font-semibold tabular-nums ${
-                    MOVEMENT_CLASS[row.direction ?? "SAME"]
-                  }`}
-                  data-testid="scenario-ranking-table-movement"
-                >
-                  {/* An em dash, never 0: an uncomputable movement is not "유지". */}
-                  {formatRankMovement(row) ?? "—"}
-                </td>
-                <ScoreCell score={row.aScore} />
-                <ScoreCell score={row.bScore} />
-                <td className="py-2.5 pr-3 text-right text-[13px] tabular-nums text-ink">
-                  {formatScoreChange(row) ?? "—"}
-                </td>
-                <StabilityCell row={row} />
               </tr>
-            ))}
-          </tbody>
+              {group.rows.map((row) => (
+                <tr
+                  key={row.candidateKey}
+                  className="border-b border-hairline"
+                  data-testid="scenario-ranking-table-row"
+                  data-candidate-key={row.candidateKey}
+                >
+                  {/* THE ROW IS THE CANDIDATE CELL. The 시·군·구 is the heading above,
+                      so it is not reprinted here — which is exactly the flat
+                      "인천광역시 옹진군 / 인천광역시 옹진군 / …" the owner rejected. */}
+                  <th scope="row" className="py-2.5 pr-3 text-[13px] font-normal text-ink">
+                    <span className="flex items-center gap-1.5">
+                      {/* 지역명 옆 동그라미 — the same three-colour band the movement
+                          scatter uses, so one candidate reads identically on both. */}
+                      <VariabilityDot movement={row.movement} />
+                      <span className="block">500m 후보 구역</span>
+                    </span>
+                    <span className="block text-[11px] text-ink-subtle">{row.candidateKey}</span>
+                  </th>
+                  <RankCell
+                    rank={row.aRank}
+                    fallback={formatUnavailableRank(row.aRankState, "A", model.boundaryA)}
+                  />
+                  <RankCell
+                    rank={row.bRank}
+                    fallback={formatUnavailableRank(row.bRankState, "B", model.boundaryB)}
+                  />
+                  <td
+                    className={`py-2.5 pr-3 text-right text-[13px] font-semibold tabular-nums ${
+                      MOVEMENT_CLASS[row.direction ?? "SAME"]
+                    }`}
+                    data-testid="scenario-ranking-table-movement"
+                  >
+                    {/* An em dash, never 0: an uncomputable movement is not "유지". */}
+                    {formatRankMovement(row) ?? "—"}
+                  </td>
+                  <ScoreCell score={row.aScore} />
+                  <ScoreCell score={row.bScore} />
+                  <td className="py-2.5 pr-3 text-right text-[13px] tabular-nums text-ink">
+                    {formatScoreChange(row) ?? "—"}
+                  </td>
+                  <StabilityCell row={row} />
+                </tr>
+              ))}
+            </tbody>
+          ))}
         </table>
       </div>
 
@@ -207,7 +256,36 @@ export default function ScenarioRankingTable({ model }: ScenarioRankingTableProp
         · 순위는 스크리닝을 통과한 후보 구역 전체를 대상으로 매겨집니다. 실행 안정성은 분석 실행이
         미리 계산해 둔 값으로 A안·B안에서 같습니다.
       </p>
+      <p
+        className="mt-1 text-[11px] leading-snug text-ink-subtle"
+        data-testid="scenario-ranking-table-grouping-note"
+      >
+        · {SIGUNGU_GROUPING_NOTE}
+      </p>
     </div>
+  );
+}
+
+/**
+ * The three-colour rank-variability marker (`lib/rankVariability.ts`).
+ *
+ * Renders nothing when there is no exact movement — an unknown movement is NOT
+ * stable, and a green dot would say it was.
+ */
+function VariabilityDot({ movement }: { movement: number | null }) {
+  const level = rankVariabilityLevel(movement);
+  if (level === null) return null;
+  const meta = RANK_VARIABILITY_META[level];
+  return (
+    <span
+      className="h-2 w-2 flex-none rounded-full"
+      style={{ backgroundColor: meta.dot }}
+      title={meta.label}
+      data-testid="scenario-ranking-table-variability"
+      data-variability={level}
+    >
+      <span className="sr-only">{meta.label}</span>
+    </span>
   );
 }
 

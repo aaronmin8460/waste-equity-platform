@@ -57,6 +57,8 @@ import SuitabilityScoringBasis from "./SuitabilityScoringBasis";
 import SuitabilityStabilitySummary from "./SuitabilityStabilitySummary";
 import SuitabilityStatusSummary from "./SuitabilityStatusSummary";
 import UnmodeledFactorsDisclosure from "./UnmodeledFactorsDisclosure";
+import type { SuitabilityCustomWeights } from "./useSuitabilityCustomWeights";
+import type { GradeThresholds } from "../../lib/relativeGrade";
 
 export interface SuitabilityMeta {
   policy: SuitabilityPolicy;
@@ -126,6 +128,26 @@ export interface SuitabilitySidebarProps {
    * neither owns the dialog nor knows what it renders, it only reports the intent.
    */
   onOpenFullRanking?: () => void;
+  /**
+   * ② 사용자 지정 가중치. Owned by the page (an applied vector re-points ③, the map
+   * and ④ together), reported here. Passed only in the three-column workspace —
+   * 후보지 심층 비교 has its own weight lab and must not grow a second one.
+   */
+  customWeights?: SuitabilityCustomWeights;
+  /**
+   * The sentence naming how a custom-weight ranking was derived, when one is on
+   * screen. Built by the page because only it knows the active ① 분석 범위.
+   */
+  customRankingNote?: string;
+  /** How many rows the 시·군·구 display cap is holding back. */
+  customRankingHeldBack?: number;
+  sigunguCapOn?: boolean;
+  onSigunguCapChange?: (on: boolean) => void;
+  /**
+   * The scoped A/B/C boundaries, so a ranking row can carry its band beside the
+   * region name. The page owns the distribution read, exactly as it owns the panel.
+   */
+  gradeThresholds?: Pick<GradeThresholds, "p25" | "p75"> | null;
 }
 
 export default function SuitabilitySidebar({
@@ -155,6 +177,12 @@ export default function SuitabilitySidebar({
   sort,
   onSortChange,
   onOpenFullRanking,
+  customWeights,
+  customRankingNote,
+  customRankingHeldBack = 0,
+  sigunguCapOn = false,
+  onSigunguCapChange,
+  gradeThresholds = null,
 }: SuitabilitySidebarProps) {
   // The error and loading states belong to ONE column. Rendering them in both
   // would duplicate a single failure into two identical messages on one screen.
@@ -204,6 +232,11 @@ export default function SuitabilitySidebar({
     // Only the ranking block renders the trigger; the stability short-list is a
     // different population and `showRanking` already gates it out there.
     onOpenFullRanking,
+    customRankingNote,
+    customRankingHeldBack,
+    sigunguCapOn,
+    onSigunguCapChange,
+    gradeThresholds,
   };
   return (
     <>
@@ -265,6 +298,7 @@ export default function SuitabilitySidebar({
                점수 기준 자세히 보기 disclosure. Passed only in this shape — the
                single-column layout still renders both as their own cards below. */
             summary={summary}
+            customWeights={customWeights}
           />
         </div>
       )}

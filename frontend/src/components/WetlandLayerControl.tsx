@@ -65,7 +65,15 @@ export default function WetlandLayerControl({
           ▾
         </span>
       </summary>
-      <div className="max-h-[52vh] overflow-y-auto px-3 pb-3 text-xs">
+      {/* 28vh, not 52vh — TWO of these controls stack in one page-owned column.
+          The page-4 기술 참고사항 asks that expanding 내륙습지 목록 push 토지피복 격자
+          통계 down rather than covering it, which the flex column already does. At
+          52vh each, though, ONE expanded control was taller than the clear space
+          above the map legend, so the control it pushed down landed under the legend
+          and became unclickable — the same defect one step further along. Two 28vh
+          bodies plus their summaries fit above the legend at the 900px design height,
+          and each body still scrolls internally, so nothing is unreachable. */}
+      <div className="max-h-[28vh] overflow-y-auto px-3 pb-3 text-xs">
         {/* Layer on/off. Default off (the parent owns the state). */}
         <label className="flex items-center gap-2 text-ink-muted">
           <input
