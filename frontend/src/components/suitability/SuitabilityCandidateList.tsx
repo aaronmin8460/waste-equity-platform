@@ -35,6 +35,8 @@ import SectionCard from "../ui/SectionCard";
 import { stabilityTotalForModel } from "../../lib/suitability";
 import StabilityBadge from "./StabilityBadge";
 import { SCORE_RANK_FRAMING } from "./shared";
+import { gradeFor, type GradeThresholds, type RelativeGrade } from "../../lib/relativeGrade";
+import { RelativeGradeChip } from "./RelativeGradeChip";
 
 /** The two ranking directions, in the Figma's order and wording. */
 const SORT_OPTIONS: readonly { value: SuitabilitySort; label: string }[] = [
@@ -99,6 +101,18 @@ export interface SuitabilityCandidateListProps {
    * rendered dead.
    */
   onOpenFullRanking?: () => void;
+  /**
+   * The scoped A/B/C boundaries, so each row can carry its band beside the region
+   * name (page-4 기술 참고사항: "그 색이 아래 [순위보기]에 뜨는 지역명 옆에 반영되도록").
+   * `null`/omitted leaves every row without a chip — a band is never guessed.
+   */
+  gradeThresholds?: Pick<GradeThresholds, "p25" | "p75"> | null;
+  /** How a custom-weight ranking was derived, when one is on screen. */
+  customRankingNote?: string;
+  /** Rows the 시·군·구 display cap is holding back, so the card can say how many. */
+  customRankingHeldBack?: number;
+  sigunguCapOn?: boolean;
+  onSigunguCapChange?: (on: boolean) => void;
 }
 
 /**
@@ -151,6 +165,7 @@ function CandidateRow({
   rank,
   sigungu,
   score,
+  grade,
   stabilityClass,
   stableCount,
   stabilityTotal,
@@ -162,6 +177,8 @@ function CandidateRow({
   rank: string;
   sigungu: string;
   score: string;
+  /** The row's A/B/C band, or null when the bands could not be established. */
+  grade: RelativeGrade | null;
   stabilityClass: string | null;
   stableCount: number | null;
   /** Comparisons the class came from: 3 historical profiles, 4 successor perturbations. */
@@ -197,6 +214,13 @@ function CandidateRow({
         <span className="flex-none tabular-nums text-ink-subtle">{rank}위</span>
         <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
           <span className="min-w-0 truncate text-[15px] font-bold text-ink">{sigungu}</span>
+          {/* THE A/B/C BAND, BESIDE THE REGION NAME — the position the page-4
+              기술 참고사항 names. The chip prints its LETTER and carries the full
+              Korean band name as its accessible name, so the green/amber/red fill is
+              a second encoding of something already stated in words, never the only
+              one. Absent whenever the bands could not be computed: an ungraded row
+              simply has no chip rather than a guessed one. */}
+          {grade !== null && <RelativeGradeChip grade={grade} />}
           {/* THE SCORED OBJECT, still on every row — the row is one 500 m grid
               cell, not the 시·군·구 named beside it. It moved from its own line to
               an inline caption so the row fits Figma's 36px, but it is never
@@ -237,6 +261,11 @@ export default function SuitabilityCandidateList({
   nested = false,
   section = "both",
   onOpenFullRanking,
+  gradeThresholds = null,
+  customRankingNote,
+  customRankingHeldBack = 0,
+  sigunguCapOn = false,
+  onSigunguCapChange,
 }: SuitabilityCandidateListProps) {
   // The stability class's denominator belongs to the RUN's component model: 3
   // compared profiles historically, 4 perturbations under the successor model.
@@ -252,6 +281,51 @@ export default function SuitabilityCandidateList({
         <p className="mb-2 text-[11px] text-ink-subtle" data-testid="candidate-rank-framing">
           {SCORE_RANK_FRAMING}
         </p>
+
+        {/* HOW A 사용자 지정 RANKING WAS DERIVED. Shown only while one is on screen.
+            The scenario preview endpoint takes no scope parameter, so ① 분석 범위 is
+            applied to the SERVED top-N client-side; this sentence states exactly that,
+            because "the top 5 of the custom ranking that lie in 인천" and "인천's top
+            5 under custom weights" are different claims and only the first is true. */}
+        {customRankingNote !== undefined && (
+          <p
+            className="mb-2 rounded-card border border-info-border bg-info-surface p-2 text-[11px] leading-snug text-ink-muted"
+            data-testid="candidate-custom-weight-note"
+          >
+            {customRankingNote}
+          </p>
+        )}
+
+        {/* THE 시·군·구 DISPLAY CAP. The V3 policy record notes a top-50 that was 49/50
+            one 시·군·구 and assigns the PRESENTATIONAL fix here. It is OFF by default
+            — a ranking whose rows silently vanished would be worse than a concentrated
+            one — and when it is on the card says how many rows it is holding back, so
+            the list never quietly disagrees with its own count. */}
+        {onSigunguCapChange !== undefined && (
+          <div className="mb-2 text-[11px] text-ink-muted">
+            {/* `relative`: the `sr-only` description below is absolutely positioned,
+                and an unpositioned ancestor would let it escape this scrolling column
+                and grow the document. See SuitabilityFactorCards for the same note. */}
+            <label className="relative inline-flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={sigunguCapOn}
+                onChange={(event) => onSigunguCapChange(event.target.checked)}
+                data-testid="candidate-sigungu-cap"
+              />
+              <span>한 시·군·구당 최대 2곳만 보기</span>
+              <span className="sr-only">
+                순위와 점수는 그대로 두고 같은 시·군·구의 후보 구역을 목록에서만 줄여 보여 줍니다.
+              </span>
+            </label>
+            {sigunguCapOn && customRankingHeldBack > 0 && (
+              <p className="mt-0.5 text-ink-subtle" data-testid="candidate-sigungu-cap-held">
+                같은 시·군·구의 {formatCount(customRankingHeldBack)}개 후보 구역을 목록에서만
+                감췄습니다. 순위와 점수는 그대로이며, 다시 끄면 모두 표시됩니다.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* ③ 순위 방향. Both directions are served by the BACKEND (sort=score_desc /
             score_asc) over the whole scoped population — never by reversing the page
@@ -319,6 +393,7 @@ export default function SuitabilityCandidateList({
                       rank={String(c.rank)}
                       sigungu={cellLocationLabel(c.sigungu_region_name)}
                       score={String(c.total_score)}
+                      grade={gradeFor(c.status, c.total_score, gradeThresholds)}
                       stabilityClass={c.stability_class != null ? String(c.stability_class) : null}
                       stableCount={c.stable_count != null ? Number(c.stable_count) : null}
                       stabilityTotal={stabilityTotal}
@@ -466,6 +541,9 @@ export default function SuitabilityCandidateList({
                 rank={String(c.rank)}
                 sigungu={cellLocationLabel(c.sigungu)}
                 score={String(c.total_score)}
+                /* The stable short-list is the same ELIGIBLE population the bands
+                   were computed over, so its rows carry the same band. */
+                grade={gradeFor("ELIGIBLE", String(c.total_score), gradeThresholds)}
                 stabilityClass={String(c.stability_class)}
                 stableCount={Number(c.stable_count)}
                 stabilityTotal={stabilityTotal}

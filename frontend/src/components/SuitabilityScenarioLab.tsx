@@ -53,6 +53,15 @@ import { downloadScenarioComparison, scenarioScopeNote } from "../lib/scenarioEx
 export interface AppliedScenario {
   runId: number;
   weights: UserScenarioWeights;
+  /**
+   * The component model the applied vector is defined over, echoed by the preview.
+   *
+   * Carried so the legacy Z/R/E/D-only surfaces (the `?wz=…` URL keys, the map
+   * legend's weight read-out) can tell whether this vector is one they may render.
+   * Optional so an older caller keeps working; absent is read as historical, which
+   * is what every pre-existing caller was.
+   */
+  componentModelVersion?: string;
   scenarioHash: string;
   compareProfile: SuitabilityProfile;
 }

@@ -42,12 +42,33 @@
  */
 
 import type { UserScenarioWeights } from "./api";
+import {
+  COMPONENT_MODEL_HISTORICAL,
+  inferUntaggedModel,
+  isCanonicalWeightsFor,
+  isComponentModelVersion,
+  modelWeightsFrom,
+  type ComponentModelVersion,
+} from "./componentModelWeights";
 
 /** Versioned list key. Deliberately distinct from the sessionStorage draft key. */
 export const SAVED_SCENARIOS_STORAGE_KEY = "waste-equity:suitability-saved-scenarios:v1";
 
 /** Bumped only for a shape change that old readers could misread. */
-export const SAVED_SCENARIO_SCHEMA_VERSION = 1;
+/**
+ * Schema 2 adds `componentModelVersion`.
+ *
+ * A schema-1 row has no model tag, and a weight vector without one is ambiguous the
+ * moment a second component model exists. Reading such a row as V3 would rename
+ * `road` to `resident_impact` by position — the single reinterpretation the
+ * component-model contract forbids outright. So schema-1 rows are UPGRADED, not
+ * discarded: their Z/R/E/D key set identifies them as historical beyond doubt (the
+ * two namespaces are disjoint), and they are tagged historical and stay historical.
+ */
+export const SAVED_SCENARIO_SCHEMA_VERSION = 2;
+
+/** The schema that predates model tagging. Read, upgraded, never written. */
+export const SAVED_SCENARIO_SCHEMA_VERSION_UNTAGGED = 1;
 
 /** Figma 136:8684 shows a `9/15` counter on the name field. */
 export const SAVED_SCENARIO_NAME_MAX_LENGTH = 15;
@@ -121,7 +142,32 @@ export interface SavedScenario {
   schemaVersion: number;
   id: string;
   name: string;
+  /**
+   * The vector, over the components of {@link componentModelVersion} — NOT a fixed
+   * Z/R/E/D shape.
+   *
+   * Typed as the open wire map rather than the strict union because a stored row is
+   * data that arrives from `localStorage`: its shape is established by VALIDATION,
+   * not by assertion. `parseScenario` rebuilds it key by key over the tagged model's
+   * own components and refuses any row whose tag and vector disagree, so a value of
+   * this type has already been checked against its model. The strict
+   * `ModelWeights` union in `componentModelWeights.ts` guards the AUTHORING side,
+   * where a cross-model mistake is a compile error.
+   */
   weights: UserScenarioWeights;
+  /**
+   * WHICH COMPONENT MODEL these weights are defined over.
+   *
+   * Not decoration: it is what lets a stored vector be checked against the run it is
+   * about to be recombined on. A scenario authored under one model is surfaced as
+   * incompatible with the other rather than silently re-read, because the two
+   * component namespaces are disjoint and a positional remap would rename one
+   * measurement to another.
+   *
+   * Upgraded rows (schema 1) get the historical model, inferred from their own key
+   * set — never guessed, and never the successor.
+   */
+  componentModelVersion: ComponentModelVersion;
   runId: number;
   profileSource: string | null;
   /** ISO 8601 instants. `createdAt` is frozen; `updatedAt` moves on rename. */
@@ -132,8 +178,14 @@ export interface SavedScenario {
 /** What a caller hands in to create one. Id and timestamps are minted here. */
 export interface SaveScenarioInput {
   name: string;
-  /** Canonical weights, ideally the preview API's own `canonical_weights` echo. */
+  /** Canonical weights over `componentModelVersion`'s components. */
   weights: UserScenarioWeights;
+  /**
+   * The component model the weights are defined over — the preview response's own
+   * `component_model_version` echo, so a stored scenario records the model the
+   * ANALYSIS ENGINE applied rather than the one the client believed it was using.
+   */
+  componentModelVersion: ComponentModelVersion;
   /** The run the weights were verified against — the API response's `run_id`. */
   runId: number;
   profileSource?: string | null;
@@ -237,30 +289,58 @@ export function scenarioRunState(
 // Parsing — one entry at a time, so one bad row never costs the others
 // --------------------------------------------------------------------------- //
 
+/**
+ * Which component model a stored row is for, or `null` if it cannot be established.
+ *
+ * Schema 2 carries the tag explicitly and it is TRUSTED ONLY IF the weights actually
+ * match that model's components — a row claiming to be successor while holding
+ * Z/R/E/D keys is corrupt, not successor, and is dropped rather than believed.
+ *
+ * Schema 1 predates tagging. Its model is INFERRED from its own key set, which is
+ * unambiguous because the two namespaces are disjoint. In practice that always
+ * yields the historical model, because schema 1 could only ever store Z/R/E/D — and
+ * that is the point: an untagged legacy row can never become a successor scenario.
+ */
+function storedComponentModel(raw: Record<string, unknown>): ComponentModelVersion | null {
+  if (raw.schemaVersion === SAVED_SCENARIO_SCHEMA_VERSION) {
+    const tagged = raw.componentModelVersion;
+    if (!isComponentModelVersion(tagged)) return null;
+    // The tag must AGREE with the vector. A disagreement is unresolvable — believing
+    // either side would mislabel a measurement — so the row is refused.
+    return isCanonicalWeightsFor(tagged, raw.weights) ? tagged : null;
+  }
+  if (raw.schemaVersion === SAVED_SCENARIO_SCHEMA_VERSION_UNTAGGED) {
+    const inferred = inferUntaggedModel(raw.weights);
+    // Belt and braces: an untagged row is historical or it is nothing. Even if a
+    // successor-shaped vector somehow appeared under schema 1, promoting it would be
+    // asserting a provenance no schema-1 writer could have had.
+    return inferred === COMPONENT_MODEL_HISTORICAL ? COMPONENT_MODEL_HISTORICAL : null;
+  }
+  return null;
+}
+
 function parseScenario(value: unknown): SavedScenario | null {
   if (typeof value !== "object" || value === null) return null;
   const raw = value as Record<string, unknown>;
-  if (raw.schemaVersion !== SAVED_SCENARIO_SCHEMA_VERSION) return null;
+  const componentModelVersion = storedComponentModel(raw);
+  if (componentModelVersion === null) return null;
   if (typeof raw.id !== "string" || !SAVED_SCENARIO_ID_RE.test(raw.id)) return null;
   if (typeof raw.name !== "string") return null;
   const name = normalizeScenarioName(raw.name);
   if (scenarioNameProblem(name) !== null) return null;
-  if (!isCanonicalWeights(raw.weights)) return null;
   if (!isRunId(raw.runId)) return null;
   if (typeof raw.createdAt !== "string" || typeof raw.updatedAt !== "string") return null;
-  const weights = raw.weights as UserScenarioWeights;
+  // Rebuilt key by key over the MODEL'S OWN components, so an attacker-supplied
+  // extra property on the stored object cannot ride along into the request body —
+  // and so a vector can never carry a key from the other model's namespace.
+  const rebuilt = modelWeightsFrom(componentModelVersion, raw.weights);
+  if (rebuilt === null) return null;
   return {
     schemaVersion: SAVED_SCENARIO_SCHEMA_VERSION,
     id: raw.id,
     name,
-    // Rebuilt key by key so an attacker-supplied extra property on the stored
-    // object cannot ride along into the request body sent to the backend.
-    weights: {
-      zoning: weights.zoning,
-      road: weights.road,
-      equity: weights.equity,
-      demand: weights.demand,
-    },
+    weights: rebuilt.weights,
+    componentModelVersion,
     runId: raw.runId,
     profileSource: typeof raw.profileSource === "string" ? raw.profileSource : null,
     createdAt: raw.createdAt,
@@ -309,22 +389,36 @@ export function readSavedScenarios(): SavedScenarioReadResult {
     return { scenarios: [], warnings: ["저장된 시나리오 자료를 읽을 수 없어 표시하지 않았습니다."] };
   }
   const envelope = parsed as Record<string, unknown>;
-  if (envelope.schemaVersion !== SAVED_SCENARIO_SCHEMA_VERSION) {
+  // BOTH schemas are readable. Refusing the untagged one would silently empty every
+  // existing reader's saved list on upgrade; each row inside is model-tagged by
+  // `parseScenario`, which is where the historical-only rule is actually enforced.
+  if (
+    envelope.schemaVersion !== SAVED_SCENARIO_SCHEMA_VERSION &&
+    envelope.schemaVersion !== SAVED_SCENARIO_SCHEMA_VERSION_UNTAGGED
+  ) {
     return {
       scenarios: [],
       warnings: ["저장된 시나리오의 형식이 달라 불러오지 못했습니다."],
     };
   }
+  // A row's own schema decides how it is read, so an upgraded envelope containing
+  // untagged rows still reads them as the historical scenarios they are.
+  const envelopeSchema = envelope.schemaVersion;
   if (!Array.isArray(envelope.scenarios)) {
     return { scenarios: [], warnings: ["저장된 시나리오 자료를 읽을 수 없어 표시하지 않았습니다."] };
   }
+
+  const withSchema = (row: unknown): unknown =>
+    typeof row === "object" && row !== null && (row as Record<string, unknown>).schemaVersion === undefined
+      ? { ...(row as Record<string, unknown>), schemaVersion: envelopeSchema }
+      : row;
 
   const scenarios: SavedScenario[] = [];
   const seen = new Set<string>();
   let dropped = 0;
   let duplicates = 0;
   for (const entry of envelope.scenarios) {
-    const scenario = parseScenario(entry);
+    const scenario = parseScenario(withSchema(entry));
     if (scenario === null) {
       dropped += 1;
       continue;
@@ -420,7 +514,11 @@ export function saveScenario(
   const current = readSavedScenarios();
   const nameProblem = scenarioNameProblem(input.name);
   if (nameProblem !== null) return failure(nameProblem, current);
-  if (!isCanonicalWeights(input.weights)) return failure("INVALID_WEIGHTS", current);
+  // Validated against the model the caller is saving under — a Z/R/E/D vector is
+  // not a valid successor scenario and vice versa.
+  if (!isCanonicalWeightsFor(input.componentModelVersion, input.weights)) {
+    return failure("INVALID_WEIGHTS", current);
+  }
   if (!isRunId(input.runId)) return failure("INVALID_RUN", current);
   if (current.scenarios.length >= SAVED_SCENARIO_CAP) return failure("CAP_REACHED", current);
 
@@ -436,16 +534,18 @@ export function saveScenario(
   if (taken.has(id) || !SAVED_SCENARIO_ID_RE.test(id)) return failure("STORAGE_UNAVAILABLE", current);
 
   const now = options.now ?? new Date().toISOString();
+  // The vector must belong to the model it is being saved under. A caller that
+  // handed in the other namespace is refused here rather than writing a row whose
+  // tag and contents disagree.
+  const rebuilt = modelWeightsFrom(input.componentModelVersion, input.weights);
+  if (rebuilt === null) return failure("INVALID_WEIGHTS", current);
+
   const scenario: SavedScenario = {
     schemaVersion: SAVED_SCENARIO_SCHEMA_VERSION,
     id,
     name: normalizeScenarioName(input.name),
-    weights: {
-      zoning: input.weights.zoning,
-      road: input.weights.road,
-      equity: input.weights.equity,
-      demand: input.weights.demand,
-    },
+    weights: rebuilt.weights,
+    componentModelVersion: input.componentModelVersion,
     runId: input.runId,
     profileSource: input.profileSource ?? null,
     createdAt: now,

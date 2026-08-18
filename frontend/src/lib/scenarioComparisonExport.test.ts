@@ -15,6 +15,7 @@ import type {
   UserScenarioWeights,
 } from "./api";
 import type { ComparisonSide, ScenarioComparison } from "./scenarioComparison";
+import { COMPONENT_MODEL_SUCCESSOR } from "./componentModelWeights";
 import {
   candidateContributionRows,
   majorImpactFactor,
@@ -90,6 +91,7 @@ function side(slot: "A" | "B", name: string, weights: UserScenarioWeights, hash:
 
 const COMPARISON: ScenarioComparison = {
   runId: 47,
+  componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
   sideA: side("A", "균형안", WEIGHTS_A, "hasha"),
   sideB: side("B", "형평성안", WEIGHTS_B, "hashb"),
   status: "READY",
@@ -413,5 +415,21 @@ describe("workbook + Page-5B extension point", () => {
     expect(comparisonExportFilenameBase(input())).toBe(
       "후보지_심층비교_run47_CELL-0011_단일후보",
     );
+  });
+});
+
+describe("the exported workbook names its component model", () => {
+  it("identifies the successor model, so a detached file is not ambiguous", async () => {
+    const { rankingComparisonExportExtension } = await import("./scenarioRankingExport");
+    const { buildScenarioRankingComparison } = await import("./scenarioRankingComparison");
+    const comparison = COMPARISON;
+    const model = buildScenarioRankingComparison(comparison);
+    const extension = rankingComparisonExportExtension(model, comparison);
+    const notes = (extension?.metadataNotes ?? []).join("\n");
+    // A workbook has no screen around it: without this, a successor export and a
+    // historical one are indistinguishable, and their four factor columns are
+    // different measurements occupying the same positions.
+    expect(notes).toContain("평가 모델");
+    expect(notes).toContain("suitability-components-successor-v1");
   });
 });

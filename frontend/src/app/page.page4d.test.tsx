@@ -54,6 +54,7 @@ import {
   readSavedScenarios,
   type SavedScenario,
 } from "../lib/savedScenarios";
+import { COMPONENT_MODEL_HISTORICAL } from "../lib/componentModelWeights";
 
 /** Run 47's served baseline weights, as `homeApiMock` declares them. */
 const BASELINE = { zoning: "0.4", road: "0.3", equity: "0.2", demand: "0.1" };
@@ -125,6 +126,10 @@ function storedScenario(overrides: Partial<SavedScenario> = {}): SavedScenario {
     id: "seeded-a",
     name: "기존안",
     weights: CANONICAL,
+    // These fixtures are HISTORICAL Z/R/E/D vectors, so they carry the historical
+    // model tag. A successor scenario is a different namespace and is fixtured
+    // separately where it is the subject.
+    componentModelVersion: COMPONENT_MODEL_HISTORICAL,
     runId: 47,
     profileSource: "baseline",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -237,6 +242,10 @@ describe("saving", () => {
     expect(blob).not.toContain("custom_rank");
     expect(blob).not.toContain("701");
     expect(Object.keys(readSavedScenarios().scenarios[0]).sort()).toEqual([
+      // Schema 2: the model the weights are defined over travels with them, so a
+      // stored vector can be checked against the run it is recombined on rather
+      // than positionally reinterpreted.
+      "componentModelVersion",
       "createdAt",
       "id",
       "name",

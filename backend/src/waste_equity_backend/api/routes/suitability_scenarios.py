@@ -22,7 +22,7 @@ trusted banker's-rounding fragment. See ``docs/SUITABILITY_USER_WEIGHT_SCENARIOS
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Annotated, Any
 
@@ -31,6 +31,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ...analysis.suitability import component_model, policy, scenario
+from ...analysis.suitability.successor import policy as successor_policy
 from ...db import get_session
 from ...schemas.scenario import (
     ScenarioContribution,
@@ -47,6 +48,13 @@ from .suitability import (
     MVT_MAX_ZOOM,
     MVT_MIN_ZOOM,
     TILE_SOURCE_LAYER,
+    # The region-code space is defined ONCE, in the candidates route, together with
+    # the long comment explaining which of the three neighbouring code spaces is
+    # stored on ``suitability_candidates``. These are imported rather than
+    # re-implemented so a scope can never mean one set of rows on
+    # ``/suitability/candidates`` and a different set here.
+    _canonical_region_code,
+    _distinct_region_codes,
     _ensure_profile_available,
     _json_field,
     _not_found,
@@ -78,6 +86,19 @@ SCENARIO_ASSUMPTIONS = [
 # Trusted static SQL fragments (never any user text) — one shared scoring formula
 # --------------------------------------------------------------------------- #
 
+# ── WHERE A COMPONENT SCORE LIVES DEPENDS ON THE RUN'S MODEL ─────────────────
+# The historical model's four ``*_score`` columns are the sole authoritative storage
+# for the runs that used them; every later component model stores its scores in the
+# version-aware ``component_scores`` map and leaves those columns NULL
+# (docs/SUITABILITY_COMPONENT_MODEL_CONTRACT.md, models/suitability.py). So a query
+# that reads the legacy columns returns NOTHING for a successor run — every row is
+# filtered out by the ``IS NOT NULL`` guards — rather than failing loudly.
+#
+# The historical fragments below are kept EXACTLY as they were, and
+# ``_score_expressions`` returns them verbatim for the historical model, so a
+# historical run's query is byte-identical to the one it has always run. Any other
+# model gets the same three expressions generated over its own components.
+
 # Weighted sum of the four frozen component scores under the bound weights
 # (:wz/:wr/:we/:wd). Non-negative convex combination of [0,100] scores.
 _RAW_SCORE_SQL = (
@@ -96,6 +117,100 @@ _PROV_DEN_SQL = (
     "+ (CASE WHEN c.equity_score IS NOT NULL THEN :we ELSE 0 END) "
     "+ (CASE WHEN c.demand_score IS NOT NULL THEN :wd ELSE 0 END))"
 )
+
+# The four legacy columns' NOT-NULL guard, unchanged.
+_HISTORICAL_PRESENT_SQL = (
+    "AND c.zoning_score IS NOT NULL\n"
+    "      AND c.road_score IS NOT NULL\n"
+    "      AND c.equity_score IS NOT NULL\n"
+    "      AND c.demand_score IS NOT NULL"
+)
+
+# The bound-parameter NAME for one component's weight. Historical keeps its four
+# historical abbreviations because they are also the tile URL's public query
+# parameters (``wz``/``wr``/``we``/``wd``); every other model uses an explicit,
+# collision-free name derived from the component itself.
+_HISTORICAL_WEIGHT_PARAMS = {"zoning": "wz", "road": "wr", "equity": "we", "demand": "wd"}
+
+
+def _weight_param_name(model_version: str, component: str) -> str:
+    if model_version == component_model.COMPONENT_MODEL_HISTORICAL:
+        return _HISTORICAL_WEIGHT_PARAMS[component]
+    # Component names come from the RUN's validated ``component_order`` (a registry
+    # constant), never from user text, so this is a trusted identifier.
+    return f"w_{component}"
+
+
+def _component_score_sql(model_version: str, component: str) -> str:
+    """Where this model keeps one component's score, as a numeric SQL expression."""
+
+    if model_version == component_model.COMPONENT_MODEL_HISTORICAL:
+        return f"c.{component}_score"
+    # A JSON text extraction cast to numeric. `->>` yields NULL for an absent key,
+    # which is exactly the "component not observed" state the guards below test —
+    # so a missing successor component behaves like a missing legacy column and is
+    # never coerced to 0. (ZERO_FILL is forbidden by the successor policy.)
+    return f"(c.component_scores ->> '{component}')::numeric"
+
+
+def _score_expressions(model_version: str, component_order: Sequence[str]) -> tuple[str, str, str, str]:
+    """``(raw_score, provisional_num, provisional_den, present_filter)`` for a model.
+
+    The historical model returns the frozen constants above verbatim — not a
+    regenerated equivalent — so its emitted SQL cannot drift by a character.
+    """
+
+    if model_version == component_model.COMPONENT_MODEL_HISTORICAL:
+        return (_RAW_SCORE_SQL, _PROV_NUM_SQL, _PROV_DEN_SQL, _HISTORICAL_PRESENT_SQL)
+
+    terms = []
+    prov_num = []
+    prov_den = []
+    present = []
+    for component in component_order:
+        score = _component_score_sql(model_version, component)
+        param = _weight_param_name(model_version, component)
+        terms.append(f"{score} * :{param}")
+        prov_num.append(f"coalesce({score} * :{param}, 0)")
+        prov_den.append(f"(CASE WHEN {score} IS NOT NULL THEN :{param} ELSE 0 END)")
+        present.append(f"AND {score} IS NOT NULL")
+    return (
+        "(" + " + ".join(terms) + ")",
+        "(" + " + ".join(prov_num) + ")",
+        "(" + " + ".join(prov_den) + ")",
+        "\n      ".join(present),
+    )
+
+
+def _scope_predicate(
+    sido: str | None, sigungu: list[str] | None, *, alias: str = "c"
+) -> tuple[str, dict[str, Any]]:
+    """SQL AND-clauses restricting a scenario query to the analysis scope, + params.
+
+    THE SAME COMPOSITION ``/suitability/candidates`` USES, deliberately: a 시·도
+    equality and a 시·군·구 ``IN`` list, ANDed, over the canonical SGIS codes stored
+    on the candidate row. Returning ``("", {})`` for an empty scope is what keeps
+    수도권 전체 exactly the query it has always been.
+
+    Every code is a BOUND parameter — the only thing interpolated into the SQL is a
+    generated placeholder NAME (``:sigungu_0``…), never a value.
+
+    A 시·군·구 list that is empty after normalization applies NO restriction rather
+    than matching nothing: a cleared multi-select must return to 수도권 전체, not
+    silently blank the comparison.
+    """
+
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if sido is not None and sido.strip() != "":
+        clauses.append(f"AND {alias}.sido_region_code = :scope_sido")
+        params["scope_sido"] = _canonical_region_code(sido)
+    codes = _distinct_region_codes(list(sigungu) if sigungu else None)
+    if codes:
+        placeholders = ", ".join(f":scope_sigungu_{i}" for i in range(len(codes)))
+        clauses.append(f"AND {alias}.sigungu_region_code IN ({placeholders})")
+        params.update({f"scope_sigungu_{i}": code for i, code in enumerate(codes)})
+    return ("\n      ".join(clauses), params)
 
 
 def _round_half_even_4(col: str) -> str:
@@ -122,7 +237,7 @@ def _round_half_even_4(col: str) -> str:
 # user value (run, weights, top_n) is a bound parameter; the window covers the
 # COMPLETE ELIGIBLE population before LIMIT (sequential 1..N, score DESC then
 # candidate_key ASC — the same deterministic behavior as the stored engine).
-_PREVIEW_SQL = f"""
+_PREVIEW_SQL_TEMPLATE = f"""
 WITH raw AS (
     SELECT
         c.id AS candidate_id,
@@ -142,14 +257,12 @@ WITH raw AS (
         (c.profile_ranks ->> :profile)::int AS comparison_rank,
         ST_X(c.centroid) AS centroid_lon,
         ST_Y(c.centroid) AS centroid_lat,
-        {_RAW_SCORE_SQL} AS raw_score
+        {{score}} AS raw_score
     FROM suitability_candidates c
     WHERE c.analysis_run_id = :run_id
       AND c.status = 'ELIGIBLE'
-      AND c.zoning_score IS NOT NULL
-      AND c.road_score IS NOT NULL
-      AND c.equity_score IS NOT NULL
-      AND c.demand_score IS NOT NULL
+      {{present}}
+      {{scope}}
 ),
 scored AS (
     SELECT raw.*, {_round_half_even_4("raw.raw_score")} AS custom_score
@@ -165,22 +278,33 @@ ranked AS (
 SELECT * FROM ranked ORDER BY custom_rank ASC LIMIT :top_n
 """
 
+
+def _preview_sql(scope_sql: str, score_sql: str, present_sql: str) -> str:
+    """The ranking query, restricted to the analysis scope.
+
+    THE SCOPE IS INSIDE ``raw``, i.e. BEFORE ``row_number()`` and before
+    ``count(*) OVER ()``. That is the whole point: ``custom_rank`` becomes the
+    candidate's rank WITHIN the selected 범위 and ``ranking_population`` becomes that
+    범위's size. Filtering after the window would have produced capital-region ranks
+    wearing a regional label — the exact defect this fixes.
+    """
+
+    return _PREVIEW_SQL_TEMPLATE.format(scope=scope_sql, score=score_sql, present=present_sql)
+
 # Sequential custom rank of ONE ELIGIBLE candidate without ranking twice: 1 + the
 # number of ELIGIBLE candidates that strictly outrank it (higher custom_score, or
 # equal custom_score with a smaller candidate_key). Matches ``row_number`` exactly
 # because Python and SQL round the score identically (banker's, 4 dp).
-_CANDIDATE_RANK_SQL = f"""
+_CANDIDATE_RANK_SQL_TEMPLATE = f"""
 WITH raw AS (
     SELECT
         c.candidate_key AS candidate_key,
-        {_RAW_SCORE_SQL} AS raw_score
+        {{score}} AS raw_score
     FROM suitability_candidates c
     WHERE c.analysis_run_id = :run_id
       AND c.status = 'ELIGIBLE'
-      AND c.zoning_score IS NOT NULL
-      AND c.road_score IS NOT NULL
-      AND c.equity_score IS NOT NULL
-      AND c.demand_score IS NOT NULL
+      {{present}}
+      {{scope}}
 ),
 scored AS (
     SELECT candidate_key, {_round_half_even_4("raw.raw_score")} AS cs FROM raw
@@ -191,12 +315,22 @@ WHERE cs > :this_score
    OR (cs = :this_score AND candidate_key < :this_key)
 """
 
+
+def _candidate_rank_sql(scope_sql: str, score_sql: str, present_sql: str) -> str:
+    """One candidate's custom rank, counted WITHIN the analysis scope.
+
+    Same scope as the preview, applied in the same place, so the rank a candidate's
+    detail reports is the rank its row shows in the ranking it came from.
+    """
+
+    return _CANDIDATE_RANK_SQL_TEMPLATE.format(scope=scope_sql, score=score_sql, present=present_sql)
+
 # Custom MVT: recompute the ELIGIBLE ``score`` and REVIEW ``provisional_score`` on
 # the geometries intersecting the tile only (filter-before-transform: the
 # ``geometry &&`` predicate hits the 4326 GiST index, then only matched geometries
 # are transformed for ST_AsMVTGeom). Same source-layer + property names as the
 # stored tiles so the map reuses its fill/outline expressions. NO global ranking.
-_TILE_SQL = f"""
+_TILE_SQL_TEMPLATE = f"""
 WITH base AS (
     SELECT
         ST_AsMVTGeom(
@@ -215,12 +349,13 @@ WITH base AS (
         c.stability_class AS stability_class,
         c.sigungu_region_code AS sigungu_region_code,
         c.sigungu_region_name AS sigungu_region_name,
-        CASE WHEN c.status = 'ELIGIBLE' THEN {_RAW_SCORE_SQL} END AS raw_score,
+        CASE WHEN c.status = 'ELIGIBLE' THEN {{score}} END AS raw_score,
         CASE WHEN c.status = 'REVIEW_REQUIRED'
-             THEN {_PROV_NUM_SQL} / nullif({_PROV_DEN_SQL}, 0) END AS raw_provisional
+             THEN {{prov_num}} / nullif({{prov_den}}, 0) END AS raw_provisional
     FROM suitability_candidates c
     WHERE c.analysis_run_id = :run_id
       AND c.geometry && ST_Transform(ST_TileEnvelope(:z, :x, :y), 4326)
+      {{scope}}
 )
 SELECT ST_AsMVT(t.*, '{TILE_SOURCE_LAYER}', 4096, 'geom')
 FROM (
@@ -243,6 +378,19 @@ FROM (
 ) t
 WHERE t.geom IS NOT NULL
 """
+
+
+def _tile_sql(scope_sql: str, score_sql: str, prov_num: str, prov_den: str) -> str:
+    """The custom-scenario MVT, restricted to the analysis scope.
+
+    The map must show the SAME population the ranking beside it describes. Without
+    this a 경기-scoped comparison drew 인천 cells the ranking had excluded, which is
+    the map half of the same defect.
+    """
+
+    return _TILE_SQL_TEMPLATE.format(
+        scope=scope_sql, score=score_sql, prov_num=prov_num, prov_den=prov_den
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -301,8 +449,24 @@ def _resolve_scenario_run(session: Session, run_id: int | None, requested_model:
     return resolved, run_meta, model_version, order
 
 
+def _approved_scenario_weight_profiles(model_version: str) -> Mapping[str, Any] | None:
+    """The approved weight profiles for a component model, or ``None`` if it has none.
+
+    This is the ONE fact that decides whether a user-weight scenario is meaningful
+    for a model: a recombination needs an approved reference weight vector and a
+    declared normalization, or the result is a fabricated number rather than the
+    reader's scenario.
+    """
+
+    if model_version == component_model.COMPONENT_MODEL_HISTORICAL:
+        return policy.STATIC_WEIGHT_PROFILES
+    if model_version == component_model.COMPONENT_MODEL_SUCCESSOR:
+        return successor_policy.SUCCESSOR_WEIGHT_PROFILES or None
+    return None
+
+
 def _assert_scenario_model_supported(resolved: int, model_version: str) -> None:
-    """Refuse a run whose component model has no scenario contract yet.
+    """Refuse a run whose component model has no approved weight vector.
 
     **Called after weight validation, not before.** The two refusals answer
     different questions and the more specific one has to win:
@@ -316,9 +480,26 @@ def _assert_scenario_model_supported(resolved: int, model_version: str) -> None:
 
     Checking availability first collapsed both into the second answer and threw away
     the only signal that distinguishes them.
+
+    ── WHY THIS IS NO LONGER "HISTORICAL ONLY" ─────────────────────────────────────
+    This gate used to refuse every model except the historical one. That was correct
+    when it was written and is not any more: it refused on the stated ground that no
+    approved weight vector or normalization existed for the other model, and the
+    successor model now has both — ``SUCCESSOR_WEIGHT_PROFILES`` carries an approved
+    ``baseline`` profile, ``successor.policy`` declares its percentile normalization,
+    and ``ACTIVATION_BLOCKERS`` is empty.
+
+    So the condition is now the fact it always described, asked directly, rather than
+    a model allow-list that had drifted away from it. A model with no approved profile
+    is still refused, with the same code and the same message — which is what keeps
+    this a real guard instead of a formality.
+
+    Note this decides only whether a SCENARIO may be recombined for a model. It says
+    nothing about which model is the DEFAULT any reader sees; that stays
+    ``DEFAULT_COMPONENT_MODEL``, and it is untouched.
     """
 
-    if model_version != component_model.COMPONENT_MODEL_HISTORICAL:
+    if _approved_scenario_weight_profiles(model_version) is None:
         raise HTTPException(
             status_code=422,
             detail={
@@ -332,23 +513,68 @@ def _assert_scenario_model_supported(resolved: int, model_version: str) -> None:
                 "fields": {
                     "run_id": resolved,
                     "run_component_model_version": model_version,
-                    "supported_component_model_version": (
-                        component_model.COMPONENT_MODEL_HISTORICAL
-                    ),
+                    # The models that DO have an approved weight vector, so a caller
+                    # refused here is told what it could ask for instead. Derived
+                    # from the same predicate that refused, never a hardcoded list
+                    # that could drift away from it the way the old allow-list did.
+                    "supported_component_model_versions": [
+                        version
+                        for version in component_model.KNOWN_COMPONENT_MODELS
+                        if _approved_scenario_weight_profiles(version) is not None
+                    ],
                 },
             },
         )
 
 
-def _weight_params(weights: dict[str, Decimal]) -> dict[str, Decimal]:
-    """Bound-parameter mapping for the shared scoring SQL."""
+def _tile_weight_map(
+    wz: str | None,
+    wr: str | None,
+    we: str | None,
+    wd: str | None,
+    pairs: list[str] | None,
+) -> dict[str, str]:
+    """The tile's weight map, from whichever parameter form the caller used.
 
+    `w=component:value` is the model-agnostic form and wins when present; the four
+    historical abbreviations remain for every existing caller and every cached URL.
+    A malformed pair is passed through as-is so `_validate_weights` reports it with
+    the structured weight error the caller already handles, rather than a bare 422
+    from here.
+    """
+
+    if pairs:
+        out: dict[str, str] = {}
+        for pair in pairs:
+            name, sep, value = pair.partition(":")
+            if not sep:
+                # No separator: unusable as a component/value pair. Recorded under
+                # its own text so the validator names it back to the caller.
+                out[pair] = ""
+                continue
+            out[name] = value
+        return out
     return {
-        "wz": weights["zoning"],
-        "wr": weights["road"],
-        "we": weights["equity"],
-        "wd": weights["demand"],
+        "zoning": wz or "",
+        "road": wr or "",
+        "equity": we or "",
+        "demand": wd or "",
     }
+
+
+def _weight_params(
+    weights: dict[str, Decimal],
+    model_version: str = component_model.COMPONENT_MODEL_HISTORICAL,
+) -> dict[str, Decimal]:
+    """Bound-parameter mapping for the scoring SQL of ONE component model.
+
+    The parameter NAMES must match the expressions `_score_expressions` generated,
+    which is why both go through `_weight_param_name`. The historical default keeps
+    every existing caller — and the tile URL's public wz/wr/we/wd contract — exactly
+    as it was.
+    """
+
+    return {_weight_param_name(model_version, name): value for name, value in weights.items()}
 
 
 def _score_str(value: Any) -> str | None:
@@ -435,6 +661,8 @@ def _build_candidate_detail(
     run_meta: Any,
     run_model_version: str,
     run_component_order: list[str],
+    scope_sql: str = "",
+    scope_params: dict[str, Any] | None = None,
 ) -> UserScenarioCandidateDetailOut:
     """One candidate's scenario result. Reuses the stored candidate row + provenance.
 
@@ -482,13 +710,19 @@ def _build_candidate_detail(
     if status == policy.STATUS_ELIGIBLE and all_present:
         score_dec = scenario.scenario_score(components, weights)
         custom_score = format(score_dec, "f")
+        # WITHIN THE SCOPE, not within the capital region: a detail opened from a
+        # 경기-scoped ranking must report the rank that ranking showed.
+        score_sql, _prov_num, _prov_den, present_sql = _score_expressions(
+            run_model_version, run_component_order
+        )
         rank = session.execute(
-            text(_CANDIDATE_RANK_SQL),
+            text(_candidate_rank_sql(scope_sql, score_sql, present_sql)),
             {
                 "run_id": resolved_run,
                 "this_score": score_dec,
                 "this_key": row["candidate_key"],
-                **_weight_params(weights),
+                **_weight_params(weights, run_model_version),
+                **(scope_params or {}),
             },
         ).scalar_one()
         custom_rank = int(rank)
@@ -589,14 +823,29 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
     canonical = scenario.canonical_weight_strings(weights, run_component_order)
     full_hash = scenario.scenario_hash(resolved, weights)
 
+    # THE ANALYSIS SCOPE. Omitted → 수도권 전체, which is the query this endpoint has
+    # always run. Given, the ranking, `ranking_population` and every rank below are
+    # computed WITHIN that 범위, so an A/B comparison compares two weight vectors
+    # over one fixed candidate universe rather than two different geographies.
+    scope_sql, scope_params = _scope_predicate(req.sido, req.sigungu)
+
+    # WHERE THIS RUN'S COMPONENT SCORES LIVE. A historical run reads its four legacy
+    # columns; any later model reads its own `component_scores` map. Reading the
+    # wrong one returns zero rows rather than failing, so it is resolved from the
+    # run's OWN model identity, never assumed.
+    score_sql, _prov_num, _prov_den, present_sql = _score_expressions(
+        run_model_version, run_component_order
+    )
+
     rows = (
         session.execute(
-            text(_PREVIEW_SQL),
+            text(_preview_sql(scope_sql, score_sql, present_sql)),
             {
                 "run_id": resolved,
                 "profile": req.compare_profile,
                 "top_n": req.top_n,
-                **_weight_params(weights),
+                **_weight_params(weights, run_model_version),
+                **scope_params,
             },
         )
         .mappings()
@@ -653,6 +902,10 @@ def preview(session: SessionDep, req: UserWeightScenarioRequest) -> UserWeightSc
             run_meta=run_meta,
             run_model_version=run_model_version,
             run_component_order=run_component_order,
+            # The SAME scope the ranking above used, so the embedded detail's
+            # `custom_rank` matches the row the reader selected it from.
+            scope_sql=scope_sql,
+            scope_params=scope_params,
         )
 
     return UserWeightScenarioPreviewOut(
@@ -698,6 +951,7 @@ def candidate_detail(
     _assert_scenario_model_supported(resolved, run_model_version)
     canonical = scenario.canonical_weight_strings(weights, run_component_order)
     full_hash = scenario.scenario_hash(resolved, weights)
+    scope_sql, scope_params = _scope_predicate(req.sido, req.sigungu)
     return _build_candidate_detail(
         session,
         resolved_run=resolved,
@@ -709,6 +963,8 @@ def candidate_detail(
         run_meta=run_meta,
         run_model_version=run_model_version,
         run_component_order=run_component_order,
+        scope_sql=scope_sql,
+        scope_params=scope_params,
     )
 
 
@@ -717,11 +973,27 @@ def scenario_tile(
     session: SessionDep,
     request: Request,
     run_id: int,
-    wz: str = Query(...),
-    wr: str = Query(...),
-    we: str = Query(...),
-    wd: str = Query(...),
+    # HISTORICAL weights, by their four public abbreviations. Optional now: a
+    # successor tile carries its weights through `w` below instead, because
+    # `we` would abbreviate the successor's `existing_burden` just as naturally as
+    # it abbreviates `equity`, and a parameter name that can be reinterpreted is
+    # exactly how one model's weight silently becomes another's.
+    wz: str | None = Query(default=None),
+    wr: str | None = Query(default=None),
+    we: str | None = Query(default=None),
+    wd: str | None = Query(default=None),
+    # ANY model's weights, as explicit `component=decimal` pairs. Repeatable, and
+    # the component names are checked against the RUN's own `component_order`, so a
+    # pair naming another model's component is refused rather than ignored.
+    w: list[str] | None = Query(default=None),
     scenario_hash: str = Query(...),
+    # The ANALYSIS SCOPE, so the map draws the same population the ranking beside it
+    # describes. Both omitted → 수도권 전체, the tile this endpoint has always served.
+    # They are part of the URL, so a scoped tile stays fully determined by its URL
+    # and its ETag (which binds them below) can never serve one 범위's bytes for
+    # another's.
+    sido: str | None = Query(default=None),
+    sigungu: list[str] | None = Query(default=None),
     z: int = Path(..., ge=MVT_MIN_ZOOM, le=MVT_MAX_ZOOM),
     x: int = Path(..., ge=0),
     y: int = Path(..., ge=0),
@@ -748,9 +1020,7 @@ def scenario_tile(
     resolved, _run_meta, run_model_version, run_component_order = _resolve_scenario_run(
         session, run_id, None
     )
-    weights = _validate_weights(
-        {"zoning": wz, "road": wr, "equity": we, "demand": wd}, run_component_order
-    )
+    weights = _validate_weights(_tile_weight_map(wz, wr, we, wd, w), run_component_order)
     _assert_scenario_model_supported(resolved, run_model_version)
     expected_hash = scenario.scenario_hash(run_id, weights)
     if scenario_hash != expected_hash:
@@ -766,14 +1036,33 @@ def scenario_tile(
     # ETag binds run + canonical weights (via the hash prefix) + z/x/y; the URL
     # fully determines the bytes. Bounded one-day browser cache (a temporary
     # experiment, not a stored immutable official profile).
-    etag = f'"suitscn-{resolved}-{scenario.short_scenario_hash(expected_hash)}-{z}-{x}-{y}"'
+    scope_sql, scope_params = _scope_predicate(sido, sigungu)
+    # The scope is IN the ETag: two tiles that differ only by 범위 are different
+    # bytes, so a cached 수도권 전체 tile can never be replayed for a 경기 request.
+    # `sorted` over the bound VALUES makes the key order-independent, matching the
+    # query, which de-duplicates and does not care about the order codes arrived in.
+    scope_key = "all" if not scope_params else "-".join(sorted(map(str, scope_params.values())))
+    etag = (
+        f'"suitscn-{resolved}-{scenario.short_scenario_hash(expected_hash)}'
+        f'-{scope_key}-{z}-{x}-{y}"'
+    )
     cache_headers = {"Cache-Control": SCENARIO_TILE_CACHE_CONTROL, "ETag": etag}
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=cache_headers)
 
+    score_sql, prov_num, prov_den, _present = _score_expressions(
+        run_model_version, run_component_order
+    )
     raw = session.execute(
-        text(_TILE_SQL),
-        {"run_id": resolved, "z": z, "x": x, "y": y, **_weight_params(weights)},
+        text(_tile_sql(scope_sql, score_sql, prov_num, prov_den)),
+        {
+            "run_id": resolved,
+            "z": z,
+            "x": x,
+            "y": y,
+            **_weight_params(weights, run_model_version),
+            **scope_params,
+        },
     ).scalar()
     body = bytes(raw) if raw is not None else b""
     return Response(content=body, media_type=MVT_CONTENT_TYPE, headers=cache_headers)

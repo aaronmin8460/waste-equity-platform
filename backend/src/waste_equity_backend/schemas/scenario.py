@@ -18,6 +18,36 @@ from pydantic import BaseModel, Field
 CompareProfile = Literal["baseline", "equal", "equity_focused", "access_focused", "critic"]
 
 
+class ScenarioScope(BaseModel):
+    """The ANALYSIS SCOPE a scenario is ranked within — the same one ① 지역 선택 sets.
+
+    A user scenario compares two WEIGHT VECTORS. It must never also compare two
+    different geographic universes: if the reader narrowed the analysis to 경기 on
+    후보지 심층 분석, the A/B comparison has to rank 경기 candidates against each
+    other, not re-open the whole capital region. Before this existed the preview was
+    unconditionally population-wide, so a narrowed scope was silently discarded and
+    Page 5 answered a different question from the one Page 4 asked.
+
+    Both fields are OPTIONAL and both omitted means 수도권 전체 — the previous
+    behaviour, unchanged, so every existing caller keeps the population it had.
+
+    Codes are the SGIS region-code space stored on ``suitability_candidates``
+    (``KR-SGIS-11`` / ``KR-SGIS-23`` / ``KR-SGIS-31`` for 시·도), normalized by the
+    same ``_canonical_region_code`` the ``/suitability/candidates`` route uses, so a
+    scope means exactly the same rows on both endpoints. A code from another space
+    normalizes to one that exists nowhere and therefore matches NOTHING, rather than
+    silently selecting a different region.
+    """
+
+    # A 시·도 scope. Mutually exclusive with ``sigungu`` in practice (the client
+    # serializes exactly one), but both are accepted and simply AND together, which
+    # is the same composition ``/suitability/candidates`` applies.
+    sido: str | None = None
+    # Repeatable 시·군·구 scope. An empty list means NO 시·군·구 restriction — never
+    # "match nothing", so a cleared multi-select cannot silently blank a comparison.
+    sigungu: list[str] = Field(default_factory=list)
+
+
 class UserWeightScenarioRequest(BaseModel):
     """Preview request. ``run_id`` omitted → latest succeeded run.
 
@@ -36,6 +66,9 @@ class UserWeightScenarioRequest(BaseModel):
     compare_profile: CompareProfile = "baseline"
     top_n: int = Field(default=10, ge=1, le=50)
     selected_candidate_id: int | None = None
+    # The analysis scope to rank WITHIN. Omitted → 수도권 전체 (see ScenarioScope).
+    sido: str | None = None
+    sigungu: list[str] = Field(default_factory=list)
 
 
 class UserScenarioCandidateDetailRequest(BaseModel):
@@ -45,6 +78,10 @@ class UserScenarioCandidateDetailRequest(BaseModel):
     component_model_version: str | None = None
     weights: dict[str, str]
     compare_profile: CompareProfile = "baseline"
+    # The SAME scope the preview was ranked within, so ``custom_rank`` here is the
+    # candidate's position in that scope rather than in the whole capital region.
+    sido: str | None = None
+    sigungu: list[str] = Field(default_factory=list)
 
 
 class ScenarioContribution(BaseModel):

@@ -449,7 +449,11 @@ describe("accessibility and layout", () => {
 
   it("bounds its own height and keeps long class names from overflowing", () => {
     const { container } = renderOpen(baseProps({ mode: "dominant", classLevel: 3 }));
-    const body = container.querySelector(".max-h-\\[52vh\\]");
+    // 28vh, not 52vh: TWO of these controls stack in one page-owned column on the
+    // suitability map, and at 52vh each an expanded control pushed the one below it
+    // under the map legend, where it could not be clicked. The contract this test is
+    // about is unchanged — the body is height-BOUNDED and scrolls internally.
+    const body = container.querySelector(".max-h-\\[28vh\\]");
     expect(body).not.toBeNull();
     expect(body!.className).toContain("overflow-y-auto");
     // The card is width-constrained by its parent stack; rows wrap rather than

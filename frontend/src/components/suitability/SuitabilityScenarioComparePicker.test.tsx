@@ -21,6 +21,7 @@ import {
   resolveComparisonPair,
   type SavedScenario,
 } from "../../lib/savedScenarios";
+import { COMPONENT_MODEL_HISTORICAL } from "../../lib/componentModelWeights";
 
 const WEIGHTS = { zoning: "0.40000000", road: "0.30000000", equity: "0.20000000", demand: "0.10000000" };
 
@@ -30,6 +31,10 @@ function scenario(overrides: Partial<SavedScenario> = {}): SavedScenario {
     id: "s1",
     name: "형평성 우선안",
     weights: WEIGHTS,
+    // These fixtures are HISTORICAL Z/R/E/D vectors, so they carry the historical
+    // model tag. A successor scenario is a different namespace and is fixtured
+    // separately where it is the subject.
+    componentModelVersion: COMPONENT_MODEL_HISTORICAL,
     runId: 47,
     profileSource: null,
     createdAt: "2026-01-01T00:00:00.000Z",

@@ -69,6 +69,20 @@ import Home from "./page";
 import * as api from "../lib/api";
 import { rankingCollection } from "./homeApiMock";
 
+/**
+ * The weight a factor card is showing.
+ *
+ * The card renders `가중치 설정 [ NN ] %` — Figma 356:582's own control — which is a
+ * live `<input>` in the Page-4 workspace and a read-out `<span>` in the single-column
+ * shape. Both carry the same testid and the same number; only where the number lives
+ * differs, so the assertions read whichever the element is.
+ */
+function factorWeightText(testId: string): string {
+  const el = screen.getByTestId(testId);
+  return el instanceof HTMLInputElement ? `${el.value}%` : (el.textContent ?? "");
+}
+
+
 // --------------------------------------------------------------------------- //
 // Fixtures
 // --------------------------------------------------------------------------- //
@@ -436,7 +450,7 @@ describe("후보지 점수 — the active scoring basis", () => {
     expect(cards).toContain("도로 근접성 대리지표(R)");
     expect(cards).toContain("기존 지역 부담(E)");
     expect(cards).toContain("폐기물 처리 수요(D)");
-    expect(screen.getByTestId("factor-weight-zoning").textContent).toContain("40%");
+    expect(factorWeightText("factor-weight-zoning")).toContain("40%");
   });
 
   it("follows the profile radio and describes CRITIC as data-derived, never importance", async () => {

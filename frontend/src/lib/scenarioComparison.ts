@@ -45,10 +45,16 @@
  * `components/suitability/useScenarioComparison.ts`.
  */
 
-import { COMPONENT_MODEL_HISTORICAL } from "./api";
 import type { SuitabilityProfile, UserScenarioPreview, UserScenarioWeights } from "./api";
 import { COMPONENT_META, COMPONENT_ORDER, plainError, type ScoreComponent } from "./glossary";
 import type { ComparisonResolution, ComparisonSlot, SavedScenario } from "./savedScenarios";
+import {
+  COMPONENT_MODEL_HISTORICAL,
+  COMPONENT_MODEL_SUCCESSOR,
+  SUCCESSOR_COMPONENT_ORDER,
+  type ComponentModelVersion,
+} from "./componentModelWeights";
+import { V3_COMPONENT_META, type V3Component } from "./suitabilityV3";
 import { scenarioRunState } from "./savedScenarios";
 
 // --------------------------------------------------------------------------- //
@@ -103,7 +109,19 @@ export type ComparisonSideState =
   | "OTHER_RUN"
   | "PREVIEW_ERROR"
   /** The run on screen could not be loaded, so this side could not be checked. */
-  | "RUN_UNKNOWN";
+  | "RUN_UNKNOWN"
+  /**
+   * The scenario was authored over a DIFFERENT component model from the one this
+   * comparison runs on.
+   *
+   * A legacy Z/R/E/D scenario opened on a successor comparison lands here. It is not
+   * an error and not a missing scenario — the saved vector is perfectly valid, just
+   * over a namespace whose four components are different measurements. Recombining
+   * it here would rename `road` to `resident_impact` by position, which is the one
+   * translation the component-model contract forbids outright. So it is surfaced as
+   * incompatible and the reader is asked to save a new one.
+   */
+  | "OTHER_MODEL";
 
 /**
  * The run the comparison is validated against, and whether it is known YET.
@@ -189,6 +207,14 @@ export type ScenarioComparisonStatus =
  * exactly the value the `OTHER_RUN` check compares against.
  */
 export interface ScenarioComparison {
+  /**
+   * The component model this comparison ran on.
+   *
+   * Carried on the result, not only used to build it, because a detached artifact —
+   * an exported workbook — has no screen around it to say which four measurements
+   * its columns are.
+   */
+  componentModelVersion: ComponentModelVersion;
   runId: number | null;
   sideA: ComparisonSide;
   sideB: ComparisonSide;
@@ -236,12 +262,24 @@ export function comparisonSideBlock(
   scenario: SavedScenario | null,
   requestedId: string | null,
   activeRunId: number | null,
-): Extract<ComparisonSideState, "EMPTY" | "MISSING" | "OTHER_RUN"> | null {
+  /**
+   * The component model this comparison runs on. A scenario authored over another
+   * model is blocked rather than recombined — see `OTHER_MODEL`. Omitted keeps the
+   * previous behaviour for any caller that has not been migrated.
+   */
+  componentModelVersion?: ComponentModelVersion,
+): Extract<ComparisonSideState, "EMPTY" | "MISSING" | "OTHER_RUN" | "OTHER_MODEL"> | null {
   if (requestedId === null) return "EMPTY";
   if (scenario === null) return "MISSING";
   // `activeRunId === null` resolves to OTHER_RUN inside `scenarioRunState`: an
   // unknown run is not a matching run, and must never be assumed to be one.
   if (scenarioRunState(scenario, activeRunId) === "OTHER_RUN") return "OTHER_RUN";
+  if (
+    componentModelVersion !== undefined &&
+    scenario.componentModelVersion !== componentModelVersion
+  ) {
+    return "OTHER_MODEL";
+  }
   return null;
 }
 
@@ -255,6 +293,7 @@ function buildSide(
   scenario: SavedScenario | null,
   run: ActiveRunResolution,
   outcome: ComparisonSideOutcome | null,
+  componentModelVersion: ComponentModelVersion = COMPONENT_MODEL_HISTORICAL,
 ): ComparisonSide {
   const base = {
     slot,
@@ -277,7 +316,7 @@ function buildSide(
   if (run.state === "LOADING") return { ...base, state: "LOADING" };
   if (run.state === "ERROR") return { ...base, state: "RUN_UNKNOWN" };
 
-  const block = comparisonSideBlock(scenario, requestedId, run.runId);
+  const block = comparisonSideBlock(scenario, requestedId, run.runId, componentModelVersion);
   if (block !== null) return { ...base, state: block };
 
   // Cleared for preview but nothing has come back yet.
@@ -300,7 +339,11 @@ function buildSide(
   // resident_impact / land_conversion, and every Z/R/E/D lookup on this page would
   // read `undefined` — printing one model's numbers under another model's four
   // labels rather than failing. A wrong-model comparison is not a comparison.
-  if (outcome.preview.component_model_version !== COMPONENT_MODEL_HISTORICAL) {
+  // …and the model it must match is the one this comparison RUNS ON, not a fixed
+  // historical constant. The guard's purpose is unchanged — a preview from another
+  // model would carry another namespace's components, and every lookup on this page
+  // would read `undefined`, printing one model's numbers under another's labels.
+  if (outcome.preview.component_model_version !== componentModelVersion) {
     return {
       ...base,
       state: "PREVIEW_ERROR",
@@ -380,9 +423,11 @@ export function buildScenarioComparison(
   resolution: ComparisonResolution,
   run: ActiveRunResolution,
   outcomes: { a: ComparisonSideOutcome | null; b: ComparisonSideOutcome | null },
+  /** The component model this comparison runs on. Both sides are held to it. */
+  componentModelVersion: ComponentModelVersion = COMPONENT_MODEL_HISTORICAL,
 ): ScenarioComparison {
-  const sideA = buildSide("A", resolution.a.id, resolution.a.scenario, run, outcomes.a);
-  const sideB = buildSide("B", resolution.b.id, resolution.b.scenario, run, outcomes.b);
+  const sideA = buildSide("A", resolution.a.id, resolution.a.scenario, run, outcomes.a, componentModelVersion);
+  const sideB = buildSide("B", resolution.b.id, resolution.b.scenario, run, outcomes.b, componentModelVersion);
   // The URL decoder already drops a `cmpB` equal to `cmpA`, and Page 4D refuses to
   // assign one scenario to both slots. This is the third guard, on the value that
   // actually reaches the screen, because neither of those two runs on a hand-typed
@@ -392,6 +437,7 @@ export function buildScenarioComparison(
 
   return {
     runId: run.state === "RESOLVED" ? run.runId : null,
+    componentModelVersion,
     sideA,
     sideB,
     status: summarise(sideA, sideB, run, duplicate),
@@ -400,7 +446,7 @@ export function buildScenarioComparison(
 }
 
 // --------------------------------------------------------------------------- //
-// Z/R/E/D weight comparison rows
+// Weight comparison rows — over whichever model's components
 // --------------------------------------------------------------------------- //
 
 /**
@@ -421,10 +467,12 @@ export function buildScenarioComparison(
  * served demand, not a future-generation forecast.
  */
 export interface ComparisonWeightRow {
-  component: ScoreComponent;
+  /** The component name in ITS OWN model's namespace — historical OR successor. */
+  component: string;
   /** "용도지역 호환성", from the central glossary. */
   label: string;
-  /** "Z" | "R" | "E" | "D". Only ever rendered next to `label`. */
+  /** "Z" | "R" | "E" | "D" for the historical model; empty for the successor, whose
+   *  components have no single-letter code. Only ever rendered next to `label`. */
   code: string;
   /** The exact served decimal strings, unrounded. `null` when that side is not READY. */
   aWeight: string | null;
@@ -452,9 +500,30 @@ function percentOf(value: string | undefined): number | null {
 export function comparisonWeightRows(
   aWeights: UserScenarioWeights | null,
   bWeights: UserScenarioWeights | null,
+  /**
+   * The component model both vectors are defined over.
+   *
+   * Without it this walked the historical Z/R/E/D glossary unconditionally, so a
+   * successor comparison printed four historical factor names with empty values —
+   * the reader's own weights labelled as measurements they never chose. Defaulted to
+   * historical so any unmigrated caller is unchanged.
+   */
+  componentModelVersion: ComponentModelVersion = COMPONENT_MODEL_HISTORICAL,
 ): ComparisonWeightRow[] {
-  return COMPONENT_ORDER.map((component) => {
-    const meta = COMPONENT_META[component];
+  const successor = componentModelVersion === COMPONENT_MODEL_SUCCESSOR;
+  const components = successor
+    ? SUCCESSOR_COMPONENT_ORDER
+    : (COMPONENT_ORDER as readonly string[]);
+  return components.map((component) => {
+    const meta = successor
+      ? {
+          // The successor components have no single-letter code; the label carries
+          // the whole identity, so the code slot stays empty rather than borrowing
+          // a Z/R/E/D letter that means something else.
+          primary: V3_COMPONENT_META[component as V3Component].label,
+          code: "",
+        }
+      : COMPONENT_META[component as ScoreComponent];
     const aWeight = aWeights?.[component] ?? null;
     const bWeight = bWeights?.[component] ?? null;
     const aPercent = percentOf(aWeight ?? undefined);

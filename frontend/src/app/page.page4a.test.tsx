@@ -52,6 +52,20 @@ import { COMPONENT_META, COMPONENT_ORDER } from "../lib/glossary";
 import Home from "./page";
 import * as api from "../lib/api";
 
+/**
+ * The weight a factor card is showing.
+ *
+ * The card renders `가중치 설정 [ NN ] %` — Figma 356:582's own control — which is a
+ * live `<input>` in the Page-4 workspace and a read-out `<span>` in the single-column
+ * shape. Both carry the same testid and the same number; only where the number lives
+ * differs, so the assertions read whichever the element is.
+ */
+function factorWeightText(testId: string): string {
+  const el = screen.getByTestId(testId);
+  return el instanceof HTMLInputElement ? `${el.value}%` : (el.textContent ?? "");
+}
+
+
 const DISTRIBUTION = {
   runId: 47,
   profile: "baseline" as const,
@@ -309,10 +323,10 @@ describe("the four factor cards", () => {
     await enterDeepAnalysis();
     // The mocked run's baseline vector is 40/30/20/10 — the served numbers, not a
     // set this component chose.
-    expect(screen.getByTestId("factor-weight-zoning").textContent).toContain("40%");
-    expect(screen.getByTestId("factor-weight-road").textContent).toContain("30%");
-    expect(screen.getByTestId("factor-weight-equity").textContent).toContain("20%");
-    expect(screen.getByTestId("factor-weight-demand").textContent).toContain("10%");
+    expect(factorWeightText("factor-weight-zoning")).toContain("40%");
+    expect(factorWeightText("factor-weight-road")).toContain("30%");
+    expect(factorWeightText("factor-weight-equity")).toContain("20%");
+    expect(factorWeightText("factor-weight-demand")).toContain("10%");
     const bar = screen.getByTestId("weight-distribution-bar");
     expect(
       (within(bar).getByTestId("weight-segment-zoning") as HTMLElement).style.width,
@@ -325,7 +339,7 @@ describe("the four factor cards", () => {
     await enterDeepAnalysis();
     fireEvent.click(screen.getByTestId("profile-radio-equal"));
     await waitFor(() =>
-      expect(screen.getByTestId("factor-weight-zoning").textContent).toContain("25%"),
+      expect(factorWeightText("factor-weight-zoning")).toContain("25%"),
     );
   });
 
@@ -389,6 +403,33 @@ describe("the A/B/C bands", () => {
     for (const verdict of ["스크리닝 통과", "추가 검토 필요", "스크리닝 제외"]) {
       expect(bands.textContent, verdict).not.toContain(verdict);
     }
+  });
+
+  it("carries the band BESIDE THE REGION NAME on every ranking row, letter and all", async () => {
+    // The page-4 기술 참고사항: "ABC 등급 색은 초록,노랑,빨강으로. 그리고 그 색이
+    // 아래 [순위보기]에 뜨는 지역명 옆에 반영되도록."
+    await enterDeepAnalysis();
+    await waitFor(() => expect(screen.getByTestId("relative-grade-bands")).toBeDefined());
+    const rows = within(screen.getByTestId("top-candidates")).getAllByTestId("top-candidate-item");
+    const chip = within(rows[0]).getByTestId("relative-grade-chip");
+    // The row's fixture score (88.1234) is above P75 (57.811), so the band is A.
+    expect(chip.getAttribute("data-grade")).toBe("A");
+    // The LETTER is printed and the full band name is the accessible name, so the
+    // green/amber/red fill is never the only carrier of the band.
+    expect(chip.textContent).toContain("A");
+    expect(chip.textContent).toContain("상위 구간");
+    expect(chip.className).toContain("wep-grade-A");
+    // The chip sits beside the region name, inside the row's name group.
+    expect(rows[0].textContent).toContain("강화군");
+  });
+
+  it("shows no chip at all when the bands could not be established", async () => {
+    // Never a guessed band: an unavailable distribution leaves the rows bare.
+    computeGradeDistribution.mockResolvedValue(null);
+    await enterDeepAnalysis();
+    await waitFor(() => expect(screen.getByTestId("relative-grade-unavailable")).toBeDefined());
+    const rows = within(screen.getByTestId("top-candidates")).getAllByTestId("top-candidate-item");
+    expect(within(rows[0]).queryByTestId("relative-grade-chip")).toBeNull();
   });
 
   it("keeps the official screening statuses on their OWN surface", async () => {

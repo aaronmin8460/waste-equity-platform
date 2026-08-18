@@ -829,12 +829,43 @@ export function fetchSuitabilityPolicy(): Promise<SuitabilityPolicy> {
   return fetchJson<SuitabilityPolicy>("/api/v1/suitability/policies");
 }
 
-export function fetchSuitabilityLatestRun(): Promise<SuitabilityRun> {
-  return fetchJson<SuitabilityRun>("/api/v1/suitability/runs/latest");
+export function fetchSuitabilityLatestRun(
+  /**
+   * Resolve the latest run WITHIN this component model.
+   *
+   * ⚠️ THE MOST IMPORTANT PIN OF THE SET. Default-run resolution selects the latest
+   * succeeded run REGARDLESS of component model, which is why the successor policy
+   * records it as the hazard that would let a successor run silently capture every
+   * default view. It is also the run object the whole page reasons about — pinning
+   * the summary while leaving this unpinned produced exactly the split state this
+   * transition exists to prevent: a V3 summary beside a historical run, and
+   * therefore historical factor cards under a V3 request.
+   *
+   * Omitted → the global default (still historical), unchanged for every other page.
+   */
+  componentModelVersion?: string,
+): Promise<SuitabilityRun> {
+  const query = componentModelVersion
+    ? `?component_model_version=${encodeURIComponent(componentModelVersion)}`
+    : "";
+  return fetchJson<SuitabilityRun>(`/api/v1/suitability/runs/latest${query}`);
 }
 
-export function fetchSuitabilitySummary(profile: SuitabilityProfile): Promise<SuitabilitySummary> {
-  return fetchJson<SuitabilitySummary>(`/api/v1/suitability/summary?profile=${profile}`);
+export function fetchSuitabilitySummary(
+  profile: SuitabilityProfile,
+  /**
+   * Resolve the run WITHIN this component model.
+   *
+   * Omitted → `DEFAULT_COMPONENT_MODEL` (still historical), which is what every
+   * unpinned caller gets. Page 4 and Page 5 pin the successor model, so the run they
+   * describe, the components they render and the scenario they recombine are all one
+   * model — rather than V3 controls drawn over a historical run.
+   */
+  componentModelVersion?: string,
+): Promise<SuitabilitySummary> {
+  const params = new URLSearchParams({ profile });
+  if (componentModelVersion) params.set("component_model_version", componentModelVersion);
+  return fetchJson<SuitabilitySummary>(`/api/v1/suitability/summary?${params.toString()}`);
 }
 
 /**
@@ -870,6 +901,12 @@ export interface CandidateQuery {
   sigungu?: string[];
   /** Ranking direction. Omitted ⇒ the server default, `score_desc`. */
   sort?: SuitabilitySort;
+  /**
+   * Resolve the run WITHIN this component model. Omitted ⇒ the global default
+   * (historical). Page 4 pins the successor model so its ranking, its summary and
+   * its scenario all describe one model.
+   */
+  componentModelVersion?: string;
   top?: number;
   limit?: number;
   /**
@@ -912,6 +949,11 @@ export function fetchSuitabilityCandidates(
   if (query.runId !== undefined) params.set("run_id", String(query.runId));
   if (query.offset !== undefined) params.set("offset", String(query.offset));
   if (query.minScore !== undefined) params.set("min_score", String(query.minScore));
+  // The run is resolved WITHIN this model, so a scoped ranking and the summary above
+  // can never describe runs of two different models.
+  if (query.componentModelVersion) {
+    params.set("component_model_version", query.componentModelVersion);
+  }
   if (query.maxScore !== undefined) params.set("max_score", String(query.maxScore));
   return fetchJsonSignal<SuitabilityCandidateCollection>(
     `/api/v1/suitability/candidates?${params.toString()}`,
@@ -968,9 +1010,17 @@ export function fetchSuitabilityCandidateDetail(
  * Worker whose base URL is a blob: URL — a bare relative path would not resolve
  * there. No host, IP, or domain is ever hardcoded.
  */
-export function suitabilityTileUrl(runId: number, profile: SuitabilityProfile): string {
+export function suitabilityTileUrl(
+  runId: number,
+  profile: SuitabilityProfile,
+  /** Kept for symmetry with the other reads; the run id already fixes the model. */
+  componentModelVersion?: string,
+): string {
   const base = apiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
-  return `${base}/api/v1/suitability/tiles/${runId}/${profile}/{z}/{x}/{y}.mvt`;
+  const query = componentModelVersion
+    ? `?component_model_version=${encodeURIComponent(componentModelVersion)}`
+    : "";
+  return `${base}/api/v1/suitability/tiles/${runId}/${profile}/{z}/{x}/{y}.mvt${query}`;
 }
 
 /** Vector-tile source-layer name the map binds its candidate layers to. */
@@ -1402,13 +1452,19 @@ export function landCoverCellTileUrl(statisticsVersionId: number): string {
 /** Direction a candidate's rank moved under the scenario vs the comparison profile. */
 export type UserScenarioRankDirection = "up" | "down" | "same";
 
-/** Canonical Z/R/E/D weights as exact 8-dp decimal strings (e.g. "0.35000000"). */
-export interface UserScenarioWeights {
-  zoning: string;
-  road: string;
-  equity: string;
-  demand: string;
-}
+/**
+ * Canonical weights as exact 8-dp decimal strings (e.g. "0.35000000"), over the
+ * components of ONE component model.
+ *
+ * A weight vector only means something over the namespace it was authored for, and
+ * the historical and successor namespaces are disjoint. This is therefore an open
+ * `{component: decimal}` map at the WIRE level — matching the backend's own
+ * `weights: dict[str, str]` — while `lib/componentModelWeights.ts` carries the
+ * model-discriminated types the app reasons with. The request's
+ * `component_model_version` is what says which namespace a given map is in, and the
+ * backend validates the map against that run's `component_order`.
+ */
+export type UserScenarioWeights = Record<string, string>;
 
 /**
  * The component model a run was scored under.
@@ -1435,6 +1491,17 @@ export interface UserScenarioRequest {
   compare_profile: SuitabilityProfile;
   top_n?: number;
   selected_candidate_id?: number | null;
+  /**
+   * THE ANALYSIS SCOPE the scenario is ranked WITHIN — the same ① 지역 선택 the
+   * candidates endpoint takes, in the same SGIS code space and with the same
+   * serializer (`scopeToQuery`).
+   *
+   * A scenario compares two WEIGHT VECTORS; it must never also compare two different
+   * geographic universes. Omitting both is 수도권 전체, which is what every caller
+   * sent before this existed, so the default is unchanged.
+   */
+  sido?: string | null;
+  sigungu?: string[];
 }
 
 export interface UserScenarioContribution {
@@ -1606,12 +1673,44 @@ export function userScenarioTileUrl(
   runId: number,
   weights: UserScenarioWeights,
   scenarioHash: string,
+  /**
+   * The analysis scope, so the MAP draws the same population the ranking beside it
+   * describes. Omitted → 수도권 전체, the tile this function has always produced.
+   * It goes in the URL like every other tile parameter, which is what keeps a tile
+   * fully determined by its URL (and its cache entry per 범위).
+   */
+  scope?: { sido?: string; sigungu?: string[] },
 ): string {
   const base = apiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
+  const scopeQuery = [
+    scope?.sido ? `&sido=${encodeURIComponent(scope.sido)}` : "",
+    ...(scope?.sigungu ?? []).map((code) => `&sigungu=${encodeURIComponent(code)}`),
+  ].join("");
+  /**
+   * Weights as explicit `w=component:value` pairs whenever the vector is NOT the
+   * historical four.
+   *
+   * `wz`/`wr`/`we`/`wd` are historical abbreviations. `we` would abbreviate the
+   * successor's `existing_burden` as naturally as it abbreviates `equity`, so
+   * reusing them for another model is how one model's weight silently becomes
+   * another's. The historical form is kept exactly as it was, so every cached tile
+   * URL and every existing caller is unchanged.
+   */
+  const historical =
+    typeof weights.zoning === "string" &&
+    typeof weights.road === "string" &&
+    typeof weights.equity === "string" &&
+    typeof weights.demand === "string" &&
+    Object.keys(weights).length === 4;
+  const weightQuery = historical
+    ? `wz=${weights.zoning}&wr=${weights.road}&we=${weights.equity}&wd=${weights.demand}`
+    : Object.entries(weights)
+        .map(([name, value]) => `w=${encodeURIComponent(`${name}:${value}`)}`)
+        .join("&");
   return (
     `${base}/api/v1/suitability/scenarios/tiles/${runId}/{z}/{x}/{y}.mvt` +
-    `?wz=${weights.zoning}&wr=${weights.road}&we=${weights.equity}&wd=${weights.demand}` +
-    `&scenario_hash=${scenarioHash}`
+    `?${weightQuery}` +
+    `&scenario_hash=${scenarioHash}${scopeQuery}`
   );
 }
 

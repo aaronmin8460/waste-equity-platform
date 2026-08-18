@@ -41,4 +41,46 @@ test.describe("Page 4 visual QA capture", () => {
     await page.screenshot({ path: `${OUT}/${tag}-full-1440.png`, fullPage: true });
     testInfo.annotations.push({ type: "out", description: OUT });
   });
+
+  /**
+   * The 사용자 지정 state — Figma 356:582's expanded panel, which is a DIFFERENT
+   * screen state from the closed card above and therefore needs its own capture:
+   * the four weight inputs carry edited values, the 사용자 지정 pill is current, and
+   * ③ plus the map are showing the applied scenario's result rather than the
+   * profile's.
+   */
+  test("captures the 사용자 지정 weight state", async ({ page }, testInfo) => {
+    await openScore(page);
+    // 40/30/20/10 → 50/30/10/10, which totals exactly 100 and is therefore appliable.
+    await page.getByTestId("factor-weight-zoning").fill("50");
+    await page.getByTestId("factor-weight-equity").fill("10");
+    await page.getByTestId("custom-weight-apply").click();
+    await page.getByTestId("custom-weight-applied").waitFor({ state: "visible", timeout: 20000 });
+    await page.waitForTimeout(1500);
+    const tag = process.env.PAGE4_QA_TAG ?? "pass";
+    await page.screenshot({ path: `${OUT}/${tag}-custom-fold-1440x900.png` });
+    await page.screenshot({ path: `${OUT}/${tag}-custom-full-1440.png`, fullPage: true });
+    testInfo.annotations.push({ type: "out", description: OUT });
+  });
+
+  /**
+   * The two map-overlay controls, both EXPANDED.
+   *
+   * The page-4 기술 참고사항 asks that expanding 내륙습지 목록 push 토지피복 격자 통계
+   * down instead of overlapping it. They share a page-owned flex column, so this
+   * capture is the check that the column is actually doing that at 1440×900.
+   */
+  test("captures both map overlays expanded", async ({ page }, testInfo) => {
+    await openScore(page);
+    for (const testId of ["wetland-layer-summary", "land-cover-layer-summary"]) {
+      const summary = page.getByTestId(testId);
+      if ((await summary.count()) === 0) continue;
+      await summary.first().click();
+      await page.waitForTimeout(300);
+    }
+    await page.waitForTimeout(600);
+    const tag = process.env.PAGE4_QA_TAG ?? "pass";
+    await page.screenshot({ path: `${OUT}/${tag}-overlays-1440x900.png` });
+    testInfo.annotations.push({ type: "out", description: OUT });
+  });
 });

@@ -400,6 +400,8 @@ export interface ScenarioRankingComparison {
  */
 export function buildScenarioRankingComparison(
   comparison: ScenarioComparison,
+  /** The analysis scope's visible name, when narrower than 수도권 전체. */
+  scopeName?: string,
 ): ScenarioRankingComparison | null {
   const { sideA, sideB } = comparison;
   if (!isReady(sideA) || !isReady(sideB)) return null;
@@ -446,7 +448,7 @@ export function buildScenarioRankingComparison(
     fellCount: comparableRows.filter((row) => row.direction === "DOWN").length,
     heldCount: comparableRows.filter((row) => row.direction === "SAME").length,
     slopeRows: slopeRows(candidateRows),
-    scopeDescription: scopeDescription(boundaryA, boundaryB, rankingPopulation),
+    scopeDescription: scopeDescription(boundaryA, boundaryB, rankingPopulation, scopeName),
   };
 }
 
@@ -589,16 +591,26 @@ function scopeDescription(
   boundaryA: RankBoundary,
   boundaryB: RankBoundary,
   rankingPopulation: number | null,
+  /**
+   * The ANALYSIS SCOPE's visible name, when one narrower than 수도권 전체 is active.
+   *
+   * `rankingPopulation` is already the scoped count — the backend ranks within the
+   * 범위 — so without naming it, "순위 대상 후보 구역은 1,099개" would look like a
+   * capital-region figure that had inexplicably shrunk. Naming the 범위 is what makes
+   * the number readable, and it travels into the export's own scope note.
+   */
+  scopeName?: string,
 ): string {
   const served =
     boundaryA.servedCount === boundaryB.servedCount
       ? `각각 상위 ${boundaryA.servedCount.toLocaleString("ko-KR")}개`
       : `A안 상위 ${boundaryA.servedCount.toLocaleString("ko-KR")}개 · B안 상위 ${boundaryB.servedCount.toLocaleString("ko-KR")}개`;
+  const where = scopeName === undefined ? "" : `분석 범위 ${scopeName} · `;
   const population =
     rankingPopulation === null
       ? ""
-      : ` 현재 분석 실행의 순위 대상 후보 구역은 ${rankingPopulation.toLocaleString("ko-KR")}개입니다.`;
-  return `아래 수치는 A안과 B안의 ${served} 후보 구역만 비교한 결과입니다.${population}`;
+      : ` ${scopeName === undefined ? "현재 분석 실행의" : `${scopeName} 범위의`} 순위 대상 후보 구역은 ${rankingPopulation.toLocaleString("ko-KR")}개입니다.`;
+  return `${where}아래 수치는 A안과 B안의 ${served} 후보 구역만 비교한 결과입니다.${population}`;
 }
 
 // --------------------------------------------------------------------------- //

@@ -1180,6 +1180,12 @@ body {
    These are deliberately NOT the official status colours: a reader must never
    confuse a relative band with a screening outcome. */
 .wep-grade {
+  /* `relative` so the chip's `sr-only` band name (an absolutely positioned span)
+     resolves against the chip rather than the initial containing block. Without it
+     the span lands at a document coordinate, and in a scrolling analysis column that
+     grows documentElement.scrollHeight past the viewport — which breaks the Page-4
+     contract that the COLUMNS scroll and the page never does. */
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1192,20 +1198,37 @@ body {
   line-height: 1.6;
   white-space: nowrap;
 }
+/* A/B/C = 초록 / 노랑 / 빨강, per the page-4 기술 참고사항: "[③ 종합 점수와 후보
+   순위]에 ABC 등급 색은 초록,노랑,빨강으로. 그리고 그 색이 아래 [순위보기]에 뜨는
+   지역명 옆에 반영되도록."
+
+   An earlier pass deliberately kept a non-status navy ramp here, reasoning that a
+   traffic light beside a candidate reads as 스크리닝 통과/제외. The owner has
+   required the colours explicitly, so the ramp is the requested one and the
+   misreading is neutralised where it actually lives — in the LABELS, not the hues:
+   every chip prints its A/B/C letter and carries the full band name (상위 구간(A) …)
+   as its accessible name, the A/B/C block keeps the standing
+   "상대 위치를 나눈 구간일 뿐 법적 적합·부적합 판정이 아닙니다" line, and no A/B/C
+   surface anywhere uses the frame's 통과 / 제외 wording. Colour therefore reinforces
+   a band that is already stated in words, and is never its only carrier.
+
+   The three fills are the same greens/ambers/reds the A/B/C legend rows already use
+   (`GRADE_ROW_TINT`), so a chip and the row it belongs to are one colour system. The
+   foreground values are the darkened variants, ≥ 4.5:1 on their own fill. */
 .wep-grade-A {
-  border-color: #b6c0e0;
-  background: #e8ecf8;
-  color: #16205f;
+  border-color: #a7d7bd;
+  background: #eaf5ef;
+  color: #0f5132;
 }
 .wep-grade-B {
-  border-color: #cdd2dd;
-  background: #f0f2f6;
-  color: #3f4459;
+  border-color: #f0dcb4;
+  background: #fbf3e2;
+  color: #7a4a00;
 }
 .wep-grade-C {
-  border-color: #dcdfe6;
-  background: #f7f8fa;
-  color: #5b6070;
+  border-color: #f5c2c0;
+  background: #fdeeed;
+  color: #9b1c1c;
 }
 
 /* Map pane sizing — ONE rule, one layout.

@@ -15,6 +15,7 @@ import type {
   UserScenarioWeights,
 } from "./api";
 import type { ComparisonSide, ScenarioComparison } from "./scenarioComparison";
+import { COMPONENT_MODEL_SUCCESSOR } from "./componentModelWeights";
 import {
   RANKING_COMPARISON_TOP_N,
   buildScenarioRankingComparison,
@@ -129,6 +130,7 @@ function comparison(
 ): ScenarioComparison {
   return {
     runId: 47,
+    componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
     sideA: side("A", a),
     sideB: side("B", b),
     status: a !== null && b !== null ? "READY" : "PREVIEW_ERROR_BOTH",
@@ -141,8 +143,8 @@ function ranked(keys: string[]): UserScenarioTopCandidate[] {
   return keys.map((key, index) => candidate(key, index + 1, (1 - index * 0.01).toFixed(4)));
 }
 
-function build(a: UserScenarioPreview, b: UserScenarioPreview) {
-  const model = buildScenarioRankingComparison(comparison(a, b));
+function build(a: UserScenarioPreview, b: UserScenarioPreview, scopeName?: string) {
+  const model = buildScenarioRankingComparison(comparison(a, b), scopeName);
   if (model === null) throw new Error("expected a model");
   return model;
 }
@@ -484,6 +486,21 @@ describe("bounded population labelling", () => {
     const model = build(preview(ranked(["c1"])), preview(ranked(["c1"])));
     expect(model.scopeDescription).not.toContain("전체 후보");
     expect(model.scopeDescription).not.toContain("전체 순위");
+  });
+
+  it("names the ANALYSIS SCOPE, so a scoped population is not read as a shrunken one", () => {
+    // The backend ranks within ① 분석 범위, so `ranking_population` is that 범위's
+    // size. Unlabelled, "순위 대상 후보 구역은 500개" looks like a capital-region
+    // figure that inexplicably shrank; naming the 범위 is what makes it readable.
+    const model = build(preview(ranked(["c1", "c2"])), preview(ranked(["c1", "c2"])), "경기");
+    expect(model.scopeDescription).toContain("분석 범위 경기");
+    expect(model.scopeDescription).toContain("경기 범위의 순위 대상 후보 구역은 500개");
+  });
+
+  it("says nothing about a 범위 when the comparison covers 수도권 전체", () => {
+    const model = build(preview(ranked(["c1"])), preview(ranked(["c1"])));
+    expect(model.scopeDescription).not.toContain("분석 범위");
+    expect(model.scopeDescription).toContain("현재 분석 실행의");
   });
 });
 

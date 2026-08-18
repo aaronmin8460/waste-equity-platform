@@ -17,12 +17,28 @@
  * which of five equally-weighted rows was checked to learn what the map was showing.
  *
  * PAGE 4A adds the Figma shape on top of that same content: a segmented weight bar
- * over the four served weights, and one card per factor. The Figma card also carries
- * a free "가중치 설정 __%" input per factor; this view has no such control, because
- * the scores and ranks on the map are a STORED run — editing a weight here would
- * imply a recomputation that does not happen. Weight experimentation already has its
- * own screen (후보지 심층 비교), which recomputes explicitly and labels the result as
- * a user scenario, so the profile radios stay the honest control for this one.
+ * over the four served weights, and one card per factor.
+ *
+ * ── 사용자 지정 가중치 — THE FRAME'S OWN CONTROL, NOW LIVE ───────────────────────
+ * Figma 356:582 draws a free "가중치 설정 __%" input in every factor card, and the
+ * saved-scenario list 231:442 shows non-preset vectors that can only exist if the
+ * reader authors them. An earlier pass rendered that input DISABLED, reasoning that
+ * the map and ranking are a STORED run and an editable weight would imply a
+ * recomputation that does not happen.
+ *
+ * The recomputation DOES happen, and always did: `POST /suitability/scenarios/preview`
+ * recombines this run's frozen Z/R/E/D component scores under any weight vector that
+ * sums to exactly 1.00000000, and `userScenarioTileUrl` serves the matching map tiles.
+ * The owner has required the control explicitly, so the input is live and its result
+ * is REAL — ③'s rows, their scores and the map's tile source all come from that
+ * response while a vector is applied. What the earlier refusal was protecting is kept
+ * instead by labelling: an applied vector is named 사용자 지정 everywhere it appears,
+ * it never re-runs screening, and it never relabels a candidate's official status.
+ *
+ * The profile radios remain, as the PRESETS the requirement asks to keep; selecting
+ * one reloads its served vector and drops any applied scenario, and editing a loaded
+ * preset moves the editor to 사용자 지정 without the reader having to declare it
+ * (`useSuitabilityCustomWeights.ts`).
  *
  * THE FIGMA REMEDIATION re-ordered the card to the frame's own reading — heading,
  * segmented bar, the basis it belongs to, the control that changes it, the four
@@ -70,6 +86,7 @@ import type {
 } from "../../lib/api";
 import UnmodeledFactorsDisclosure from "./UnmodeledFactorsDisclosure";
 import {
+  COMPONENT_META,
   PROFILE_META,
   profileLabel,
   statusExplanation,
@@ -86,6 +103,13 @@ import SuitabilityV3FactorCards, {
 import { isSuccessorRun, pendingV3Factors, v3FactorViews } from "../../lib/suitabilityV3";
 import { namedWeightRows } from "../../lib/suitability";
 import { OLD_RUN_NO_CRITIC_MESSAGE, PROFILE_OPTIONS } from "./shared";
+import {
+  FACTOR_SCORE_BANDS,
+  FACTOR_SCORE_BAND_SOURCE_NOTE,
+  FACTOR_SCORE_BAND_TITLE,
+} from "../../lib/factorScoreBand";
+import { SCENARIO_COMPONENTS, type ComponentPercents } from "../../lib/scenario";
+import type { SuitabilityCustomWeights } from "./useSuitabilityCustomWeights";
 
 /** The three screening statuses, in the order every surface lists them. */
 const SCREENING_STATUSES = ["ELIGIBLE", "REVIEW_REQUIRED", "EXCLUDED"] as const;
@@ -114,6 +138,14 @@ export interface SuitabilityScoringBasisProps {
    * copy here would be a duplicate.
    */
   summary?: SuitabilitySummary;
+  /**
+   * The 사용자 지정 weight editor, passed ONLY in the Page-4 workspace.
+   *
+   * `undefined` leaves every weight a read-out of the served profile, which is the
+   * correct shape for 후보지 심층 비교 — that screen has its own weight lab, and two
+   * editors defining one scenario would be a contradiction rather than a convenience.
+   */
+  customWeights?: SuitabilityCustomWeights;
 }
 
 /**
@@ -129,6 +161,21 @@ function weightsFor(
   return (run.weight_profiles ?? {})[profile] ?? policy.weight_profiles[profile] ?? {};
 }
 
+/**
+ * The editor's integer percents as the bar's row shape.
+ *
+ * A FORMATTING STEP, not a computation: it restates the four numbers the reader
+ * typed. The label comes from the shared glossary, so the bar, the factor cards and
+ * every export name each factor identically.
+ */
+function percentBarRows(percents: ComponentPercents) {
+  return SCENARIO_COMPONENTS.map((component) => ({
+    component,
+    label: COMPONENT_META[component].primary,
+    percent: `${percents[component]}%`,
+  }));
+}
+
 export default function SuitabilityScoringBasis({
   policy,
   run,
@@ -138,11 +185,24 @@ export default function SuitabilityScoringBasis({
   stabilityAvailable,
   selected,
   summary,
+  customWeights,
 }: SuitabilityScoringBasisProps) {
   // `stableOnly` stays on the props interface but is not read: it was only ever
   // consumed by the struck 안정 후보 row.
   const activeMeta = PROFILE_META[profile];
   const activeWeights = weightsFor(run, policy, profile);
+
+  /**
+   * The rows the segmented bar draws.
+   *
+   * While the editor is open the bar follows the EDITOR, so the shape above the
+   * cards is the vector the reader is composing rather than the one they moved away
+   * from. It is the same redundant encoding either way — the number it draws is
+   * always printed as text in the factor card beneath it.
+   */
+  const barRows = customWeights
+    ? percentBarRows(customWeights.percents)
+    : namedWeightRows(activeWeights);
 
   /**
    * WHICH MODEL THIS RUN IS — read from the RUN, never assumed.
@@ -194,7 +254,7 @@ export default function SuitabilityScoringBasis({
       {successor ? (
         <SuitabilityV3WeightBar factors={v3Factors} />
       ) : (
-        <SuitabilityWeightBar rows={namedWeightRows(activeWeights)} />
+        <SuitabilityWeightBar rows={barRows} />
       )}
 
       {/* WHICH basis those proportions belong to — the NAME, and nothing else.
@@ -220,7 +280,18 @@ export default function SuitabilityScoringBasis({
       >
         <span className="text-[11px] text-ink-subtle">현재 적용 중인 기준</span>
         <span className="text-sm font-semibold text-ink" data-testid="active-basis-name">
-          {profileLabel(profile)}
+          {/* Once the reader has authored a vector, the basis in force is THEIRS —
+              printing a preset's name over 사용자 지정 numbers would be the one
+              mislabel this card cannot afford. */}
+          {/* The name of the basis IN FORCE. On a successor run the five historical
+              profile labels do not apply — the model has one approved profile — so
+              naming it "기본 기준" would attach a historical policy name to a
+              successor vector. */}
+          {customWeights?.isCustom
+            ? CUSTOM_WEIGHTS_LABEL
+            : successor
+              ? SUCCESSOR_BASIS_LABEL
+              : profileLabel(profile)}
         </span>
       </div>
 
@@ -245,6 +316,52 @@ export default function SuitabilityScoringBasis({
           actually be read side by side instead of scattered down a radio list. */}
       <fieldset className="mt-3 m-0 border-0 p-0" data-testid="profile-selector">
         <legend className="mb-1 text-[11px] font-semibold text-ink-subtle">점수 반영 기준</legend>
+        {/* ── THE SUCCESSOR MODEL HAS ONE APPROVED PROFILE ───────────────────────
+            `baseline` (equal 0.25×4) is the only registered successor weight vector.
+            The five historical pills below (기본/모두 똑같이/지역 부담 중심/도로 근접성
+            중심/데이터 분포 기준) are defined over the Z/R/E/D components and have NO
+            approved successor equivalent — showing them here would label a vector
+            with a policy that was never registered for it, and mapping them across
+            by position would rename one measurement to another. So a successor run
+            gets exactly 기준 and 사용자 지정. */}
+        {successor && customWeights && (
+          <div className="flex flex-wrap gap-1" data-testid="v3-preset-row">
+            <label
+              title="후속 모델에 등록된 하나뿐인 승인 가중치입니다 (네 지수 각 25%)."
+              className={`inline-flex items-center gap-1.5 rounded-control border px-2 py-1 text-[11px] ${
+                customWeights.isCustom
+                  ? "border-hairline bg-surface text-ink-muted"
+                  : "border-primary-border bg-primary-soft font-semibold text-ink"
+              }`}
+            >
+              <input
+                type="radio"
+                name="profile"
+                checked={!customWeights.isCustom}
+                onChange={customWeights.reset}
+                data-testid="v3-preset-baseline"
+              />
+              <span className="whitespace-nowrap">기준</span>
+            </label>
+            <label
+              title="네 지수의 가중치를 직접 입력합니다."
+              className={`inline-flex items-center gap-1.5 rounded-control border px-2 py-1 text-[11px] ${
+                customWeights.isCustom
+                  ? "border-primary-border bg-primary-soft font-semibold text-ink"
+                  : "border-hairline bg-surface text-ink-muted"
+              }`}
+            >
+              <input
+                type="radio"
+                name="profile"
+                checked={customWeights.isCustom}
+                onChange={customWeights.selectCustom}
+                data-testid="profile-radio-custom"
+              />
+              <span className="whitespace-nowrap">{CUSTOM_WEIGHTS_LABEL}</span>
+            </label>
+          </div>
+        )}
         {/* COMPACT PILL ROW, not five stacked full-width rows.
             Figma card ② has no radio list at all — its control is the per-factor
             weight input. That input is disabled while the run is a stored one, so
@@ -252,9 +369,16 @@ export default function SuitabilityScoringBasis({
             a functional regression, not a copy cleanup. It stays, wrapped inline so
             it costs roughly one third of the height it did, and the inputs stay
             VISIBLE because e2e/integration.spec.ts asserts exactly that. */}
+        {/* NOT RENDERED for a successor run — not merely hidden. A hidden duplicate
+            is still in the DOM, still focusable by assistive technology, and still
+            a second element carrying the same testid. The V3 row above replaces it
+            entirely. */}
+        {!successor && (
         <div className="flex flex-wrap gap-1">
           {PROFILE_OPTIONS.filter((option) => runProfiles.includes(option.key)).map((option) => {
-            const selected = profile === option.key;
+            // A preset is only "the basis in force" while the reader has not
+            // authored their own vector — otherwise two pills would look selected.
+            const selected = profile === option.key && !customWeights?.isCustom;
             return (
               <label
                 key={option.key}
@@ -269,14 +393,44 @@ export default function SuitabilityScoringBasis({
                   type="radio"
                   name="profile"
                   checked={selected}
-                  onChange={() => onSelectProfile(option.key)}
+                  onChange={() => {
+                    // Selecting a preset RELOADS its served vector and drops any
+                    // applied scenario — that is what makes the pills presets rather
+                    // than labels sitting beside unrelated numbers.
+                    customWeights?.reset();
+                    onSelectProfile(option.key);
+                  }}
                   data-testid={`profile-radio-${option.key}`}
                 />
                 <span className="whitespace-nowrap">{option.label}</span>
               </label>
             );
           })}
+          {/* 사용자 지정 — the requirement's explicit Custom option, in the SAME
+              radio group as the presets so arrow keys traverse all of them and only
+              one can ever be current. It selects the mode without changing a value:
+              the numbers already in the four inputs become the reader's own. */}
+          {customWeights && (
+            <label
+              title="네 지수의 가중치를 직접 입력합니다."
+              className={`inline-flex items-center gap-1.5 rounded-control border px-2 py-1 text-[11px] ${
+                customWeights.isCustom
+                  ? "border-primary-border bg-primary-soft font-semibold text-ink"
+                  : "border-hairline bg-surface text-ink-muted"
+              }`}
+            >
+              <input
+                type="radio"
+                name="profile"
+                checked={customWeights.isCustom}
+                onChange={customWeights.selectCustom}
+                data-testid="profile-radio-custom"
+              />
+              <span className="whitespace-nowrap">{CUSTOM_WEIGHTS_LABEL}</span>
+            </label>
+          )}
         </div>
+        )}
         {/* Every basis's four weights in one place, with their full Korean names —
             never bare code letters. Closed by default; the one in force is already
             stated above the list. */}
@@ -304,6 +458,15 @@ export default function SuitabilityScoringBasis({
       {successor ? (
         <SuitabilityV3FactorCards
           factors={v3Factors}
+          editor={
+            customWeights
+              ? {
+                  percents: customWeights.percents,
+                  setPercent: customWeights.setPercent,
+                  disabled: customWeights.applying,
+                }
+              : undefined
+          }
           pendingReason={
             v3Pending
               ? "지수 점수는 후보를 선택하면 그 후보의 실제 계산 결과로 표시됩니다. 값이 없는 항목은 0으로 채우지 않습니다."
@@ -315,8 +478,23 @@ export default function SuitabilityScoringBasis({
            zred-v1 run would hide the real component scores that run actually has —
            the mirror image of the fabrication the V3 cards exist to prevent. The
            model a reader sees is always the model the run is. */
-        <SuitabilityFactorCards weights={namedWeightRows(activeWeights)} selected={selected} />
+        <SuitabilityFactorCards
+          weights={namedWeightRows(activeWeights)}
+          selected={selected}
+          editor={
+            customWeights
+              ? {
+                  percents: customWeights.percents,
+                  setPercent: customWeights.setPercent,
+                  disabled: customWeights.applying,
+                }
+              : undefined
+          }
+        />
       )}
+
+      {/* THE TOTAL, THE VALIDATION, AND THE APPLY. Only where the inputs are live. */}
+      {customWeights && <CustomWeightControls custom={customWeights} />}
 
       {/* THE METHODOLOGY, BEHIND ONE DISCLOSURE. Both blocks below are unchanged in
           wording and both used to stand open in the primary card: a reader had to
@@ -425,6 +603,31 @@ export default function SuitabilityScoringBasis({
             가능 여부를 판정한 결과가 아닙니다.
           </p>
 
+          {/* THE PER-FACTOR LABEL TABLE — Figma 225:440 asks for exactly this, behind
+              exactly this disclosure: "각 계산 모델의 만점은 100점이고, 라벨은 다음과
+              같음 (라벨링 기준은 하단에 '점수 기준 자세히 보기' 누르면 나오도록)".
+              The five words are the ABSOLUTE per-factor label each card prints beside
+              its own score; they are NOT the relative A/B/C band over the total score,
+              which lives in ③ and is computed from the population's distribution. */}
+          <div className="mt-2" data-testid="factor-score-band-table">
+            <p className="text-[11px] font-semibold text-ink">{FACTOR_SCORE_BAND_TITLE}</p>
+            <dl className="mt-1 flex flex-col gap-0.5">
+              {FACTOR_SCORE_BANDS.map((band) => (
+                <div
+                  key={band.key}
+                  className="flex items-baseline justify-between gap-2 text-[11px]"
+                  data-testid={`factor-score-band-${band.key}`}
+                >
+                  <dt className="tabular-nums text-ink-subtle">{band.range}</dt>
+                  <dd className="font-semibold text-ink">{band.label}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-1 text-[11px] leading-snug text-ink-subtle">
+              {FACTOR_SCORE_BAND_SOURCE_NOTE}
+            </p>
+          </div>
+
           {summary.assumptions.length > 0 && (
             <ul
               className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] leading-snug text-ink-subtle"
@@ -518,6 +721,118 @@ export default function SuitabilityScoringBasis({
         </p>
       )}
     </SectionCard>
+  );
+}
+
+/** The name the Custom option carries on every surface that mentions it. */
+export const CUSTOM_WEIGHTS_LABEL = "사용자 지정";
+
+/**
+ * The successor model's one approved profile, named as itself.
+ *
+ * NOT "기본 기준": that is the historical `baseline` profile's citizen-facing label,
+ * defined over Z/R/E/D, and printing it above successor weights would name a policy
+ * that was never registered for them.
+ */
+export const SUCCESSOR_BASIS_LABEL = "기준";
+
+/**
+ * The running total, its validation, and the two actions — 계산 적용 / 기준값으로
+ * 되돌리기.
+ *
+ * ── VALIDATION IS THE BACKEND'S OWN RULE, STATED EARLY ───────────────────────────
+ * `analysis/suitability/scenario.py` requires the canonical 8-dp weight sum to equal
+ * exactly `Decimal("1.00000000")` and records that invalid weights are *"never
+ * silently normalized, replaced with equal weights, or have a remainder
+ * redistributed — the caller is always informed"*. This block is the client-side
+ * expression of that same rule: the total is shown live, a total that is not exactly
+ * 100% DISABLES 계산 적용 and says by how much it is off, and nothing is ever
+ * auto-corrected. Each input is already bounded to 0–100 by the card that renders it,
+ * so the only reachable failure is the total — which is named rather than repaired.
+ *
+ * The disabled button is paired with a visible reason (`aria-describedby`), because a
+ * greyed control with no explanation is the failure mode this validation exists to
+ * avoid.
+ *
+ * ── WHAT "적용" DOES ─────────────────────────────────────────────────────────────
+ * Sends the vector to the scenario preview endpoint and, on success, hands the
+ * response to the page, which re-points ③'s rows and the map's tile source at it. On
+ * refusal, the backend's own message is shown verbatim and NO scenario is left
+ * applied — the screen never shows one weighting while claiming another.
+ */
+function CustomWeightControls({ custom }: { custom: SuitabilityCustomWeights }) {
+  const noteId = "custom-weight-total-note";
+  const overBy = custom.difference;
+  return (
+    <div className="mt-3 rounded-card border border-hairline bg-surface-muted p-2.5" data-testid="custom-weight-controls">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+        <span className="text-[11px] font-semibold text-ink">가중치 합계</span>
+        <span
+          className={`text-sm font-bold tabular-nums ${custom.valid ? "text-ink" : "text-danger"}`}
+          data-testid="custom-weight-total"
+        >
+          {custom.total}%
+        </span>
+      </div>
+
+      {/* The rule, then the live verdict. Both are text; the colour above is a second
+          encoding of a state this line already names. */}
+      <p
+        id={noteId}
+        className={`mt-1 text-[11px] leading-snug ${custom.valid ? "text-ink-subtle" : "text-danger"}`}
+        data-testid="custom-weight-validation"
+      >
+        {custom.valid
+          ? "네 항목의 합이 100%입니다. 계산을 적용할 수 있습니다."
+          : `네 항목의 합이 정확히 100%여야 계산할 수 있습니다. 현재 ${
+              overBy > 0 ? `${overBy}%p 많습니다` : `${Math.abs(overBy)}%p 모자랍니다`
+            }. 합계는 자동으로 맞추지 않습니다.`}
+      </p>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          onClick={custom.apply}
+          disabled={!custom.canApply}
+          aria-describedby={custom.canApply ? undefined : noteId}
+          className="h-8 rounded-control border border-primary-border bg-primary-soft px-3 text-[11px] font-bold text-ink disabled:cursor-not-allowed disabled:border-hairline disabled:bg-surface disabled:text-ink-subtle"
+          data-testid="custom-weight-apply"
+        >
+          {custom.applying ? "계산 중…" : "이 가중치로 계산"}
+        </button>
+        <button
+          type="button"
+          onClick={custom.reset}
+          disabled={custom.applying}
+          className="h-8 rounded-control border border-hairline bg-surface px-3 text-[11px] text-ink-muted disabled:cursor-not-allowed"
+          data-testid="custom-weight-reset"
+        >
+          기준값으로 되돌리기
+        </button>
+      </div>
+
+      {custom.error !== null && (
+        <p
+          className="mt-2 rounded-card border border-danger-border bg-danger-surface p-2 text-[11px] leading-snug text-danger"
+          role="alert"
+          data-testid="custom-weight-error"
+        >
+          {custom.error}
+        </p>
+      )}
+
+      {custom.applied !== null && custom.error === null && (
+        <p
+          className="mt-2 text-[11px] leading-snug text-ink-muted"
+          role="status"
+          data-testid="custom-weight-applied"
+        >
+          {CUSTOM_WEIGHTS_LABEL} 가중치를 적용했습니다. 아래 지도와 ③ 순위·점수가 이 가중치로 다시
+          계산된 결과입니다. 스크리닝 통과·제외 판정은 가중치와 무관하므로 달라지지 않습니다.{" "}
+          <span data-diagnostic>시나리오 {custom.applied.scenarioHashShort}</span>
+        </p>
+      )}
+    </div>
   );
 }
 

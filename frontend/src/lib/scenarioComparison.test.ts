@@ -24,6 +24,7 @@ import {
   resolveComparisonPair,
   type SavedScenario,
 } from "./savedScenarios";
+import { COMPONENT_MODEL_HISTORICAL } from "./componentModelWeights";
 
 const WEIGHTS_A: UserScenarioWeights = {
   zoning: "0.40000000",
@@ -44,6 +45,7 @@ function scenario(overrides: Partial<SavedScenario> = {}): SavedScenario {
     id: "sc-a",
     name: "균형안",
     weights: WEIGHTS_A,
+    componentModelVersion: COMPONENT_MODEL_HISTORICAL,
     runId: 47,
     profileSource: "baseline",
     createdAt: "2026-01-01T00:00:00.000Z",

@@ -171,6 +171,22 @@ import { defaultWetlandTypeVisibility } from "../lib/wetland";
 import RegionRanking from "../components/RegionRanking";
 import FullRankingDialog from "../components/FullRankingDialog";
 import SuitabilityRankingDialog from "../components/suitability/SuitabilityRankingDialog";
+import { useSuitabilityCustomWeights } from "../components/suitability/useSuitabilityCustomWeights";
+import {
+  COMPONENT_MODEL_HISTORICAL,
+  COMPONENT_MODEL_SUCCESSOR,
+  isComponentModelVersion,
+  modelWeightsFrom,
+} from "../lib/componentModelWeights";
+import { CUSTOM_WEIGHTS_LABEL } from "../components/suitability/SuitabilityScoringBasis";
+import {
+  CUSTOM_RANKING_DISPLAY_N,
+  SIGUNGU_CAP_POOL_N,
+  applyRankingDisplayRules,
+  customWeightRankingCollection,
+  customWeightRankingRows,
+  customWeightScopeNote,
+} from "../lib/customWeightRanking";
 import ShareExportBar from "../components/ShareExportBar";
 import ReportPreview from "../components/ReportPreview";
 import PageHeader from "../components/ui/PageHeader";
@@ -243,7 +259,20 @@ type DashboardMode = MapMode | "flow" | "transparency";
  * served as `top_candidates`, so the default unscoped view is unchanged. The
  * `범위 내` count beside it is the backend's `total_matched`, never this number.
  */
-const RANKING_TOP_N = 10;
+/**
+ * ③ 순위 보기's display cut.
+ *
+ * FIVE, per the page-4 기술 참고사항 ("[순위보기]는 TOP5개까지만") and the frame's own
+ * modal footer (`표시된 순위 5개 · 범위 내 총 60개`). It is a DISPLAY cut over a
+ * ranking computed for the whole scoped population — the card always prints the
+ * served `total_matched` beside it, and 전체보기 removes the cut entirely, so nothing
+ * a reader could reach was taken away by narrowing it from ten.
+ *
+ * NOT the same constant as `lib/ranking.ts`'s `DEFAULT_TOP_N`, which is Page 1's
+ * 지역 순위 card (a different surface with its own, still-ten requirement) and is the
+ * `?top=` URL whitelist. Neither is touched here.
+ */
+const RANKING_TOP_N = CUSTOM_RANKING_DISPLAY_N;
 
 const CANDIDATE_STATUS_COLORS: Record<SuitabilityStatus, string> = {
   ELIGIBLE: CANDIDATE_SCORE_PALETTE_5[3],
@@ -685,8 +714,8 @@ export default function Home() {
     if (mode !== "suitability" || suit !== null) return;
     Promise.all([
       fetchSuitabilityPolicy(),
-      fetchSuitabilityLatestRun(),
-      fetchSuitabilitySummary(profile),
+      fetchSuitabilityLatestRun(COMPONENT_MODEL_SUCCESSOR),
+      fetchSuitabilitySummary(profile, COMPONENT_MODEL_SUCCESSOR),
     ])
       .then(([policy, run, summary]) => setSuit({ policy, run, summary }))
       .catch((cause: unknown) => {
@@ -705,7 +734,7 @@ export default function Home() {
   // until the initial meta load has populated suit.
   useEffect(() => {
     if (mode !== "suitability") return;
-    fetchSuitabilitySummary(profile)
+    fetchSuitabilitySummary(profile, COMPONENT_MODEL_SUCCESSOR)
       .then((summary) => setSuit((prev) => (prev ? { ...prev, summary } : prev)))
       .catch(() => undefined);
   }, [profile, mode]);
@@ -735,6 +764,18 @@ export default function Home() {
   // ELIGIBLE query is the same one the summary's `top_candidates` runs. Unscoped and
   // 높은 순 the rows are therefore identical to before; scoped, both the rows AND
   // `total_matched` narrow together.
+  /**
+   * The component model of the run ON SCREEN — the single answer to "which
+   * components is this page about?". Read from the run, never from the request.
+   */
+  const activeComponentModel = isComponentModelVersion(suit?.run.component_model_version)
+    ? suit.run.component_model_version
+    : COMPONENT_MODEL_HISTORICAL;
+
+  /** Cap a 시·군·구 to two displayed rows (the 49/50 concentration fix). Off by default. */
+  const [sigunguCapOn, setSigunguCapOn] = useState(false);
+  const rankingFetchLimit = sigunguCapOn ? SIGUNGU_CAP_POOL_N : RANKING_TOP_N;
+
   const suitRunId = suit?.run.id ?? null;
   const suitScopeQueryKey = scopeKey(suitScope);
   useEffect(() => {
@@ -754,8 +795,13 @@ export default function Home() {
         status: "ELIGIBLE",
         // `top` makes the endpoint order by the REQUESTED profile's rank; without it
         // the listing orders by the run's active-profile rank column.
-        top: RANKING_TOP_N,
-        limit: RANKING_TOP_N,
+        // The cap HOLDS ROWS BACK, so with the cap on the request asks for a deeper
+        // pool and the cut to five happens after it — otherwise turning the cap on
+        // would silently shrink ③ below the five rows its heading promises.
+        top: rankingFetchLimit,
+        limit: rankingFetchLimit,
+        // The SAME model the summary resolved and the scenario recombines.
+        componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
         sort: suitSort,
         // The ONE serializer — a `sido` + `sigungu` pair is unrepresentable.
         ...scopeToQuery(suitScope),
@@ -782,7 +828,7 @@ export default function Home() {
     // `suitScopeQueryKey` stands in for `suitScope`: a new object with the same codes
     // must not re-request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, suitabilityView, suitRunId, profile, suitSort, suitScopeQueryKey]);
+  }, [mode, suitabilityView, suitRunId, profile, suitSort, suitScopeQueryKey, rankingFetchLimit]);
 
   // A candidate outside the new scope is no longer part of the active ranking, so it
   // is deselected rather than left on screen as though it still were. The check uses
@@ -818,7 +864,7 @@ export default function Home() {
     // The SAME scope as the ranking. A/B/C is a position in a POPULATION, so the
     // bands are recomputed exactly (four scoped order-statistic reads), never
     // approximated from the rows already on screen.
-    computeGradeDistribution(runId, profile, suitScope)
+    computeGradeDistribution(runId, profile, suitScope, suit.run.component_model_version)
       .then((distribution) => {
         if (cancelled) return;
         setGradeDistribution(distribution);
@@ -1181,18 +1227,128 @@ export default function Home() {
   }, []);
 
   /**
+   * ② 사용자 지정 가중치 — the Page-4 weight editor (Figma 356:582).
+   *
+   * The state lives HERE, not in the card, for the same reason ④'s saved list and
+   * the A/B/C distribution do: an applied vector re-points ③'s rows, the map's tile
+   * source and ④'s saved weights together, and a copy of it inside one column could
+   * disagree with the other two. Everything else — the percent maths, the exact-decimal
+   * conversion, the preview request and its refusal — is in the hook.
+   */
+  const customWeights = useSuitabilityCustomWeights({
+    run: suit?.run ?? null,
+    policyProfiles: suit?.policy.weight_profiles,
+    profile,
+    // ① 분석 범위 — the SAME state that scopes the profile ranking, the A/B/C
+    // population and the map. The custom ranking is computed within it server-side,
+    // so ③ shows this 범위's top N under the reader's own weights.
+    scope: suitScope,
+    // ⭐ THE EDITOR EDITS THE COMPONENTS OF THE RUN ON SCREEN.
+    //
+    // Page 4 REQUESTS the successor model (see the pinned reads above): that is what
+    // decides which run is resolved. But which components are editable must follow
+    // the run the backend actually returned, read from its own
+    // `component_model_version` — never assumed from the request.
+    //
+    // The two are the same thing whenever a successor run exists, which is the
+    // intended state. They differ only where one does not, and then the honest
+    // behaviour is to render the run that IS there with its own four components,
+    // rather than four empty successor inputs over historical numbers. Assuming the
+    // pin here produced exactly that: an editor keyed by successor components
+    // reading `undefined` out of a historical vector.
+    componentModelVersion: activeComponentModel,
+    enabled: mode === "suitability" && suitabilityView === "score",
+  });
+  const customWeightsApplied =
+    mode === "suitability" && suitabilityView === "score" && customWeights.applied !== null
+      ? customWeights.applied
+      : null;
+
+  /**
+   * ③'s rows while a 사용자 지정 vector is applied: the served scenario preview,
+   * filtered to ① 분석 범위 client-side because the preview endpoint has no scope
+   * parameter, then cut to TOP 5. `customWeightScopeNote` states that derivation on
+   * screen, so the rows are never read as "the top 5 OF this 범위".
+   */
+  const customRanking = useMemo(() => {
+    if (customWeightsApplied === null || customWeights.preview === null) return null;
+    return customWeightRankingRows(customWeights.preview, suitScope, profileLabel(profile));
+    // `suitScopeQueryKey` stands in for `suitScope` (stable identity for equal scopes).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customWeightsApplied, customWeights.preview, suitScopeQueryKey, profile]);
+
+  /**
+   * THE ONE ranking ③ renders — the served profile ranking, or the custom-weight one
+   * while a 사용자 지정 vector is applied. Exactly one is ever in play, so the card,
+   * its counts and the map can never describe two different weightings at once.
+   *
+   * Both go through the SAME two display rules (the 시·군·구 cap, then the TOP-5 cut),
+   * so the toggle in ③ means the same thing whichever weighting is active — it used to
+   * apply only to the custom ranking, which left it visible and inert the rest of the
+   * time.
+   */
+  const displayedRanking = useMemo(() => {
+    const base =
+      customRanking !== null && customWeights.preview !== null
+        ? customWeightRankingCollection(
+            customWeights.preview,
+            customRanking,
+            // Cut AFTER the cap, so pass the whole in-scope pool through here.
+            customRanking.features.length,
+          )
+        : ranking;
+    if (base === null) return { collection: null, heldBack: 0 };
+    return applyRankingDisplayRules(base, { cap: sigunguCapOn, displayN: RANKING_TOP_N });
+  }, [ranking, customRanking, customWeights.preview, sigunguCapOn]);
+
+  /**
    * The Z/R/E/D weights ④ would save: the SERVED weights of the active 점수 반영
    * 기준, resolved exactly as ② 계산 모델 가중치 설정 resolves them (the run's own
    * profile, falling back to the policy's static profile only for a pre-CRITIC run
    * that stored none). `null` when the run served nothing usable for that basis —
    * never a fabricated default, and never a partially-filled vector.
    */
+  /**
+   * A weight vector as the LEGACY historical surfaces can accept it, or `null`.
+   *
+   * Two consumers still speak only Z/R/E/D by contract: the `?wz=&wr=&we=&wd=` URL
+   * keys, and the map legend's weight read-out. Both are historical-model artifacts,
+   * and a successor vector must NOT be squeezed into them — encoding
+   * `existing_burden` as `wz` would make a shared link claim a Z/R/E/D scenario that
+   * was never authored. So a non-historical vector resolves to `null` here: the
+   * legacy key is simply absent, which is the honest state, rather than present and
+   * wrong.
+   */
+  const historicalWeightsOnly = useCallback(
+    (
+      weights: UserScenarioWeights | null | undefined,
+      model: string | null | undefined,
+    ): { zoning: string; road: string; equity: string; demand: string } | null => {
+      if (!weights) return null;
+      if (model !== undefined && model !== null && model !== COMPONENT_MODEL_HISTORICAL) return null;
+      const parsed = modelWeightsFrom(COMPONENT_MODEL_HISTORICAL, weights);
+      return parsed === null ? null : (parsed.weights as {
+        zoning: string;
+        road: string;
+        equity: string;
+        demand: string;
+      });
+    },
+    [],
+  );
+
   const activeScenarioWeights = useMemo<UserScenarioWeights | null>(() => {
     if (suit === null) return null;
+    // A 사용자 지정 vector that the backend has ALREADY accepted for this run is what
+    // ④ saves once one is applied — otherwise the card would offer to save a preset
+    // the reader has moved away from, under a screen showing their own weights. The
+    // stored value is the backend's canonical echo, exactly as `handleSaveScenario`
+    // re-verifies it before writing.
+    if (customWeightsApplied !== null) return customWeightsApplied.weights;
     const served =
       (suit.run.weight_profiles ?? {})[profile] ?? suit.policy.weight_profiles[profile] ?? null;
     return isCanonicalWeights(served) ? served : null;
-  }, [suit, profile]);
+  }, [suit, profile, customWeightsApplied]);
 
   const activeRunId = suit?.run.id ?? null;
 
@@ -1251,6 +1407,13 @@ export default function Home() {
             saveScenario({
               name,
               weights: preview.canonical_weights,
+              // The model the ANALYSIS ENGINE applied, echoed by the preview — not
+              // the one this client believed it was requesting. A stored scenario
+              // must record the namespace its numbers are actually over, or it
+              // cannot be checked before being recombined on a later run.
+              componentModelVersion: isComponentModelVersion(preview.component_model_version)
+                ? preview.component_model_version
+                : COMPONENT_MODEL_HISTORICAL,
               runId: preview.run_id,
               profileSource: profile,
             }),
@@ -1386,8 +1549,24 @@ export default function Home() {
           )
         : suitabilityTileUrl(suit.run.id, "baseline");
     }
+    // ── 후보지 심층 분석 ─────────────────────────────────────────────────────
+    // A 사용자 지정 vector applied in ② re-points the MAP as well as ③: the custom
+    // tiles carry the canonical 8-dp weights and the scenario hash in their URL, so
+    // the source is fully determined by the vector and swaps once per apply. This is
+    // the map half of "custom weights must not be cosmetic".
+    if (customWeightsApplied !== null) {
+      return userScenarioTileUrl(
+        customWeightsApplied.runId,
+        customWeightsApplied.weights,
+        customWeightsApplied.scenarioHash,
+        // The 범위 the vector was APPLIED under, carried on the applied record rather
+        // than read from live state, so the tiles can never describe a scope the
+        // ranking beside them was not computed for.
+        scopeToQuery(customWeightsApplied.scope),
+      );
+    }
     return suitabilityTileUrl(suit.run.id, profile);
-  }, [mode, suit, profile, suitabilityView, appliedScenario]);
+  }, [mode, suit, profile, suitabilityView, appliedScenario, customWeightsApplied]);
 
   // The map's selected candidate + click handler follow the active sub-view: the
   // scenario view uses the scenario detail (custom score/rank), the score view the
@@ -1798,7 +1977,13 @@ export default function Home() {
       stableOnly,
       // Prefer the live applied scenario / selection; fall back to a not-yet-consumed
       // shared-URL value so a scenario/candidate link is preserved, not self-stripped.
-      weights: appliedScenario?.weights ?? restoredScenario?.weights ?? null,
+      // The legacy `wz/wr/we/wd` keys are HISTORICAL by definition. A successor
+      // scenario is not encodable in them and is therefore not encoded — see
+      // `historicalWeightsOnly`.
+      weights:
+        historicalWeightsOnly(appliedScenario?.weights, appliedScenario?.componentModelVersion) ??
+        historicalWeightsOnly(restoredScenario?.weights, null) ??
+        null,
       cmpProfile: appliedScenario?.compareProfile ?? restoredScenario?.compareProfile ?? "baseline",
       candidate: selected?.candidate_id ?? scenarioSelected?.candidate_id ?? restoredCandidate ?? null,
       // 매립지 현황 filters — the canonical state already lives here, so the URL
@@ -1824,6 +2009,7 @@ export default function Home() {
       cmpB,
     }),
     [
+      historicalWeightsOnly,
       mode,
       metricKey,
       selectedRegionCode,
@@ -2285,10 +2471,18 @@ export default function Home() {
           // exactly once; the composition below re-derives nothing. `restoredCandidate`
           // is the decoded legacy `cand`, passed as a SEED only: the section never
           // writes it back, so no derived state reaches the URL.
+          // ① 지역 선택, carried over from 후보지 심층 분석. This is the ONE state
+          // that fixes the candidate universe: both previews, the candidate detail,
+          // the scenario map tiles and every table below are ranked within it, so A
+          // and B differ by WEIGHTS only and never by geography.
+          scope={suitScope}
+          scopeName={suitScopeName}
           analysisSections={(comparison) => (
             <SuitabilityScenarioAnalysisSections
               comparison={comparison}
               initialCandidateId={restoredCandidate}
+              scope={suitScope}
+              scopeName={suitScopeName}
             />
           )}
         />
@@ -2388,6 +2582,7 @@ export default function Home() {
               no map legend of their own, keep the full banner. */}
           <SuitabilitySidebar
             part="left"
+            customWeights={customWeights}
             suit={suit}
             suitError={suitError}
             profile={profile}
@@ -2710,7 +2905,12 @@ export default function Home() {
             control is mounted only in suitability mode, which is the only context its
             layer exists in. `min-w-0` keeps long Korean class names from forcing
             horizontal overflow in the narrow mobile card. */}
-        <div className="pointer-events-none absolute left-2 top-2 z-10 flex w-[min(86vw,272px)] min-w-0 flex-col gap-2 md:left-3 md:top-3">
+        {/* THE OPTIONAL-LAYER COLUMN. One page-owned stack, so expanding 내륙습지
+            목록 pushes 토지피복 격자 통계 down instead of drawing over it (page-4
+            기술 참고사항). It is height-BOUNDED and scrolls: the map legend is a
+            separate bottom-anchored overlay on the same edge, and an unbounded stack
+            grew under it, which made the lower control unclickable. */}
+        <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-h-[calc(100%-5rem)] w-[min(86vw,272px)] min-w-0 flex-col gap-2 overflow-y-auto md:left-3 md:top-3">
           {/* 내륙습지 목록 — SUITABILITY ONLY as of the Page-1 fidelity pass.
               The `page-1 기술요청` annotation asks for it off Page 1's primary UI, and
               it is an environmental SCREENING layer: it exists to qualify candidate
@@ -2835,7 +3035,10 @@ export default function Home() {
                     : SUITABILITY_SCREENING_SHORT_LABEL
                 }
                 scenarioActive={scenarioActive}
-                scenarioWeights={appliedScenario?.weights ?? null}
+                scenarioWeights={historicalWeightsOnly(
+                  appliedScenario?.weights,
+                  appliedScenario?.componentModelVersion,
+                )}
               />
             )}
           </div>
@@ -2943,7 +3146,17 @@ export default function Home() {
                  placeholder band would be a claim we cannot yet make.
                  `nested`: in this workspace the band is the first block of
                  ③ 종합 점수와 후보 순위, not a card of its own (Figma 136:8684). */
-              !gradeSettled ? null : gradeDistribution ? (
+              /* THE BANDS BELONG TO THE SERVED PROFILE'S DISTRIBUTION.
+                 `computeGradeDistribution` reads four order statistics from
+                 `/suitability/candidates`, which ranks by a STORED profile — there is
+                 no equivalent read for a user vector, and the preview serves only a
+                 top-50, which cannot yield a population quartile. So while a
+                 사용자 지정 vector is applied the bands are withheld with that reason
+                 named, rather than printed beside custom scores they were not
+                 computed from. */
+              customWeightsApplied !== null ? (
+                <RelativeGradeUnavailable nested customWeights />
+              ) : !gradeSettled ? null : gradeDistribution ? (
                 <RelativeGradePanel
                   distribution={gradeDistribution}
                   scopeName={suitScopeName}
@@ -2966,7 +3179,14 @@ export default function Home() {
               suit ? (
                 <SuitabilityScenarioSaveCard
                   weights={activeScenarioWeights}
-                  weightsSourceLabel={profileLabel(profile)}
+                  /* The label must name the vector ACTUALLY being saved. Once a
+                     사용자 지정 vector is applied, `activeScenarioWeights` is that
+                     vector, so labelling it with the preset the reader moved away
+                     from would print one basis's name over another's numbers. */
+                  weightsSourceLabel={
+                    customWeightsApplied !== null ? CUSTOM_WEIGHTS_LABEL : profileLabel(profile)
+                  }
+                  componentModelVersion={activeComponentModel}
                   activeRunId={activeRunId}
                   scenarios={savedScenarios}
                   storageWarnings={savedScenarioWarnings}
@@ -2999,11 +3219,32 @@ export default function Home() {
             regionOptions={scopeRegionOptions}
             scopeName={suitScopeName}
             mapFollowsScope={mapFollowsScope}
-            ranking={ranking}
+            ranking={displayedRanking.collection}
             rankingError={rankingError}
             sort={suitSort}
             onSortChange={setSuitSort}
-            onOpenFullRanking={() => setSuitRankingOpen(true)}
+            /* 전체보기 is the PROFILE ranking with the top-N cut removed, paged and
+               exported straight from `/suitability/candidates`. That endpoint knows
+               nothing about a user vector, so offering it while a 사용자 지정 vector
+               is applied would open a dialog contradicting the card behind it — and
+               would put a profile ranking under a CSV whose scope note named the
+               custom one. It is withheld with a stated reason instead. */
+            onOpenFullRanking={
+              customWeightsApplied === null ? () => setSuitRankingOpen(true) : undefined
+            }
+            customRankingNote={
+              customRanking === null
+                ? undefined
+                : customWeightScopeNote(customRanking, suitScopeName, suitScope.kind !== "all")
+            }
+            customRankingHeldBack={displayedRanking.heldBack}
+            sigunguCapOn={sigunguCapOn}
+            onSigunguCapChange={setSigunguCapOn}
+            /* The SAME scoped bands the A/B/C block above the list shows, so a row's
+               chip and the legend can never disagree. Null while a custom vector is
+               applied (they describe the profile's distribution, not the custom one),
+               which leaves every row without a chip rather than with a wrong one. */
+            gradeThresholds={customWeightsApplied === null ? gradeDistribution : null}
           />
         </CollapsiblePanel>
       )}

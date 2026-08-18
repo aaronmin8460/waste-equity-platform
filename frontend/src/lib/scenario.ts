@@ -63,9 +63,77 @@ export const SCENARIO_PRESET_LABELS: Record<string, string> = {
 export const SCENARIO_STORAGE_KEY = "waste-equity:suitability-scenario:v1";
 export const SCENARIO_SESSION_SCHEMA = 1;
 
+/**
+ * ── MODEL-AWARE PERCENT HELPERS ─────────────────────────────────────────────────
+ * The four functions below take the COMPONENT LIST explicitly, so one editor can
+ * author a vector for the historical Z/R/E/D components or the successor's four
+ * without a second copy of the arithmetic. The historical-signature functions that
+ * follow each of them are thin wrappers over the same code, so every existing
+ * caller keeps identical behaviour.
+ *
+ * A percent record is keyed by whichever components it was built for; nothing here
+ * mixes namespaces, because nothing here ever sees two lists at once.
+ */
+
+/** Percent record over an arbitrary component list. */
+export type ComponentPercents = Record<string, number>;
+
+export function draftTotalFor(
+  components: readonly string[],
+  percents: ComponentPercents,
+): number {
+  return components.reduce((acc, c) => acc + (percents[c] ?? 0), 0);
+}
+
+/** Every value an integer in [0,100] AND the total exactly 100. */
+export function isDraftValidFor(
+  components: readonly string[],
+  percents: ComponentPercents,
+): boolean {
+  return (
+    components.every((c) => {
+      const value = percents[c];
+      return Number.isInteger(value) && value >= 0 && value <= 100;
+    }) && draftTotalFor(components, percents) === 100
+  );
+}
+
+/**
+ * Canonical 8-dp weight strings from integer percents, over the given components.
+ *
+ * Requires a total of exactly 100 (each p/100 is exact to 2 dp, so the sum is
+ * exactly 1.00000000). THROWS on an invalid total rather than silently normalizing —
+ * the backend refuses invalid weights and never repairs them, and so does this.
+ */
+export function percentsToCanonicalFor(
+  components: readonly string[],
+  percents: ComponentPercents,
+): Record<string, string> {
+  if (!isDraftValidFor(components, percents)) {
+    throw new Error("percentsToCanonicalFor requires integer percents summing to exactly 100");
+  }
+  const out: Record<string, string> = {};
+  for (const c of components) out[c] = (percents[c] / 100).toFixed(8);
+  return out;
+}
+
+/** Integer percents from a stored decimal weight profile, over the given components. */
+export function decimalWeightsToPercentsFor(
+  components: readonly string[],
+  profile: Record<string, string>,
+): ComponentPercents {
+  const raw = components.map((c) => Number(profile[c] ?? "0") * 100);
+  const allocated = largestRemainder(raw, 100) ?? components.map(() => Math.round(100 / components.length));
+  const out: ComponentPercents = {};
+  components.forEach((c, i) => {
+    out[c] = allocated[i];
+  });
+  return out;
+}
+
 /** Sum of the four percents (may be ≠ 100 while the user is editing). */
 export function draftTotal(percents: ScenarioPercents): number {
-  return SCENARIO_COMPONENTS.reduce((acc, c) => acc + percents[c], 0);
+  return draftTotalFor(SCENARIO_COMPONENTS, percents);
 }
 
 /** A draft is applicable only when every value is in [0,100] and the total is exactly 100. */

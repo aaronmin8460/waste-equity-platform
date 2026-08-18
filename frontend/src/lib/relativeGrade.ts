@@ -247,14 +247,23 @@ export function computeGradeDistribution(
   runId: number,
   profile: SuitabilityProfile,
   scope: SuitabilityScope = SCOPE_ALL,
+  /**
+   * The component model of the run these order statistics belong to.
+   *
+   * `runId` already fixes the run, so this changes no result — it makes the request
+   * SELF-DESCRIBING, so every candidates read on the page states which model it is
+   * about rather than leaving one of them silent. A browser test asserts exactly
+   * that uniformity, because a silent read is how the model pin gets half-applied.
+   */
+  componentModelVersion?: string,
 ): Promise<GradeDistribution | null> {
   // The scope is part of the key: a stored run's scores are immutable, but the
   // POPULATION they are ranked within is exactly what ① changes, so 서울's bands
   // must never be served from 수도권 전체's memo.
-  const key = `${runId}:${profile}:${scopeKey(scope)}`;
+  const key = `${runId}:${profile}:${scopeKey(scope)}:${componentModelVersion ?? "default"}`;
   const cached = distributionCache.get(key);
   if (cached) return cached;
-  const pending = readGradeDistribution(runId, profile, scope).then((result) => {
+  const pending = readGradeDistribution(runId, profile, scope, componentModelVersion).then((result) => {
     // Forget a failure so the next visit retries; keep a success forever, since
     // a stored run's scores cannot change.
     if (result === null) distributionCache.delete(key);
@@ -268,6 +277,7 @@ async function readGradeDistribution(
   runId: number,
   profile: SuitabilityProfile,
   scope: SuitabilityScope,
+  componentModelVersion?: string,
 ): Promise<GradeDistribution | null> {
   // The SAME scope on every one of the four reads. Mixing an unscoped population
   // size with scoped order statistics (or vice versa) would produce a threshold no
@@ -282,6 +292,7 @@ async function readGradeDistribution(
       top: TOP_FILTER_SENTINEL,
       limit: 1,
       ...scopeQuery,
+      componentModelVersion,
     });
     const population = probe.total_matched;
     if (!Number.isFinite(population) || population < 4) return null;
@@ -298,6 +309,7 @@ async function readGradeDistribution(
         limit: 1,
         offset: rank25 - 1,
         ...scopeQuery,
+        componentModelVersion,
       }),
       fetchSuitabilityCandidates({
         runId,
@@ -307,6 +319,7 @@ async function readGradeDistribution(
         limit: 1,
         offset: rank75 - 1,
         ...scopeQuery,
+        componentModelVersion,
       }),
     ]);
     const p25 = parseScore(at25.features[0]?.properties.total_score);
@@ -325,6 +338,7 @@ async function readGradeDistribution(
         minScore: p75,
         limit: 1,
         ...scopeQuery,
+        componentModelVersion,
       }),
       fetchSuitabilityCandidates({
         runId,
@@ -333,6 +347,7 @@ async function readGradeDistribution(
         minScore: p25,
         limit: 1,
         ...scopeQuery,
+        componentModelVersion,
       }),
     ]);
     const countA = aBand.total_matched;

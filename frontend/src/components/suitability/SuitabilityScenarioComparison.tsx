@@ -55,6 +55,12 @@ import {
   type ComparisonSide,
   type ScenarioComparison,
 } from "../../lib/scenarioComparison";
+import { SCOPE_ALL, type SuitabilityScope } from "../../lib/suitabilityScope";
+import {
+  COMPONENT_MODEL_SUCCESSOR,
+  LEGACY_MODEL_NOTICE,
+  SCENARIO_REWEIGHT_NOTE,
+} from "../../lib/componentModelWeights";
 import {
   SAVED_SCENARIO_OTHER_RUN_NOTICE,
   type ComparisonResolution,
@@ -91,6 +97,17 @@ export interface SuitabilityScenarioComparisonProps {
    * could not stand behind.
    */
   analysisSections?: (comparison: ScenarioComparison) => ReactNode;
+  /**
+   * THE ANALYSIS SCOPE carried over from 후보지 심층 분석's ① 지역 선택.
+   *
+   * The page owns it — it is the same one state that scopes Page 4's ranking, its
+   * A/B/C population and its map — and it is passed here so BOTH sides of the
+   * comparison are previewed over that one candidate universe. A and B differ by
+   * WEIGHTS only; they must never differ by geography.
+   */
+  scope?: SuitabilityScope;
+  /** The scope's visible name, so the page can say which 범위 it is comparing. */
+  scopeName?: string;
 }
 
 const SLOT_LABEL = { A: "A안", B: "B안" } as const;
@@ -110,6 +127,8 @@ export default function SuitabilityScenarioComparison({
   orientation,
   onBackToSelection,
   analysisSections,
+  scope = SCOPE_ALL,
+  scopeName,
 }: SuitabilityScenarioComparisonProps) {
   // Memoised on the two primitives so the hook's dependency is stable across
   // renders in which the run did not actually change.
@@ -120,10 +139,14 @@ export default function SuitabilityScenarioComparison({
 
   // THE single data load for Page 5. Later sections receive `comparison`; none of
   // them resolves the pair or calls the preview API again.
-  const comparison = useScenarioComparison(selection, runResolution);
+  const comparison = useScenarioComparison(selection, runResolution, scope, COMPONENT_MODEL_SUCCESSOR);
   const { sideA, sideB, status } = comparison;
 
-  const rows = comparisonWeightRows(sideA.canonicalWeights, sideB.canonicalWeights);
+  const rows = comparisonWeightRows(
+    sideA.canonicalWeights,
+    sideB.canonicalWeights,
+    COMPONENT_MODEL_SUCCESSOR,
+  );
   // One served side is enough to show the table: the other column renders as
   // explicitly unavailable, which is more informative than hiding both.
   const anyWeights = sideA.canonicalWeights !== null || sideB.canonicalWeights !== null;
@@ -161,6 +184,24 @@ export default function SuitabilityScenarioComparison({
         <h2 id="scenario-comparison-heading" className="sr-only">
           비교 대상과 가중치 비교
         </h2>
+
+        {/* WHICH 범위 IS BEING COMPARED — stated, not implied.
+            The candidate universe is fixed by 후보지 심층 분석's ① 지역 선택, and both
+            sides are ranked within it. A comparison that did not name its 범위 would
+            leave a reader unable to tell a 경기-only A/B from a capital-region one,
+            which is precisely the confusion this page had while the scope was being
+            discarded. Only shown when a 범위 is actually narrower than 수도권 전체;
+            the whole-region case needs no qualification. */}
+        {scopeName !== undefined && scope.kind !== "all" && (
+          <p
+            className="text-[11px] leading-snug text-ink-muted"
+            data-testid="scenario-comparison-scope"
+          >
+            분석 범위 <span className="font-semibold text-ink">{scopeName}</span> · A안과 B안 모두
+            이 범위의 스크리닝 통과 후보 구역만을 대상으로 다시 순위를 매긴 결과입니다. 두 안은
+            가중치만 다르며, 비교 대상 지역은 같습니다.
+          </p>
+        )}
 
         {/* The two chips, side by side and equal — the frame's 662+24+662. */}
         <div className="grid gap-4 md:grid-cols-2">
@@ -218,7 +259,11 @@ export default function SuitabilityScenarioComparison({
                               CONTENT is the model's — a code is never shown bare. */}
                           <span className="mr-1.5 tabular-nums text-ink-subtle">{index + 1}</span>
                           {row.label}
-                          <span className="text-ink-subtle">（{row.code}）</span>
+                          {/* The successor components have no single-letter code, so
+                              the parens are omitted rather than rendered empty. */}
+                          {row.code !== "" && (
+                            <span className="text-ink-subtle">（{row.code}）</span>
+                          )}
                         </th>
                         <td className="py-3 pr-3">
                           <WeightCell percent={row.aPercent} testId="scenario-comparison-weight-a" />
@@ -271,7 +316,8 @@ export default function SuitabilityScenarioComparison({
                 {rows.map((row) => (
                   <div key={row.component} className="flex flex-wrap gap-x-3">
                     <dt className="font-medium">
-                      {row.label}（{row.code}）
+                      {row.label}
+                      {row.code !== "" ? `（${row.code}）` : ""}
                     </dt>
                     <dd className="tabular-nums">
                       {SLOT_LABEL.A} {row.aWeight ?? "자료 없음"} · {SLOT_LABEL.B}{" "}
@@ -296,8 +342,7 @@ export default function SuitabilityScenarioComparison({
       {/* The standing limit on what a scenario changes. Stated on the page that
           shows the reweighting, not only on the page that produced it. */}
       <p className="text-[11px] leading-snug text-ink-subtle" data-testid="scenario-comparison-method-note">
-        시나리오는 이미 계산된 Z·R·E·D 점수를 다시 가중해 순위를 바꿉니다. 배제·검토 판정(스크리닝)은
-        규칙 기반이며 가중치를 바꿔도 달라지지 않습니다.
+        {SCENARIO_REWEIGHT_NOTE}
       </p>
     </div>
   );
@@ -424,6 +469,21 @@ function SideIdentity({ side }: { side: ComparisonSide }) {
       {state === "OTHER_RUN" ? (
         <p className="mt-1 text-[11px] leading-snug text-warn" data-testid="scenario-comparison-side-other-run">
           {SAVED_SCENARIO_OTHER_RUN_NOTICE}
+        </p>
+      ) : null}
+
+      {/* A LEGACY SCENARIO, NOT A BROKEN ONE.
+          Its weights are perfectly valid — over the historical Z/R/E/D components,
+          which are different measurements from the successor's four. Recombining it
+          here would rename one measurement to another by position, so it is named as
+          incompatible and the reader is asked to save a new one. Its stored numbers
+          are never reinterpreted and never discarded. */}
+      {state === "OTHER_MODEL" ? (
+        <p
+          className="mt-1 text-[11px] leading-snug text-warn"
+          data-testid="scenario-comparison-side-other-model"
+        >
+          {LEGACY_MODEL_NOTICE}
         </p>
       ) : null}
 

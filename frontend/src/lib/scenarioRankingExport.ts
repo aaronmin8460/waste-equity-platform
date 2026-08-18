@@ -29,6 +29,10 @@ import {
   type ScenarioRankingComparison,
 } from "./scenarioRankingComparison";
 import type { ScenarioComparison } from "./scenarioComparison";
+import {
+  SCENARIO_REWEIGHT_NOTE,
+  componentModelLabel,
+} from "./componentModelWeights";
 import { NOT_SERVED, type ScenarioComparisonExportExtension } from "./scenarioComparisonExport";
 import { sealSheet, type XlsxSheet } from "./xlsx";
 
@@ -137,8 +141,7 @@ export function buildRankingComparisonSheet(
     `순위 이동이 계산된 후보 구역 ${model.comparableRows.length}개 중 상승 ${model.roseCount}개 · ` +
       `하락 ${model.fellCount}개 · 유지 ${model.heldCount}개.`,
     // The standing limit, repeated here because a detached sheet must carry it.
-    "시나리오는 이미 계산된 Z·R·E·D 점수를 다시 가중해 순위를 바꿉니다. " +
-      "배제·검토 판정(스크리닝)은 규칙 기반이며 가중치를 바꿔도 달라지지 않습니다.",
+    SCENARIO_REWEIGHT_NOTE,
     `순위 칸의 "${"A안/B안"} 상위 N 밖" 또는 "순위 미제공"은 그 시나리오의 미리보기 목록에 ` +
       "이 후보 구역이 없었다는 뜻이며, 순위가 낮다는 뜻도 0이라는 뜻도 아닙니다.",
   ];
@@ -190,6 +193,12 @@ export function rankingComparisonExportExtension(
     sheets: [sealSheet(buildRankingComparisonSheet(model, comparison))],
     metadataNotes: [
       `이 파일에는 "${RANKING_SHEET_NAME}" 시트가 포함되어 있습니다: ${model.scopeDescription}`,
+      // WHICH COMPONENT MODEL produced these numbers. A detached workbook has no
+      // screen around it, so without this a successor export and a historical one
+      // are indistinguishable — and their four factor columns are different
+      // measurements that happen to occupy the same positions.
+      `평가 모델: ${componentModelLabel(comparison.componentModelVersion)}` +
+        ` (${comparison.componentModelVersion ?? "모델 정보 없음"})`,
     ],
     scopeNote: RANKING_SHEET_SCOPE_NOTE,
     filenameMarker: "순위비교",
