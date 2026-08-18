@@ -149,15 +149,20 @@ function scenarioPreview(): api.UserScenarioPreview {
     policy_version: "suitability-policy-v2",
     derivation_version: "suitability-screening-v3",
     candidate_grid_version: "capital-grid-500m-v1",
-    component_model_version: "suitability-components-zred-v1",
-    component_order: ["zoning", "road", "equity", "demand"],
+    component_model_version: "suitability-components-successor-v1",
+    component_order: [
+      "existing_burden",
+      "air_impact_proxy",
+      "resident_impact",
+      "land_conversion",
+    ],
     // The BACKEND's canonical echo. The page must store and transmit THIS, not the
     // client's own copy of what it typed.
     canonical_weights: {
-      zoning: "0.50000000",
-      road: "0.30000000",
-      equity: "0.10000000",
-      demand: "0.10000000",
+      existing_burden: "0.40000000",
+      air_impact_proxy: "0.20000000",
+      resident_impact: "0.25000000",
+      land_conversion: "0.15000000",
     },
     compare_profile: "baseline",
     candidate_count_total: 20000,
@@ -230,7 +235,37 @@ function serveRanking(): void {
   });
 }
 
+/** The RUN the page resolves — pinned to the successor model, so it is one. */
+function serveRun(): void {
+  vi.mocked(api.fetchSuitabilityLatestRun).mockResolvedValue({
+    id: 47,
+    status: "SUCCEEDED",
+    reference_year: 2024,
+    boundary_vintage: "2024",
+    policy_version: "suitability-successor-policy-v1",
+    derivation_version: "suitability-successor-derivation-v1",
+    candidate_grid_version: "capital-grid-500m-v1",
+    component_model_version: "suitability-components-successor-v1",
+    component_order: [
+      "existing_burden",
+      "air_impact_proxy",
+      "resident_impact",
+      "land_conversion",
+    ],
+    weight_profiles: {
+      baseline: {
+        existing_burden: "0.25",
+        air_impact_proxy: "0.25",
+        resident_impact: "0.25",
+        land_conversion: "0.25",
+      },
+    },
+    weight_derivation: {},
+  } as unknown as api.SuitabilityRun);
+}
+
 async function serveSummary(): Promise<void> {
+  serveRun();
   serveRanking();
   vi.mocked(api.fetchSuitabilitySummary).mockResolvedValue({
     run: {
@@ -241,12 +276,23 @@ async function serveSummary(): Promise<void> {
       policy_version: "suitability-policy-v2",
       derivation_version: "suitability-screening-v3",
       candidate_grid_version: "capital-grid-500m-v1",
-      component_model_version: "suitability-components-zred-v1",
-      component_order: ["zoning", "road", "equity", "demand"],
-      // The served preset the editor opens on: 40 / 30 / 20 / 10.
+      // Page 4 now PINS the successor model, so the run it resolves is a successor
+      // run: its scores live in `component_scores`, its four legacy columns are
+      // null, and its only approved weight profile is the successor `baseline`.
+      component_model_version: "suitability-components-successor-v1",
+      component_order: [
+        "existing_burden",
+        "air_impact_proxy",
+        "resident_impact",
+        "land_conversion",
+      ],
       weight_profiles: {
-        baseline: { zoning: "0.40", road: "0.30", equity: "0.20", demand: "0.10" },
-        equal: { zoning: "0.25", road: "0.25", equity: "0.25", demand: "0.25" },
+        baseline: {
+          existing_burden: "0.25",
+          air_impact_proxy: "0.25",
+          resident_impact: "0.25",
+          land_conversion: "0.25",
+        },
       },
       weight_derivation: {},
     } as unknown as api.SuitabilityRun,
@@ -289,8 +335,13 @@ async function enterDeepAnalysis() {
   return utils;
 }
 
+/**
+ * Page 4 renders the SUCCESSOR factor cards now, so its weight inputs carry the V3
+ * testids. The historical cards (`factor-weight-*`) are still exercised by the
+ * single-column comparison screen's own specs.
+ */
 const weightInput = (component: string) =>
-  screen.getByTestId(`factor-weight-${component}`) as HTMLInputElement;
+  screen.getByTestId(`v3-factor-weight-${component}`) as HTMLInputElement;
 
 /** Type a whole percent into one factor's input, the way a reader would. */
 function setWeight(component: string, percent: number): void {
@@ -304,11 +355,17 @@ function setWeight(component: string, percent: number): void {
 describe("② the 가중치 설정 inputs", () => {
   it("renders one editable input per factor, loaded with the active preset", async () => {
     await enterDeepAnalysis();
-    expect(weightInput("zoning").value).toBe("40");
-    expect(weightInput("road").value).toBe("30");
-    expect(weightInput("equity").value).toBe("20");
-    expect(weightInput("demand").value).toBe("10");
-    for (const component of ["zoning", "road", "equity", "demand"]) {
+    // The successor model's ONE approved profile: `baseline`, equal 0.25×4.
+    expect(weightInput("existing_burden").value).toBe("25");
+    expect(weightInput("air_impact_proxy").value).toBe("25");
+    expect(weightInput("resident_impact").value).toBe("25");
+    expect(weightInput("land_conversion").value).toBe("25");
+    for (const component of [
+      "existing_burden",
+      "air_impact_proxy",
+      "resident_impact",
+      "land_conversion",
+    ]) {
       expect(weightInput(component).disabled, component).toBe(false);
     }
     // The total is stated, and it starts valid because a served preset sums to 100.
@@ -317,32 +374,41 @@ describe("② the 가중치 설정 inputs", () => {
 
   it("offers 사용자 지정 alongside the built-in presets, which are kept", async () => {
     await enterDeepAnalysis();
-    expect(screen.getByTestId("profile-radio-baseline")).toBeDefined();
-    expect(screen.getByTestId("profile-radio-equal")).toBeDefined();
+    // The V3 row is 기준 + 사용자 지정 and nothing else: the historical presets
+    // (equal / equity_focused / access_focused / critic) have NO approved successor
+    // equivalent, so offering them here would label a vector with a policy that was
+    // never registered for it.
+    expect(screen.getByTestId("v3-preset-baseline")).toBeDefined();
     expect(screen.getByTestId("profile-radio-custom")).toBeDefined();
+    expect(screen.queryByTestId("profile-radio-equal")).toBeNull();
+    expect(screen.queryByTestId("profile-radio-critic")).toBeNull();
     // Nothing is custom until the reader makes it so.
     expect((screen.getByTestId("profile-radio-custom") as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByTestId("profile-radio-baseline") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId("v3-preset-baseline") as HTMLInputElement).checked).toBe(true);
   });
 
-  it("loads a preset's values when that preset is selected", async () => {
+  it("loads the approved baseline when 기준 is selected", async () => {
     await enterDeepAnalysis();
-    fireEvent.click(screen.getByTestId("profile-radio-equal"));
-    await waitFor(() => expect(weightInput("zoning").value).toBe("25"));
-    expect(weightInput("road").value).toBe("25");
-    expect(weightInput("equity").value).toBe("25");
-    expect(weightInput("demand").value).toBe("25");
+    setWeight("existing_burden", 70);
+    await waitFor(() =>
+      expect((screen.getByTestId("profile-radio-custom") as HTMLInputElement).checked).toBe(true),
+    );
+    fireEvent.click(screen.getByTestId("v3-preset-baseline"));
+    await waitFor(() => expect(weightInput("existing_burden").value).toBe("25"));
+    expect(weightInput("air_impact_proxy").value).toBe("25");
+    expect(weightInput("resident_impact").value).toBe("25");
+    expect(weightInput("land_conversion").value).toBe("25");
   });
 
   it("transitions to 사용자 지정 as soon as a preset-loaded value is edited", async () => {
     await enterDeepAnalysis();
     expect((screen.getByTestId("profile-radio-custom") as HTMLInputElement).checked).toBe(false);
-    setWeight("zoning", 50);
+    setWeight("existing_burden", 40);
     await waitFor(() =>
       expect((screen.getByTestId("profile-radio-custom") as HTMLInputElement).checked).toBe(true),
     );
     // …and the preset stops claiming to be the basis in force.
-    expect((screen.getByTestId("profile-radio-baseline") as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByTestId("v3-preset-baseline") as HTMLInputElement).checked).toBe(false);
     expect(screen.getByTestId("active-basis-name").textContent).toContain("사용자 지정");
   });
 });
@@ -354,42 +420,43 @@ describe("② the 가중치 설정 inputs", () => {
 describe("weight validation", () => {
   it("blocks the calculation and says by how much when the total is not 100%", async () => {
     await enterDeepAnalysis();
-    setWeight("zoning", 50); // 50 + 30 + 20 + 10 = 110
+    setWeight("existing_burden", 55); // 55 + 25 + 25 + 25 = 130
     await waitFor(() =>
       expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(true),
     );
-    expect(screen.getByTestId("custom-weight-total").textContent).toContain("110%");
+    expect(screen.getByTestId("custom-weight-total").textContent).toContain("130%");
     const validation = screen.getByTestId("custom-weight-validation").textContent ?? "";
     expect(validation).toContain("100%");
-    expect(validation).toContain("10%p 많습니다");
+    expect(validation).toContain("30%p 많습니다");
     // NEVER auto-corrected — the backend refuses rather than normalising, and so
     // does this editor.
     expect(validation).toContain("자동으로 맞추지 않습니다");
-    expect(weightInput("road").value).toBe("30");
+    expect(weightInput("air_impact_proxy").value).toBe("25");
     expect(api.previewUserWeightScenario).not.toHaveBeenCalled();
   });
 
   it("blocks an under-100 total too, and names the shortfall", async () => {
     await enterDeepAnalysis();
-    setWeight("zoning", 10); // 10 + 30 + 20 + 10 = 70
+    setWeight("existing_burden", 10); // 10 + 25 + 25 + 25 = 85
     await waitFor(() =>
       expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(true),
     );
-    expect(screen.getByTestId("custom-weight-validation").textContent).toContain("30%p 모자랍니다");
+    expect(screen.getByTestId("custom-weight-validation").textContent).toContain("15%p 모자랍니다");
   });
 
   it("clamps a value to 0–100 rather than accepting an out-of-range weight", async () => {
     await enterDeepAnalysis();
-    setWeight("zoning", 250);
-    await waitFor(() => expect(weightInput("zoning").value).toBe("100"));
-    setWeight("road", -40);
-    await waitFor(() => expect(weightInput("road").value).toBe("0"));
+    setWeight("existing_burden", 250);
+    await waitFor(() => expect(weightInput("existing_burden").value).toBe("100"));
+    setWeight("air_impact_proxy", -40);
+    await waitFor(() => expect(weightInput("air_impact_proxy").value).toBe("0"));
   });
 
   it("enables the calculation once the four values total exactly 100%", async () => {
     await enterDeepAnalysis();
-    setWeight("zoning", 50);
-    setWeight("equity", 10); // 50 + 30 + 10 + 10 = 100
+    setWeight("existing_burden", 40);
+    setWeight("air_impact_proxy", 20);
+    setWeight("land_conversion", 15); // 40 / 20 / 25 / 15 = 100
     await waitFor(() =>
       expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(false),
     );
@@ -406,8 +473,9 @@ describe("weight validation", () => {
 describe("custom weights drive the REAL calculation", () => {
   async function applyCustomVector() {
     await enterDeepAnalysis();
-    setWeight("zoning", 50);
-    setWeight("equity", 10); // 50 / 30 / 10 / 10 = 100
+    setWeight("existing_burden", 40);
+    setWeight("air_impact_proxy", 20);
+    setWeight("land_conversion", 15); // 40 / 20 / 25 / 15 = 100
     await waitFor(() =>
       expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(false),
     );
@@ -420,10 +488,10 @@ describe("custom weights drive the REAL calculation", () => {
     const [request] = vi.mocked(api.previewUserWeightScenario).mock.calls[0];
     expect(request.run_id).toBe(47);
     expect(request.weights).toEqual({
-      zoning: "0.50000000",
-      road: "0.30000000",
-      equity: "0.10000000",
-      demand: "0.10000000",
+      existing_burden: "0.40000000",
+      air_impact_proxy: "0.20000000",
+      resident_impact: "0.25000000",
+      land_conversion: "0.15000000",
     });
     // The backend's rule, restated as arithmetic: the four canonical strings sum to
     // exactly 1.00000000 at 8 decimal places, with no float drift.
@@ -461,10 +529,13 @@ describe("custom weights drive the REAL calculation", () => {
     const url = screen.getByTestId("map-container").getAttribute("data-tile-url") ?? "";
     // The canonical weights the BACKEND echoed, in the tile URL — so the map and the
     // ranking are showing one and the same weighting.
-    expect(url).toContain("wz=0.50000000");
-    expect(url).toContain("wr=0.30000000");
-    expect(url).toContain("we=0.10000000");
-    expect(url).toContain("wd=0.10000000");
+    // Successor weights travel as explicit `w=component:value` pairs — never as the
+    // historical wz/wr/we/wd abbreviations, which name different measurements.
+    expect(url).toContain(encodeURIComponent("existing_burden:0.40000000"));
+    expect(url).toContain(encodeURIComponent("air_impact_proxy:0.20000000"));
+    expect(url).toContain(encodeURIComponent("resident_impact:0.25000000"));
+    expect(url).toContain(encodeURIComponent("land_conversion:0.15000000"));
+    expect(url).not.toContain("wz=");
     expect(url).toContain("scenario_hash=abc123def456");
   });
 
@@ -485,7 +556,7 @@ describe("custom weights drive the REAL calculation", () => {
     // save card re-verifies through the same preview endpoint before writing.
     const weights = screen.getByTestId("scenario-save-weights").textContent ?? "";
     expect(weights).toContain("사용자 지정");
-    expect(weights).toContain("50%");
+    expect(weights).toContain("40%");
     expect(weights).not.toContain("기본 기준의 가중치를 저장합니다");
   });
 
@@ -503,7 +574,8 @@ describe("custom weights drive the REAL calculation", () => {
     await waitFor(() => expect(screen.getByTestId("custom-weight-applied")).toBeDefined());
     fireEvent.click(screen.getByTestId("custom-weight-reset"));
     await waitFor(() => expect(screen.queryByTestId("custom-weight-applied")).toBeNull());
-    expect(weightInput("zoning").value).toBe("40");
+    // Back to the successor model's approved baseline, not a historical vector.
+    expect(weightInput("existing_burden").value).toBe("25");
     // The map is back on the stored run's profile tiles.
     const url = screen.getByTestId("map-container").getAttribute("data-tile-url") ?? "";
     expect(url).not.toContain("/scenarios/tiles/");
@@ -524,8 +596,9 @@ describe("custom weights drive the REAL calculation", () => {
       ),
     );
     await enterDeepAnalysis();
-    setWeight("zoning", 50);
-    setWeight("equity", 10);
+    setWeight("existing_burden", 40);
+    setWeight("air_impact_proxy", 20);
+    setWeight("land_conversion", 15); // 40 / 20 / 25 / 15 = 100
     await waitFor(() =>
       expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(false),
     );
@@ -551,6 +624,32 @@ describe("the rest of the ② / ③ requirements", () => {
     expect(request.limit).toBe(5);
   });
 
+  it("⭐ requests the V3 SUCCESSOR model explicitly, with successor component keys", async () => {
+    // Page 4 pins the model rather than inheriting DEFAULT_COMPONENT_MODEL (still
+    // historical). Without the pin the request silently resolved to a historical run
+    // — V3 controls over historical numbers, the exact defect this transition fixes.
+    await enterDeepAnalysis();
+    setWeight("existing_burden", 40);
+    setWeight("air_impact_proxy", 20);
+    setWeight("land_conversion", 15); // 40 / 20 / 25 / 15 = 100
+    await waitFor(() =>
+      expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("custom-weight-apply"));
+    await waitFor(() => expect(api.previewUserWeightScenario).toHaveBeenCalled());
+
+    const [request] = vi.mocked(api.previewUserWeightScenario).mock.calls[0];
+    expect(request.component_model_version).toBe("suitability-components-successor-v1");
+    // The weight keys are the SUCCESSOR's own components…
+    expect(Object.keys(request.weights).sort()).toEqual(
+      ["air_impact_proxy", "existing_burden", "land_conversion", "resident_impact"].sort(),
+    );
+    // …and NO historical key leaks into a V3 payload.
+    for (const legacy of ["zoning", "road", "equity", "demand"]) {
+      expect(request.weights[legacy]).toBeUndefined();
+    }
+  });
+
   it("sends the ACTIVE ① 분석 범위 with the custom vector, and carries it into the tiles", async () => {
     // The preview endpoint ranks WITHIN the scope, so a scoped ③ shows this 범위's
     // own top N under the reader's weights. Sending no scope would rank the whole
@@ -558,8 +657,9 @@ describe("the rest of the ② / ③ requirements", () => {
     // Page-5 scope contract exists to prevent, in its Page-4 form.
     window.history.replaceState(null, "", "/?v=1&mode=suitability&view=score&suitScope=KR-SGIS-31");
     await enterDeepAnalysis();
-    setWeight("zoning", 50);
-    setWeight("equity", 10);
+    setWeight("existing_burden", 40);
+    setWeight("air_impact_proxy", 20);
+    setWeight("land_conversion", 15); // 40 / 20 / 25 / 15 = 100
     await waitFor(() =>
       expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(false),
     );
@@ -580,8 +680,9 @@ describe("the rest of the ② / ③ requirements", () => {
 
   it("sends NO scope for 수도권 전체, which is the whole-region ranking", async () => {
     await enterDeepAnalysis();
-    setWeight("zoning", 50);
-    setWeight("equity", 10);
+    setWeight("existing_burden", 40);
+    setWeight("air_impact_proxy", 20);
+    setWeight("land_conversion", 15); // 40 / 20 / 25 / 15 = 100
     await waitFor(() =>
       expect((screen.getByTestId("custom-weight-apply") as HTMLButtonElement).disabled).toBe(false),
     );

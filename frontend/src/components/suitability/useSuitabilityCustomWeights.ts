@@ -62,15 +62,20 @@ import {
   type SuitabilityScope,
 } from "../../lib/suitabilityScope";
 import {
-  SCENARIO_COMPONENTS,
   decimalWeightsToPercents,
-  draftTotal,
-  isDraftValid,
-  percentsToCanonical,
-  totalDifference,
-  type ScenarioComponent,
-  type ScenarioPercents,
+  decimalWeightsToPercentsFor,
+  draftTotalFor,
+  isDraftValidFor,
+  percentsToCanonicalFor,
+  type ComponentPercents,
 } from "../../lib/scenario";
+import {
+  COMPONENT_MODEL_HISTORICAL,
+  COMPONENT_MODEL_SUCCESSOR,
+  SUCCESSOR_COMPONENT_ORDER,
+  componentsFor,
+  type ComponentModelVersion,
+} from "../../lib/componentModelWeights";
 
 /** Where the numbers currently in the editor came from. */
 export type WeightSource =
@@ -85,15 +90,15 @@ export interface AppliedCustomWeights {
   scenarioHash: string;
   scenarioHashShort: string;
   /** The percents the reader typed, kept so the editor can show what is applied. */
-  percents: ScenarioPercents;
+  percents: ComponentPercents;
   /** The 범위 this vector was ranked within, carried so the map tiles match it. */
   scope: SuitabilityScope;
 }
 
 export interface SuitabilityCustomWeights {
   /** The editor's current values, always integers in 0–100. */
-  percents: ScenarioPercents;
-  setPercent: (component: ScenarioComponent, percent: number) => void;
+  percents: ComponentPercents;
+  setPercent: (component: string, percent: number) => void;
   source: WeightSource;
   isCustom: boolean;
   /** Sum of the four values; 100 exactly when applicable. */
@@ -117,11 +122,34 @@ export interface SuitabilityCustomWeights {
 }
 
 /** The served weights for one profile on THIS run — the same resolution card ② uses. */
+/**
+ * THE SUCCESSOR MODEL HAS EXACTLY ONE APPROVED PROFILE: `baseline`, equal 0.25×4.
+ *
+ * The historical presets (`equal`, `equity_focused`, `access_focused`, `critic`)
+ * have NO approved successor equivalent — they are defined over a different
+ * component namespace, and carrying their names across would label a vector with a
+ * policy that was never registered for it. So a V3 editor offers exactly Baseline
+ * and 사용자 지정, which is what the successor policy actually supports.
+ */
+export const SUCCESSOR_BASELINE_PERCENTS: ComponentPercents = Object.fromEntries(
+  SUCCESSOR_COMPONENT_ORDER.map((component) => [component, 25]),
+);
+
+/** The preset a model's editor opens on, as integer percents. */
 function servedPercents(
   run: SuitabilityRun | null,
   policyProfiles: Record<string, Record<string, string>> | undefined,
   profile: SuitabilityProfile,
-): ScenarioPercents {
+  model: ComponentModelVersion,
+): ComponentPercents {
+  if (model === COMPONENT_MODEL_SUCCESSOR) {
+    // The run's own successor `baseline`, when it served one; otherwise the approved
+    // policy constant. Both are the SAME registered profile — never an invented one.
+    const served = (run?.weight_profiles ?? {})["baseline"];
+    return served === undefined
+      ? { ...SUCCESSOR_BASELINE_PERCENTS }
+      : decimalWeightsToPercentsFor(SUCCESSOR_COMPONENT_ORDER, served);
+  }
   const served = (run?.weight_profiles ?? {})[profile] ?? policyProfiles?.[profile];
   // No served vector for this profile on this run: an equal split is the only
   // neutral starting point, and it is never presented as the run's own weights —
@@ -131,8 +159,12 @@ function servedPercents(
   return decimalWeightsToPercents(served);
 }
 
-function samePercents(a: ScenarioPercents, b: ScenarioPercents): boolean {
-  return SCENARIO_COMPONENTS.every((component) => a[component] === b[component]);
+function samePercents(
+  components: readonly string[],
+  a: ComponentPercents,
+  b: ComponentPercents,
+): boolean {
+  return components.every((component) => a[component] === b[component]);
 }
 
 export function useSuitabilityCustomWeights({
@@ -140,6 +172,7 @@ export function useSuitabilityCustomWeights({
   policyProfiles,
   profile,
   scope = SCOPE_ALL,
+  componentModelVersion = COMPONENT_MODEL_HISTORICAL,
   enabled,
 }: {
   run: SuitabilityRun | null;
@@ -147,6 +180,16 @@ export function useSuitabilityCustomWeights({
   policyProfiles?: Record<string, Record<string, string>>;
   /** The active 점수 반영 기준. Changing it reloads that preset. */
   profile: SuitabilityProfile;
+  /**
+   * WHICH COMPONENT MODEL this editor authors a vector for.
+   *
+   * Page 4 pins the successor model explicitly rather than relying on
+   * `DEFAULT_COMPONENT_MODEL`, so its four inputs are the successor's four
+   * components and the request it builds is unambiguously a V3 scenario. The
+   * historical default keeps the single-column comparison screen — and any caller
+   * that has not been migrated — exactly as it was.
+   */
+  componentModelVersion?: ComponentModelVersion;
   /**
    * The active ① 분석 범위. The preview is ranked WITHIN it, exactly as the profile
    * ranking is, so ③'s rows are this 범위's top N under the reader's own weights —
@@ -163,9 +206,14 @@ export function useSuitabilityCustomWeights({
   enabled: boolean;
 }): SuitabilityCustomWeights {
   const runId = run?.id ?? null;
+  /** The components THIS editor edits — the pinned model's own, never a mixture. */
+  const components = useMemo(
+    () => componentsFor(componentModelVersion),
+    [componentModelVersion],
+  );
   const presetPercents = useMemo(
-    () => servedPercents(run, policyProfiles, profile),
-    [run, policyProfiles, profile],
+    () => servedPercents(run, policyProfiles, profile, componentModelVersion),
+    [run, policyProfiles, profile, componentModelVersion],
   );
 
   /**
@@ -181,7 +229,7 @@ export function useSuitabilityCustomWeights({
    * weights in between — a test, or a reader who typed immediately — saw a vector the
    * run never served.
    */
-  const [draft, setDraft] = useState<ScenarioPercents>(presetPercents);
+  const [draft, setDraft] = useState<ComponentPercents>(presetPercents);
   const [source, setSource] = useState<WeightSource>({ kind: "preset", profile });
   // On a preset, the SERVED vector is the answer; on 사용자 지정, the reader's draft.
   const percents = source.kind === "preset" ? presetPercents : draft;
@@ -204,7 +252,7 @@ export function useSuitabilityCustomWeights({
    * scenario across any of them would leave ③ and the map showing a weighting that
    * nothing on screen still names.
    */
-  const presetKey = `${runId}:${profile}:${scopeKey(scope)}:${enabled ? "on" : "off"}`;
+  const presetKey = `${runId}:${profile}:${componentModelVersion}:${scopeKey(scope)}:${enabled ? "on" : "off"}`;
   const lastPresetKey = useRef(presetKey);
   useEffect(() => {
     if (lastPresetKey.current === presetKey) return;
@@ -222,7 +270,7 @@ export function useSuitabilityCustomWeights({
     setError(null);
   }, [presetKey, presetPercents, profile]);
 
-  const setPercent = useCallback((component: ScenarioComponent, percent: number) => {
+  const setPercent = useCallback((component: string, percent: number) => {
     // Clamped to the 0–100 the requirement states, and floored to an integer so the
     // exact-decimal mapping can never be handed a fractional percent. A blank or
     // unparseable field arrives as NaN and is read as 0, which keeps the total
@@ -253,14 +301,14 @@ export function useSuitabilityCustomWeights({
     setError(null);
   }, [presetPercents, profile]);
 
-  const valid = isDraftValid(percents);
-  const total = draftTotal(percents);
-  const difference = totalDifference(percents);
+  const valid = isDraftValidFor(components, percents);
+  const total = draftTotalFor(components, percents);
+  const difference = total - 100;
   const canApply =
     valid &&
     runId !== null &&
     !applying &&
-    (applied === null || !samePercents(applied.percents, percents));
+    (applied === null || !samePercents(components, applied.percents, percents));
 
   const apply = useCallback(() => {
     if (!valid || runId === null) return;
@@ -268,7 +316,7 @@ export function useSuitabilityCustomWeights({
     // try/catch is the belt so a future edit cannot turn a refusal into a crash.
     let weights: UserScenarioWeights;
     try {
-      weights = percentsToCanonical(percents);
+      weights = percentsToCanonicalFor(components, percents);
     } catch {
       setError("가중치 합계가 정확히 100%일 때만 계산할 수 있습니다.");
       return;
@@ -283,6 +331,11 @@ export function useSuitabilityCustomWeights({
     previewUserWeightScenario(
       {
         run_id: runId,
+        // EXPLICIT, never inherited from DEFAULT_COMPONENT_MODEL. Page 4 pins the
+        // successor model, so the run this recombines is a successor run and the
+        // weights above are over the successor components. Sending nothing here is
+        // what silently made this a historical request.
+        component_model_version: componentModelVersion,
         weights,
         // The stored profile the preview reports each candidate's movement against.
         // `baseline` is the same anchor ④ 시나리오 저장 and Page 5 use, so a rank
@@ -326,7 +379,7 @@ export function useSuitabilityCustomWeights({
       .finally(() => {
         if (!controller.signal.aborted) setApplying(false);
       });
-  }, [valid, runId, percents, scope]);
+  }, [valid, runId, percents, scope, components, componentModelVersion]);
 
   return {
     percents,

@@ -48,14 +48,15 @@ import {
   componentExplanation,
   type ScoreComponent,
 } from "../../lib/glossary";
-import type { ScenarioComponent, ScenarioPercents } from "../../lib/scenario";
+import type { ComponentPercents } from "../../lib/scenario";
 import { COMPONENT_ACCENT } from "./factorAccents";
 import { COMPONENT_DIRECTION } from "./shared";
 
 /** The live weight editor, when this card group is the editable one. */
 export interface FactorWeightEditor {
-  percents: ScenarioPercents;
-  setPercent: (component: ScenarioComponent, percent: number) => void;
+  /** Keyed by the components the CARDS render — historical here, successor in V3. */
+  percents: ComponentPercents;
+  setPercent: (component: string, percent: number) => void;
   /** Blocks editing while an apply is in flight, so a half-typed vector cannot race it. */
   disabled?: boolean;
 }
@@ -79,16 +80,6 @@ function servedScore(detail: CandidateDetail | null, component: ScoreComponent):
     demand: detail.demand_score,
   };
   return scores[component];
-}
-
-/**
- * The four component keys are the same set in both namespaces — `ScoreComponent`
- * (glossary) and `ScenarioComponent` (the weight editor) — so the cast is a
- * restatement, not a widening. `lib/scenario.ts`'s `SCENARIO_COMPONENTS` and
- * `glossary.ts`'s `COMPONENT_ORDER` are both exactly zoning/road/equity/demand.
- */
-function asScenarioComponent(component: ScoreComponent): ScenarioComponent {
-  return component as ScenarioComponent;
 }
 
 export default function SuitabilityFactorCards({
@@ -175,10 +166,10 @@ export default function SuitabilityFactorCards({
                   // Figma: 43×27, r=8, 1.2px accent border.
                   className="h-[27px] w-[52px] rounded-[8px] border-[1.2px] bg-surface px-1 text-center text-[13px] tabular-nums text-ink disabled:cursor-not-allowed disabled:opacity-60"
                   style={{ borderColor: accent }}
-                  value={editor.percents[asScenarioComponent(component)]}
+                  value={editor.percents[component]}
                   onChange={(event) =>
                     editor.setPercent(
-                      asScenarioComponent(component),
+                      component,
                       // An emptied field reads as NaN and the editor floors it to 0,
                       // which keeps the running total truthful (and therefore
                       // invalid) instead of silently holding the previous value.

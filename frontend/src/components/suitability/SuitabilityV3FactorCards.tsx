@@ -42,6 +42,16 @@ import {
 export interface SuitabilityV3FactorCardsProps {
   factors: readonly V3FactorView[];
   /**
+   * The LIVE weight editor. When supplied, each card's `가중치 설정 [ __ ] %` input
+   * is editable and its value drives a real successor scenario request; when
+   * omitted the input keeps its read-only shape.
+   */
+  editor?: {
+    percents: Record<string, number>;
+    setPercent: (component: string, percent: number) => void;
+    disabled?: boolean;
+  };
+  /**
    * One sentence explaining WHY the values are absent, shown once at the foot of
    * the group rather than repeated in all four cards. Omitted when values arrive.
    */
@@ -53,7 +63,13 @@ function scoreText(score: number | null): string {
   return score === null ? "—/100" : `${score}/100`;
 }
 
-function FactorCard({ view }: { view: V3FactorView }) {
+function FactorCard({
+  view,
+  editor,
+}: {
+  view: V3FactorView;
+  editor?: SuitabilityV3FactorCardsProps["editor"];
+}) {
   const meta = V3_COMPONENT_META[view.component];
   const inputId = useId();
   const unavailable = view.score === null;
@@ -86,23 +102,42 @@ function FactorCard({ view }: { view: V3FactorView }) {
       </div>
 
       {/* WEIGHT CONTROL — Figma "가중치 설정 [ __ ] %". Full shape, disabled. */}
-      <div className="mt-2 flex items-center gap-2">
+      <div className="relative mt-2 flex items-center gap-2">
         <label
           className="text-sm font-bold text-ink-subtle"
           htmlFor={inputId}
         >
           가중치 설정
         </label>
+        {/* LIVE when an editor is supplied. The value then comes from the editor,
+            not from the run's served weight, because what the reader is composing is
+            a scenario over this model — the served vector is the preset it started
+            from. */}
         <input
           id={inputId}
-          type="text"
+          type={editor ? "number" : "text"}
           inputMode="numeric"
-          readOnly
-          disabled
+          min={editor ? 0 : undefined}
+          max={editor ? 100 : undefined}
+          step={editor ? 1 : undefined}
+          readOnly={editor ? undefined : true}
+          disabled={editor ? editor.disabled : true}
           // Figma: 43×27, r=8, 1.2px accent border.
-          className="h-[27px] w-[43px] rounded-[8px] border-[1.2px] bg-surface text-center text-[13px] tabular-nums text-ink disabled:cursor-not-allowed disabled:opacity-70"
+          className="h-[27px] w-[52px] rounded-[8px] border-[1.2px] bg-surface px-1 text-center text-[13px] tabular-nums text-ink disabled:cursor-not-allowed disabled:opacity-70"
           style={{ borderColor: meta.accent }}
-          value={view.weightPercent === null ? "" : String(view.weightPercent)}
+          value={
+            editor
+              ? editor.percents[view.component] ?? 0
+              : view.weightPercent === null
+                ? ""
+                : String(view.weightPercent)
+          }
+          onChange={
+            editor
+              ? (event) =>
+                  editor.setPercent(view.component, Number.parseInt(event.target.value, 10))
+              : undefined
+          }
           aria-describedby={`${inputId}-note`}
           data-testid={`v3-factor-weight-${view.component}`}
         />
@@ -110,8 +145,10 @@ function FactorCard({ view }: { view: V3FactorView }) {
           %
         </span>
         <span id={`${inputId}-note`} className="sr-only">
-          {meta.label} 가중치. 현재 이 화면은 저장된 분석 실행 결과를 보여주므로 값을 바꿀 수
-          없습니다.
+          {meta.label} 가중치.
+          {editor
+            ? " 0에서 100 사이의 정수로 입력하며, 네 항목의 합이 정확히 100%일 때만 계산할 수 있습니다."
+            : " 현재 이 화면은 저장된 분석 실행 결과를 보여주므로 값을 바꿀 수 없습니다."}
         </span>
       </div>
 
@@ -137,12 +174,13 @@ function FactorCard({ view }: { view: V3FactorView }) {
 export default function SuitabilityV3FactorCards({
   factors,
   pendingReason,
+  editor,
 }: SuitabilityV3FactorCardsProps) {
   return (
     <div data-testid="v3-factor-cards">
       <ul className="mt-3 flex flex-col gap-2">
         {factors.map((view) => (
-          <FactorCard key={view.component} view={view} />
+          <FactorCard key={view.component} view={view} editor={editor} />
         ))}
       </ul>
       {pendingReason && (

@@ -88,6 +88,10 @@ import {
   scopeToQuery,
   type SuitabilityScope,
 } from "../../lib/suitabilityScope";
+import {
+  COMPONENT_MODEL_SUCCESSOR,
+  type ComponentModelVersion,
+} from "../../lib/componentModelWeights";
 import { STATUS_LABELS } from "./shared";
 import { useScenarioCandidateDetail } from "./useScenarioCandidateDetail";
 
@@ -170,6 +174,7 @@ export function useScenarioCandidateSelection(
    * counted capital-region-wide beside a regional ranking.
    */
   scope: SuitabilityScope = SCOPE_ALL,
+  componentModelVersion: ComponentModelVersion = COMPONENT_MODEL_SUCCESSOR,
 ) {
   const { sideA, sideB } = comparison;
 
@@ -185,7 +190,7 @@ export function useScenarioCandidateSelection(
   const [picked, setPicked] = useState<number | null>(null);
   const candidateId = picked ?? initialCandidateId;
 
-  const details = useScenarioCandidateDetail(comparison, candidateId, scope);
+  const details = useScenarioCandidateDetail(comparison, candidateId, scope, componentModelVersion);
   const rows = useMemo(
     () => candidateContributionRows(details.a.detail, details.b.detail),
     [details.a.detail, details.b.detail],

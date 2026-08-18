@@ -54,6 +54,7 @@ import {
   SAVED_SCENARIO_SCHEMA_VERSION,
   type SavedScenario,
 } from "../lib/savedScenarios";
+import { COMPONENT_MODEL_HISTORICAL } from "../lib/componentModelWeights";
 
 /** The run `homeApiMock` serves. */
 const RUN_ID = 47;
@@ -130,6 +131,10 @@ function scenario(overrides: Partial<SavedScenario> = {}): SavedScenario {
     id: "sc-a",
     name: "균형안",
     weights: A_WEIGHTS,
+    // These fixtures are HISTORICAL Z/R/E/D vectors, so they carry the historical
+    // model tag. A successor scenario is a different namespace and is fixtured
+    // separately where it is the subject.
+    componentModelVersion: COMPONENT_MODEL_HISTORICAL,
     runId: RUN_ID,
     profileSource: "baseline",
     createdAt: "2026-01-01T00:00:00.000Z",

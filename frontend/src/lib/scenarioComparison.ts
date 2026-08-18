@@ -49,6 +49,7 @@ import { COMPONENT_MODEL_HISTORICAL } from "./api";
 import type { SuitabilityProfile, UserScenarioPreview, UserScenarioWeights } from "./api";
 import { COMPONENT_META, COMPONENT_ORDER, plainError, type ScoreComponent } from "./glossary";
 import type { ComparisonResolution, ComparisonSlot, SavedScenario } from "./savedScenarios";
+import type { ComponentModelVersion } from "./componentModelWeights";
 import { scenarioRunState } from "./savedScenarios";
 
 // --------------------------------------------------------------------------- //
@@ -103,7 +104,19 @@ export type ComparisonSideState =
   | "OTHER_RUN"
   | "PREVIEW_ERROR"
   /** The run on screen could not be loaded, so this side could not be checked. */
-  | "RUN_UNKNOWN";
+  | "RUN_UNKNOWN"
+  /**
+   * The scenario was authored over a DIFFERENT component model from the one this
+   * comparison runs on.
+   *
+   * A legacy Z/R/E/D scenario opened on a successor comparison lands here. It is not
+   * an error and not a missing scenario — the saved vector is perfectly valid, just
+   * over a namespace whose four components are different measurements. Recombining
+   * it here would rename `road` to `resident_impact` by position, which is the one
+   * translation the component-model contract forbids outright. So it is surfaced as
+   * incompatible and the reader is asked to save a new one.
+   */
+  | "OTHER_MODEL";
 
 /**
  * The run the comparison is validated against, and whether it is known YET.
@@ -236,12 +249,24 @@ export function comparisonSideBlock(
   scenario: SavedScenario | null,
   requestedId: string | null,
   activeRunId: number | null,
-): Extract<ComparisonSideState, "EMPTY" | "MISSING" | "OTHER_RUN"> | null {
+  /**
+   * The component model this comparison runs on. A scenario authored over another
+   * model is blocked rather than recombined — see `OTHER_MODEL`. Omitted keeps the
+   * previous behaviour for any caller that has not been migrated.
+   */
+  componentModelVersion?: ComponentModelVersion,
+): Extract<ComparisonSideState, "EMPTY" | "MISSING" | "OTHER_RUN" | "OTHER_MODEL"> | null {
   if (requestedId === null) return "EMPTY";
   if (scenario === null) return "MISSING";
   // `activeRunId === null` resolves to OTHER_RUN inside `scenarioRunState`: an
   // unknown run is not a matching run, and must never be assumed to be one.
   if (scenarioRunState(scenario, activeRunId) === "OTHER_RUN") return "OTHER_RUN";
+  if (
+    componentModelVersion !== undefined &&
+    scenario.componentModelVersion !== componentModelVersion
+  ) {
+    return "OTHER_MODEL";
+  }
   return null;
 }
 
@@ -255,6 +280,7 @@ function buildSide(
   scenario: SavedScenario | null,
   run: ActiveRunResolution,
   outcome: ComparisonSideOutcome | null,
+  componentModelVersion?: ComponentModelVersion,
 ): ComparisonSide {
   const base = {
     slot,
@@ -277,7 +303,7 @@ function buildSide(
   if (run.state === "LOADING") return { ...base, state: "LOADING" };
   if (run.state === "ERROR") return { ...base, state: "RUN_UNKNOWN" };
 
-  const block = comparisonSideBlock(scenario, requestedId, run.runId);
+  const block = comparisonSideBlock(scenario, requestedId, run.runId, componentModelVersion);
   if (block !== null) return { ...base, state: block };
 
   // Cleared for preview but nothing has come back yet.
@@ -380,9 +406,11 @@ export function buildScenarioComparison(
   resolution: ComparisonResolution,
   run: ActiveRunResolution,
   outcomes: { a: ComparisonSideOutcome | null; b: ComparisonSideOutcome | null },
+  /** The component model this comparison runs on. Both sides are held to it. */
+  componentModelVersion?: ComponentModelVersion,
 ): ScenarioComparison {
-  const sideA = buildSide("A", resolution.a.id, resolution.a.scenario, run, outcomes.a);
-  const sideB = buildSide("B", resolution.b.id, resolution.b.scenario, run, outcomes.b);
+  const sideA = buildSide("A", resolution.a.id, resolution.a.scenario, run, outcomes.a, componentModelVersion);
+  const sideB = buildSide("B", resolution.b.id, resolution.b.scenario, run, outcomes.b, componentModelVersion);
   // The URL decoder already drops a `cmpB` equal to `cmpA`, and Page 4D refuses to
   // assign one scenario to both slots. This is the third guard, on the value that
   // actually reaches the screen, because neither of those two runs on a hand-typed

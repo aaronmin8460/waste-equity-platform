@@ -50,6 +50,10 @@ import {
   scopeToQuery,
   type SuitabilityScope,
 } from "../../lib/suitabilityScope";
+import {
+  COMPONENT_MODEL_HISTORICAL,
+  type ComponentModelVersion,
+} from "../../lib/componentModelWeights";
 
 /** Fallback when a rejection carried no usable backend detail. */
 export const CANDIDATE_DETAIL_FAILED_MESSAGE =
@@ -107,6 +111,8 @@ export function useScenarioCandidateDetail(
    * rank beside a regional one.
    */
   scope: SuitabilityScope = SCOPE_ALL,
+  /** The SAME model the comparison ran on — a detail is a row of that ranking. */
+  componentModelVersion: ComponentModelVersion = COMPONENT_MODEL_HISTORICAL,
 ): ScenarioCandidateDetails {
   const runId = comparison.runId;
   // `canonicalWeights` is non-null ONLY when that side is READY, so this single
@@ -114,7 +120,7 @@ export function useScenarioCandidateDetail(
   const weightsA = comparison.sideA.canonicalWeights;
   const weightsB = comparison.sideB.canonicalWeights;
 
-  const key = `${requestKey(runId, candidateId, weightsA, weightsB)}|${scopeKey(scope)}`;
+  const key = `${requestKey(runId, candidateId, weightsA, weightsB)}|${scopeKey(scope)}|${componentModelVersion}`;
   const [settled, setSettled] = useState<Settled>(NOTHING_LOADED);
 
   // Outcomes from a SUPERSEDED key are not shown. Derived rather than reset in an
@@ -137,6 +143,7 @@ export function useScenarioCandidateDetail(
             run_id: runId,
             weights,
             compare_profile: SCENARIO_COMPARISON_COMPARE_PROFILE,
+            component_model_version: componentModelVersion,
             ...scopeToQuery(scope),
           },
           controller.signal,

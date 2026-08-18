@@ -57,6 +57,10 @@ import {
 } from "../../lib/scenarioComparison";
 import { SCOPE_ALL, type SuitabilityScope } from "../../lib/suitabilityScope";
 import {
+  COMPONENT_MODEL_SUCCESSOR,
+  LEGACY_MODEL_NOTICE,
+} from "../../lib/componentModelWeights";
+import {
   SAVED_SCENARIO_OTHER_RUN_NOTICE,
   type ComparisonResolution,
 } from "../../lib/savedScenarios";
@@ -134,7 +138,7 @@ export default function SuitabilityScenarioComparison({
 
   // THE single data load for Page 5. Later sections receive `comparison`; none of
   // them resolves the pair or calls the preview API again.
-  const comparison = useScenarioComparison(selection, runResolution, scope);
+  const comparison = useScenarioComparison(selection, runResolution, scope, COMPONENT_MODEL_SUCCESSOR);
   const { sideA, sideB, status } = comparison;
 
   const rows = comparisonWeightRows(sideA.canonicalWeights, sideB.canonicalWeights);
@@ -456,6 +460,21 @@ function SideIdentity({ side }: { side: ComparisonSide }) {
       {state === "OTHER_RUN" ? (
         <p className="mt-1 text-[11px] leading-snug text-warn" data-testid="scenario-comparison-side-other-run">
           {SAVED_SCENARIO_OTHER_RUN_NOTICE}
+        </p>
+      ) : null}
+
+      {/* A LEGACY SCENARIO, NOT A BROKEN ONE.
+          Its weights are perfectly valid — over the historical Z/R/E/D components,
+          which are different measurements from the successor's four. Recombining it
+          here would rename one measurement to another by position, so it is named as
+          incompatible and the reader is asked to save a new one. Its stored numbers
+          are never reinterpreted and never discarded. */}
+      {state === "OTHER_MODEL" ? (
+        <p
+          className="mt-1 text-[11px] leading-snug text-warn"
+          data-testid="scenario-comparison-side-other-model"
+        >
+          {LEGACY_MODEL_NOTICE}
         </p>
       ) : null}
 

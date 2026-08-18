@@ -172,6 +172,12 @@ import RegionRanking from "../components/RegionRanking";
 import FullRankingDialog from "../components/FullRankingDialog";
 import SuitabilityRankingDialog from "../components/suitability/SuitabilityRankingDialog";
 import { useSuitabilityCustomWeights } from "../components/suitability/useSuitabilityCustomWeights";
+import {
+  COMPONENT_MODEL_HISTORICAL,
+  COMPONENT_MODEL_SUCCESSOR,
+  isComponentModelVersion,
+  modelWeightsFrom,
+} from "../lib/componentModelWeights";
 import { CUSTOM_WEIGHTS_LABEL } from "../components/suitability/SuitabilityScoringBasis";
 import {
   CUSTOM_RANKING_DISPLAY_N,
@@ -683,8 +689,8 @@ export default function Home() {
     if (mode !== "suitability" || suit !== null) return;
     Promise.all([
       fetchSuitabilityPolicy(),
-      fetchSuitabilityLatestRun(),
-      fetchSuitabilitySummary(profile),
+      fetchSuitabilityLatestRun(COMPONENT_MODEL_SUCCESSOR),
+      fetchSuitabilitySummary(profile, COMPONENT_MODEL_SUCCESSOR),
     ])
       .then(([policy, run, summary]) => setSuit({ policy, run, summary }))
       .catch((cause: unknown) => {
@@ -703,7 +709,7 @@ export default function Home() {
   // until the initial meta load has populated suit.
   useEffect(() => {
     if (mode !== "suitability") return;
-    fetchSuitabilitySummary(profile)
+    fetchSuitabilitySummary(profile, COMPONENT_MODEL_SUCCESSOR)
       .then((summary) => setSuit((prev) => (prev ? { ...prev, summary } : prev)))
       .catch(() => undefined);
   }, [profile, mode]);
@@ -761,6 +767,8 @@ export default function Home() {
         // would silently shrink ③ below the five rows its heading promises.
         top: rankingFetchLimit,
         limit: rankingFetchLimit,
+        // The SAME model the summary resolved and the scenario recombines.
+        componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
         sort: suitSort,
         // The ONE serializer — a `sido` + `sigungu` pair is unrepresentable.
         ...scopeToQuery(suitScope),
@@ -1174,6 +1182,15 @@ export default function Home() {
     // population and the map. The custom ranking is computed within it server-side,
     // so ③ shows this 범위's top N under the reader's own weights.
     scope: suitScope,
+    // ⭐ PAGE 4 IS PINNED TO THE V3 SUCCESSOR MODEL, EXPLICITLY.
+    //
+    // Not inherited from DEFAULT_COMPONENT_MODEL: that constant is the GLOBAL
+    // default any unpinned reader gets, it is still historical, and flipping it is
+    // the product owner's rollout decision. Pinning here scopes the change to this
+    // page — the four editable factors below are the successor's own components and
+    // the preview request carries `component_model_version`, so the ranking, the
+    // scores and the map tiles all come from one V3 calculation.
+    componentModelVersion: COMPONENT_MODEL_SUCCESSOR,
     enabled: mode === "suitability" && suitabilityView === "score",
   });
   const customWeightsApplied =
@@ -1225,6 +1242,35 @@ export default function Home() {
    * that stored none). `null` when the run served nothing usable for that basis —
    * never a fabricated default, and never a partially-filled vector.
    */
+  /**
+   * A weight vector as the LEGACY historical surfaces can accept it, or `null`.
+   *
+   * Two consumers still speak only Z/R/E/D by contract: the `?wz=&wr=&we=&wd=` URL
+   * keys, and the map legend's weight read-out. Both are historical-model artifacts,
+   * and a successor vector must NOT be squeezed into them — encoding
+   * `existing_burden` as `wz` would make a shared link claim a Z/R/E/D scenario that
+   * was never authored. So a non-historical vector resolves to `null` here: the
+   * legacy key is simply absent, which is the honest state, rather than present and
+   * wrong.
+   */
+  const historicalWeightsOnly = useCallback(
+    (
+      weights: UserScenarioWeights | null | undefined,
+      model: string | null | undefined,
+    ): { zoning: string; road: string; equity: string; demand: string } | null => {
+      if (!weights) return null;
+      if (model !== undefined && model !== null && model !== COMPONENT_MODEL_HISTORICAL) return null;
+      const parsed = modelWeightsFrom(COMPONENT_MODEL_HISTORICAL, weights);
+      return parsed === null ? null : (parsed.weights as {
+        zoning: string;
+        road: string;
+        equity: string;
+        demand: string;
+      });
+    },
+    [],
+  );
+
   const activeScenarioWeights = useMemo<UserScenarioWeights | null>(() => {
     if (suit === null) return null;
     // A 사용자 지정 vector that the backend has ALREADY accepted for this run is what
@@ -1295,6 +1341,13 @@ export default function Home() {
             saveScenario({
               name,
               weights: preview.canonical_weights,
+              // The model the ANALYSIS ENGINE applied, echoed by the preview — not
+              // the one this client believed it was requesting. A stored scenario
+              // must record the namespace its numbers are actually over, or it
+              // cannot be checked before being recombined on a later run.
+              componentModelVersion: isComponentModelVersion(preview.component_model_version)
+                ? preview.component_model_version
+                : COMPONENT_MODEL_HISTORICAL,
               runId: preview.run_id,
               profileSource: profile,
             }),
@@ -1858,7 +1911,13 @@ export default function Home() {
       stableOnly,
       // Prefer the live applied scenario / selection; fall back to a not-yet-consumed
       // shared-URL value so a scenario/candidate link is preserved, not self-stripped.
-      weights: appliedScenario?.weights ?? restoredScenario?.weights ?? null,
+      // The legacy `wz/wr/we/wd` keys are HISTORICAL by definition. A successor
+      // scenario is not encodable in them and is therefore not encoded — see
+      // `historicalWeightsOnly`.
+      weights:
+        historicalWeightsOnly(appliedScenario?.weights, appliedScenario?.componentModelVersion) ??
+        historicalWeightsOnly(restoredScenario?.weights, null) ??
+        null,
       cmpProfile: appliedScenario?.compareProfile ?? restoredScenario?.compareProfile ?? "baseline",
       candidate: selected?.candidate_id ?? scenarioSelected?.candidate_id ?? restoredCandidate ?? null,
       // 매립지 현황 filters — the canonical state already lives here, so the URL
@@ -1884,6 +1943,7 @@ export default function Home() {
       cmpB,
     }),
     [
+      historicalWeightsOnly,
       mode,
       metricKey,
       selectedRegionCode,
@@ -2905,7 +2965,10 @@ export default function Home() {
                     : SUITABILITY_SCREENING_SHORT_LABEL
                 }
                 scenarioActive={scenarioActive}
-                scenarioWeights={appliedScenario?.weights ?? null}
+                scenarioWeights={historicalWeightsOnly(
+                  appliedScenario?.weights,
+                  appliedScenario?.componentModelVersion,
+                )}
               />
             )}
           </div>
@@ -3053,6 +3116,7 @@ export default function Home() {
                   weightsSourceLabel={
                     customWeightsApplied !== null ? CUSTOM_WEIGHTS_LABEL : profileLabel(profile)
                   }
+                  componentModelVersion={COMPONENT_MODEL_SUCCESSOR}
                   activeRunId={activeRunId}
                   scenarios={savedScenarios}
                   storageWarnings={savedScenarioWarnings}

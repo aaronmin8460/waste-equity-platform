@@ -36,6 +36,7 @@ import {
   scenarioRunState,
   type SavedScenario,
 } from "./savedScenarios";
+import { COMPONENT_MODEL_HISTORICAL } from "./componentModelWeights";
 
 const WEIGHTS = {
   zoning: "0.40000000",
@@ -62,6 +63,9 @@ function scenarioFixture(overrides: Partial<SavedScenario> = {}): Record<string,
     id: "fixture-a",
     name: "기준안",
     weights: WEIGHTS,
+    // Schema 2 rows carry their component model. This fixture is a HISTORICAL
+    // Z/R/E/D vector, so it is tagged historical.
+    componentModelVersion: COMPONENT_MODEL_HISTORICAL,
     runId: 47,
     profileSource: "baseline",
     createdAt: T0,
@@ -78,7 +82,7 @@ beforeEach(() => {
 describe("save / list", () => {
   it("saves a scenario and lists it back with the weights and run intact", () => {
     const result = saveScenario(
-      { name: "균형안", weights: WEIGHTS, runId: 47, profileSource: "baseline" },
+      { name: "균형안", weights: WEIGHTS, runId: 47, profileSource: "baseline", componentModelVersion: COMPONENT_MODEL_HISTORICAL },
       { now: T0, id: "abc" },
     );
 
@@ -92,6 +96,7 @@ describe("save / list", () => {
       id: "abc",
       name: "균형안",
       weights: WEIGHTS,
+      componentModelVersion: COMPONENT_MODEL_HISTORICAL,
       runId: 47,
       profileSource: "baseline",
       createdAt: T0,
@@ -104,15 +109,15 @@ describe("save / list", () => {
   });
 
   it("mints a URL-safe id when the caller supplies none", () => {
-    const result = saveScenario({ name: "자동", weights: WEIGHTS, runId: 47 });
+    const result = saveScenario({ name: "자동", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.scenario.id).toMatch(SAVED_SCENARIO_ID_RE);
   });
 
   it("never reuses an id already in the store", () => {
-    saveScenario({ name: "첫째", weights: WEIGHTS, runId: 47 }, { id: "dup" });
-    const second = saveScenario({ name: "둘째", weights: WEIGHTS, runId: 47 }, { id: "dup" });
+    saveScenario({ name: "첫째", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "dup" });
+    const second = saveScenario({ name: "둘째", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "dup" });
 
     expect(second.ok).toBe(true);
     if (!second.ok) return;
@@ -122,7 +127,7 @@ describe("save / list", () => {
   });
 
   it("trims the name and defaults profileSource to null", () => {
-    const result = saveScenario({ name: "  여백  ", weights: WEIGHTS, runId: 47 }, { id: "t" });
+    const result = saveScenario({ name: "  여백  ", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "t" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.scenario.name).toBe("여백");
@@ -132,7 +137,7 @@ describe("save / list", () => {
 
 describe("name rules", () => {
   it("rejects an empty name", () => {
-    const result = saveScenario({ name: "", weights: WEIGHTS, runId: 47 });
+    const result = saveScenario({ name: "", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe("INVALID_NAME_EMPTY");
@@ -140,7 +145,7 @@ describe("name rules", () => {
   });
 
   it("rejects a whitespace-only name", () => {
-    const result = saveScenario({ name: "   \t \n ", weights: WEIGHTS, runId: 47 });
+    const result = saveScenario({ name: "   \t \n ", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe("INVALID_NAME_EMPTY");
@@ -154,8 +159,8 @@ describe("name rules", () => {
     expect(scenarioNameProblem(atLimit)).toBeNull();
     expect(scenarioNameProblem(overLimit)).toBe("INVALID_NAME_TOO_LONG");
 
-    expect(saveScenario({ name: atLimit, weights: WEIGHTS, runId: 47 }, { id: "ok" }).ok).toBe(true);
-    const tooLong = saveScenario({ name: overLimit, weights: WEIGHTS, runId: 47 });
+    expect(saveScenario({ name: atLimit, weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "ok" }).ok).toBe(true);
+    const tooLong = saveScenario({ name: overLimit, weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL });
     expect(tooLong.ok).toBe(false);
     if (tooLong.ok) return;
     expect(tooLong.reason).toBe("INVALID_NAME_TOO_LONG");
@@ -197,6 +202,7 @@ describe("weight rules", () => {
     const result = saveScenario({
       name: "잘못된 가중치",
       weights: { zoning: "0.5", road: "0.5", equity: "0.5", demand: "0.5" },
+      componentModelVersion: COMPONENT_MODEL_HISTORICAL,
       runId: 47,
     });
     expect(result.ok).toBe(false);
@@ -206,7 +212,7 @@ describe("weight rules", () => {
   });
 
   it("refuses to save without a usable run id", () => {
-    const result = saveScenario({ name: "실행 없음", weights: WEIGHTS, runId: 0 });
+    const result = saveScenario({ name: "실행 없음", weights: WEIGHTS, runId: 0, componentModelVersion: COMPONENT_MODEL_HISTORICAL });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe("INVALID_RUN");
@@ -216,7 +222,7 @@ describe("weight rules", () => {
 describe("rename", () => {
   it("preserves id, weights, run and createdAt, and moves only updatedAt", () => {
     saveScenario(
-      { name: "옛 이름", weights: WEIGHTS, runId: 47, profileSource: "critic" },
+      { name: "옛 이름", weights: WEIGHTS, runId: 47, profileSource: "critic", componentModelVersion: COMPONENT_MODEL_HISTORICAL },
       { now: T0, id: "keep-me" },
     );
 
@@ -229,6 +235,7 @@ describe("rename", () => {
       id: "keep-me",
       name: "새 이름",
       weights: WEIGHTS,
+      componentModelVersion: COMPONENT_MODEL_HISTORICAL,
       runId: 47,
       profileSource: "critic",
       createdAt: T0,
@@ -239,16 +246,16 @@ describe("rename", () => {
   });
 
   it("keeps the scenario at its original position in the list", () => {
-    saveScenario({ name: "첫째", weights: WEIGHTS, runId: 47 }, { id: "one" });
-    saveScenario({ name: "둘째", weights: WEIGHTS, runId: 47 }, { id: "two" });
-    saveScenario({ name: "셋째", weights: WEIGHTS, runId: 47 }, { id: "three" });
+    saveScenario({ name: "첫째", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "one" });
+    saveScenario({ name: "둘째", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "two" });
+    saveScenario({ name: "셋째", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "three" });
 
     renameSavedScenario("two", "가운데");
     expect(readSavedScenarios().scenarios.map((s) => s.id)).toEqual(["one", "two", "three"]);
   });
 
   it("enforces the same name rules as save, and changes nothing when it refuses", () => {
-    saveScenario({ name: "원래", weights: WEIGHTS, runId: 47 }, { now: T0, id: "r" });
+    saveScenario({ name: "원래", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { now: T0, id: "r" });
 
     const empty = renameSavedScenario("r", "   ");
     expect(empty.ok).toBe(false);
@@ -276,8 +283,8 @@ describe("rename", () => {
 
 describe("delete", () => {
   it("removes only the named scenario", () => {
-    saveScenario({ name: "첫째", weights: WEIGHTS, runId: 47 }, { id: "one" });
-    saveScenario({ name: "둘째", weights: WEIGHTS, runId: 47 }, { id: "two" });
+    saveScenario({ name: "첫째", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "one" });
+    saveScenario({ name: "둘째", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "two" });
 
     const result = deleteSavedScenario("one");
     expect(result.ok).toBe(true);
@@ -292,8 +299,8 @@ describe("delete", () => {
   });
 
   it("leaves a deleted scenario's A/B slot resolvably MISSING, never silently empty", () => {
-    saveScenario({ name: "가", weights: WEIGHTS, runId: 47 }, { id: "aaa" });
-    saveScenario({ name: "나", weights: WEIGHTS, runId: 47 }, { id: "bbb" });
+    saveScenario({ name: "가", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "aaa" });
+    saveScenario({ name: "나", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "bbb" });
     deleteSavedScenario("aaa");
 
     const { scenarios } = readSavedScenarios();
@@ -308,12 +315,15 @@ describe("delete", () => {
 describe("cap", () => {
   it(`refuses the ${SAVED_SCENARIO_CAP + 1}th save and deletes nothing`, () => {
     for (let i = 0; i < SAVED_SCENARIO_CAP; i++) {
-      expect(saveScenario({ name: `안 ${i}`, weights: WEIGHTS, runId: 47 }, { id: `s${i}` }).ok).toBe(
+      expect(saveScenario(
+        { name: `안 ${i}`, weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL },
+        { id: `s${i}` },
+      ).ok).toBe(
         true,
       );
     }
 
-    const overflow = saveScenario({ name: "넘침", weights: WEIGHTS, runId: 47 }, { id: "over" });
+    const overflow = saveScenario({ name: "넘침", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "over" });
     expect(overflow.ok).toBe(false);
     if (overflow.ok) return;
     expect(overflow.reason).toBe("CAP_REACHED");
@@ -356,7 +366,7 @@ describe("corrupt / hostile stored data", () => {
   });
 
   it("drops individual entries with a wrong entry schema version", () => {
-    seedEnvelope([scenarioFixture({ id: "good" }), { ...scenarioFixture({ id: "bad" }), schemaVersion: 2 }]);
+    seedEnvelope([scenarioFixture({ id: "good" }), { ...scenarioFixture({ id: "bad" }), schemaVersion: 99 }]);
     const result = readSavedScenarios();
     expect(result.scenarios.map((s) => s.id)).toEqual(["good"]);
     expect(result.warnings).toHaveLength(1);
@@ -405,7 +415,7 @@ describe("corrupt / hostile stored data", () => {
 
   it("saves cleanly over a corrupt blob instead of throwing", () => {
     seedRaw("💥 not json");
-    const result = saveScenario({ name: "복구", weights: WEIGHTS, runId: 47 }, { id: "fresh" });
+    const result = saveScenario({ name: "복구", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "fresh" });
     expect(result.ok).toBe(true);
     expect(readSavedScenarios().scenarios.map((s) => s.id)).toEqual(["fresh"]);
   });
@@ -413,13 +423,13 @@ describe("corrupt / hostile stored data", () => {
 
 describe("quota and unavailable storage", () => {
   it("reports a quota rejection and leaves the previous list untouched", () => {
-    saveScenario({ name: "기존", weights: WEIGHTS, runId: 47 }, { id: "kept" });
+    saveScenario({ name: "기존", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "kept" });
 
     const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("exceeded", "QuotaExceededError");
     });
 
-    const result = saveScenario({ name: "넘침", weights: WEIGHTS, runId: 47 }, { id: "lost" });
+    const result = saveScenario({ name: "넘침", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "lost" });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe("QUOTA_EXCEEDED");
@@ -430,7 +440,7 @@ describe("quota and unavailable storage", () => {
   });
 
   it("reports a quota rejection on rename too, without losing the old name", () => {
-    saveScenario({ name: "원래", weights: WEIGHTS, runId: 47 }, { id: "q" });
+    saveScenario({ name: "원래", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "q" });
     const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("exceeded", "QuotaExceededError");
     });
@@ -465,7 +475,7 @@ describe("quota and unavailable storage", () => {
 
 describe("run compatibility", () => {
   it("marks a scenario from the active run as current and any other run as OTHER_RUN", () => {
-    saveScenario({ name: "실행 47", weights: WEIGHTS, runId: 47 }, { id: "r47" });
+    saveScenario({ name: "실행 47", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "r47" });
     const [scenario] = readSavedScenarios().scenarios;
 
     expect(scenarioRunState(scenario, 47)).toBe("CURRENT_RUN");
@@ -473,7 +483,7 @@ describe("run compatibility", () => {
   });
 
   it("treats an unknown active run as OTHER_RUN — never as a match by default", () => {
-    saveScenario({ name: "실행 47", weights: WEIGHTS, runId: 47 }, { id: "r47" });
+    saveScenario({ name: "실행 47", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "r47" });
     const [scenario] = readSavedScenarios().scenarios;
     expect(scenarioRunState(scenario, null)).toBe("OTHER_RUN");
   });
@@ -481,8 +491,8 @@ describe("run compatibility", () => {
 
 describe("A/B resolution", () => {
   function twoSaved(): SavedScenario[] {
-    saveScenario({ name: "가", weights: WEIGHTS, runId: 47 }, { id: "aaa" });
-    saveScenario({ name: "나", weights: WEIGHTS, runId: 47 }, { id: "bbb" });
+    saveScenario({ name: "가", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "aaa" });
+    saveScenario({ name: "나", weights: WEIGHTS, runId: 47, componentModelVersion: COMPONENT_MODEL_HISTORICAL }, { id: "bbb" });
     return readSavedScenarios().scenarios;
   }
 

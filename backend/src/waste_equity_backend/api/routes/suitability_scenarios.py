@@ -527,6 +527,41 @@ def _assert_scenario_model_supported(resolved: int, model_version: str) -> None:
         )
 
 
+def _tile_weight_map(
+    wz: str | None,
+    wr: str | None,
+    we: str | None,
+    wd: str | None,
+    pairs: list[str] | None,
+) -> dict[str, str]:
+    """The tile's weight map, from whichever parameter form the caller used.
+
+    `w=component:value` is the model-agnostic form and wins when present; the four
+    historical abbreviations remain for every existing caller and every cached URL.
+    A malformed pair is passed through as-is so `_validate_weights` reports it with
+    the structured weight error the caller already handles, rather than a bare 422
+    from here.
+    """
+
+    if pairs:
+        out: dict[str, str] = {}
+        for pair in pairs:
+            name, sep, value = pair.partition(":")
+            if not sep:
+                # No separator: unusable as a component/value pair. Recorded under
+                # its own text so the validator names it back to the caller.
+                out[pair] = ""
+                continue
+            out[name] = value
+        return out
+    return {
+        "zoning": wz or "",
+        "road": wr or "",
+        "equity": we or "",
+        "demand": wd or "",
+    }
+
+
 def _weight_params(
     weights: dict[str, Decimal],
     model_version: str = component_model.COMPONENT_MODEL_HISTORICAL,
@@ -938,10 +973,19 @@ def scenario_tile(
     session: SessionDep,
     request: Request,
     run_id: int,
-    wz: str = Query(...),
-    wr: str = Query(...),
-    we: str = Query(...),
-    wd: str = Query(...),
+    # HISTORICAL weights, by their four public abbreviations. Optional now: a
+    # successor tile carries its weights through `w` below instead, because
+    # `we` would abbreviate the successor's `existing_burden` just as naturally as
+    # it abbreviates `equity`, and a parameter name that can be reinterpreted is
+    # exactly how one model's weight silently becomes another's.
+    wz: str | None = Query(default=None),
+    wr: str | None = Query(default=None),
+    we: str | None = Query(default=None),
+    wd: str | None = Query(default=None),
+    # ANY model's weights, as explicit `component=decimal` pairs. Repeatable, and
+    # the component names are checked against the RUN's own `component_order`, so a
+    # pair naming another model's component is refused rather than ignored.
+    w: list[str] | None = Query(default=None),
     scenario_hash: str = Query(...),
     # The ANALYSIS SCOPE, so the map draws the same population the ranking beside it
     # describes. Both omitted → 수도권 전체, the tile this endpoint has always served.
@@ -976,9 +1020,7 @@ def scenario_tile(
     resolved, _run_meta, run_model_version, run_component_order = _resolve_scenario_run(
         session, run_id, None
     )
-    weights = _validate_weights(
-        {"zoning": wz, "road": wr, "equity": we, "demand": wd}, run_component_order
-    )
+    weights = _validate_weights(_tile_weight_map(wz, wr, we, wd, w), run_component_order)
     _assert_scenario_model_supported(resolved, run_model_version)
     expected_hash = scenario.scenario_hash(run_id, weights)
     if scenario_hash != expected_hash:

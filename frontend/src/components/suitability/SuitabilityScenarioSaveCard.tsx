@@ -39,7 +39,16 @@
 import { useId, useState } from "react";
 
 import type { UserScenarioWeights } from "../../lib/api";
-import { namedWeights } from "../../lib/suitability";
+import { codeWithName, type ScoreComponent } from "../../lib/glossary";
+import {
+  V3_COMPONENT_META,
+  type V3Component,
+} from "../../lib/suitabilityV3";
+import {
+  COMPONENT_MODEL_HISTORICAL,
+  namedWeightsForModel,
+  type ComponentModelVersion,
+} from "../../lib/componentModelWeights";
 import {
   SAVED_SCENARIO_CAP,
   SAVED_SCENARIO_NAME_MAX_LENGTH,
@@ -63,6 +72,8 @@ export interface SuitabilityScenarioSaveCardProps {
   weights: UserScenarioWeights | null;
   /** Citizen-facing name of the basis those weights came from ("기본 가정", …). */
   weightsSourceLabel: string;
+  /** The model the weights above are defined over. */
+  componentModelVersion?: ComponentModelVersion;
   /** The run on screen. `null` while it is still loading. */
   activeRunId: number | null;
   scenarios: readonly SavedScenario[];
@@ -90,9 +101,27 @@ function formatSavedAt(iso: string): string {
   return date.toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
+/**
+ * A weight vector as one line, in the labels of ITS OWN model.
+ *
+ * `namedWeights` walks the historical Z/R/E/D glossary, so a successor vector run
+ * through it prints four historical names with "-" values — the reader's own weights
+ * wearing measurements they never chose.
+ */
+function formatWeights(
+  model: ComponentModelVersion | undefined,
+  weights: Record<string, string> | null | undefined,
+): string {
+  return namedWeightsForModel(model ?? COMPONENT_MODEL_HISTORICAL, weights, {
+    historical: (component) => codeWithName(component as ScoreComponent),
+    successor: (component) => V3_COMPONENT_META[component as V3Component].label,
+  });
+}
+
 export default function SuitabilityScenarioSaveCard({
   weights,
   weightsSourceLabel,
+  componentModelVersion,
   activeRunId,
   scenarios,
   storageWarnings,
@@ -176,7 +205,7 @@ export default function SuitabilityScenarioSaveCard({
           </summary>
           <p className="mt-1 text-[10px] leading-snug text-ink-subtle" data-testid="scenario-save-weights">
             <span className="font-medium text-ink">{weightsSourceLabel}</span>의 가중치를 저장합니다 ·{" "}
-            {namedWeights(weights)}
+            {formatWeights(componentModelVersion, weights)}
           </p>
         </details>
       )}
@@ -387,7 +416,7 @@ export default function SuitabilityScenarioSaveCard({
                       </div>
 
                       <p className="mt-0.5 text-[10px] leading-snug text-ink-muted" data-testid="scenario-saved-weights">
-                        {namedWeights(scenario.weights)}
+                        {formatWeights(scenario.componentModelVersion, scenario.weights)}
                       </p>
 
                       <p className="mt-0.5 text-[10px] text-ink-subtle">

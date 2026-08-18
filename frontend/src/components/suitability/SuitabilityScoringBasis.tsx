@@ -108,7 +108,7 @@ import {
   FACTOR_SCORE_BAND_SOURCE_NOTE,
   FACTOR_SCORE_BAND_TITLE,
 } from "../../lib/factorScoreBand";
-import { SCENARIO_COMPONENTS, type ScenarioPercents } from "../../lib/scenario";
+import { SCENARIO_COMPONENTS, type ComponentPercents } from "../../lib/scenario";
 import type { SuitabilityCustomWeights } from "./useSuitabilityCustomWeights";
 
 /** The three screening statuses, in the order every surface lists them. */
@@ -168,7 +168,7 @@ function weightsFor(
  * typed. The label comes from the shared glossary, so the bar, the factor cards and
  * every export name each factor identically.
  */
-function percentBarRows(percents: ScenarioPercents) {
+function percentBarRows(percents: ComponentPercents) {
   return SCENARIO_COMPONENTS.map((component) => ({
     component,
     label: COMPONENT_META[component].primary,
@@ -308,6 +308,52 @@ export default function SuitabilityScoringBasis({
           actually be read side by side instead of scattered down a radio list. */}
       <fieldset className="mt-3 m-0 border-0 p-0" data-testid="profile-selector">
         <legend className="mb-1 text-[11px] font-semibold text-ink-subtle">점수 반영 기준</legend>
+        {/* ── THE SUCCESSOR MODEL HAS ONE APPROVED PROFILE ───────────────────────
+            `baseline` (equal 0.25×4) is the only registered successor weight vector.
+            The five historical pills below (기본/모두 똑같이/지역 부담 중심/도로 근접성
+            중심/데이터 분포 기준) are defined over the Z/R/E/D components and have NO
+            approved successor equivalent — showing them here would label a vector
+            with a policy that was never registered for it, and mapping them across
+            by position would rename one measurement to another. So a successor run
+            gets exactly 기준 and 사용자 지정. */}
+        {successor && customWeights && (
+          <div className="flex flex-wrap gap-1" data-testid="v3-preset-row">
+            <label
+              title="후속 모델에 등록된 하나뿐인 승인 가중치입니다 (네 지수 각 25%)."
+              className={`inline-flex items-center gap-1.5 rounded-control border px-2 py-1 text-[11px] ${
+                customWeights.isCustom
+                  ? "border-hairline bg-surface text-ink-muted"
+                  : "border-primary-border bg-primary-soft font-semibold text-ink"
+              }`}
+            >
+              <input
+                type="radio"
+                name="profile"
+                checked={!customWeights.isCustom}
+                onChange={customWeights.reset}
+                data-testid="v3-preset-baseline"
+              />
+              <span className="whitespace-nowrap">기준</span>
+            </label>
+            <label
+              title="네 지수의 가중치를 직접 입력합니다."
+              className={`inline-flex items-center gap-1.5 rounded-control border px-2 py-1 text-[11px] ${
+                customWeights.isCustom
+                  ? "border-primary-border bg-primary-soft font-semibold text-ink"
+                  : "border-hairline bg-surface text-ink-muted"
+              }`}
+            >
+              <input
+                type="radio"
+                name="profile"
+                checked={customWeights.isCustom}
+                onChange={customWeights.selectCustom}
+                data-testid="profile-radio-custom"
+              />
+              <span className="whitespace-nowrap">{CUSTOM_WEIGHTS_LABEL}</span>
+            </label>
+          </div>
+        )}
         {/* COMPACT PILL ROW, not five stacked full-width rows.
             Figma card ② has no radio list at all — its control is the per-factor
             weight input. That input is disabled while the run is a stored one, so
@@ -315,6 +361,11 @@ export default function SuitabilityScoringBasis({
             a functional regression, not a copy cleanup. It stays, wrapped inline so
             it costs roughly one third of the height it did, and the inputs stay
             VISIBLE because e2e/integration.spec.ts asserts exactly that. */}
+        {/* NOT RENDERED for a successor run — not merely hidden. A hidden duplicate
+            is still in the DOM, still focusable by assistive technology, and still
+            a second element carrying the same testid. The V3 row above replaces it
+            entirely. */}
+        {!successor && (
         <div className="flex flex-wrap gap-1">
           {PROFILE_OPTIONS.filter((option) => runProfiles.includes(option.key)).map((option) => {
             // A preset is only "the basis in force" while the reader has not
@@ -371,6 +422,7 @@ export default function SuitabilityScoringBasis({
             </label>
           )}
         </div>
+        )}
         {/* Every basis's four weights in one place, with their full Korean names —
             never bare code letters. Closed by default; the one in force is already
             stated above the list. */}
@@ -398,6 +450,15 @@ export default function SuitabilityScoringBasis({
       {successor ? (
         <SuitabilityV3FactorCards
           factors={v3Factors}
+          editor={
+            customWeights
+              ? {
+                  percents: customWeights.percents,
+                  setPercent: customWeights.setPercent,
+                  disabled: customWeights.applying,
+                }
+              : undefined
+          }
           pendingReason={
             v3Pending
               ? "지수 점수는 후보를 선택하면 그 후보의 실제 계산 결과로 표시됩니다. 값이 없는 항목은 0으로 채우지 않습니다."
@@ -425,7 +486,7 @@ export default function SuitabilityScoringBasis({
       )}
 
       {/* THE TOTAL, THE VALIDATION, AND THE APPLY. Only where the inputs are live. */}
-      {customWeights && !successor && <CustomWeightControls custom={customWeights} />}
+      {customWeights && <CustomWeightControls custom={customWeights} />}
 
       {/* THE METHODOLOGY, BEHIND ONE DISCLOSURE. Both blocks below are unchanged in
           wording and both used to stand open in the primary card: a reader had to
