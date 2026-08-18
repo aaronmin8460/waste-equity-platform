@@ -52,6 +52,7 @@ import { ApiError, type UserScenarioWeights } from "../lib/api";
 import {
   SAVED_SCENARIOS_STORAGE_KEY,
   SAVED_SCENARIO_SCHEMA_VERSION,
+  readSavedScenarios,
   type SavedScenario,
 } from "../lib/savedScenarios";
 import {
@@ -393,6 +394,72 @@ describe("preview revalidation", () => {
       within(weightRow("land_conversion")).getByTestId("scenario-comparison-weight-delta")
         .textContent,
     ).toBe("변화 없음");
+  });
+});
+
+describe("model compatibility — a legacy scenario stays legacy", () => {
+  it("refuses to recombine a HISTORICAL scenario on a successor comparison", async () => {
+    // The saved vector is perfectly valid — over the historical Z/R/E/D components,
+    // which are different measurements from the successor's four. Recombining it
+    // here would rename `road` to `resident_impact` by position, which is the one
+    // translation the component-model contract forbids outright.
+    const legacy = scenario({
+      id: "sc-a",
+      name: "예전 균형안",
+      weights: {
+        zoning: "0.40000000",
+        road: "0.30000000",
+        equity: "0.20000000",
+        demand: "0.10000000",
+      },
+      componentModelVersion: COMPONENT_MODEL_HISTORICAL,
+    });
+    seed([legacy, SAVED_B]);
+    await renderPage5(PAIR_URL);
+
+    // Named as incompatible, with an explanation — not as missing, not as an error.
+    await waitFor(() =>
+      expect(within(sideA()).getByTestId("scenario-comparison-side-other-model")).toBeTruthy(),
+    );
+    expect(
+      within(sideA()).getByTestId("scenario-comparison-side-other-model").textContent,
+    ).toContain("기존 모델");
+
+    // ⛔ AND IT WAS NEVER SENT. A refused scenario must not reach the engine at all,
+    // because a successful 422 round-trip would still have put a Z/R/E/D vector on
+    // the wire labelled as a successor request.
+    for (const [request] of previewUserWeightScenario.mock.calls) {
+      expect(request.weights.zoning).toBeUndefined();
+      expect(request.weights.existing_burden).toBeDefined();
+    }
+
+    // B is unaffected: one incompatible side does not take the other down.
+    await waitFor(() =>
+      expect(within(sideB()).getByTestId("scenario-comparison-side-ready")).toBeTruthy(),
+    );
+  });
+
+  it("keeps a stored historical scenario readable — it is not deleted or rewritten", () => {
+    const legacy = scenario({
+      id: "sc-a",
+      weights: {
+        zoning: "0.40000000",
+        road: "0.30000000",
+        equity: "0.20000000",
+        demand: "0.10000000",
+      },
+      componentModelVersion: COMPONENT_MODEL_HISTORICAL,
+    });
+    seed([legacy, SAVED_B]);
+    const stored = readSavedScenarios().scenarios.find((row) => row.id === "sc-a");
+    expect(stored?.componentModelVersion).toBe(COMPONENT_MODEL_HISTORICAL);
+    // Its numbers are untouched — never re-keyed onto successor components.
+    expect(stored?.weights).toEqual({
+      zoning: "0.40000000",
+      road: "0.30000000",
+      equity: "0.20000000",
+      demand: "0.10000000",
+    });
   });
 });
 
